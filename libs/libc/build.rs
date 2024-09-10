@@ -197,10 +197,10 @@ fn main() {
 /// Run `rustc --version` and capture the output, adjusting arguments as needed if `clippy-driver`
 /// is used instead.
 fn rustc_version_cmd(is_clippy_driver: bool) -> Output {
-    let rustc_wrapper = env::var_os("RUSTC_WRAPPER").filter(|w| !w.is_empty());
     let rustc = env::var_os("RUSTC").expect("Failed to get rustc version: missing RUSTC env");
 
-    let mut cmd = match rustc_wrapper {
+    let mut cmd = match env::var_os("RUSTC_WRAPPER") {
+        Some(ref wrapper) if wrapper.is_empty() => Command::new(rustc),
         Some(wrapper) => {
             let mut cmd = Command::new(wrapper);
             cmd.arg(rustc);
