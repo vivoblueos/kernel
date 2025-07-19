@@ -18,7 +18,7 @@
 
 | 仓库链接 | 描述 |
 |---------|------|
-| [apps](https://github.com/vivoblueos/apps) | 基于 Rust std 开发的 shell 和样例代码 |
+| apps | 基于 Rust std 开发的 [shell](https://github.com/vivoblueos/apps_shell) 和 [样例代码](https://github.com/vivoblueos/apps_example) |
 | [book](https://github.com/vivoblueos/book) | 内核技术文档和教程，包含详细的内核开发指南 |
 | [build](https://github.com/vivoblueos/build) | 项目编译构建模板和脚本 |
 | [kernel](https://github.com/vivoblueos/kernel) | 内核核心仓，包括 cpu 架构支持、sync、async Executor、文件系统、网络子系统、设备子系统等 |
