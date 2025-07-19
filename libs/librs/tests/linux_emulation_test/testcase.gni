@@ -1,0 +1,178 @@
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+import("//build/toolchain/cflags.gni")
+import("//kernel/common_crate_rustflags.gni")
+
+template("librs_linux_emulation_case") {
+  forward_variables_from(invoker, "*")
+  case_name = target_name
+  exe_name = "librs_linux_emulation_image_${case_name}"
+  runner_name = "librs_linux_emulation_runner_${case_name}"
+  checker_name = "run_librs_linux_emulation_${case_name}"
+
+  executable(exe_name) {
+    testonly = true
+    sources = [ "//librs/tests/linux_emulation_test/${case_name}.c" ]
+    deps = [ "//librs/tests/linux_emulation_test:librs_linux_emulation" ]
+    specs = "-specs=" +
+            rebase_path("//librs/tests/linux_emulation_test/blueos.specs")
+    librs_path =
+        rebase_path(
+            get_label_info(
+                "//librs/tests/linux_emulation_test:librs_linux_emulation",
+                "target_out_dir")) + "/" + "librs_linux_emulation"
+
+    ldflags = [
+      specs,
+      "-L",
+      librs_path,
+    ]
+
+    # link librs by same ldflags
+    if (board == "qemu_mps3_an547") {
+      ldflags += [
+        "-march=armv8.1-m.main",
+        "-mfpu=fpv5-d16",
+        "-mfloat-abi=hard",
+      ]
+    } else if (board == "qemu_mps2_an385") {
+      ldflags += [
+        "-mcpu=cortex-m3",
+        "-mthumb",
+      ]
+    } else {
+      # print("Unsupported board for librs linux emulation test: ${board}")
+    }
+
+    include_dirs = [ "//librs/newlib/include" ]
+
+    # common flags should come from board arg
+
+    cflags = [ "-D__blueos__" ]
+    if (board == "qemu_mps3_an547") {
+      cflags += [
+        "-march=armv8.1-m.main",
+        "-mfpu=fpv5-d16",
+        "-mfloat-abi=hard",
+      ]
+    } else if (board == "qemu_mps2_an385") {
+      cflags += [
+        "-mcpu=cortex-m3",
+        "-mthumb",
+      ]
+    } else {
+      # print("Unsupported board for librs linux emulation test: ${board}")
+    }
+  }
+
+  gen_linux_emulation_runner(runner_name) {
+    testonly = true
+    img = ":${exe_name}"
+
+    # qemu binary/cpu model should be come from board arg
+    qemu = "qemu-arm"
+    cpu = "cortex-m55"
+    if (board == "qemu_mps2_an385") {
+      cpu = "cortex-m3"
+    } else {
+      # print("Unsupported board for librs linux emulation test: ${board}")
+    }
+  }
+
+  run_qemu_check(checker_name) {
+    testonly = true
+    if (coverage) {
+      img = ":${exe_name}"
+    }
+    runner = ":${runner_name}"
+    checker = "//librs/tests/linux_emulation_test/common_checker.test"
+  }
+}
+
+template("librs_linux_emulation_rs_case") {
+  forward_variables_from(invoker, "*")
+  case_name = target_name
+  exe_name = "librs_linux_emulation_image_${case_name}"
+  runner_name = "librs_linux_emulation_runner_${case_name}"
+  checker_name = "run_librs_linux_emulation_${case_name}"
+
+  executable(exe_name) {
+    testonly = true
+    sources = [ "//librs/tests/linux_emulation_test/${case_name}.c" ]
+    deps = [
+      "//librs/tests/linux_emulation_test:librs_linux_emulation_shell_example",
+    ]
+    specs = "-specs=" +
+            rebase_path("//librs/tests/linux_emulation_test/blueos.specs")
+    librs_path =
+        rebase_path(
+            get_label_info(
+                "//librs/tests/linux_emulation_test:librs_linux_emulation",
+                "target_out_dir")) + "/" + "librs_linux_emulation"
+
+    ldflags = [
+      specs,
+      "-L",
+      librs_path,
+    ]
+
+    # link librs by same ldflags
+    if (board == "qemu_mps3_an547") {
+      ldflags += [
+        "-march=armv8.1-m.main",
+        "-mfpu=fpv5-d16",
+        "-mfloat-abi=hard",
+      ]
+    } else if (board == "qemu_mps2_an385") {
+      ldflags += [
+        "-mcpu=cortex-m3",
+        "-mthumb",
+      ]
+    } else {
+      # print("Unsupported board for librs linux_emulation test: ${board}")
+    }
+
+    include_dirs = [ "//librs/newlib/include" ]
+
+    # common flags should come from board arg
+
+    cflags = [ "-D__blueos__" ]
+    if (board == "qemu_mps3_an547") {
+      cflags += [
+        "-march=armv8.1-m.main",
+        "-mfpu=fpv5-d16",
+        "-mfloat-abi=hard",
+      ]
+    } else if (board == "qemu_mps2_an385") {
+      cflags += [
+        "-mcpu=cortex-m3",
+        "-mthumb",
+      ]
+    } else {
+      # print("Unsupported board for librs linux_emulation test: ${board}")
+    }
+  }
+
+  gen_linux_emulation_runner(runner_name) {
+    testonly = true
+    img = ":${exe_name}"
+
+    # qemu binary/cpu model should be come from board arg
+    qemu = "qemu-arm"
+    cpu = "cortex-m55"
+    if (board == "qemu_mps2_an385") {
+      cpu = "cortex-m3"
+    } else {
+      # print("Unsupported board for librs linux_emulation test: ${board}")
+    }
+  }
+
+  run_qemu_check(checker_name) {
+    testonly = true
+    if (coverage) {
+      img = ":${exe_name}"
+    }
+    runner = ":${runner_name}"
+    checker = "//librs/tests/linux_emulation_test/common_checker.test"
+  }
+}

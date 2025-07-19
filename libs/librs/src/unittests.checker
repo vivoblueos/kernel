@@ -1,0 +1,3 @@
+// NEWLINE-TIMEOUT: 10
+// ASSERT-SUCC: Librs unittest ended
+// ASSERT-FAIL: Backtrace in Panic.*

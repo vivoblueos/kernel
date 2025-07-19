@@ -1,0 +1,89 @@
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+import("//kernel/common_crate_rustflags.gni")
+
+build_rust("librs") {
+  crate_type = "rlib"
+  crate_name = "librs"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//external/semihosting/v0.1.20:semihosting",
+    "//external/spin/v0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/scal:blueos_scal",
+    "//libc:libc",
+  ]
+  rustflags = common_crate_rustflags
+}
+
+build_rust("librs_swi") {
+  crate_type = "rlib"
+  crate_name = "librs"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//external/spin/v0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/scal:blueos_scal_swi",
+    "//libc:libc",
+  ]
+  rustflags = common_crate_rustflags
+}
+
+build_rust("librs_unittest_image") {
+  testonly = true
+  crate_type = "bin"
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+
+  deps = [
+    "//external/semihosting/v0.1.20:semihosting",
+    "//external/spin/v0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/kernel:blueos",
+    "//kernel/rsrt:rsrt",
+    "//kernel/scal:blueos_scal",
+    "//libc:libc",
+  ]
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+  inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
+  rustflags = test_image_rustflags
+  rustflags += common_crate_rustflags
+}
+
+gen_qemu_runner("librs_unittest_runner") {
+  testonly = true
+  img = ":librs_unittest_image"
+  qemu = "$qemu_exe"
+  machine = "$machine"
+  semihosting = true
+  qemu_args = qemu_extra_args
+  block_img = "librs_unittest_block.img"
+  block_args = qemu_block_args
+}
+
+run_qemu_check("run_librs_unittest") {
+  testonly = true
+  runner = ":librs_unittest_runner"
+  if (coverage) {
+    img = ":librs_unittest_image"
+    checker = "src/coverage.checker"
+  } else {
+    checker = "src/unittests.checker"
+  }
+}
+
+group("check_librs") {
+  testonly = true
+  deps = [
+    ":run_librs_unittest",
+    "tests/integration_test:run_librs_integration_test",
+
+    # wait for virtio
+    # "tests/posixtestsuite:run_librs_posix_testsuite",
+  ]
+}
+
+group("check_librs_linux_emulation") {
+  testonly = true
+  deps = [ "tests/linux_emulation_test:run_librs_linux_emulation" ]
+}

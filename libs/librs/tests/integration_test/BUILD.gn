@@ -1,0 +1,53 @@
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+import("//kernel/common_crate_rustflags.gni")
+
+build_rust("librs_integration_test_image") {
+  testonly = true
+  crate_type = "bin"
+  sources = [ "integration_test.rs" ]
+  edition = "2021"
+
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+
+  deps = [
+    "//external/semihosting/v0.1.20:semihosting",
+    "//external/spin/v0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/kernel:blueos",
+    "//kernel/rsrt:rsrt",
+    "//kernel/scal:blueos_scal",
+    "//libc:libc",
+    "//librs:librs",
+  ]
+  if (coverage || profile) {
+    deps += [
+      "//external/minicov/v0.3.7:minicov",
+      "//external/semihosting/v0.1.20:semihosting",
+    ]
+  }
+  inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
+  rustflags = test_image_rustflags
+}
+
+gen_qemu_runner("librs_integration_test_runner") {
+  testonly = true
+  img = ":librs_integration_test_image"
+  qemu = "$qemu_exe"
+  machine = "$machine"
+  semihosting = true
+  qemu_args = qemu_extra_args
+  block_img = "librs_integration_test_block.img"
+  block_args = qemu_block_args
+}
+
+run_qemu_check("run_librs_integration_test") {
+  testonly = true
+  runner = ":librs_integration_test_runner"
+  if (coverage) {
+    img = ":librs_integration_test_image"
+    checker = "coverage.checker"
+  } else {
+    checker = "integration.checker"
+  }
+}

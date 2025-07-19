@@ -1,0 +1,65 @@
+import("//build/templates/rust.gni")
+import("//kernel/common_crate_rustflags.gni")
+import("//librs/tests/linux_emulation_test/testcase.gni")
+group("run_librs_linux_emulation") {
+  testonly = true
+  deps = [
+    ":run_librs_linux_emulation_clock",
+    ":run_librs_linux_emulation_mqueue",
+    ":run_librs_linux_emulation_sched",
+    ":run_librs_linux_emulation_time",
+
+    # ":run_librs_linux_emulation_shell_example",
+  ]
+}
+
+build_rust("librs_linux_emulation") {
+  testonly = true
+  crate_type = "staticlib"
+  crate_name = "librs"
+  sources = [ "//librs/src/lib.rs" ]
+  deps = [
+    "//external/spin/v0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/scal:blueos_scal",
+    "//libc:libc",
+  ]
+  features = [ "linux_emulation" ]
+  rustflags = common_crate_rustflags
+}
+
+build_rust("librs_linux_emulation_shell_example") {
+  testonly = true
+  crate_type = "staticlib"
+  crate_name = "librs_linux_emulation_shell_example"
+  sources = [ "//librs/tests/linux_emulation_test/shell_example.rs" ]
+  deps = [ "//librs/tests/linux_emulation_test:librs_linux_emulation" ]
+  common_crate_rustflags += [
+    "-C",
+    "panic=abort",
+    "-C",
+    "link-arg=--enable-non-contiguous-regions",
+
+    # Enable link-time-optimization
+    "-C",
+    "lto",
+
+    # Have rustc generate stack sizes for analyzing the size of stack frames.
+    "-Z",
+    "emit-stack-sizes",
+  ]
+
+  rustflags = common_crate_rustflags + common_gcc_rustflags
+}
+
+librs_linux_emulation_case("clock") {
+}
+librs_linux_emulation_case("time") {
+}
+librs_linux_emulation_case("sched") {
+}
+librs_linux_emulation_case("mqueue") {
+}
+
+librs_linux_emulation_rs_case("shell_example") {
+}
