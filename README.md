@@ -18,7 +18,7 @@ For details, please visit the vivo BlueOS official website [kernel](https://blue
 
 | Repository Link | Description |
 |----------------|-------------|
-| [apps](https://github.com/vivoblueos/apps) | Shell and sample code developed based on Rust std |
+| apps | [Shell](https://github.com/vivoblueos/apps_shell) and [examples](https://github.com/vivoblueos/apps_example) developed based on Rust std |
 | [book](https://github.com/vivoblueos/book) | Kernel technical documentation and tutorials, including detailed kernel development guides |
 | [build](https://github.com/vivoblueos/build) | Project compilation build templates and scripts |
 | [kernel](https://github.com/vivoblueos/kernel) | Core kernel repository, including CPU architecture support, sync/async Executor, file system, network subsystem, device subsystem, etc. |
