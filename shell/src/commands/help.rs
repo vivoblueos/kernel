@@ -16,7 +16,7 @@ use crate::COMMANDS;
 
 pub fn command(args: &[&str]) -> Result<(), String> {
     if args.is_empty() {
-        println!("BlueKernel shell commands:");
+        println!("BlueOS kernel shell commands:");
         for (name, cmdinfo) in COMMANDS.entries() {
             println!("  {:<10} - {}", name, cmdinfo.description);
         }
