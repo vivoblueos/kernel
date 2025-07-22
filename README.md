@@ -22,17 +22,15 @@ BlueOS kernel currently supports ARM32, ARM64, RISCV32 and RISCV64 chip architec
 | apps | [Shell](https://github.com/vivoblueos/apps_shell) and [examples](https://github.com/vivoblueos/apps_example) developed based on Rust std |
 | [book](https://github.com/vivoblueos/book) | Kernel technical documentation and tutorials, including detailed kernel development guides |
 | [build](https://github.com/vivoblueos/build) | Project compilation build templates and scripts |
-| [kernel](https://github.com/vivoblueos/kernel) | Core kernel repository, including CPU architecture support, sync/async Executor, file system, network subsystem, device subsystem, etc. |
+| [kernel](https://github.com/vivoblueos/kernel) | Core kernel repository, including CPU architecture support, system scheduler，sync primitives, async executor, memory management subsystem,  file system, network subsystem, device subsystem, etc |
 | [libc](https://github.com/vivoblueos/libc) | BlueOS kernel libc header files, forked from [rust-lang/libc](https://github.com/rust-lang/libc) |
 | [librs](https://github.com/vivoblueos/librs) | BlueOS kernel libc implementation based on Rust programming language |
 
-# BlueOS Kernel Toolchain
-We have forked the upstream Rust compiler to support BlueOS kernel targeted to `*-vivo-blueos-*` and BlueOS's Rust std.
-
-We'll finally contribute our changes to the upstream repository and make `*-vivo-blueos-*` a supported platform of Rust.
-
-## How to build
-Please check [Build Kernel Rust Toolchain](https://github.com/vivoblueos/book/blob/main/src/build-rust-toolchain.md).
+# Getting started with the kernel development
+To build and work with the BlueOS kernel, please check following documentations.
+- [Prepare basic build environment](https://github.com/vivoblueos/book/blob/main/src/getting-started.md)
+- [Build customized Rust toolchain](https://github.com/vivoblueos/book/blob/main/src/build-rust-toolchain.md)
+- [Work with the kernel](https://github.com/vivoblueos/book/blob/main/src/build-kernel.md)
 
 # Technical Documentation
-For more information about BlueOS kernel, please refer to our [book](https://github.com/vivoblueos/book).
+For more information about the BlueOS kernel, please refer to [the kernel book](https://github.com/vivoblueos/book).

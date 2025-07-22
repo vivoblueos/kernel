@@ -22,17 +22,16 @@
 | apps | 基于 Rust std 开发的 [shell](https://github.com/vivoblueos/apps_shell) 和 [样例代码](https://github.com/vivoblueos/apps_example) |
 | [book](https://github.com/vivoblueos/book) | 内核技术文档和教程，包含详细的内核开发指南 |
 | [build](https://github.com/vivoblueos/build) | 项目编译构建模板和脚本 |
-| [kernel](https://github.com/vivoblueos/kernel) | 内核核心仓，包括 cpu 架构支持、sync、async Executor、文件系统、网络子系统、设备子系统等 |
+| [kernel](https://github.com/vivoblueos/kernel) | 内核核心仓，包括 cpu 架构支持、调度器、同步原语、异步执行器、内存管理子系统、文件系统、网络子系统、设备子系统等 |
 | [libc](https://github.com/vivoblueos/libc) | 蓝河操作系统内核的 libc 头文件，fork 自[rust-lang/libc](https://github.com/rust-lang/libc) |
 | [librs](https://github.com/vivoblueos/librs) | 蓝河操作系统内核基于 Rust 语言的 libc 实现 |
 
-# vivo 蓝河操作系统内核工具链
-我们 fork 了上游 Rust 编译器来支持编译蓝河操作系统内核和 Rust std，目标平台为 `*-vivo-blueos-*` 。
+# 内核开发入门指南
+要构建并使用 BlueOS 内核，请查阅以下文档：
 
-我们计划会将我们的更改贡献给上游仓库，并使 `*-vivo-blueos-*` 成为 Rust 官方支持的目标平台。
-
-## 如何构建
-请查看 [构建内核工具链](https://github.com/vivoblueos/book/blob/main/src/build-rust-toolchain.md)。
+- [准备基础构建环境](https://github.com/vivoblueos/book/blob/main/src/getting-started.md)
+- [构建定制的 Rust 工具链](https://github.com/vivoblueos/book/blob/main/src/build-rust-toolchain.md)
+- [内核开发实践](https://github.com/vivoblueos/book/blob/main/src/build-kernel.md)
 
 # 技术书籍
-有关蓝河操作系统内核更多的信息，请查看我们的[book](https://github.com/vivoblueos/book)。
+有关蓝河操作系统内核更多的信息，请参阅[内核开发手册](https://github.com/vivoblueos/book)。
