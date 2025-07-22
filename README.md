@@ -26,13 +26,13 @@ BlueOS kernel currently supports ARM32, ARM64, RISCV32 and RISCV64 chip architec
 | [libc](https://github.com/vivoblueos/libc) | BlueOS kernel libc header files, forked from [rust-lang/libc](https://github.com/rust-lang/libc) |
 | [librs](https://github.com/vivoblueos/librs) | BlueOS kernel libc implementation based on Rust programming language |
 
-# BlueOS Kernel Toolchain
-We have forked the upstream Rust compiler to support BlueOS kernel targeted to `*-vivo-blueos-*` and BlueOS's Rust std.
+# Getting started with the kernel development
+To build and work with the BlueOS kernel, please check following documentations.
+- [Prepare basic build environment](https://github.com/vivoblueos/book/blob/main/src/getting-started.md)
+- [Build customized Rust toolchain](https://github.com/vivoblueos/book/blob/main/src/build-rust-toolchain.md)
+- [Work with the kernel](https://github.com/vivoblueos/book/blob/main/src/build-kernel.md)
 
-We'll finally contribute our changes to the upstream repository and make `*-vivo-blueos-*` a supported platform of Rust.
-
-## How to build
-Please check [Build Kernel Rust Toolchain](https://github.com/vivoblueos/book/blob/main/src/build-rust-toolchain.md).
+To find out more detailed information, please read [the kernel book](https://github.com/vivoblueos/book).
 
 # Technical Documentation
 For more information about BlueOS kernel, please refer to our [book](https://github.com/vivoblueos/book).
