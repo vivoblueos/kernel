@@ -5,7 +5,7 @@
 \[ English | [简体中文](README_zh.md) \]
 
 # BlueOS Kernel
-BlueOS kernel is developed by the Rust programming language, featuring security, lightweight, and generality. It is compatible with POSIX interfaces and supports Rust std.
+BlueOS kernel is written in Rust, featuring security, lightweight, and generality. It is compatible with POSIX interfaces and supports Rust's standard library.
 
 ## Technical Architecture
 For details, please visit the BlueOS official website [kernel](https://blueos.vivo.com/kernel) page.
