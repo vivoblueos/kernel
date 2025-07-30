@@ -120,7 +120,7 @@ pub fn enqueue_active_tasklet(t: Arc<Tasklet>) {
         scheduler::current_thread_id()
     );
     let mut q = ASYNC_WORK_QUEUE.get_active_queue();
-    let _ = t.lock();
+    let _guard = t.lock();
     q.push_back(t.clone());
     #[cfg(debugging_scheduler)]
     crate::trace!(
