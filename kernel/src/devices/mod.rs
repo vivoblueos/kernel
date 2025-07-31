@@ -28,8 +28,6 @@ pub(crate) mod dumb;
 mod error;
 pub(crate) mod net;
 mod null;
-#[cfg(target_arch = "riscv64")]
-pub(crate) mod plic;
 pub mod tty;
 #[cfg(virtio)]
 pub mod virtio;

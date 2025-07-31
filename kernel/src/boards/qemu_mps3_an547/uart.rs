@@ -12,78 +12,99 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::config::{memory_map::UART0_BASE_S, UART0RX_IRQn, UART0TX_IRQn, SYSTEM_CORE_CLOCK};
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+use super::config;
 use crate::{
+    arch::irq::IrqNumber,
     devices::{
         tty::{
-            serial::{cmsdk_uart::Driver, Serial, UartOps},
+            serial::{Serial, UartOps},
             termios::Termios,
         },
-        DeviceManager,
+        Device, DeviceManager,
     },
+    drivers::uart::cmsdk_uart::Driver,
     irq::IrqTrace,
     sync::SpinLock,
+    vfs::AccessMode,
 };
 use alloc::{string::String, sync::Arc};
 use embedded_io::ErrorKind;
 use spin::Once;
 
-static UART0: Once<SpinLock<Driver>> = Once::new();
-pub fn get_early_uart() -> &'static SpinLock<dyn UartOps> {
-    UART0.call_once(|| {
-        let mut uart = unsafe {
-            Driver::new(
-                UART0_BASE_S as *mut u32,
-                SYSTEM_CORE_CLOCK,
-                UART0RX_IRQn,
-                UART0TX_IRQn,
-            )
-        };
-        uart.enable(115200);
-        SpinLock::new(uart)
-    })
+static UART0: Once<Arc<SpinLock<Driver>>> = Once::new();
+// could add more UART if needed
+
+pub fn get_early_uart(index: u32) -> Arc<SpinLock<dyn UartOps>> {
+    match index {
+        0 => UART0
+            .get()
+            .expect("uart_init must be called before get_early_uart")
+            .clone(),
+        _ => panic!("unsupported UART number"),
+    }
 }
 
 static SERIAL0: Once<Arc<Serial>> = Once::new();
+// could add more SERIAL if needed
 
-pub fn get_serial0() -> &'static Arc<Serial> {
-    SERIAL0.call_once(|| {
-        let mut uart = unsafe {
-            Driver::new(
-                UART0_BASE_S as *mut u32,
-                SYSTEM_CORE_CLOCK,
-                UART0RX_IRQn,
-                UART0TX_IRQn,
-            )
-        };
-        uart.enable(115200);
-        Arc::new(Serial::new(
-            0,
-            Termios::default(),
-            Arc::new(SpinLock::new(uart)),
-        ))
-    })
+pub fn get_serial(index: u32) -> &'static Arc<Serial> {
+    match index {
+        0 => SERIAL0
+            .get()
+            .expect("uart_init must be called before get_serial"),
+        _ => panic!("unsupported SERIAL number"),
+    }
 }
 
-pub fn uart_init() -> Result<(), ErrorKind> {
-    let serial0 = get_serial0();
-    DeviceManager::get().register_device(String::from("ttyS0"), serial0.clone())
+pub fn uart_init(
+    index: u32,
+    base: u32,
+    clock: u32,
+    rx_irq_num: IrqNumber,
+    tx_irq_num: IrqNumber,
+    name: String,
+) -> Result<(), ErrorKind> {
+    // must be called before get_serial and get_early_uart
+
+    match index {
+        0 => {
+            UART0.call_once(|| {
+                let mut uart =
+                    unsafe { Driver::new(base as *mut u32, clock, rx_irq_num, tx_irq_num) };
+                uart.enable(115200);
+                Arc::new(SpinLock::new(uart))
+            });
+
+            SERIAL0.call_once(|| {
+                Arc::new(Serial::new(
+                    index,
+                    Termios::default(),
+                    UART0.get().unwrap().clone(),
+                ))
+            });
+        }
+        _ => panic!("unsupported index for UART & SERIAL number"),
+    }
+
+    let serial = get_serial(0);
+    DeviceManager::get().register_device(name, serial.clone())
 }
 
-#[coverage(off)]
-pub unsafe extern "C" fn uartrx0_handler() {
-    let _ = IrqTrace::new(UART0RX_IRQn);
-    let uart = get_serial0();
+#[no_mangle]
+pub unsafe extern "C" fn uart0rx_handler() {
+    let _ = IrqTrace::new(config::UART0RX_IRQn);
+    let uart = get_serial(0);
     uart.uart_ops.irqsave_lock().clear_rx_interrupt();
     if let Err(_e) = uart.recvchars() {
         // println!("UART RX error: {:?}", e);
     }
 }
-
-#[coverage(off)]
-pub unsafe extern "C" fn uarttx0_handler() {
-    let _ = IrqTrace::new(UART0TX_IRQn);
-    let uart = get_serial0();
+#[no_mangle]
+pub unsafe extern "C" fn uart0tx_handler() {
+    let _ = IrqTrace::new(config::UART0TX_IRQn);
+    let uart = get_serial(0);
     uart.uart_ops.irqsave_lock().clear_tx_interrupt();
     if let Err(_e) = uart.xmitchars() {
         // println!("UART TX error: {:?}", e);

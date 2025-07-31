@@ -37,6 +37,7 @@
 #![feature(noop_waker)]
 #![feature(pointer_is_aligned_to)]
 #![feature(trait_upcasting)]
+#![feature(trivial_bounds)]
 // Attributes applied when we're testing the kernel.
 #![cfg_attr(test, no_main)]
 #![cfg_attr(test, feature(custom_test_frameworks))]
@@ -80,6 +81,7 @@ pub(crate) mod console;
 #[cfg(coverage)]
 pub mod coverage;
 pub(crate) mod devices;
+pub(crate) mod drivers;
 pub mod error;
 pub(crate) mod irq;
 pub(crate) mod logger;
