@@ -143,7 +143,10 @@ impl Device for VirtIONetDevice {
             if net.can_recv() {
                 if let Ok(rx_buf) = net.receive() {
                     return Some((
-                        VirtIONetRxToken { buffer: rx_buf },
+                        VirtIONetRxToken {
+                            device_index: self.net_device_index,
+                            buffer: rx_buf,
+                        },
                         VirtIONetTxToken {
                             device_index: self.net_device_index,
                         },
@@ -178,6 +181,7 @@ impl Device for VirtIONetDevice {
 }
 
 pub struct VirtIONetRxToken {
+    device_index: usize,
     buffer: RxBuffer,
 }
 
@@ -186,8 +190,13 @@ impl RxToken for VirtIONetRxToken {
     where
         F: FnOnce(&[u8]) -> R,
     {
-        let packet_data = self.buffer.packet().to_vec();
-        f(&packet_data)
+        let packet = self.buffer.packet();
+
+        let result = f(packet);
+
+        // Recycle rx buffer to ensure virtqueue has space for new packets.
+        with_net_device(self.device_index, |net| net.recycle_rx_buffer(self.buffer));
+        result
     }
 }
 
