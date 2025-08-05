@@ -22,6 +22,9 @@ pub enum SocketError {
     #[error("Try again")]
     TryAgain,
 
+    #[error("Operation needs to block to complete")]
+    WouldBlock,
+
     #[error("Posix err {0} , {1}")]
     PosixError(i32, String),
 

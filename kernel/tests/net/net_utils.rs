@@ -34,7 +34,8 @@ use libc::{sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, IN6ADDR_LOOPBACK_INIT};
 use semihosting::println;
 use smoltcp::wire::{IpAddress, IpEndpoint};
 
-const TEST_BLOCK_MODE: usize = 1;
+// Block mode test iterations: 1st for data message, 2nd for EOF
+const TEST_BLOCK_MODE: usize = 2;
 const TEST_NONBLOCK_MODE: usize = 20;
 const TEST_IO_MODE: usize = TEST_BLOCK_MODE;
 
