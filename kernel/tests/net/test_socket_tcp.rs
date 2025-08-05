@@ -22,6 +22,7 @@ use blueos::{
 };
 use blueos_test_macro::test;
 use core::{
+    cmp,
     ffi::c_void,
     fmt::Debug,
     mem,
@@ -88,29 +89,46 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
     );
 
     let mut buffer = vec![0u8; 1024];
-    let mut bytes_received = 0;
+    let mut received_text = false;
+    let mut received_eof = false;
     net_utils::loop_with_io_mode(!args.is_nonblocking, || {
-        bytes_received =
+        let mut bytes_received =
             net::syscalls::recv(sock_fd, buffer.as_mut_ptr() as *mut c_void, buffer.len(), 0);
         println!("Socket[{}] recv {} bytes", sock_fd, bytes_received);
 
-        if bytes_received > 0 {
-            let received_size = bytes_received as usize;
+        match bytes_received.cmp(&0) {
+            cmp::Ordering::Greater => {
+                let received_size = bytes_received as usize;
 
-            // Try to convert using String::from_utf8
-            match String::from_utf8(buffer[0..received_size].to_vec()) {
-                Ok(text) => println!("Socket[{}] recv TCP text: {}", sock_fd, text),
-                Err(e) => println!("Socket[{}] recv TCP text fail: {}", sock_fd, e),
+                // Attempt to convert received bytes to UTF-8 string (lossy to avoid errors)
+                let text = String::from_utf8_lossy(&buffer[..received_size]);
+                println!("Socket[{}] recv TCP text: {}", sock_fd, text);
+
+                // Print received data in hex format
+                net_utils::println_hex(&buffer[..received_size], received_size);
+
+                received_text = true;
             }
-
-            // Hex print section
-            net_utils::println_hex(buffer.as_slice(), received_size);
-            return true;
+            cmp::Ordering::Less => {
+                println!(
+                    "Socket[{}] unexpected bytes_received={}",
+                    sock_fd, bytes_received
+                );
+            }
+            cmp::Ordering::Equal => {
+                // bytes_received == 0 means EOF
+                println!("Socket[{}] recv TCP EOF", sock_fd);
+                received_eof = true;
+                return true; // Indicate EOF received
+            }
         }
 
         scheduler::yield_me();
         false
     });
+
+    assert!(received_text, "Failed to receive data.");
+    assert!(received_eof, "Failed to receive EOF.");
 
     let shutdown_result = net::syscalls::shutdown(sock_fd, 0);
     println!("Socket[{}] shutdown result {}", sock_fd, shutdown_result);
@@ -121,8 +139,6 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
 
     TCP_SERVER_THREAD_FINISH.store(1, Ordering::Release);
     let _ = futex::atomic_wake(&TCP_SERVER_THREAD_FINISH, 1);
-
-    assert!(bytes_received > 0, "Test tcp server recv fail.");
     println!("Thread exit:[tcp_server_thread]");
 }
 
@@ -189,13 +205,14 @@ fn tcp_client_thread(args: Arc<NetTestArgs>) {
         false
     });
 
-    let _ = futex::atomic_wait(&TCP_SERVER_THREAD_FINISH, 0, None);
-    // Warning!!! Shutdown after server thread exit, or server may not able to recv data from client
+    // Call shutdown to send EOF (i.e., close the write side of the socket)
     let shutdown_result = net::syscalls::shutdown(sock_fd, 0);
     assert!(
         shutdown_result == 0,
         "Failed to shutdown tcp client socket."
     );
+
+    let _ = futex::atomic_wait(&TCP_SERVER_THREAD_FINISH, 0, None);
 
     assert!(bytes_sent > 0, "Test tcp client send fail.");
     println!("Thread exit:[tcp_client_thread]");

@@ -179,9 +179,12 @@ impl PosixSocket for TcpSocket<'static> {
         let socket_fd = self.socket_fd;
         let is_shutdown = self.is_shutdown.clone();
 
-        self.with(|socket, _| match socket.can_send() {
-            true => socket.send(f).map_err(SocketError::SmoltcpTcpSendError),
-            false => match socket.state() {
+        self.with(|socket, _| {
+            if socket.can_send() {
+                return socket.send(f).map_err(SocketError::SmoltcpTcpSendError);
+            }
+
+            match socket.state() {
                 State::SynSent
                 | State::SynReceived
                 | State::Listen
@@ -206,7 +209,7 @@ impl PosixSocket for TcpSocket<'static> {
                             socket.state(),
                             socket.send_queue()
                         );
-                        Ok(0)
+                        Err(SocketError::WouldBlock)
                     } else {
                         Err(SocketError::TryAgain)
                     }
@@ -215,7 +218,7 @@ impl PosixSocket for TcpSocket<'static> {
                     let msg = format!("Invalid TCP state[{}] to send", socket.state());
                     Err(SocketError::InvalidState(msg))
                 }
-            },
+            }
         })
     }
 
@@ -259,46 +262,51 @@ impl PosixSocket for TcpSocket<'static> {
         let is_shutdown = self.is_shutdown.clone();
 
         self.with(|socket, _| {
-            match socket.can_recv() {
-                true => socket.recv(f).map_err(SocketError::SmoltcpTcpRecvError),
-                false => {
-                    match socket.state() {
-                        State::SynSent
-                        | State::SynReceived
-                        | State::Listen
-                        | State::FinWait1
-                        | State::FinWait2
-                        | State::Established => {
-                            if !is_nonblocking {
-                                let recv_ops = Operation::Recv {
-                                    socket_fd,
-                                    f,
-                                    is_nonblocking,
-                                    ipc_reply,
-                                };
-                                let socket_operation = Some(recv_ops);
-                                let recv_waker = socket_waker::create_closure_waker(
-                                    "TCP recv()".into(),
-                                    socket_operation,
-                                    is_shutdown,
-                                );
-                                socket.register_recv_waker(&recv_waker);
-                                log::debug!(
-                                    "no data for recv , state={:?}, recv_queue={:?}",
-                                    socket.state(),
-                                    socket.recv_queue()
-                                );
-                                Ok(0)
-                            } else {
-                                // O_NONBLOCK is set for return immediately
-                                Err(SocketError::TryAgain)
-                            }
-                        }
-                        _ => {
-                            let msg = format!("Invalid TCP state[{}] to recv", socket.state());
-                            Err(SocketError::InvalidState(msg))
-                        }
+            if socket.can_recv() {
+                return socket.recv(f).map_err(SocketError::SmoltcpTcpRecvError);
+            }
+
+            match socket.state() {
+                State::Closed | State::CloseWait => {
+                    let msg = format!(
+                        "TCP state[{}]: closed by server, returning 0 to indicate EOF",
+                        socket.state()
+                    );
+                    log::debug!("{}", msg);
+                    Ok(0)
+                }
+                State::SynSent | State::SynReceived | State::Established | State::Listen => {
+                    // FIXME: Treating Listen state as Established temporarily, since accept() is not implemented yet
+                    if is_nonblocking {
+                        // O_NONBLOCK is set, so return immediately without blocking
+                        Err(SocketError::TryAgain)
+                    } else {
+                        let recv_ops = Operation::Recv {
+                            socket_fd,
+                            f,
+                            is_nonblocking,
+                            ipc_reply,
+                        };
+                        let socket_operation = Some(recv_ops);
+                        let recv_waker = socket_waker::create_closure_waker(
+                            "TCP recv()".into(),
+                            socket_operation,
+                            is_shutdown,
+                        );
+                        socket.register_recv_waker(&recv_waker);
+                        log::debug!(
+                            "TCP state[{:?}]: no data for recv, recv_queue={:?}",
+                            socket.state(),
+                            socket.recv_queue()
+                        );
+                        Err(SocketError::WouldBlock)
                     }
+                }
+                _ => {
+                    // States like FinWait1, FinWait2, or LastAck are unexpected for recv() here
+                    let msg = format!("TCP state[{}]: invalid state for recv()", socket.state());
+                    log::debug!("{}", msg);
+                    Err(SocketError::InvalidState(msg))
                 }
             }
         })

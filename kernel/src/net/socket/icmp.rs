@@ -248,7 +248,7 @@ impl PosixSocket for IcmpSocket<'static> {
                             "icmp socket not ready for send_queue={:?}",
                             socket.send_queue()
                         );
-                        Ok(0)
+                        Err(SocketError::WouldBlock)
                     } else {
                         // O_NONBLOCK is set for return immediately,
                         // ICMP is state-less socket , always return EAGAIN
@@ -308,7 +308,7 @@ impl PosixSocket for IcmpSocket<'static> {
                             "no data for icmp recvmsg recv_queue={:?}",
                             socket.recv_queue()
                         );
-                        Ok(0)
+                        Err(SocketError::WouldBlock)
                     } else {
                         // O_NONBLOCK is set for return immediately,
                         // ICMP is state-less socket , always return EAGAIN

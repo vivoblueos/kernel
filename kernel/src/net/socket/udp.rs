@@ -230,7 +230,7 @@ impl PosixSocket for UdpSocket<'static> {
                             "blocking : udp socket not ready for send_queue={:?}",
                             socket.send_queue()
                         );
-                        Ok(0)
+                        Err(SocketError::WouldBlock)
                     } else {
                         // O_NONBLOCK is set for return immediately,
                         // UDP is state-less socket , always return EAGAIN
@@ -319,7 +319,7 @@ impl PosixSocket for UdpSocket<'static> {
                             "blocking : no data for udp recvfrom recv_queue={:?}",
                             socket.recv_queue()
                         );
-                        Ok(0)
+                        Err(SocketError::WouldBlock)
                     } else {
                         // O_NONBLOCK is set for return immediately,
                         // UDP is state-less socket , always return EAGAIN

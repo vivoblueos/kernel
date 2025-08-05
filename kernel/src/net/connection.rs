@@ -495,15 +495,14 @@ impl Connection {
 
                             let result = posix_socket.send(f, 0, is_nonblocking, ipc_reply.clone());
 
-                            match result.as_ref() {
-                                Ok(0) => {
-                                    log::debug!(
-                                        "[Connection] handle Send socket_fd={} , recv 0 data , wait for socket",
-                                        socket_fd
-                                    );
-                                    None
-                                }
-                                _ => Some(result),
+                            if let Err(SocketError::WouldBlock) = result.as_ref() {
+                                log::debug!(
+                                    "[Connection] handle Send socket_fd={} , recv 0 data , wait for socket",
+                                    socket_fd,
+                                );
+                                None
+                            } else {
+                                Some(result)
                             }
                         },
                     );
@@ -534,15 +533,14 @@ impl Connection {
                                 ipc_reply.clone(),
                             );
 
-                            match result.as_ref() {
-                                Ok(0) => {
-                                    log::debug!(
-                                        "[Connection] handle SendTo socket_fd={} , blocking wait for socket",
-                                        socket_fd
-                                    );
-                                    None
-                                }
-                                _ => Some(result),
+                            if let Err(SocketError::WouldBlock) = result.as_ref() {
+                                log::debug!(
+                                    "[Connection] handle SendTo socket_fd={} , blocking wait for socket",
+                                    socket_fd,
+                                );
+                                None
+                            } else {
+                                Some(result)
                             }
                         },
                     );
@@ -578,15 +576,14 @@ impl Connection {
                                 ipc_reply.clone(),
                             );
 
-                            match result.as_ref() {
-                                Ok(0) => {
-                                    log::debug!(
-                                        "[Connection] handle SendMsg socket_fd={} , blocking wait for socket",
-                                        socket_fd
-                                    );
-                                    None
-                                }
-                                _ => Some(result),
+                            if let Err(SocketError::WouldBlock) = result.as_ref() {
+                                log::debug!(
+                                    "[Connection] handle SendMsg socket_fd={} , blocking wait for socket",
+                                    socket_fd,
+                                );
+                                None
+                            } else {
+                                Some(result)
                             }
                         },
                     );
@@ -607,15 +604,14 @@ impl Connection {
                             let mut posix_socket = posix_socket.borrow_mut();
                             let result = posix_socket.recv(f, is_nonblocking, ipc_reply.clone());
 
-                            match result.as_ref() {
-                                Ok(0) => {
-                                    log::debug!(
-                                        "[Connection] handle Recv socket_fd={} , blocking wait for socket",
-                                        socket_fd
-                                    );
-                                    None
-                                }
-                                _ => Some(result),
+                            if let Err(SocketError::WouldBlock) = result.as_ref() {
+                                log::debug!(
+                                    "[Connection] handle Recv socket_fd={} , blocking wait for socket",
+                                    socket_fd,
+                                );
+                                None
+                            } else {
+                                Some(result)
                             }
                         },
                     );
@@ -637,15 +633,14 @@ impl Connection {
                             let result =
                                 posix_socket.recvfrom(f, is_nonblocking, ipc_reply.clone());
 
-                            match result.as_ref() {
-                                Ok(0) => {
-                                    log::debug!(
+                            if let Err(SocketError::WouldBlock) = result.as_ref() {
+                                log::debug!(
                                         "[Connection] handle RecvFrom socket_fd={} , blocking wait for socket",
-                                        socket_fd
+                                        socket_fd,
                                     );
-                                    None
-                                }
-                                _ => Some(result),
+                                None
+                            } else {
+                                Some(result)
                             }
                         },
                     );
@@ -666,15 +661,14 @@ impl Connection {
                             let mut posix_socket = posix_socket.borrow_mut();
                             let result = posix_socket.recvmsg(f, is_nonblocking, ipc_reply.clone());
 
-                            match result.as_ref() {
-                                Ok(0) => {
-                                    log::debug!(
+                            if let Err(SocketError::WouldBlock) = result.as_ref() {
+                                log::debug!(
                                         "[Connection] handle RecvMsg socket_fd={} , blocking wait for socket",
-                                        socket_fd
+                                        socket_fd,
                                     );
-                                    None
-                                }
-                                _ => Some(result),
+                                None
+                            } else {
+                                Some(result)
                             }
                         },
                     );
