@@ -136,7 +136,7 @@ impl ReadReady for Uart {
 // This can be shared among all UartOps impl.
 impl Read for Uart {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SerialError> {
-        let _ = UART0_MUTEX.irqsave_lock();
+        let _guard = UART0_MUTEX.irqsave_lock();
         while !self.read_ready()? {
             core::hint::spin_loop();
         }
@@ -153,7 +153,7 @@ impl Read for Uart {
 
 impl Write for Uart {
     fn write(&mut self, buf: &[u8]) -> Result<usize, SerialError> {
-        let _ = UART0_MUTEX.irqsave_lock();
+        let _guard = UART0_MUTEX.irqsave_lock();
         while !self.write_ready()? {
             core::hint::spin_loop();
         }
@@ -166,7 +166,7 @@ impl Write for Uart {
     }
 
     fn flush(&mut self) -> Result<(), SerialError> {
-        let _ = UART0_MUTEX.irqsave_lock();
+        let _guard = UART0_MUTEX.irqsave_lock();
         write_reg(FCR, FCR_FIFO_CLEAR);
         Ok(())
     }
