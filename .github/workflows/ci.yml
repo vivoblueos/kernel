@@ -1,0 +1,71 @@
+name: Build and test the BlueOS kernel
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev libglib2.0-dev
+
+      - name: Install Arm GNU toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: 14.2.Rel1
+
+      - name: Install Arm64 GNU toolchain
+        uses: lawkai-vivo/aarch64-none-elf-gcc-action@v1
+        with:
+          release: 14.2.Rel1
+
+      - name: Make sysroot directory
+        run: |
+          mkdir sysroot
+
+      - name: Download and unpack prebuilt QEMU
+        run: |
+          curl -L -o qemu.tar.xz https://github.com/lawkai-vivo/test_build_toolchain/releases/download/nightly/qemu-2025_08_05_07_46.tar.xz
+          tar xvf qemu.tar.xz -C sysroot
+          rm -rvf qemu.tar.xz
+
+      - name: Download and unpack prebuilt Rust toolchain
+        run: |
+          curl -L -o blueos-toolchain.tar.xz https://github.com/lawkai-vivo/test_build_toolchain/releases/download/nightly/blueos-toolchain-2025_08_05_07_53.tar.xz
+          tar xvf blueos-toolchain.tar.xz -C sysroot
+          rm -rvf blueos-toolchain.tar.xz
+
+      - name: Download prebuilt Android repo
+        run: |
+          curl -L -o sysroot/usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+          chmod a+x sysroot/usr/local/bin/repo
+
+      - name: Export sysroot binaries
+        run: |
+          echo "$PWD/sysroot/usr/local/bin" >> "$GITHUB_PATH"
+          echo "$PWD/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
+
+      - name: Init repo and sync
+        run: |
+          repo init -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
+          repo sync -j$(nproc)
+
+      - name: Remove kernel directory
+        run: |
+          rm -rf ./kernel
+
+      - name: Checkout PR head of the kernel repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: 'kernel'
+
+      # FIXME: We should use action's builtin matrix.
+      - name: Build and test the kernel
+        run: |
+          ./build/ci/run_ci.py
