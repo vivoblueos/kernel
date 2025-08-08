@@ -1,0 +1,27 @@
+name: BlueOS CI Trigger
+ 
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+ 
+jobs:
+  invoke-blueos-ci:
+    # 仅在包含"start build"且PR/Issue开放时触发
+    if: |
+      contains(github.event.comment.body, 'start build') &&
+      (
+        (github.event.issue.state == 'open') ||
+        (github.event.pull_request.state == 'open')
+      )
+    uses: vivoblueos/org-common-workflows/.github/workflows/blueos-ci-reusable.yml@main
+    with:
+      comment_body: ${{ github.event.comment.body }}
+      issue_number: ${{ github.event.issue.number }}
+      is_pull_request: ${{ github.event.issue.pull_request != null }}
+      repository: ${{ github.repository }}
+      run_id: ${{ github.run_id }}
+      server_url: ${{ github.server_url }}
+    secrets:
+      REPO_ORCHESTRATOR_TOKEN01: ${{ secrets.REPO_ORCHESTRATOR_TOKEN01 }}
