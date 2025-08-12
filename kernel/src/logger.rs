@@ -63,7 +63,7 @@ impl log::Log for Logger {
         let timestamp = tick_get_millisecond();
         let tid = scheduler::current_thread_id();
         let cpu = arch::current_cpu_id();
-        let _ = LOGGER_MUTEX.irqsave_lock();
+        let _guard = LOGGER_MUTEX.irqsave_lock();
         kprintln!(
             "[T:{:09} C:{} TH:0x{:x}][{}] {} ",
             timestamp,
