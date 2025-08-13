@@ -215,7 +215,7 @@ impl Heap {
     ) -> Option<NonNull<u8>> {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let old_size = size_of_allocation(ptr, layout.align());
+        let old_size = size_of_allocation(ptr, layout.align())?;
 
         if new_size <= old_size {
             return Some(ptr);
@@ -240,7 +240,7 @@ impl Heap {
     ) -> Option<NonNull<u8>> {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let old_size = size_of_allocation_unknown_align(ptr);
+        let old_size = size_of_allocation_unknown_align(ptr)?;
         if new_size <= old_size {
             return Some(ptr);
         }
