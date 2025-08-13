@@ -233,7 +233,7 @@ mod tests {
 
     #[panic_handler]
     fn oops(info: &PanicInfo) -> ! {
-        let _ = DisableInterruptGuard::new();
+        let _guard = DisableInterruptGuard::new();
         semihosting::println!("{}", info);
         semihosting::println!("Oops: {}", info.message());
         loop {}
