@@ -849,7 +849,10 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, align: usize) -> usize {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let block = used_block_hdr_for_allocation(ptr, align).cast::<BlockHdr>();
+        let Some(block) = used_block_hdr_for_allocation(ptr, align) else {
+            return 0;
+        };
+        let block = block.cast::<BlockHdr>();
         self.deallocate_block(block)
     }
 
@@ -869,7 +872,10 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     pub(crate) unsafe fn deallocate_unknown_align(&mut self, ptr: NonNull<u8>) -> usize {
         // Safety: `ptr` is a previously allocated memory block. This is upheld
         //         by the caller.
-        let block = used_block_hdr_for_allocation_unknown_align(ptr).cast::<BlockHdr>();
+        let Some(block) = used_block_hdr_for_allocation_unknown_align(ptr) else {
+            return 0;
+        };
+        let block = block.cast::<BlockHdr>();
         self.deallocate_block(block)
     }
 
@@ -975,7 +981,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     ) -> Option<NonNull<u8>> {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let block = used_block_hdr_for_allocation(ptr, new_layout.align());
+        let block = used_block_hdr_for_allocation(ptr, new_layout.align())?;
 
         // Do this early so that the compiler can de-duplicate common
         // subexpressions such as `block.as_ref().common.size - SIZE_USED`
@@ -1007,7 +1013,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     ) -> Option<NonNull<u8>> {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let block = used_block_hdr_for_allocation_unknown_align(ptr);
+        let block = used_block_hdr_for_allocation_unknown_align(ptr)?;
 
         // Do this early so that the compiler can de-duplicate common
         // subexpressions such as `block.as_ref().common.size - SIZE_USED`

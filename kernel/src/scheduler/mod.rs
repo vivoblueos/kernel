@@ -421,7 +421,7 @@ pub(crate) extern "C" fn schedule() -> ! {
 
 #[inline]
 pub fn current_thread() -> ThreadNode {
-    let _ = DisableInterruptGuard::new();
+    let _guard = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
     let t = unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() };
     t
@@ -429,7 +429,7 @@ pub fn current_thread() -> ThreadNode {
 
 #[inline]
 pub fn current_thread_id() -> usize {
-    let _ = DisableInterruptGuard::new();
+    let _guard = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
     let t = unsafe { RUNNING_THREADS[my_id].assume_init_ref() };
     Thread::id(t)

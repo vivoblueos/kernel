@@ -417,7 +417,10 @@ impl HoleList {
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: &Layout) -> usize {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let old_block = used_block_hdr_for_allocation(ptr, layout.align()).cast::<UsedBlockHdr>();
+        let Some(old_block) = used_block_hdr_for_allocation(ptr, layout.align()) else {
+            return 0;
+        };
+        let old_block = old_block.cast::<UsedBlockHdr>();
         let hole_addr_u8 = old_block.as_ptr() as *mut u8;
         let hole_size = old_block.as_ref().common.size - SIZE_USED;
 
@@ -428,7 +431,10 @@ impl HoleList {
     pub unsafe fn deallocate_unknown_align(&mut self, ptr: NonNull<u8>) -> usize {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let old_block = used_block_hdr_for_allocation_unknown_align(ptr).cast::<UsedBlockHdr>();
+        let Some(old_block) = used_block_hdr_for_allocation_unknown_align(ptr) else {
+            return 0;
+        };
+        let old_block = old_block.cast::<UsedBlockHdr>();
         let hole_addr_u8 = old_block.as_ptr() as *mut u8;
         let hole_size = old_block.as_ref().common.size - SIZE_USED;
 
