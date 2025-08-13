@@ -46,7 +46,7 @@ pub fn reset_systick() {
 }
 
 pub extern "C" fn handle_tick_increment() {
-    let _ = DisableInterruptGuard::new();
+    let _guard = DisableInterruptGuard::new();
     let mut need_schedule = false;
     // FIXME: aarch64 and riscv64 need to be supported
     if arch::current_cpu_id() == 0 {

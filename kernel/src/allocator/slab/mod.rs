@@ -21,7 +21,7 @@ use crate::allocator::{
     tlsf,
 };
 use blueos_infra::list::singly_linked_list::SinglyLinkedList;
-use core::{alloc::Layout, mem, ptr::NonNull};
+use core::{alloc::Layout, mem, ptr, ptr::NonNull};
 use log::{debug, warn};
 
 pub mod heap;
@@ -69,8 +69,6 @@ impl Slab {
         match self.free_block_list.pop() {
             Some(block) => {
                 self.len -= 1;
-                unsafe { *block = self.block_size };
-                let ptr = unsafe { NonNull::new_unchecked(block as *mut u8) };
                 #[cfg(debug_slab)]
                 {
                     if (block as usize) < self.start_addr || (block as usize) >= self.end_addr {
@@ -79,7 +77,13 @@ impl Slab {
                         panic!("alloc ptr is not in the heap\n");
                     }
                 }
-                Some(ptr)
+                let ptr = block as *mut usize;
+                // clear the magic number
+                let magic_ptr = ptr.wrapping_add(1);
+                // Safety: magic_ptr is not null.
+                unsafe { *magic_ptr = 0 };
+                // Safety: ptr is not null.
+                Some(unsafe { NonNull::new_unchecked(ptr as *mut u8) })
             }
             None => None, //Err(AllocErr)
         }
@@ -100,7 +104,14 @@ impl Slab {
                 panic!("dealloc ptr is not in the heap\n");
             }
         }
-        self.free_block_list.push(ptr as *mut usize);
+
+        let magic_ptr = ptr.wrapping_add(1);
+        if *magic_ptr == 0xdeadbeef {
+            log::warn!("0x{:p} is already freed", ptr);
+            return;
+        }
+        self.free_block_list.push(ptr);
+        ptr::write(magic_ptr, 0xdeadbeef);
         self.len += 1;
     }
 }
@@ -260,6 +271,7 @@ impl<
                         // Update allocated size for system allocator
                         self.allocated += unsafe {
                             used_block_hdr_for_allocation_unknown_align(ptr.unwrap())
+                                .unwrap()
                                 .cast::<BlockHdr>()
                                 .as_ref()
                                 .size

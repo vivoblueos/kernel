@@ -152,7 +152,7 @@ pub(crate) fn get_overhead_and_size(layout: &Layout) -> Option<(usize, usize)> {
 pub(crate) unsafe fn used_block_hdr_for_allocation(
     ptr: NonNull<u8>,
     align: usize,
-) -> NonNull<UsedBlockHdr> {
+) -> Option<NonNull<UsedBlockHdr>> {
     let block_hdr = if align >= GRANULARITY {
         // Read the header pointer
         (*UsedBlockPad::get_for_allocation(ptr)).block_hdr
@@ -160,14 +160,17 @@ pub(crate) unsafe fn used_block_hdr_for_allocation(
         NonNull::new_unchecked(ptr.as_ptr().sub(GRANULARITY / 2)).cast()
     };
 
-    debug_assert_eq!(block_hdr.as_ref().common.size & SIZE_USED, SIZE_USED);
-    debug_assert_eq!(block_hdr.as_ref().common.size & SIZE_SENTINEL, 0);
+    if block_hdr.as_ref().common.size & SIZE_USED == 0
+        || block_hdr.as_ref().common.size & SIZE_SENTINEL == SIZE_SENTINEL
+    {
+        log::warn!("0x{:p} is already freed", ptr.as_ptr());
+        return None;
+    }
+
     debug_assert_ne!(block_hdr.as_ref().common.size & SIZE_SIZE_MASK, 0);
+    debug_assert_eq!(block_hdr, used_block_hdr_for_allocation_unknown_align(ptr)?);
 
-    let block_hdr2 = used_block_hdr_for_allocation_unknown_align(ptr);
-    debug_assert_eq!(block_hdr, block_hdr2);
-
-    block_hdr
+    Some(block_hdr)
 }
 
 /// Find the `UsedBlockHdr` for an allocation (any `NonNull<u8>` returned by
@@ -184,7 +187,7 @@ pub(crate) unsafe fn used_block_hdr_for_allocation(
 #[inline]
 pub(crate) unsafe fn used_block_hdr_for_allocation_unknown_align(
     ptr: NonNull<u8>,
-) -> NonNull<UsedBlockHdr> {
+) -> Option<NonNull<UsedBlockHdr>> {
     // Case 1: `align >= GRANULARITY`
     let c1_block_hdr_ptr: *const NonNull<UsedBlockHdr> =
         addr_of!((*UsedBlockPad::get_for_allocation(ptr)).block_hdr);
@@ -222,11 +225,16 @@ pub(crate) unsafe fn used_block_hdr_for_allocation_unknown_align(
         NonNull::new_unchecked(c2_block_hdr)
     };
 
-    debug_assert_eq!(block_hdr.as_ref().common.size & SIZE_USED, SIZE_USED);
-    debug_assert_eq!(block_hdr.as_ref().common.size & SIZE_SENTINEL, 0);
+    if block_hdr.as_ref().common.size & SIZE_USED == 0
+        || block_hdr.as_ref().common.size & SIZE_SENTINEL == SIZE_SENTINEL
+    {
+        log::warn!("0x{:p} is already freed", ptr.as_ptr());
+        return None;
+    }
+
     debug_assert_ne!(block_hdr.as_ref().common.size & SIZE_SIZE_MASK, 0);
 
-    block_hdr
+    Some(block_hdr)
 }
 
 #[inline]
@@ -255,9 +263,9 @@ pub(crate) unsafe fn size_of_allocation_in_block(
 ///    ([`Layout::align`]) as `align`.
 ///
 #[inline]
-pub(crate) unsafe fn size_of_allocation(ptr: NonNull<u8>, align: usize) -> usize {
-    let block = used_block_hdr_for_allocation(ptr, align);
-    size_of_allocation_in_block(ptr, block)
+pub(crate) unsafe fn size_of_allocation(ptr: NonNull<u8>, align: usize) -> Option<usize> {
+    let block = used_block_hdr_for_allocation(ptr, align)?;
+    Some(size_of_allocation_in_block(ptr, block))
 }
 
 /// Get the payload size of the allocation with an unknown alignment. The
@@ -269,21 +277,9 @@ pub(crate) unsafe fn size_of_allocation(ptr: NonNull<u8>, align: usize) -> usize
 ///  - `ptr` must denote a memory block previously allocated via `Self`.
 ///
 #[inline]
-pub(crate) unsafe fn size_of_allocation_unknown_align(ptr: NonNull<u8>) -> usize {
+pub(crate) unsafe fn size_of_allocation_unknown_align(ptr: NonNull<u8>) -> Option<usize> {
     // Safety: `ptr` is a previously allocated memory block.
     //         This is upheld by the caller.
-    let block = used_block_hdr_for_allocation_unknown_align(ptr);
-    size_of_allocation_in_block(ptr, block)
-}
-
-#[inline]
-pub(crate) unsafe fn size_of_used(ptr: NonNull<u8>, align: usize) -> usize {
-    let block = used_block_hdr_for_allocation(ptr, align);
-    block.as_ref().common.size - SIZE_USED
-}
-
-#[inline]
-pub(crate) unsafe fn size_of_used_unknown_align(ptr: NonNull<u8>) -> usize {
-    let block = used_block_hdr_for_allocation_unknown_align(ptr);
-    block.as_ref().common.size - SIZE_USED
+    let block = used_block_hdr_for_allocation_unknown_align(ptr)?;
+    Some(size_of_allocation_in_block(ptr, block))
 }
