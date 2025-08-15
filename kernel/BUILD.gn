@@ -72,6 +72,8 @@ if (board == "qemu_mps2_an385" || board == "qemu_mps3_an547") {
     "//external/flat_device_tree/v3.1.1:flat_device_tree",
     "//external/virtio-drivers/v0.11.0:virtio_drivers",
   ]
+} else if (board == "bcm2711") {
+  shared_deps += [ "//external/arm-gic/v0.4.0:arm_gic" ]
 }
 
 shared_rust_build_flags += [

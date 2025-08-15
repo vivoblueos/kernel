@@ -15,7 +15,13 @@
 // pub(crate) mod asm;
 // pub(crate) mod mmu;
 mod exception;
+#[cfg(not(target_board = "bcm2711"))]
+#[path = "gicv3.rs"]
 pub mod irq;
+#[cfg(target_board = "bcm2711")]
+#[path = "gicv2.rs"]
+pub mod irq;
+
 pub(crate) mod psci;
 pub(crate) mod registers;
 pub(crate) mod vector;
@@ -82,11 +88,47 @@ macro_rules! enter_el1 {
     };
 }
 
+// in fact, we already in EL1, so just set the stack and continue
+#[macro_export]
+macro_rules! enter_el1_bcm2711 {
+    () => {
+        "
+        // only boot core 0 now
+        mrs x0, mpidr_el1
+        and x0, x0, 0x3
+        ldr x1, =0
+        cmp x0, x1
+        b.ne 1f
+        ldr x0, ={stack_start}
+        ldr x1, ={stack_end}
+        ldr x2, ={cont}
+        adr x3, {entry}
+        br   x3
+    1:
+        wfe
+        b 1b
+        "
+    };
+}
+
 #[macro_export]
 macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
             $crate::enter_el1!(),
+            entry = sym $crate::arch::aarch64::init,
+            stack_start = sym $stack_start,
+            stack_end = sym $stack_end,
+            cont = sym $cont,
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! arch_bootstrap_bcm2711 {
+    ($stack_start:path, $stack_end:path, $cont: path) => {
+        core::arch::naked_asm!(
+            $crate::enter_el1_bcm2711!(),
             entry = sym $crate::arch::aarch64::init,
             stack_start = sym $stack_start,
             stack_end = sym $stack_end,
@@ -341,7 +383,7 @@ pub(crate) extern "C" fn init(_: *mut u8, stack_end: *mut u8, cont: extern "C" f
                 mrs x8, mpidr_el1
                 and x8, x8, #0Xff
                 lsl x8, x8, #14
-                sub sp, x1, x8 
+                sub sp, x1, x8
                 br x2
             "
         )
