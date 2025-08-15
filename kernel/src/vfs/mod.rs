@@ -50,7 +50,7 @@ use alloc::string::String;
 pub use file::AccessMode;
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 
-/// Initialize the virtual file system  
+/// Initialize the virtual file system
 pub fn vfs_init() -> Result<(), Error> {
     debug!("Initializing VFS...");
     root::init();
