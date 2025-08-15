@@ -121,6 +121,16 @@ SECTIONS
     KEEP(*(.bk_app_array))
     PROVIDE_HIDDEN (__bk_app_array_end = .);
 
+    . = ALIGN(4);
+    __start___llvm_prf_cnts = .;
+    KEEP(*(__llvm_prf_cnts))
+    __stop___llvm_prf_cnts = .;
+
+    . = ALIGN(4);
+    __start___llvm_prf_data = .;
+    KEEP(*(__llvm_prf_data))
+    __stop___llvm_prf_data = .;
+
     KEEP(*(.jcr*))
     . = ALIGN(4);
     __data_end = .;
