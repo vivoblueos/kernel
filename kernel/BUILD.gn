@@ -44,6 +44,11 @@ shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//libc:libc",
 ]
+
+if (board == "raspberry_pico2_cortexm") {
+  shared_deps += [ "//external/embedded-hal/v1.0.0:embedded_hal" ]
+}
+
 if (coverage || profile) {
   shared_deps += [
     ":atomic",
@@ -60,7 +65,8 @@ if (direct_syscall_handler) {
   ]
 }
 
-if (board == "qemu_mps2_an385" || board == "qemu_mps3_an547") {
+if (board == "qemu_mps2_an385" || board == "qemu_mps3_an547" ||
+    board == "raspberry_pico2_cortexm") {
   shared_rust_build_flags += [
     "--cfg",
     "hardware_schedule",

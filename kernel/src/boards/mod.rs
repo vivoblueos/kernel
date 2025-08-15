@@ -36,3 +36,10 @@ mod qemu_virt64_aarch64;
 pub(crate) use qemu_virt64_aarch64::{
     get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init,
 };
+
+#[cfg(target_board = "raspberry_pico2_cortexm")]
+mod raspberry_pico2_cortexm;
+#[cfg(target_board = "raspberry_pico2_cortexm")]
+pub(crate) use raspberry_pico2_cortexm::{
+    get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init,
+};
