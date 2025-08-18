@@ -509,6 +509,30 @@ define_syscall_handler!(
 );
 // Netdb syscall end
 
+define_syscall_handler!(
+    sys_clock_nanosleep(
+        clock_id: i32,
+        flags: i32,
+        rqtp: *const timespec,
+        rmtp: *mut timespec
+    ) -> c_int {
+        // TODO: Valid Clock Id
+
+        // TODO: Valid rqtp
+
+        // TODO: Implement absolute time sleep
+        let duration = timespec {
+            tv_sec: unsafe { rqtp.read().tv_sec },
+            tv_nsec: unsafe { rqtp.read().tv_nsec },
+        };
+
+        // TODO: Implement tv_nsec
+        let ticks = blueos_kconfig::TICKS_PER_SECOND * duration.tv_sec as usize;
+        scheduler::suspend_me_for(ticks);
+        0
+    }
+);
+
 syscall_table! {
     (Echo, echo),
     (Nop, nop),
@@ -565,6 +589,7 @@ syscall_table! {
     (Recvmsg,recvmsg),
     (GetAddrinfo,getaddrinfo),
     (FreeAddrinfo,freeaddrinfo),
+    (NanoSleep,sys_clock_nanosleep),
 }
 
 // Begin syscall modules.

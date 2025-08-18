@@ -40,7 +40,7 @@ if (board == "qemu_mps2_an385") {
     "--cfg",
     "armv7m",
   ]
-} else if (board == "qemu_mps3_an547") {
+} else if (board == "qemu_mps3_an547" || board == "raspberry_pico2_cortexm") {
   common_crate_rustflags += [
     "--cfg",
     "cortex_m",
