@@ -74,6 +74,7 @@ pub mod syscalls {
         Recvmsg,
         GetAddrinfo,
         FreeAddrinfo,
+        NanoSleep,
         LastNR,
     }
 }
