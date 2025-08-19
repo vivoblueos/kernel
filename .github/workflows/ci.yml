@@ -30,13 +30,13 @@ jobs:
 
       - name: Download and unpack prebuilt QEMU
         run: |
-          curl -L -o qemu.tar.xz https://github.com/lawkai-vivo/test_build_toolchain/releases/download/nightly/qemu-2025_08_05_07_46.tar.xz
+          curl -L -o qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/qemu-2025_08_05_12_17.tar.xz
           tar xvf qemu.tar.xz -C sysroot
           rm -rvf qemu.tar.xz
 
       - name: Download and unpack prebuilt Rust toolchain
         run: |
-          curl -L -o blueos-toolchain.tar.xz https://github.com/lawkai-vivo/test_build_toolchain/releases/download/nightly/blueos-toolchain-2025_08_05_07_53.tar.xz
+          curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_08_18_04_24.tar.xz
           tar xvf blueos-toolchain.tar.xz -C sysroot
           rm -rvf blueos-toolchain.tar.xz
 
