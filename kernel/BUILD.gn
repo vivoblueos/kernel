@@ -49,6 +49,10 @@ if (board == "raspberry_pico2_cortexm") {
   shared_deps += [ "//external/embedded-hal/v1.0.0:embedded_hal" ]
 }
 
+if (use_defmt) {
+  shared_deps += [ "//external/defmt_test/v0.4.0:defmt_test" ]
+}
+
 if (coverage || profile) {
   shared_deps += [
     ":atomic",
