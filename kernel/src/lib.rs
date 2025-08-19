@@ -42,9 +42,9 @@
 #![feature(trivial_bounds)]
 // Attributes applied when we're testing the kernel.
 #![cfg_attr(test, no_main)]
-#![cfg_attr(test, feature(custom_test_frameworks))]
-#![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
-#![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
+#![cfg_attr(all(test, not(use_defmt)), feature(custom_test_frameworks))]
+#![cfg_attr(all(test, not(use_defmt)), test_runner(tests::kernel_unittest_runner))]
+#![cfg_attr(all(test, not(use_defmt)), reexport_test_harness_main = "run_kernel_unittests")]
 
 extern crate alloc;
 
@@ -125,6 +125,7 @@ macro_rules! trace {
     }};
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     extern crate alloc;

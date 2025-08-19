@@ -474,6 +474,7 @@ pub(crate) fn get_next_timer_ticks() -> usize {
     }
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;

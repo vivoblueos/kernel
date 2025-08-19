@@ -152,6 +152,7 @@ impl core::fmt::Display for Xpsr {
     }
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(all(test, not(target_os = "none")))]
 mod tests {
     use super::*;

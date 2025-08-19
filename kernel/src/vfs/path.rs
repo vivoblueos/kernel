@@ -23,7 +23,6 @@ use crate::{
     },
 };
 use alloc::{string::String, sync::Arc};
-use semihosting::println;
 use spin::{Mutex as SpinMutex, Once};
 
 // FIXME: move WORKING_DIR to FsEnv
@@ -295,11 +294,13 @@ fn lookup_in_dir(dir: &Arc<Dcache>, path: &str) -> Option<Arc<Dcache>> {
     Some(current)
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloc::string::ToString;
     use blueos_test_macro::test;
+    use semihosting::println;
 
     #[test]
     fn test_is_valid_path() {
