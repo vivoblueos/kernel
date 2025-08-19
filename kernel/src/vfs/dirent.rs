@@ -179,6 +179,7 @@ impl<'a> DirBufferReader<'a> {
     }
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;
