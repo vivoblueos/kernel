@@ -171,7 +171,7 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
         f()
     }
     compiler_fence(Ordering::SeqCst);
-    if let Some(t) = retiring_thread {
+    if let Some(mut t) = retiring_thread {
         let cleanup = t.lock().take_cleanup();
         if let Some(entry) = cleanup {
             match entry {
@@ -180,7 +180,7 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
                 Entry::Posix(f, arg) => f(arg),
             }
         };
-        GlobalQueueVisitor::remove(&t);
+        GlobalQueueVisitor::remove(&mut t);
         let ok = t.transfer_state(thread::RUNNING, thread::RETIRED);
         assert!(ok);
         if ThreadNode::strong_count(&t) != 1 {

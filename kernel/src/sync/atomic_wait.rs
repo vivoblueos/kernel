@@ -22,7 +22,10 @@ use crate::{
     thread::{Thread, ThreadNode},
     time::WAITING_FOREVER,
     trace,
-    types::{impl_simple_intrusive_adapter, Arc, ArcList, ArcListIterator, IlistHead as ListHead},
+    types::{
+        impl_simple_intrusive_adapter, Arc, ArcList, ArcListIterator, AtomicIlistHead as ListHead,
+        StaticListOwner, UniqueListHead,
+    },
 };
 use core::sync::atomic::{AtomicUsize, Ordering};
 use scheduler::WaitQueue;
@@ -31,12 +34,21 @@ use support::PerCpu;
 impl_simple_intrusive_adapter!(Sync, AtomicWaitEntry, sync_node);
 
 type Head = ListHead<AtomicWaitEntry, Sync>;
-type EntryList = ArcList<AtomicWaitEntry, Sync>;
 type EntryNode = Arc<AtomicWaitEntry>;
+type EntryListHead = UniqueListHead<AtomicWaitEntry, Sync, SyncEntry>;
+
+#[derive(Default, Debug)]
+pub struct SyncEntry;
+
+impl const StaticListOwner<AtomicWaitEntry, Sync> for SyncEntry {
+    fn get() -> &'static Arc<SpinLock<Head>> {
+        &SYNC_ENTRIES
+    }
+}
 
 #[derive(Debug)]
 pub struct AtomicWaitEntry {
-    pub sync_node: EntryList,
+    sync_node: EntryListHead,
     addr: usize,
     pending: SpinLock<WaitQueue>,
 }
@@ -52,7 +64,7 @@ impl AtomicWaitEntry {
 
     pub fn new(addr: usize) -> Self {
         Self {
-            sync_node: EntryList::new(),
+            sync_node: EntryListHead::new(),
             addr,
             pending: SpinLock::new(WaitQueue::new()),
         }
@@ -69,7 +81,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         return Err(code::EAGAIN);
     }
     // We should not wait in IRQ.
-    let mut w = SYNC_ENTRIES.irqsave_lock();
+    let mut w = EntryListHead::lock();
     // Make the second check.
     let current_val = atom.load(Ordering::Acquire);
     if current_val != val {
@@ -77,7 +89,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
     }
     let mut entry = None;
     let addr = atom as *const _ as usize;
-    for e in ArcListIterator::new(&*w, None) {
+    for e in ArcListIterator::new(w.get_list_mut(), None) {
         if e.addr() == addr {
             entry = Some(e);
             break;
@@ -87,14 +99,14 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         || {
             let entry = Arc::new(AtomicWaitEntry::new(addr));
             entry.init();
-            EntryList::insert_after(&mut *w, entry.clone());
+            w.insert(entry.clone());
             entry
         },
         |e| e,
     );
     let t = scheduler::current_thread();
     let mut we = entry.pending.irqsave_lock();
-    we.take_irq_guard(&mut w);
+    we.take_irq_guard(w.get_guard_mut());
     drop(w);
     #[cfg(debugging_scheduler)]
     crate::trace!(
@@ -125,8 +137,8 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
         addr
     );
     let mut woken = 0;
-    let w = SYNC_ENTRIES.irqsave_lock();
-    for e in ArcListIterator::new(&*w, None) {
+    let mut w = EntryListHead::lock();
+    for e in ArcListIterator::new(w.get_list_mut(), None) {
         if e.addr() != addr {
             continue;
         }
@@ -146,7 +158,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
             }
         }
         if we.is_empty() {
-            EntryList::detach(&e.clone());
+            w.detach(&mut e.clone());
         }
         if woken == how_many {
             break;

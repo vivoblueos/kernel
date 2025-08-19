@@ -15,7 +15,7 @@
 use crate::{
     boards, config, scheduler, sync, thread,
     time::get_sys_ticks,
-    types::{impl_simple_intrusive_adapter, Arc, ArcList, IlistHead},
+    types::{impl_simple_intrusive_adapter, Arc, ArcList, AtomicIlistHead as IlistHead},
 };
 use alloc::boxed::Box;
 use bitflags::bitflags;
@@ -110,14 +110,14 @@ impl TimerWheel {
         }
     }
 
-    fn add_timer(&self, timer: Arc<Timer>, timeout_ticks: usize) {
+    fn add_timer(&self, mut timer: Arc<Timer>, timeout_ticks: usize) {
         let mut wheel = self.wheel.irqsave_lock();
         let cursor = timeout_ticks & (TIMER_WHEEL_SIZE as usize - 1);
         let it = wheel[cursor].iter();
-        for t in it {
+        for mut t in it {
             if t.timeout_ticks() > timeout_ticks {
                 WheelTimerList::insert_before(
-                    unsafe { WheelTimerList::list_head_of_mut(&t) },
+                    unsafe { WheelTimerList::list_head_of_mut_unchecked(&mut t) },
                     timer,
                 );
                 return;
@@ -132,7 +132,7 @@ impl TimerWheel {
         }
     }
 
-    fn remove_timer(&self, timer: &Arc<Timer>) {
+    fn remove_timer(&self, timer: &mut Arc<Timer>) {
         let lock = self.wheel.irqsave_lock();
         WheelTimerList::detach(timer);
         drop(lock);
@@ -148,7 +148,7 @@ impl TimerWheel {
         let mut next_timeout_tick = usize::MAX;
         let wheel = self.wheel.irqsave_lock();
         for i in 0..TIMER_WHEEL_SIZE as usize {
-            if let Some(timer) = wheel[i].iter().next() {
+            if let Some(timer) = wheel[i].front() {
                 let timeout_ticks = timer.timeout_ticks();
                 if timeout_ticks < next_timeout_tick {
                     next_timeout_tick = timeout_ticks;
@@ -166,11 +166,11 @@ impl TimerWheel {
         {
             let wheel = self.wheel.irqsave_lock();
             let mut iter = wheel[cursor].iter();
-            for timer in &mut iter {
+            for mut timer in iter {
                 if timer.timeout_ticks() > current_ticks {
                     break;
                 }
-                WheelTimerList::detach(&timer);
+                WheelTimerList::detach(&mut timer);
                 task_list.push_back(timer);
             }
         }
@@ -246,7 +246,7 @@ impl Timer {
 
     fn new(interval: usize, flags: TimerFlags, callback: Box<dyn Fn() + Send + Sync>) -> Arc<Self> {
         Arc::new(Self {
-            wheel_node: IlistHead::const_new(),
+            wheel_node: IlistHead::new(),
             flags: AtomicU32::new(flags.bits()),
             inner: SpinLock::new(Inner {
                 interval,
@@ -284,12 +284,12 @@ impl Timer {
             self.flags
                 .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
             // make_arc_from will increment the strong count of the Arc being cloned.
-            let timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+            let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
             #[cfg(soft_timer)]
             if is_soft {
-                SOFT_TIMER_WHEEL.remove_timer(&timer);
+                SOFT_TIMER_WHEEL.remove_timer(&mut timer);
             } else {
-                HARD_TIMER_WHEEL.remove_timer(&timer);
+                HARD_TIMER_WHEEL.remove_timer(&mut timer);
             }
 
             #[cfg(not(soft_timer))]
@@ -335,12 +335,12 @@ impl Timer {
             self.flags
                 .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
             // make_arc_from will increment the strong count of the Arc being cloned.
-            let timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+            let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
             #[cfg(soft_timer)]
             if is_soft {
-                SOFT_TIMER_WHEEL.remove_timer(&timer);
+                SOFT_TIMER_WHEEL.remove_timer(&mut timer);
             } else {
-                HARD_TIMER_WHEEL.remove_timer(&timer);
+                HARD_TIMER_WHEEL.remove_timer(&mut timer);
             }
 
             #[cfg(not(soft_timer))]
@@ -379,12 +379,12 @@ impl Timer {
             let is_soft = self.is_soft();
 
             // remove from wheel first
-            let timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+            let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
             #[cfg(soft_timer)]
             if is_soft {
-                SOFT_TIMER_WHEEL.remove_timer(&timer);
+                SOFT_TIMER_WHEEL.remove_timer(&mut timer);
             } else {
-                HARD_TIMER_WHEEL.remove_timer(&timer);
+                HARD_TIMER_WHEEL.remove_timer(&mut timer);
             }
 
             #[cfg(not(soft_timer))]
@@ -398,13 +398,13 @@ impl Timer {
         #[cfg(soft_timer)]
         let is_soft = self.is_soft();
 
-        let timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+        let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
         #[cfg(soft_timer)]
         if is_soft {
             if self.is_activated() {
                 self.flags
                     .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
-                SOFT_TIMER_WHEEL.remove_timer(&timer);
+                SOFT_TIMER_WHEEL.remove_timer(&mut timer);
             }
             let mut inner = self.inner.irqsave_lock();
             inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
@@ -415,7 +415,7 @@ impl Timer {
             if self.is_activated() {
                 self.flags
                     .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
-                HARD_TIMER_WHEEL.remove_timer(&timer);
+                HARD_TIMER_WHEEL.remove_timer(&mut timer);
             }
             let mut inner = self.inner.irqsave_lock();
             inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
