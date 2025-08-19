@@ -33,7 +33,6 @@ shared_deps = [
   "//external/log/v0.4.22:log",
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/safe-mmio/v0.2.5:safe_mmio",
-  "//external/semihosting/v0.1.20:semihosting",
   "//external/smoltcp/v0.12.0:smoltcp",
   "//external/spin/v0.9.8:spin",
   "//external/thiserror/v2.0.9:thiserror",
@@ -49,8 +48,15 @@ if (board == "raspberry_pico2_cortexm") {
   shared_deps += [ "//external/embedded-hal/v1.0.0:embedded_hal" ]
 }
 
+group("check_kernel_defmt") {
+  testonly = true
+  deps = [ ":kernel_unittest" ]
+}
+
 if (defined(use_defmt_test) && use_defmt_test) {
   shared_deps += [ "//external/defmt_test/v0.4.0:defmt_test" ]
+} else {
+  shared_deps += [ "//external/semihosting/v0.1.20:semihosting" ]
 }
 
 if (coverage || profile) {

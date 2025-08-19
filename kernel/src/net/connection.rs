@@ -923,6 +923,7 @@ pub enum Operation {
     },
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;
