@@ -15,7 +15,7 @@
 use super::ProcFileOps;
 use crate::{
     error::Error,
-    irq::irq_trace::{IrqTraceInfo, IRQ_COUNTS, IRQ_TRACE_INFOS},
+    irq::irq_trace::{IrqTraceInfo, IRQ_COUNTERS, PER_CPU_TRACE_INFO},
     scheduler, thread, time,
 };
 use alloc::{string::String, vec::Vec};
@@ -112,8 +112,8 @@ fn format_cpu_time() -> String {
             let idle_cycle = idle_thread.get_cycles();
             let system_time = time::get_cycles_to_ms(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
             let idle_time = time::get_cycles_to_ms(idle_cycle) / 10;
-            let irq_trace: &IrqTraceInfo = &IRQ_TRACE_INFOS[cpu_id];
-            let irq_time = time::get_cycles_to_ms(*(irq_trace.total_irq_process_cycle.read())) / 10;
+            let irq_trace: &IrqTraceInfo = unsafe { &PER_CPU_TRACE_INFO[cpu_id] };
+            let irq_time = time::get_cycles_to_ms(irq_trace.total_irq_process_cycles) / 10;
             total_system_time += system_time;
             total_idle_time += idle_time;
             total_irq_time += irq_time;
@@ -139,7 +139,7 @@ fn format_cpu_time() -> String {
 fn format_irq_counts() -> String {
     let mut total_count: u64 = 0;
     let mut non_zero_count: usize = 0;
-    for atomic in &IRQ_COUNTS {
+    for atomic in &IRQ_COUNTERS {
         let count = atomic.load(Relaxed) as u64;
         total_count = total_count.saturating_add(count);
         if count > 0 {
@@ -152,10 +152,10 @@ fn format_irq_counts() -> String {
     const LEN_PER_ZERO_ELEMENT: usize = 2; // space + number 0
     let capacity = PREFIX.len()
         + LEN_PER_NON_ZERO_ELEMENT * non_zero_count
-        + LEN_PER_ZERO_ELEMENT * (IRQ_COUNTS.len() - non_zero_count);
+        + LEN_PER_ZERO_ELEMENT * (IRQ_COUNTERS.len() - non_zero_count);
     let mut result = String::with_capacity(capacity);
     write!(result, "{} {}", PREFIX, total_count).unwrap();
-    for element in &IRQ_COUNTS {
+    for element in &IRQ_COUNTERS {
         let count = element.load(Relaxed);
         write!(result, " {}", count).unwrap();
     }
