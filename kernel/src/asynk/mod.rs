@@ -36,7 +36,7 @@ impl_simple_intrusive_adapter!(TaskletNode, Tasklet, node);
 impl_simple_intrusive_adapter!(TaskletLock, Tasklet, lock);
 
 pub struct Tasklet {
-    pub node: IlistHead<Tasklet, TaskletNode>,
+    node: IlistHead<Tasklet, TaskletNode>,
     lock: ISpinLock<Tasklet, TaskletLock>,
     future: Pin<Box<dyn Future<Output = ()>>>,
     blocked: Option<ThreadNode>,
@@ -141,7 +141,7 @@ fn poll_inner() {
             // If we detach the task what ever it's ready or
             // pending, it would be edge-level triggered. Now
             // we're using level-trigger mode conservatively.
-            AsyncWorkQueue::WorkList::detach(&task.clone());
+            AsyncWorkQueue::WorkList::detach(&mut task.clone());
         } else {
             // FIXME: This is not an efficient impl right now. We
             // might need a waker for each future, so that the poller

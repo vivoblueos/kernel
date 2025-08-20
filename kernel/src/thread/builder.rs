@@ -15,16 +15,18 @@
 extern crate alloc;
 use crate::{
     arch, config, debug, scheduler, static_arc,
-    sync::spinlock::{SpinLock, SpinLockGuard},
+    sync::{SpinLock, SpinLockGuard},
     thread, trace,
-    types::{ArcInner, ArcList, ArcListIterator, IlistHead as ListHead, Uint},
+    types::{
+        Arc, ArcInner, ArcList, ArcListIterator, AtomicIlistHead as ListHead, StaticListOwner, Uint,
+    },
 };
 use alloc::boxed::Box;
 use config::SYSTEM_THREAD_STACK_SIZE;
 use core::mem::MaybeUninit;
 use thread::{
-    AlignedStackStorage, Entry, OffsetOfGlobal, Stack, Thread, ThreadKind, ThreadNode,
-    ThreadPriority,
+    AlignedStackStorage, Entry, GlobalQueueListHead, OffsetOfGlobal, Stack, Thread, ThreadKind,
+    ThreadNode, ThreadPriority,
 };
 
 type Head = ListHead<Thread, OffsetOfGlobal>;
@@ -39,6 +41,15 @@ pub(crate) struct GlobalQueueVisitor<'a> {
     it: ArcListIterator<Thread, OffsetOfGlobal>,
 }
 
+#[derive(Default, Debug)]
+pub(crate) struct GlobalQueue;
+
+impl const StaticListOwner<Thread, OffsetOfGlobal> for GlobalQueue {
+    fn get() -> &'static Arc<SpinLock<Head>> {
+        &GLOBAL_QUEUE
+    }
+}
+
 impl GlobalQueueVisitor<'_> {
     pub fn new() -> Self {
         let lock = GLOBAL_QUEUE.irqsave_lock();
@@ -51,18 +62,11 @@ impl GlobalQueueVisitor<'_> {
     }
 
     pub fn add(t: ThreadNode) -> bool {
-        let mut w = GLOBAL_QUEUE.irqsave_lock();
-        ThreadList::insert_after(&mut *w, t.clone())
+        GlobalQueueListHead::insert(t)
     }
 
-    pub fn remove(t: &ThreadNode) -> bool {
-        let mut w = GLOBAL_QUEUE.irqsave_lock();
-        for mut e in ArcListIterator::new(&*w, None) {
-            if Thread::id(&e) == Thread::id(t) {
-                return ThreadList::detach(&e);
-            }
-        }
-        false
+    pub fn remove(t: &mut ThreadNode) -> bool {
+        GlobalQueueListHead::detach(t)
     }
 }
 
