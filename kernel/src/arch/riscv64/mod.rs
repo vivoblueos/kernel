@@ -15,7 +15,7 @@
 pub(crate) mod irq;
 mod trap;
 
-use crate::{scheduler, scheduler::ContextSwitchHookHolder};
+use crate::{irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
 use blueos_kconfig::NUM_CORES;
 use core::{
     mem::offset_of,
@@ -41,45 +41,8 @@ pub(crate) const MIE_SEIE: usize = 1 << 9;
 pub(crate) const MIE_MEIE: usize = 1 << 11;
 // We haven't supported supervisor mode and user mode yet.
 
-// Use a fake number right now.
-static mut CURRENT_ISR_LEVEL: [usize; NUM_CORES] = [0usize; NUM_CORES];
-
-#[inline]
-fn increment_isr_level(hart: usize) -> usize {
-    let counter = unsafe { &mut CURRENT_ISR_LEVEL[hart] };
-    let old = *counter;
-    *counter += 1;
-    old
-}
-
-#[inline]
-fn decrement_isr_level(hart: usize) -> usize {
-    let counter = unsafe { &mut CURRENT_ISR_LEVEL[hart] };
-    let old = *counter;
-    *counter -= 1;
-    old
-}
-
 #[inline]
 pub(crate) extern "C" fn pend_switch_context() {}
-
-#[inline]
-pub(crate) extern "C" fn is_in_interrupt() -> bool {
-    let n = disable_local_irq_save();
-    let ret = unsafe { CURRENT_ISR_LEVEL[current_cpu_id()] != 0 };
-    enable_local_irq_restore(n);
-    ret
-}
-
-#[inline]
-extern "C" fn enter_irq() {
-    increment_isr_level(current_cpu_id());
-}
-
-#[inline]
-extern "C" fn leave_irq() {
-    decrement_isr_level(current_cpu_id());
-}
 
 #[inline]
 pub(crate) extern "C" fn local_irq_enabled() -> bool {

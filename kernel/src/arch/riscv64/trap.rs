@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    disable_local_irq, enable_local_irq, enter_irq, leave_irq, Context, IsrContext, NR_SWITCH,
-};
+use super::{disable_local_irq, enable_local_irq, Context, IsrContext, NR_SWITCH};
 use crate::{
     boards::{handle_plic_irq, set_timeout_after},
-    debug, rv64_restore_context, rv64_restore_context_epilogue, rv64_save_context,
+    debug,
+    irq::{enter_irq, leave_irq},
+    rv64_restore_context, rv64_restore_context_epilogue, rv64_save_context,
     rv64_save_context_prologue, scheduler,
     scheduler::ContextSwitchHookHolder,
     support::sideeffect,
