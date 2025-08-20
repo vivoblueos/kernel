@@ -1,2 +1,4 @@
 boards/src/bindings.rs
 target
+*.rej
+*.orig

@@ -17,8 +17,12 @@ use crate::{
     arch, config, debug, scheduler,
     support::{Region, RegionalObjectBuilder},
     sync::{ISpinLock, SpinLockGuard},
+    thread::builder::GlobalQueue,
     time::timer::Timer,
-    types::{impl_simple_intrusive_adapter, Arc, AtomicUint, IlistHead, ThreadPriority, Uint},
+    types::{
+        impl_simple_intrusive_adapter, Arc, AtomicUint, IlistHead, ThreadPriority, Uint,
+        UniqueListHead,
+    },
 };
 use alloc::boxed::Box;
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
@@ -125,10 +129,12 @@ impl ThreadStats {
     }
 }
 
+pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, GlobalQueue>;
+
 #[derive(Default, Debug)]
 pub struct Thread {
-    pub global: IlistHead<Thread, OffsetOfGlobal>,
-    pub sched_node: IlistHead<Thread, OffsetOfSchedNode>,
+    global: GlobalQueueListHead,
+    sched_node: IlistHead<Thread, OffsetOfSchedNode>,
     pub timer: Option<Arc<Timer>>,
     // Cleanup function will be invoked when retiring.
     cleanup: Option<Entry>,
@@ -306,7 +312,7 @@ impl Thread {
             state: AtomicUint::new(CREATED),
             lock: ISpinLock::new(),
             sched_node: IlistHead::<Thread, OffsetOfSchedNode>::new(),
-            global: IlistHead::<Thread, OffsetOfGlobal>::new(),
+            global: UniqueListHead::new(),
             saved_sp: 0,
             priority: 0,
             preempt_count: AtomicUint::new(0),

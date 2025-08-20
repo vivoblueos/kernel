@@ -15,14 +15,17 @@
 extern crate alloc;
 use crate::{
     intrusive::Adapter,
-    list::typed_ilist::{ListHead, ListIterator, ListReverseIterator},
+    list::typed_atomic_ilist::{
+        AtomicListHead, AtomicListIterator as ListIterator,
+        AtomicListReverseIterator as ListReverseIterator,
+    },
 };
 use alloc::boxed::Box;
 use core::{
     marker::PhantomData,
     ops::Deref,
     ptr::NonNull,
-    sync::atomic::{fence, Ordering},
+    sync::atomic::{fence, AtomicPtr, Ordering},
 };
 
 #[cfg(target_pointer_width = "32")]
@@ -56,6 +59,8 @@ impl<T: Sized> TinyArcInner<T> {
     }
 }
 
+// We don't Send or Sync TinyArcInner directly. All TinyArcInner values should
+// be static or allocated from the heap and wrapped in TinyArc.
 unsafe impl<T> Send for TinyArcInner<T> {}
 unsafe impl<T> Sync for TinyArcInner<T> {}
 
@@ -92,27 +97,54 @@ impl<T> TinyArc<T> {
         TinyArc { inner }
     }
 
+    #[inline]
     pub unsafe fn get_handle(this: &Self) -> *const u8 {
         this.inner.as_ref() as *const _ as *const u8
     }
 
-    #[allow(clippy::unnecessary_cast)]
+    #[inline]
     pub fn strong_count(this: &Self) -> usize {
-        unsafe { this.inner.as_ref().rc.load(Ordering::Relaxed) as usize }
+        #[cfg(target_pointer_width = "32")]
+        unsafe {
+            this.inner.as_ref().rc.load(Ordering::Relaxed) as usize
+        }
+        #[cfg(target_pointer_width = "64")]
+        unsafe {
+            this.inner.as_ref().rc.load(Ordering::Relaxed)
+        }
     }
 
+    #[inline]
     pub unsafe fn increment_strong_count(this: &Self) {
         let old = this.inner.as_ref().rc.fetch_add(1, Ordering::Relaxed);
         assert_ne!(old, 0);
     }
 
+    #[inline]
     pub unsafe fn decrement_strong_count(this: &Self) {
         let old = this.inner.as_ref().rc.fetch_sub(1, Ordering::Relaxed);
         assert_ne!(old, 1);
     }
 
+    #[inline]
     pub fn is(&self, other: &Self) -> bool {
         unsafe { Self::get_handle(self) == Self::get_handle(other) }
+    }
+
+    // `get_mut` requires `&mut Arc` which is different from what Sync
+    // indicates. Thus it's impossible to see two threads `get_mut` successfully
+    // at the same time.
+    pub fn get_mut(this: &mut Self) -> Option<&mut T> {
+        let rc = unsafe { this.inner.as_ref().rc.load(Ordering::Acquire) };
+        if rc != 1 {
+            return None;
+        }
+        Some(unsafe { &mut this.inner.as_mut().data })
+    }
+
+    #[inline]
+    pub unsafe fn get_mut_unchecked(this: &mut Self) -> &mut T {
+        &mut this.inner.as_mut().data
     }
 }
 
@@ -152,35 +184,27 @@ impl<T: Sized> Deref for TinyArc<T> {
     }
 }
 
-// TinyArc doesn't contain the value it manages, but a pointer to the
-// value. So it's safe to impl Send + Sync for it.
+// TinyArc doesn't contain the value it manages, but a pointer to the value. We
+// also assume no alias of the internal NonNull, so it's safe to impl Send +
+// Sync for it.
 unsafe impl<T: Sized> Send for TinyArc<T> {}
 unsafe impl<T: Sized> Sync for TinyArc<T> {}
 
-// This list is semi-safe for concurrency. Following usage is
-// considered safe if a node might be inserted to several lists:
-// Acquire the lock of the list and then the lock of the node, after
-// that insert the node or detach the node.
-//
-// It's **UNSAFE** to detach a node directly if the node might be
-// inserted to multiple lists.
+// This list is semi-safe for concurrency. When performing list operations, the
+// lock on the whole list must be acquired first. Must be noted, when detaching
+// a node from a list, we must be sure that the node being detached exactly
+// belongs to the list we are locking.
 #[derive(Default, Debug)]
 pub struct TinyArcList<T: Sized, A: Adapter> {
-    len: usize,
-    head: ListHead<T, A>,
-    tail: ListHead<T, A>,
-    _t: PhantomData<T>,
-    _a: PhantomData<A>,
+    head: AtomicListHead<T, A>,
+    tail: AtomicListHead<T, A>,
 }
 
 impl<T: Sized, A: Adapter> TinyArcList<T, A> {
     pub const fn const_new() -> Self {
         Self {
-            len: 0,
-            head: ListHead::<T, A>::const_new(),
-            tail: ListHead::<T, A>::const_new(),
-            _t: PhantomData,
-            _a: PhantomData,
+            head: AtomicListHead::<T, A>::new(),
+            tail: AtomicListHead::<T, A>::new(),
         }
     }
 
@@ -190,96 +214,104 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
 
     #[inline]
     pub fn init(&mut self) -> bool {
-        ListHead::<T, A>::insert_after(&mut self.head, NonNull::from_mut(&mut self.tail))
+        AtomicListHead::<T, A>::insert_after(&mut self.head, &mut self.tail)
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        assert_eq!(
-            self.head.next == Some(NonNull::from_ref(&self.tail)),
-            self.len == 0
-        );
-        self.head.next == Some(NonNull::from_ref(&self.tail))
+        self.head.next() == Some(NonNull::from_ref(&self.tail))
     }
 
     #[inline]
-    fn list_head_of(this: &TinyArc<T>) -> NonNull<ListHead<T, A>> {
-        let other_val = this.deref();
-        let ptr = other_val as *const _ as *const u8;
-        let list_head_ptr = unsafe { ptr.add(A::offset()) as *const ListHead<T, A> };
-        NonNull::from_ref(unsafe { &*list_head_ptr })
+    pub fn list_head_of_mut(this: &mut TinyArc<T>) -> Option<&mut AtomicListHead<T, A>> {
+        let this_val = TinyArc::<T>::get_mut(this)?;
+        let ptr = this_val as *mut _ as *mut u8;
+        let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut AtomicListHead<T, A> };
+        Some(unsafe { &mut *list_head_ptr })
     }
 
     #[inline]
-    pub unsafe fn list_head_of_mut(this: &TinyArc<T>) -> &mut ListHead<T, A> {
-        let other_val = this.deref();
-        let ptr = other_val as *const _ as *const u8;
-        let list_head_ptr = ptr.add(A::offset()) as *mut ListHead<T, A>;
+    pub unsafe fn list_head_of_mut_unchecked(this: &mut TinyArc<T>) -> &mut AtomicListHead<T, A> {
+        let this_val = TinyArc::<T>::get_mut_unchecked(this);
+        let ptr = this_val as *mut _ as *mut u8;
+        let list_head_ptr = ptr.add(A::offset()) as *mut AtomicListHead<T, A>;
         &mut *list_head_ptr
     }
 
     #[inline]
-    pub unsafe fn make_arc_from(node: &ListHead<T, A>) -> TinyArc<T> {
+    pub unsafe fn make_arc_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
         let ptr = node as *const _ as *const u8;
         let mut offset = core::mem::offset_of!(TinyArcInner<T>, data);
         offset += A::offset();
-        unsafe {
-            let inner = &*(ptr.sub(offset) as *const TinyArcInner<T>);
-            TinyArc::from_inner(NonNull::from_ref(inner))
-        }
+        let inner = &*(ptr.sub(offset) as *const TinyArcInner<T>);
+        TinyArc::from_inner(NonNull::from_ref(inner))
     }
 
-    pub fn insert_after(other_node: &mut ListHead<T, A>, me: TinyArc<T>) -> bool {
-        let me_node = Self::list_head_of(&me);
-        if !ListHead::<T, A>::insert_after(other_node, me_node) {
+    pub fn insert_after(other_node: &mut AtomicListHead<T, A>, mut me: TinyArc<T>) -> bool {
+        let me_node = unsafe { Self::list_head_of_mut_unchecked(&mut me) };
+        if !AtomicListHead::<T, A>::insert_after(other_node, me_node) {
             return false;
         }
         // The list shares ownership of me.
-        unsafe { TinyArc::<T>::increment_strong_count(&me) };
+        core::mem::forget(me);
         true
     }
 
-    pub fn insert_before(other_node: &mut ListHead<T, A>, me: TinyArc<T>) -> bool {
-        let me_node = Self::list_head_of(&me);
-        if !ListHead::<T, A>::insert_before(other_node, me_node) {
+    pub fn insert_before(other_node: &mut AtomicListHead<T, A>, mut me: TinyArc<T>) -> bool {
+        let me_node = unsafe { Self::list_head_of_mut_unchecked(&mut me) };
+        if !AtomicListHead::<T, A>::insert_before(other_node, me_node) {
             return false;
         }
         // The list shares ownership of me.
-        unsafe { TinyArc::<T>::increment_strong_count(&me) };
+        core::mem::forget(me);
         true
     }
 
     pub fn push_back(&mut self, me: TinyArc<T>) -> bool {
         if Self::insert_before(&mut self.tail, me) {
-            self.len += 1;
             return true;
         }
         false
     }
 
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn pop_front(&mut self) -> Option<TinyArc<T>> {
-        assert!(self.head.next.is_some());
+    pub fn back(&self) -> Option<TinyArc<T>> {
         if self.is_empty() {
             return None;
         }
-        let Some(next) = self.head.next else {
+        let Some(mut prev) = self.tail.prev() else {
+            panic!("Tail's prev node should not be None");
+        };
+        Some(unsafe { Self::make_arc_from(prev.as_ref()) })
+    }
+
+    pub fn front(&self) -> Option<TinyArc<T>> {
+        if self.is_empty() {
+            return None;
+        }
+        let Some(mut next) = self.head.next() else {
+            panic!("Head's next node should not be None");
+        };
+        Some(unsafe { Self::make_arc_from(next.as_ref()) })
+    }
+
+    pub fn pop_front(&mut self) -> Option<TinyArc<T>> {
+        assert!(self.head.next().is_some());
+        if self.is_empty() {
+            return None;
+        }
+        let Some(mut next) = self.head.next() else {
             panic!("Head's next node should not be None");
         };
         let arc = unsafe { Self::make_arc_from(next.as_ref()) };
-        let ok = ListHead::<T, A>::detach(next);
+        let ok = AtomicListHead::<T, A>::detach(unsafe { next.as_mut() });
         assert!(ok);
         unsafe { TinyArc::<T>::decrement_strong_count(&arc) };
-        self.len -= 1;
         Some(arc)
     }
 
-    pub fn detach(me: &TinyArc<T>) -> bool {
-        let me_node = Self::list_head_of(me);
-        if !ListHead::<T, A>::detach(me_node) {
+    pub fn detach(me: &mut TinyArc<T>) -> bool {
+        let me_node = unsafe { Self::list_head_of_mut_unchecked(me) };
+        if !AtomicListHead::<T, A>::detach(me_node) {
             return false;
         }
         unsafe { TinyArc::<T>::decrement_strong_count(me) };
@@ -288,11 +320,12 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
 
     pub fn clear(&mut self) -> usize {
         let mut c = 0;
-        for i in TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail))) {
-            Self::detach(&i);
+        for mut i in
+            TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
+        {
+            Self::detach(&mut i);
             c += 1;
         }
-        self.len = 0;
         c
     }
 
@@ -304,7 +337,6 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
 impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
     #[inline]
     fn drop(&mut self) {
-        // FIXME: Warn if self.len != 0 since memory might leak.
         // NOTE: Elements should be cleared by calling `clear` method
         // since move occurs when dropping. Do you recall how drop is
         // called? It's `drop(val)`.
@@ -320,7 +352,7 @@ pub struct TinyArcListReverseIterator<T, A: Adapter> {
 }
 
 impl<T, A: Adapter> TinyArcListIterator<T, A> {
-    pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
+    pub fn new(head: &AtomicListHead<T, A>, tail: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListIterator::new(head, tail),
         }
@@ -328,7 +360,7 @@ impl<T, A: Adapter> TinyArcListIterator<T, A> {
 }
 
 impl<T, A: Adapter> TinyArcListReverseIterator<T, A> {
-    pub fn new(tail: &ListHead<T, A>, head: Option<NonNull<ListHead<T, A>>>) -> Self {
+    pub fn new(tail: &AtomicListHead<T, A>, head: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListReverseIterator::new(tail, head),
         }
@@ -357,7 +389,9 @@ impl<T, A: Adapter> Iterator for TinyArcListReverseIterator<T, A> {
 mod tests {
     extern crate test;
     use super::*;
-    use crate::{impl_simple_intrusive_adapter, list::typed_ilist::ListHead, tinyrwlock::RwLock};
+    use crate::{
+        impl_simple_intrusive_adapter, list::typed_atomic_ilist::AtomicListHead, tinyrwlock::RwLock,
+    };
     use test::Bencher;
 
     impl_simple_intrusive_adapter!(OffsetOfCsl, Thread, control_status_list);
@@ -365,8 +399,8 @@ mod tests {
 
     #[derive(Default, Debug)]
     pub struct Thread {
-        pub control_status_list: ListHead<Thread, OffsetOfCsl>,
-        pub timer_list: ListHead<Thread, OffsetOfTl>,
+        pub control_status_list: AtomicListHead<Thread, OffsetOfCsl>,
+        pub timer_list: AtomicListHead<Thread, OffsetOfTl>,
         pub id: usize,
     }
 
@@ -384,25 +418,27 @@ mod tests {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
         type TlList = TinyArcList<Thread, OffsetOfTl>;
-        let t = TinyArc::new(Thread::default());
+        let mut t = TinyArc::new(Thread::default());
+        assert_eq!(&t.control_status_list as *const _, unsafe {
+            CslList::list_head_of_mut_unchecked(&mut t)
+        } as *const _,);
         assert_eq!(
-            &t.control_status_list as *const _,
-            CslList::list_head_of(&t).as_ptr()
+            &t.timer_list as *const _,
+            unsafe { TlList::list_head_of_mut_unchecked(&mut t) } as *const _,
         );
-        assert_eq!(&t.timer_list as *const _, TlList::list_head_of(&t).as_ptr());
     }
 
     #[test]
     fn test_detach_during_iter() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let mut head = RwLock::new(L::default());
         let mut w = head.write();
         let t = TinyArc::new(Thread::default());
         CslList::insert_after(&mut *w, t);
-        for e in TinyArcListIterator::new(&*w, None) {
-            CslList::detach(&e);
+        for mut e in TinyArcListIterator::new(&*w, None) {
+            CslList::detach(&mut e);
         }
     }
 
@@ -410,7 +446,7 @@ mod tests {
     fn test_insert_and_detach() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 4;
         let mut head = L::default();
         for i in 0..n {
@@ -420,11 +456,11 @@ mod tests {
             assert_eq!(Ty::strong_count(&t), 2);
         }
         let mut counter = (n - 1) as isize;
-        for i in TinyArcListIterator::new(&head, None) {
+        for mut i in TinyArcListIterator::new(&head, None) {
             assert_eq!(i.id, counter as usize);
             assert_eq!(Ty::strong_count(&i), 2);
             counter -= 1;
-            assert!(CslList::detach(&i));
+            assert!(CslList::detach(&mut i));
             assert_eq!(Ty::strong_count(&i), 1);
         }
     }
@@ -433,7 +469,7 @@ mod tests {
     fn test_insert_before_and_detach() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 4;
         let mut tail = L::default();
         for i in 0..n {
@@ -443,11 +479,11 @@ mod tests {
             assert_eq!(Ty::strong_count(&t), 2);
         }
         let mut counter = (n - 1) as isize;
-        for i in TinyArcListReverseIterator::new(&tail, None) {
+        for mut i in TinyArcListReverseIterator::new(&tail, None) {
             assert_eq!(i.id, counter as usize);
             assert_eq!(Ty::strong_count(&i), 2);
             counter -= 1;
-            assert!(CslList::detach(&i));
+            assert!(CslList::detach(&mut i));
             assert_eq!(Ty::strong_count(&i), 1);
         }
     }
@@ -456,13 +492,15 @@ mod tests {
     fn test_push_and_pop() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 16;
         let mut l = CslList::default();
         l.init();
         for i in 0..n {
-            let t = Ty::new(Thread::new(i));
+            let mut t = Ty::new(Thread::new(i));
             assert_eq!(Ty::strong_count(&t), 1);
+            let node = unsafe { CslList::list_head_of_mut_unchecked(&mut t) };
+            assert!(node.is_detached());
             assert!(l.push_back(t.clone()));
             assert!(!CslList::insert_before(&mut l.tail, t.clone()));
             assert_eq!(Ty::strong_count(&t), 2);
@@ -482,13 +520,15 @@ mod tests {
     fn test_push_and_drop() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 16;
         let mut l = CslList::default();
         l.init();
         for i in 0..n {
-            let t = Ty::new(Thread::new(i));
+            let mut t = Ty::new(Thread::new(i));
             assert_eq!(Ty::strong_count(&t), 1);
+            let node = unsafe { CslList::list_head_of_mut_unchecked(&mut t) };
+            assert!(node.is_detached());
             assert!(l.push_back(t.clone()));
             assert!(!CslList::insert_before(&mut l.tail, t.clone()));
             assert_eq!(Ty::strong_count(&t), 2);
@@ -500,7 +540,7 @@ mod tests {
     fn test_detach_during_iter_2() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let mut l = CslList::default();
         l.init();
         let mut n = 16;
@@ -512,9 +552,9 @@ mod tests {
 
         loop {
             let mut iter = l.iter();
-            if let Some(t) = iter.next() {
+            if let Some(mut t) = iter.next() {
                 assert_eq!(Ty::strong_count(&t), 2);
-                assert!(CslList::detach(&t));
+                assert!(CslList::detach(&mut t));
                 assert_eq!(Ty::strong_count(&t), 1);
                 n -= 1;
             } else {
@@ -528,21 +568,23 @@ mod tests {
     fn test_detach_and_insert_during_iter() {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let mut l = CslList::default();
         l.init();
         let n = 16;
         for i in 0..n {
-            let t = Ty::new(Thread::new(i));
+            let mut t = Ty::new(Thread::new(i));
             assert_eq!(Ty::strong_count(&t), 1);
+            let node = unsafe { CslList::list_head_of_mut_unchecked(&mut t) };
+            assert!(node.is_detached());
             assert!(l.push_back(t.clone()));
         }
 
         for i in 0..n {
             let mut iter = l.iter();
-            if let Some(t) = iter.next() {
+            if let Some(mut t) = iter.next() {
                 assert_eq!(Ty::strong_count(&t), 2);
-                assert!(CslList::detach(&t));
+                assert!(CslList::detach(&mut t));
                 assert_eq!(Ty::strong_count(&t), 1);
                 // insert back to the list again
                 l.push_back(t.clone());
@@ -555,14 +597,14 @@ mod tests {
     fn bench_insert_and_detach(b: &mut Bencher) {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 1 << 16;
         b.iter(|| {
             let mut head = L::default();
-            let tail = L::default();
-            L::insert_after(&mut head, NonNull::from_ref(&tail));
+            let mut tail = L::default();
+            L::insert_after(&mut head, &mut tail);
             for i in 0..n {
-                let t = Ty::new(Thread::new(i));
+                let mut t = Ty::new(Thread::new(i));
                 assert_eq!(Ty::strong_count(&t), 1);
                 CslList::insert_after(&mut head, t.clone());
                 assert_eq!(Ty::strong_count(&t), 2);
@@ -572,7 +614,7 @@ mod tests {
                 assert_eq!(i.id, counter as usize);
                 assert_eq!(Ty::strong_count(&i), 2);
                 counter -= 1;
-                assert!(CslList::detach(&i));
+                assert!(CslList::detach(&mut i));
                 assert_eq!(Ty::strong_count(&i), 1);
             }
         });
@@ -582,14 +624,14 @@ mod tests {
     fn bench_insert_and_detach_1(b: &mut Bencher) {
         type Ty = TinyArc<Thread>;
         type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = ListHead<Thread, OffsetOfCsl>;
+        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 1 << 16;
         b.iter(|| {
             let mut head = L::default();
             let mut tail = L::default();
-            L::insert_after(&mut head, NonNull::from_ref(&tail));
+            L::insert_after(&mut head, &mut tail);
             for i in 0..n {
-                let t = Ty::new(Thread::new(i));
+                let mut t = Ty::new(Thread::new(i));
                 assert_eq!(Ty::strong_count(&t), 1);
                 CslList::insert_before(&mut tail, t.clone());
                 assert_eq!(Ty::strong_count(&t), 2);
@@ -599,7 +641,7 @@ mod tests {
             {
                 assert_eq!(i.id, counter);
                 assert_eq!(Ty::strong_count(&i), 2);
-                assert!(CslList::detach(&i));
+                assert!(CslList::detach(&mut i));
                 assert_eq!(Ty::strong_count(&i), 1);
             }
         });

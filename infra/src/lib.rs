@@ -27,6 +27,8 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(ptr_as_uninit)]
 #![feature(slice_as_chunks)]
+#![feature(slice_ptr_get)]
+#![feature(strict_provenance_atomic_ptr)]
 
 pub mod intrusive;
 pub mod list;

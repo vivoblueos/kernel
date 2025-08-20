@@ -32,8 +32,6 @@ pub struct ListHead<T, A: Adapter> {
 pub struct ListIterator<T, A: Adapter> {
     next: Option<NonNull<ListHead<T, A>>>,
     tail: Option<NonNull<ListHead<T, A>>>,
-    _t: PhantomData<T>,
-    _a: PhantomData<A>,
 }
 
 impl<T, A: Adapter> ListIterator<T, A> {
@@ -41,8 +39,6 @@ impl<T, A: Adapter> ListIterator<T, A> {
         Self {
             next: head.next,
             tail,
-            _t: PhantomData,
-            _a: PhantomData,
         }
     }
 }
@@ -66,8 +62,6 @@ impl<T, A: Adapter> Iterator for ListIterator<T, A> {
 pub struct ListReverseIterator<T, A: Adapter> {
     prev: Option<NonNull<ListHead<T, A>>>,
     head: Option<NonNull<ListHead<T, A>>>,
-    _t: PhantomData<T>,
-    _a: PhantomData<A>,
 }
 
 impl<T, A: Adapter> ListReverseIterator<T, A> {
@@ -75,8 +69,6 @@ impl<T, A: Adapter> ListReverseIterator<T, A> {
         Self {
             prev: tail.prev,
             head,
-            _t: PhantomData,
-            _a: PhantomData,
         }
     }
 }
@@ -90,7 +82,7 @@ impl<T, A: Adapter> Iterator for ListReverseIterator<T, A> {
         }
         // FIXME: Shall we unwrap_unchecked directly?
         let Some(current) = self.prev else {
-            panic!("Tail node is specified, but encountered None during iteration");
+            panic!("Head node is specified, but encountered None during iteration");
         };
         self.prev = unsafe { current.as_ref().prev };
         Some(current)
@@ -127,74 +119,73 @@ impl<T, A: Adapter> ListHead<T, A> {
         self.prev.is_none() && self.next.is_none()
     }
 
-    pub fn insert_after(head: &mut ListHead<T, A>, mut me: NonNull<ListHead<T, A>>) -> bool {
+    pub fn insert_after(head: &mut ListHead<T, A>, me: &mut ListHead<T, A>) -> bool {
         unsafe {
-            if !me.as_ref().is_detached() {
+            if !me.is_detached() {
                 return false;
             }
-            let next = core::mem::replace(&mut head.next, Some(me));
-            let _ = core::mem::replace(&mut me.as_mut().next, next);
+            let next = core::mem::replace(&mut head.next, Some(NonNull::from_mut(me)));
+            let _ = core::mem::replace(&mut me.next, next);
             let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
-                core::mem::replace(&mut v.as_mut().prev, Some(me))
+                core::mem::replace(&mut v.as_mut().prev, Some(NonNull::from_mut(me)))
             });
-            let _ = core::mem::replace(&mut me.as_mut().prev, prev);
+            let _ = core::mem::replace(&mut me.prev, prev);
             true
         }
     }
 
-    pub fn insert_before(tail: &mut ListHead<T, A>, mut me: NonNull<ListHead<T, A>>) -> bool {
+    pub fn insert_before(tail: &mut ListHead<T, A>, me: &mut ListHead<T, A>) -> bool {
         unsafe {
-            if !me.as_ref().is_detached() {
+            if !me.is_detached() {
                 return false;
             }
-            let prev = core::mem::replace(&mut tail.prev, Some(me));
-            let _ = core::mem::replace(&mut me.as_mut().prev, prev);
+            let prev = core::mem::replace(&mut tail.prev, Some(NonNull::from_mut(me)));
+            let _ = core::mem::replace(&mut me.prev, prev);
             let next = prev.map_or(Some(NonNull::from_mut(tail)), |mut v| {
-                core::mem::replace(&mut v.as_mut().next, Some(me))
+                core::mem::replace(&mut v.as_mut().next, Some(NonNull::from_mut(me)))
             });
-            let _ = core::mem::replace(&mut me.as_mut().next, next);
+            let _ = core::mem::replace(&mut me.next, next);
             true
         }
     }
 
     pub fn insert_after_with_hook<F: Fn(&ListHead<T, A>)>(
         head: &mut ListHead<T, A>,
-        me: NonNull<ListHead<T, A>>,
+        me: &mut ListHead<T, A>,
         hook: F,
     ) -> bool {
         if !Self::insert_after(head, me) {
             return false;
         }
-        hook(unsafe { me.as_ref() });
+        hook(me);
         true
     }
 
-    pub fn detach(mut me: NonNull<ListHead<T, A>>) -> bool {
+    pub fn detach(me: &mut ListHead<T, A>) -> bool {
         unsafe {
-            let me_mut = me.as_mut();
-            if me_mut.is_detached() {
+            if me.is_detached() {
                 return false;
             }
-            if let Some(mut prev) = me_mut.prev {
-                let _ = core::mem::replace(&mut prev.as_mut().next, me_mut.next);
+            if let Some(mut prev) = me.prev {
+                let _ = core::mem::replace(&mut prev.as_mut().next, me.next);
             };
-            if let Some(mut next) = me_mut.next {
-                let _ = core::mem::replace(&mut next.as_mut().prev, me_mut.prev);
+            if let Some(mut next) = me.next {
+                let _ = core::mem::replace(&mut next.as_mut().prev, me.prev);
             };
-            me_mut.prev = None;
-            me_mut.next = None;
+            me.prev = None;
+            me.next = None;
             true
         }
     }
 
-    pub fn detach_with_hook<F>(me: NonNull<ListHead<T, A>>, hook: F) -> bool
+    pub fn detach_with_hook<F>(me: &mut ListHead<T, A>, hook: F) -> bool
     where
         F: Fn(&ListHead<T, A>),
     {
         if !Self::detach(me) {
             return false;
         }
-        hook(unsafe { me.as_ref() });
+        hook(me);
         true
     }
 }
@@ -237,12 +228,12 @@ mod tests {
         type Ty = ListHead<Foo, OffsetOfLh>;
         let mut a = Foo::default();
         assert!(a.lh.is_detached());
-        let b = Foo::default();
+        let mut b = Foo::default();
         assert!(b.lh.is_detached());
-        assert!(Ty::insert_after(&mut a.lh, NonNull::from_ref(&b.lh)));
+        assert!(Ty::insert_after(&mut a.lh, &mut b.lh));
         assert!(!a.lh.is_detached());
         assert!(!b.lh.is_detached());
-        Ty::detach(NonNull::from_ref(&b.lh));
+        Ty::detach(&mut b.lh);
         assert!(a.lh.is_detached());
         assert!(b.lh.is_detached());
     }
