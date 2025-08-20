@@ -18,7 +18,7 @@ build_rust("blueos_test_macro") {
   crate_type = "proc-macro"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  if (use_defmt_test) {
+  if (defined(use_defmt) && use_defmt) {
     public_deps = [ "//external/defmt/v1.0.1:defmt($kernel_toolchain)" ]
   } else {
     public_deps =
