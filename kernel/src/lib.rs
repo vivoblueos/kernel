@@ -42,9 +42,9 @@
 #![feature(trivial_bounds)]
 // Attributes applied when we're testing the kernel.
 #![cfg_attr(test, no_main)]
-#![cfg_attr(all(test, not(use_defmt)), feature(custom_test_frameworks))]
-#![cfg_attr(all(test, not(use_defmt)), test_runner(tests::kernel_unittest_runner))]
-#![cfg_attr(all(test, not(use_defmt)), reexport_test_harness_main = "run_kernel_unittests")]
+#![cfg_attr(test, feature(custom_test_frameworks))]
+#![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
+#![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
 
 extern crate alloc;
 
@@ -125,7 +125,6 @@ macro_rules! trace {
     }};
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     extern crate alloc;
@@ -141,6 +140,8 @@ mod tests {
         panic::PanicInfo,
         sync::atomic::{AtomicUsize, Ordering},
     };
+    #[cfg(use_defmt)]
+    use defmt_rtt as _;
     use spin::Mutex;
     use thread::{Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode};
 
@@ -239,8 +240,17 @@ mod tests {
     #[panic_handler]
     fn oops(info: &PanicInfo) -> ! {
         let _guard = DisableInterruptGuard::new();
-        semihosting::println!("{}", info);
-        semihosting::println!("Oops: {}", info.message());
+        #[cfg(not(use_defmt))]
+        {
+            semihosting::println!("{}", info);
+            semihosting::println!("Oops: {}", info.message());
+        }
+
+        #[cfg(use_defmt)]
+        {
+            defmt::error!("{}", defmt::Display2Format(info));
+            defmt::error!("Oops: {}", defmt::Display2Format(&info.message()));
+        }
         loop {}
     }
 
@@ -470,8 +480,22 @@ mod tests {
     #[inline(never)]
     pub fn kernel_unittest_runner(tests: &[&dyn Fn()]) {
         let t = scheduler::current_thread();
-        semihosting::println!("---- Running {} kernel unittests...", tests.len());
-        semihosting::println!(
+        #[cfg(use_defmt)]
+        use defmt::println;
+        #[cfg(not(use_defmt))]
+        use semihosting::println;
+
+        println!("---- Running {} kernel unittests...", tests.len());
+        #[cfg(use_defmt)]
+        println!(
+            "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
+            Thread::id(&t),
+            ThreadNode::strong_count(&t),
+            defmt::Debug2Format(&ALLOCATOR.memory_info()),
+            arch::current_sp(),
+        );
+        #[cfg(not(use_defmt))]
+        println!(
             "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t),
@@ -481,13 +505,21 @@ mod tests {
         for test in tests {
             test();
         }
-        semihosting::println!(
+        #[cfg(use_defmt)]
+        println!(
             "After test, thread 0x{:x}, heap status: {:?}, sp: 0x{:x}",
+            Thread::id(&t),
+            defmt::Debug2Format(&ALLOCATOR.memory_info()),
+            arch::current_sp()
+        );
+        #[cfg(not(use_defmt))]
+        println!(
+            "After test, thread 0x{:x}, heap status: {:?}, sp:  0x{:x}",
             Thread::id(&t),
             ALLOCATOR.memory_info(),
             arch::current_sp()
         );
-        semihosting::println!("---- Done kernel unittests.");
+        println!("---- Done kernel unittests.");
         #[cfg(coverage)]
         crate::coverage::write_coverage_data();
     }

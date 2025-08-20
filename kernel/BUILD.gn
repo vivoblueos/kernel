@@ -53,8 +53,14 @@ group("check_kernel_defmt") {
   deps = [ ":kernel_unittest" ]
 }
 
-if (defined(use_defmt_test) && use_defmt_test) {
-  shared_deps += [ "//external/defmt_test/v0.4.0:defmt_test" ]
+if (defined(use_defmt) && use_defmt) {
+  shared_deps += [
+    "//external/defmt/v1.0.1:defmt",
+    "//external/defmt_rtt/v1.0.0:defmt_rtt",
+  ]
+  if (defined(use_defmt_test) && use_defmt_test) {
+    shared_deps += [ "//external/defmt_test/v0.4.0:defmt_test" ]
+  }
 } else {
   shared_deps += [ "//external/semihosting/v0.1.20:semihosting" ]
 }
@@ -72,6 +78,13 @@ if (direct_syscall_handler) {
   shared_rust_build_flags += [
     "--cfg",
     "direct_syscall_handler",
+  ]
+}
+
+if (defined(use_defmt) && use_defmt) {
+  shared_rust_build_flags += [
+    "-C",
+    "link-arg=-T" + rebase_path("//external/defmt/v1.0.1/bin/defmt.x"),
   ]
 }
 

@@ -73,24 +73,21 @@ if ("$board" == "qemu_riscv64") {
   common_image_rustflags += common_crate_rustflags + common_gcc_rustflags
 }
 
-if (!defined(use_defmt_test)) {
-  use_defmt_test = false
+if (!defined(use_defmt)) {
+  use_defmt = false
 }
 
-if (use_defmt_test) {
-  test_image_rustflags = [
-    "--test",
-    "-Z",
-    "panic-abort-tests",
+test_image_rustflags = [
+  # unstable rust custom test framework
+  "--test",
+  "-Z",
+  "panic-abort-tests",
+]
+
+if (use_defmt) {
+  test_image_rustflags += [
     "--cfg",
     "use_defmt",
-  ]
-} else {
-  test_image_rustflags = [
-    # unstable rust custom test framework
-    "--test",
-    "-Z",
-    "panic-abort-tests",
   ]
 }
 
