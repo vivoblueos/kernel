@@ -37,7 +37,10 @@ pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #[test_case]
         fn #test_name(#(#filtered_params),*) {
+            #[cfg(not(use_defmt))]
             use semihosting::println;
+            #[cfg(use_defmt)]
+            use defmt::println as println;
             println!("[ RUN      ] {}", stringify!(#test_name));
             #( let _ = #param_names; )*
             #input_block
