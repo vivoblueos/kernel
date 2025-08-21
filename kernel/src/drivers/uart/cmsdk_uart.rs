@@ -22,7 +22,7 @@ use crate::{
             serial::{SerialError, UartOps},
             termios::Termios,
         },
-        DeviceRequest,
+        DeviceManager, DeviceRequest,
     },
 };
 use core::hint::spin_loop;

@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{config, uart};
+use super::config;
 #[cfg(virtio)]
-use crate::devices::virtio;
+use super::uart::{enable_uart, get_serial};
 use crate::{
     arch::{self, READY_CORES},
-    devices::{console, tty::n_tty::Tty},
+    devices::{console, tty::n_tty::Tty, virtio},
     error::Error,
     scheduler,
     support::SmpStagedInit,
     time,
 };
-use alloc::sync::Arc;
+use alloc::{string::String, sync::Arc};
 use blueos_kconfig::NUM_CORES;
 use core::sync::atomic::Ordering;
 #[cfg(virtio)]
@@ -43,7 +43,7 @@ pub(crate) fn init() {
         time::systick_init(0);
     });
     STAGING.run(6, false, || {
-        uart::enable_uart(arch::current_cpu_id());
+        enable_uart(arch::current_cpu_id(), config::PL011_UART0_IRQNUM);
     });
     STAGING.run(7, true, || arch::secondary_cpu_setup(config::PSCI_BASE));
     if arch::current_cpu_id() != 0 {
@@ -51,11 +51,17 @@ pub(crate) fn init() {
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
 
-    match uart::uart_init() {
+    match super::uart::uart_init(
+        0,
+        config::PL011_UART0_BASE,
+        config::APBP_CLOCK,
+        config::PL011_UART0_IRQNUM,
+        String::from("ttyS0"),
+    ) {
         Ok(_) => (),
         Err(e) => panic!("Failed to init uart: {}", Error::from(e)),
     }
-    match console::init_console(Tty::init(uart::get_serial0().clone()).clone()) {
+    match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
         Ok(_) => (),
         Err(e) => panic!("Failed to init console: {}", Error::from(e)),
     }

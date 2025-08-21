@@ -74,7 +74,7 @@ macro_rules! default_irq_handler {
     };
 }
 
-use super::uart::{uartrx0_handler, uarttx0_handler};
+use super::uart::{uart0rx_handler, uart0tx_handler};
 default_irq_handler!(nonsec_watchdog_reset_req_handler);
 default_irq_handler!(nonsec_watchdog_handler);
 default_irq_handler!(slowclk_timer_handler);
@@ -107,6 +107,7 @@ default_irq_handler!(uarttx4_handler);
 #[no_mangle]
 static __INTERRUPT_HANDLERS__: InterruptTable = {
     let mut tbl = [Vector { reserved: 0 }; INTERRUPT_TABLE_LEN];
+
     tbl[0] = Vector {
         handler: nonsec_watchdog_reset_req_handler,
     };
@@ -179,10 +180,10 @@ static __INTERRUPT_HANDLERS__: InterruptTable = {
     // For details, see `fix RX/TX interrupts order <https://github.com/qemu/qemu/commit/5a558be93ad628e5bed6e0ee062870f49251725c>`_
     // default set as new version of QEMU
     tbl[33] = Vector {
-        handler: uartrx0_handler,
+        handler: uart0rx_handler,
     };
     tbl[34] = Vector {
-        handler: uarttx0_handler,
+        handler: uart0tx_handler,
     };
     tbl[35] = Vector {
         handler: uartrx1_handler,

@@ -325,7 +325,7 @@ impl<'a> Uart<'a> {
         field!(self.regs, uartcr)
             .write(ControlRegister::RXE | ControlRegister::TXE | ControlRegister::UARTEN);
 
-        Ok(())
+        Ok(()) // Refactor: no SerialError returned so far, could be independent from SerialError?
     }
 
     /// Disable UART

@@ -27,11 +27,6 @@ use core::sync::atomic::AtomicUsize;
 use delegate::delegate;
 use embedded_io::{ErrorKind, ErrorType, Read, ReadReady, Write, WriteReady};
 
-#[cfg(target_arch = "aarch64")]
-pub mod arm_pl011;
-#[cfg(target_arch = "arm")]
-pub mod cmsdk_uart;
-
 const SERIAL_RX_FIFO_MIN_SIZE: usize = 256;
 const SERIAL_TX_FIFO_MIN_SIZE: usize = 256;
 
@@ -81,7 +76,13 @@ impl From<SerialError> for ErrorKind {
 
 // TODO: add DMA support
 pub trait UartOps:
-    Read + Write + ReadReady + WriteReady + ErrorType<Error = SerialError> + Send + Sync
+    Read
+    + Write
+    + ReadReady
+    + WriteReady
+    + ErrorType<Error = SerialError>
+    + core::marker::Send
+    + core::marker::Sync
 {
     fn setup(&mut self, termios: &Termios) -> Result<(), SerialError>;
     fn shutdown(&mut self) -> Result<(), SerialError>;

@@ -15,16 +15,16 @@
 pub mod config;
 mod handlers;
 mod uart;
-pub use uart::get_early_uart;
-
 use crate::{
     arch, boot,
     devices::{console, tty::n_tty::Tty},
     error::Error,
     time,
 };
-use alloc::sync::Arc;
+use alloc::{string::String, sync::Arc};
 use boot::INIT_BSS_DONE;
+pub(crate) use uart::get_early_uart; // re-export
+use uart::{get_serial, uart_init};
 #[repr(C)]
 struct CopyTable {
     src: *const u32,
@@ -78,11 +78,18 @@ pub(crate) fn init() {
     unsafe { boot::init_heap() };
     arch::irq::init();
     time::systick_init(config::SYSTEM_CORE_CLOCK);
-    match uart::uart_init() {
+    match uart_init(
+        0,
+        config::memory_map::UART0_BASE,
+        config::SYSTEM_CORE_CLOCK,
+        config::UART0RX_IRQn,
+        config::UART0TX_IRQn,
+        String::from("ttyS0"),
+    ) {
         Ok(_) => (),
         Err(e) => panic!("Failed to init uart: {}", Error::from(e)),
     }
-    match console::init_console(Tty::init(uart::get_serial0().clone()).clone()) {
+    match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
         Ok(_) => (),
         Err(e) => panic!("Failed to init console: {}", Error::from(e)),
     }

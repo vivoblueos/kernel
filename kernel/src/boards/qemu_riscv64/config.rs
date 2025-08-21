@@ -12,20 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod init;
-pub use init::*;
-pub mod uart;
-pub(crate) use uart::get_early_uart; // re-export
-mod config;
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::arch::registers::cntfrq_el0::CNTFRQ_EL0;
-use tock_registers::interfaces::Readable;
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    core::time::Duration::from_nanos(
-        (cycles as f64 * (1_000_000_000f64 / CNTFRQ_EL0.get() as f64)) as u64,
-    )
-}
+use crate::arch::irq::IrqNumber;
 
-pub(crate) fn get_cycles_to_ms(cycles: u64) -> u64 {
-    (cycles as f64 * (1_000f64 / CNTFRQ_EL0.get() as f64)) as u64
-}
+pub const PLIC_BASE: usize = 0x0c00_0000;
+
+pub const UART0: u32 = 0x1000_0000;
+pub const UART0_IRQ: IrqNumber = IrqNumber::new(10);
