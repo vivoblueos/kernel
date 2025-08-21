@@ -175,6 +175,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
     Ok(woken)
 }
 
+#[cfg(not(use_defmt))]
 #[cfg(cortex_m)]
 #[cfg(test)]
 mod tests {
