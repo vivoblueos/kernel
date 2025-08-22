@@ -522,5 +522,7 @@ mod tests {
         println!("---- Done kernel unittests.");
         #[cfg(coverage)]
         crate::coverage::write_coverage_data();
+        #[cfg(use_defmt)]
+        cortex_m_semihosting::debug::exit(cortex_m_semihosting::debug::EXIT_SUCCESS);
     }
 }

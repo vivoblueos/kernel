@@ -26,7 +26,7 @@ group("check_kernel") {
 
 group("check_kernel_probe") {
   testonly = true
-  deps = []
+  deps = [ ":kernel_unittest" ]
 }
 
 shared_deps = [
@@ -126,6 +126,9 @@ build_rust("kernel_unittest") {
   ]
   cfgs = blueos_default_cfgs
   deps = shared_deps
+  if (defined(use_defmt) && use_defmt) {
+    deps += [ "//external/cortex_m_semihosting/v0.5.0:cortex_m_semihosting" ]
+  }
   configs += [ "//kernel/kconfig:kconfigs" ]
   inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
   rustflags = shared_rust_build_flags
@@ -273,14 +276,27 @@ gen_qemu_runner("unittest_runner") {
   semihosting = true
 }
 
-run_qemu_check("run_unittest") {
-  testonly = true
-  runner = ":unittest_runner"
-  if (coverage) {
-    img = ":kernel_unittest"
-    checker = "src/coverage.checker"
-  } else {
-    checker = "src/unittests.checker"
+if (defined(use_defmt) && use_defmt) {
+  run_qemu_check("run_unittest") {
+    testonly = true
+    runner = ":unittest_runner"
+    if (coverage) {
+      img = ":kernel_unittest"
+      checker = "src/coverage.checker"
+    } else {
+      checker = "src/unittests.checker"
+    }
+  }
+} else {
+  run_qemu_check("run_unittest") {
+    testonly = true
+    runner = ":unittest_runner"
+    if (coverage) {
+      img = ":kernel_unittest"
+      checker = "src/coverage.checker"
+    } else {
+      checker = "src/unittests.checker"
+    }
   }
 }
 
