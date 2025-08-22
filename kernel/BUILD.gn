@@ -279,14 +279,27 @@ if (defined(use_defmt) && use_defmt) {
   }
 }
 
-run_qemu_check("run_unittest") {
-  testonly = true
-  runner = ":unittest_runner"
-  if (coverage) {
-    img = ":kernel_unittest"
-    checker = "src/coverage.checker"
-  } else {
-    checker = "src/unittests.checker"
+if (defined(use_defmt) && use_defmt) {
+  run_qemu_check("run_unittest") {
+    testonly = true
+    runner = ":unittest_runner"
+    if (coverage) {
+      img = ":kernel_unittest"
+      checker = "src/coverage.checker"
+    } else {
+      checker = "src/unittests.checker"
+    }
+  }
+} else {
+  run_qemu_check("run_unittest") {
+    testonly = true
+    runner = ":unittest_runner"
+    if (coverage) {
+      img = ":kernel_unittest"
+      checker = "src/coverage.checker"
+    } else {
+      checker = "src/unittests.checker"
+    }
   }
 }
 
