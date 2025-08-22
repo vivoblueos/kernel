@@ -1,10 +1,9 @@
-  set_default_toolchain("//build/toolchain:blueos_thumbv8m")
-  llvm_target = "thumbv8m.main-none-eabihf"
-  qemu_exe = "qemu-system-arm"
-  machine = "mps3-an547"
-  libc_toolchain = "//build/toolchain:blueos_thumbv8m"
-  librs_linux_emulation_toolchain =
-      "//build/toolchain:librs_linux_emulation_thumbv8m"
-  kernel_toolchain = "//build/toolchain:blueos_thumbv8m"
-  use_defmt=true
-  
+set_default_toolchain("//build/toolchain:blueos_thumbv8m")
+llvm_target = "thumbv8m.main-none-eabihf"
+qemu_exe = "qemu-system-arm"
+machine = "mps3-an547"
+libc_toolchain = "//build/toolchain:blueos_thumbv8m"
+librs_linux_emulation_toolchain =
+    "//build/toolchain:librs_linux_emulation_thumbv8m"
+kernel_toolchain = "//build/toolchain:blueos_thumbv8m"
+use_defmt = true
