@@ -48,7 +48,6 @@ impl Device for Null {
     }
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;

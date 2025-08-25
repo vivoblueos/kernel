@@ -305,7 +305,6 @@ pub fn init() -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -129,7 +129,6 @@ fn next_ephemeral(current: u16) -> u16 {
     }
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;
