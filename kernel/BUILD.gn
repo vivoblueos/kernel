@@ -280,26 +280,32 @@ if (defined(use_defmt) && use_defmt) {
 }
 
 if (defined(use_defmt) && use_defmt) {
-  run_qemu_check("run_unittest") {
+  gen_probe_runner("unittest_runner") {
     testonly = true
-    runner = ":unittest_runner"
-    if (coverage) {
-      img = ":kernel_unittest"
-      checker = "src/coverage.checker"
-    } else {
-      checker = "src/unittests.checker"
-    }
+    img = ":kernel_unittest"
+    chip = "$chip"
   }
 } else {
-  run_qemu_check("run_unittest") {
+  gen_qemu_runner("unittest_runner") {
     testonly = true
-    runner = ":unittest_runner"
-    if (coverage) {
-      img = ":kernel_unittest"
-      checker = "src/coverage.checker"
-    } else {
-      checker = "src/unittests.checker"
-    }
+    img = ":kernel_unittest"
+    qemu = "$qemu_exe"
+    machine = "$machine"
+    qemu_args = qemu_extra_args
+    block_img = "unittest_block.img"
+    block_args = qemu_block_args
+    semihosting = true
+  }
+}
+
+run_qemu_check("run_unittest") {
+  testonly = true
+  runner = ":unittest_runner"
+  if (coverage) {
+    img = ":kernel_unittest"
+    checker = "src/coverage.checker"
+  } else {
+    checker = "src/unittests.checker"
   }
 }
 
