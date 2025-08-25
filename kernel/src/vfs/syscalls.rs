@@ -1016,18 +1016,34 @@ mod tests {
         while next_entry < len as usize {
             let entry = unsafe { Dirent::from_buf_ref(&buf[next_entry..]) };
             if entry.type_() == DirentType::Dir {
+                #[cfg(not(use_defmt))]
                 println!(
                     "[VFS Test DirctoryTree]: Found directory: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
                 );
+                #[cfg(use_defmt)]
+                println!(
+                    "[VFS Test DirctoryTree]: Found directory: {} {} {}",
+                    entry.ino(),
+                    entry.off(),
+                    defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
+                );
             } else {
+                #[cfg(not(use_defmt))]
                 println!(
                     "[VFS Test DirctoryTree]: Found file: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
+                );
+                #[cfg(use_defmt)]
+                println!(
+                    "[VFS Test DirctoryTree]: Found file: {} {} {}",
+                    entry.ino(),
+                    entry.off(),
+                    defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
                 );
             }
             next_entry += entry.reclen() as usize;
@@ -1050,18 +1066,34 @@ mod tests {
         while next_entry < len as usize {
             let entry = unsafe { Dirent::from_buf_ref(&buf[next_entry..]) };
             if entry.type_() == DirentType::Dir {
+                #[cfg(not(use_defmt))]
                 println!(
                     "[VFS Test DirctoryTree]: Found directory: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
                 );
+                #[cfg(use_defmt)]
+                println!(
+                    "[VFS Test DirctoryTree]: Found directory: {} {} {}",
+                    entry.ino(),
+                    entry.off(),
+                    defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
+                );
             } else {
+                #[cfg(not(use_defmt))]
                 println!(
                     "[VFS Test DirctoryTree]: Found file: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
+                );
+                #[cfg(use_defmt)]
+                println!(
+                    "[VFS Test DirctoryTree]: Found file: {} {} {}",
+                    entry.ino(),
+                    entry.off(),
+                    defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
                 );
             }
             next_entry += entry.reclen() as usize;
