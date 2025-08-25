@@ -33,4 +33,4 @@ To build and work with the BlueOS kernel, please check following documentations.
 - [Work with the kernel](https://github.com/vivoblueos/book/blob/main/src/build-kernel.md)
 
 # Technical Documentation
-For more information about the BlueOS kernel, please refer to [the kernel book](https://github.com/vivoblueos/book).
+For more information about the BlueOS kernel, please refer to [the kernel book](https://vivoblueos.github.io/book/).
