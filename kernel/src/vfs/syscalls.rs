@@ -805,7 +805,6 @@ fn flags_to_string(flags: c_int) -> String {
     result
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;

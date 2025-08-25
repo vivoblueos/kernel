@@ -294,7 +294,6 @@ fn lookup_in_dir(dir: &Arc<Dcache>, path: &str) -> Option<Arc<Dcache>> {
     Some(current)
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -602,7 +602,6 @@ pub fn write_to_sockaddr(
     }
 }
 
-#[cfg(not(use_defmt))]
 #[cfg(test)]
 mod tests {
     use super::*;
