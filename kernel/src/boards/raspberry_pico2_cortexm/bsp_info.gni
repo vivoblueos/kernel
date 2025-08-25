@@ -21,3 +21,4 @@ librs_linux_emulation_toolchain =
     "//build/toolchain:librs_linux_emulation_thumbv8m"
 kernel_toolchain = "//build/toolchain:blueos_thumbv8m"
 use_defmt = true
+chip = "RP235x"
