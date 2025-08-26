@@ -15,7 +15,7 @@ jobs:
         (github.event.issue.state == 'open') ||
         (github.event.pull_request.state == 'open')
       )
-    uses: vivoblueos/org-common-workflows/.github/workflows/blueos-ci-reusable.yml@main
+    uses: vivoblueos/toolchain/.github/workflows/blueos-ci-reusable.yml@main
     with:
       comment_body: ${{ github.event.comment.body }}
       issue_number: ${{ github.event.issue.number }}
