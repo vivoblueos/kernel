@@ -23,7 +23,6 @@ use crate::{
     },
 };
 use alloc::{string::String, sync::Arc};
-use semihosting::println;
 use spin::{Mutex as SpinMutex, Once};
 
 // FIXME: move WORKING_DIR to FsEnv
@@ -300,6 +299,10 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use blueos_test_macro::test;
+    #[cfg(use_defmt)]
+    use defmt::println;
+    #[cfg(not(use_defmt))]
+    use semihosting::println;
 
     #[test]
     fn test_is_valid_path() {
