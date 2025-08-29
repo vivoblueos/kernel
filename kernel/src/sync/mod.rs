@@ -18,3 +18,5 @@ pub mod semaphore;
 pub mod spinlock;
 pub use semaphore::Semaphore;
 pub use spinlock::{ISpinLock, SpinLock, SpinLockGuard};
+#[cfg(event_flags)]
+pub mod event_flags;
