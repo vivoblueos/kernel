@@ -525,4 +525,29 @@ mod tests {
         #[cfg(use_defmt)]
         cortex_m_semihosting::debug::exit(cortex_m_semihosting::debug::EXIT_SUCCESS);
     }
+
+    #[cfg(event_flags)]
+    static EVENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    #[cfg(event_flags)]
+    static EVENT: sync::event_flags::EventFlags = sync::event_flags::EventFlags::new();
+    #[cfg(event_flags)]
+    extern "C" fn test_event_flags() {
+        EVENT.wait(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
+        EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    }
+    #[cfg(event_flags)]
+    #[test]
+    fn stress_event_flags() {
+        EVENT.init(0);
+        reset_and_queue_test_threads(test_event_flags, None);
+        let l = unsafe { TEST_THREADS.len() };
+        loop {
+            EVENT.set(1 << 0);
+            let n = EVENT_COUNTER.load(Ordering::Relaxed);
+            if n == l {
+                break;
+            }
+            scheduler::yield_me();
+        }
+    }
 }
