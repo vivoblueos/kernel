@@ -15,9 +15,12 @@
 extern crate alloc;
 use crate::{
     intrusive::Adapter,
-    list::typed_atomic_ilist::{
-        AtomicListHead, AtomicListIterator as ListIterator,
-        AtomicListReverseIterator as ListReverseIterator,
+    list::{
+        typed_atomic_ilist::{
+            AtomicListHead, AtomicListIterator as ListIterator,
+            AtomicListReverseIterator as ListReverseIterator,
+        },
+        GenericList,
     },
 };
 use alloc::boxed::Box;
@@ -39,6 +42,7 @@ type Uint = usize;
 type AtomicUint = core::sync::atomic::AtomicUsize;
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct TinyArcInner<T: Sized> {
     data: T,
     // We don't need a large counter as Arc, we don't have weak
@@ -74,6 +78,12 @@ pub struct TinyArc<T: Sized> {
     inner: NonNull<TinyArcInner<T>>,
 }
 
+impl<T: Default + Sized> Default for TinyArc<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 impl<T> TinyArc<T> {
     #[inline]
     pub fn new(data: T) -> Self {
@@ -98,8 +108,8 @@ impl<T> TinyArc<T> {
     }
 
     #[inline]
-    pub unsafe fn get_handle(this: &Self) -> *const u8 {
-        this.inner.as_ref() as *const _ as *const u8
+    pub fn get_handle(this: &Self) -> *const u8 {
+        Self::as_ptr(this) as *const u8
     }
 
     #[inline]
@@ -127,8 +137,30 @@ impl<T> TinyArc<T> {
     }
 
     #[inline]
-    pub fn is(&self, other: &Self) -> bool {
-        unsafe { Self::get_handle(self) == Self::get_handle(other) }
+    pub fn is(this: &Self, that: &Self) -> bool {
+        Self::get_handle(this) == Self::get_handle(that)
+    }
+
+    #[must_use]
+    pub fn as_ptr(this: &Self) -> *const T {
+        let ptr: *mut TinyArcInner<T> = NonNull::as_ptr(this.inner);
+
+        // SAFETY: This cannot go through Deref::deref because this is required to retain raw/mut provenance
+        unsafe { &raw mut (*ptr).data }
+    }
+
+    pub fn into_raw(this: Self) -> *const T {
+        let ptr = Self::as_ptr(&this);
+        core::mem::forget(this);
+        ptr
+    }
+
+    pub unsafe fn from_raw(ptr: *const T) -> Self {
+        // SAFETY: ptr offset is same as TinyArcInner struct offset no recalculation of
+        // offset is required
+        TinyArc {
+            inner: NonNull::new_unchecked(ptr as *mut TinyArcInner<T>),
+        }
     }
 
     // `get_mut` requires `&mut Arc` which is different from what Sync
@@ -146,6 +178,19 @@ impl<T> TinyArc<T> {
     pub unsafe fn get_mut_unchecked(this: &mut Self) -> &mut T {
         &mut this.inner.as_mut().data
     }
+
+    #[inline]
+    unsafe fn inner(this: &Self) -> &NonNull<TinyArcInner<T>> {
+        &this.inner
+    }
+
+    #[inline]
+    unsafe fn from_ptr(inner: *mut TinyArcInner<T>) -> Self {
+        debug_assert!(!inner.is_null());
+        TinyArc {
+            inner: NonNull::new_unchecked(inner),
+        }
+    }
 }
 
 impl<T: Sized> Clone for TinyArc<T> {
@@ -153,7 +198,7 @@ impl<T: Sized> Clone for TinyArc<T> {
     fn clone(&self) -> TinyArc<T> {
         let old = unsafe { self.inner.as_ref() }
             .rc
-            .fetch_add(1, Ordering::Relaxed);
+            .fetch_add(1, Ordering::AcqRel);
         assert!(old >= 1);
         TinyArc { inner: self.inner }
     }
@@ -168,7 +213,6 @@ impl<T: Sized> Drop for TinyArc<T> {
         if old_val != 1 {
             return;
         }
-        fence(Ordering::SeqCst);
         // Static data should never reach here.
         let x = unsafe { Box::from_non_null(self.inner) };
         drop(x);
@@ -332,6 +376,65 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
     pub fn iter(&self) -> TinyArcListIterator<T, A> {
         TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
     }
+
+    // Find a stable sorting position.
+    fn find_insert_position_by<Compare>(
+        compare: Compare,
+        it: TinyArcListIterator<T, A>,
+        val: &TinyArc<T>,
+    ) -> Option<TinyArc<T>>
+    where
+        Compare: Fn(&T, &T) -> core::cmp::Ordering,
+    {
+        use core::cmp::Ordering;
+        let mut last = None;
+        for other_val in it {
+            let ord = compare(val, &other_val);
+            if ord == Ordering::Less {
+                return last;
+            }
+            last = Some(other_val);
+        }
+        last
+    }
+
+    // Sort by ascending order.
+    #[inline]
+    pub fn insert_by<Compare>(
+        compare: Compare,
+        head: &mut AtomicListHead<T, A>,
+        val: TinyArc<T>,
+    ) -> bool
+    where
+        Compare: Fn(&T, &T) -> core::cmp::Ordering,
+    {
+        let Some(mut other_val) =
+            Self::find_insert_position_by(compare, TinyArcListIterator::new(head, None), &val)
+        else {
+            return Self::insert_after(head, val);
+        };
+        Self::insert_after(
+            unsafe { Self::list_head_of_mut_unchecked(&mut other_val) },
+            val,
+        )
+    }
+
+    pub fn push_by<Compare>(&mut self, compare: Compare, val: TinyArc<T>) -> bool
+    where
+        Compare: Fn(&T, &T) -> core::cmp::Ordering,
+    {
+        let Some(mut other_val) = Self::find_insert_position_by(
+            compare,
+            TinyArcListIterator::new(&self.head, Some(NonNull::from_ref(&self.tail))),
+            &val,
+        ) else {
+            return Self::insert_after(&mut self.head, val);
+        };
+        Self::insert_after(
+            unsafe { Self::list_head_of_mut_unchecked(&mut other_val) },
+            val,
+        )
+    }
 }
 
 impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
@@ -340,7 +443,13 @@ impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
         // NOTE: Elements should be cleared by calling `clear` method
         // since move occurs when dropping. Do you recall how drop is
         // called? It's `drop(val)`.
+        // Maybe we can change `head` and `tail` to `Box<struct(AtomicListHead,AtomicListHead)>`,
+        // which is implicitly pinned.
     }
+}
+
+impl<T: Sized, A: Adapter> GenericList for TinyArcList<T, A> {
+    type Node = AtomicListHead<T, A>;
 }
 
 pub struct TinyArcListIterator<T, A: Adapter> {
@@ -382,6 +491,104 @@ impl<T, A: Adapter> Iterator for TinyArcListReverseIterator<T, A> {
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.it.next()?;
         Some(unsafe { TinyArcList::<T, A>::make_arc_from(node.as_ref()) })
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct TinyArcCas<T: Sized> {
+    inner: Option<TinyArc<T>>,
+}
+
+impl<T: Sized> Clone for TinyArcCas<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl<T: Sized> TinyArcCas<T> {
+    #[inline]
+    fn as_mut_ptr(this: &Option<TinyArc<T>>) -> *mut TinyArcInner<T> {
+        this.as_ref().map_or(core::ptr::null_mut(), |v| unsafe {
+            (*TinyArc::inner(v)).as_ptr()
+        })
+    }
+
+    pub fn load(&self, order: Ordering) -> Option<TinyArc<T>> {
+        let this = unsafe { &*(self as *const Self as *const AtomicPtr<TinyArcInner<T>>) };
+        let inner = this.load(order);
+        if inner.is_null() {
+            return None;
+        }
+        Some(unsafe { TinyArc::from_inner(NonNull::new_unchecked(inner)) })
+    }
+
+    pub fn from_arc(arc: TinyArc<T>) -> Self {
+        Self { inner: Some(arc) }
+    }
+
+    pub const fn new(inner: Option<TinyArc<T>>) -> Self {
+        Self { inner }
+    }
+
+    // Why don't we use standard interface? Like
+    // ```
+    //     pub fn compare_exchange(
+    //         &self,
+    //         compare: Option<TinyArc<T>>,
+    //         new: Option<TinyArc<T>>,
+    //         success: Ordering,
+    //         failure: Ordering,
+    //     ) -> Result<Option<TinyArc<T>>, Option<TinyArc<T>>
+    //  ```
+    //
+    // When we are on the error path, like
+    // ```
+    //        match this.compare_exchange(compare_ptr, new_ptr, success, failure) {
+    //            Ok(_) => { ... }
+    //            // We are unable to determine if addr is still valid at this point,
+    //            // so we can't return an Option<TinyArc> on error.
+    //            Err(addr) => { ... }
+    //        }
+    // ```
+
+    // Return true if CAS is performed successfully.
+    pub fn cas(
+        &self,
+        compare: Option<TinyArc<T>>,
+        new: Option<TinyArc<T>>,
+        success: Ordering,
+        failure: Ordering,
+    ) -> bool {
+        let this = unsafe { &*(self as *const Self as *const AtomicPtr<TinyArcInner<T>>) };
+        let compare_ptr = Self::as_mut_ptr(&compare);
+        let new_ptr = Self::as_mut_ptr(&new);
+        // Must be noted, counters of these TinyArc are not updated atomically.
+        match this.compare_exchange(compare_ptr, new_ptr, success, failure) {
+            Ok(_) => {
+                if let Some(compare) = compare.as_ref() {
+                    unsafe { TinyArc::decrement_strong_count(compare) };
+                }
+                core::mem::forget(new);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub fn swap(&self, new: Option<TinyArc<T>>, order: Ordering) -> Option<TinyArc<T>> {
+        let this = unsafe { &*(self as *const Self as *const AtomicPtr<TinyArcInner<T>>) };
+        let new_ptr = Self::as_mut_ptr(&new);
+        let old_ptr = this.swap(new_ptr, order);
+        core::mem::forget(new);
+        if old_ptr.is_null() {
+            return None;
+        }
+        // old_ptr must be a valid *mut TinyArcInner<T>, we can use it to
+        // recover a TinyArc<T>.
+        Some(unsafe { TinyArc::from_ptr(old_ptr) })
     }
 }
 
