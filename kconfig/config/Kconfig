@@ -82,6 +82,10 @@ config SOFT_TIMER
     default y
     bool "Enable soft timer"
 
+config EVENT_FLAGS
+    default n
+    bool "Enable event flags"
+
 config ROBIN_SCHEDULER
     default y
     bool "Enable robin scheduler"
