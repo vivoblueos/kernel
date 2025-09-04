@@ -414,7 +414,10 @@ impl<T> Ilist<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.head().read().next().is_some_and(|v| v.is(self.tail()))
+        self.head()
+            .read()
+            .next()
+            .is_some_and(|v| Arc::is(v, self.tail()))
     }
 
     pub fn push_back(&mut self, n: SpinArc<Node<T>>) {
