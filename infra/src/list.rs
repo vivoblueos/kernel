@@ -15,3 +15,7 @@
 pub mod singly_linked_list;
 pub mod typed_atomic_ilist;
 pub mod typed_ilist;
+
+pub trait GenericList {
+    type Node;
+}
