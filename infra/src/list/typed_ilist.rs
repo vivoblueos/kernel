@@ -231,10 +231,110 @@ mod tests {
         let mut b = Foo::default();
         assert!(b.lh.is_detached());
         assert!(Ty::insert_after(&mut a.lh, &mut b.lh));
+        assert!(!Ty::insert_after(&mut a.lh, &mut b.lh));
         assert!(!a.lh.is_detached());
         assert!(!b.lh.is_detached());
         Ty::detach(&mut b.lh);
         assert!(a.lh.is_detached());
         assert!(b.lh.is_detached());
+        assert!(!Ty::detach(&mut b.lh));
+    }
+
+    #[test]
+    fn test_insert_before() {
+        type Ty = ListHead<Foo, OffsetOfLh>;
+        let mut a = Foo::default();
+        assert!(a.lh.is_detached());
+        let mut b = Foo::default();
+        assert!(b.lh.is_detached());
+        assert!(Ty::insert_before(&mut a.lh, &mut b.lh));
+        assert!(!Ty::insert_before(&mut a.lh, &mut b.lh));
+        assert!(!a.lh.is_detached());
+        assert!(!b.lh.is_detached());
+        Ty::detach(&mut b.lh);
+        assert!(a.lh.is_detached());
+        assert!(b.lh.is_detached());
+    }
+
+    #[test]
+    fn test_listiterator() {
+        let list_head = ListHead::<i32, OffsetOfLh>::default();
+        let mut iter = ListIterator::new(&list_head, None);
+
+        let result = iter.next();
+        assert!(result.is_none());
+
+        let node1 = Box::new(ListHead::<i32, OffsetOfLh> {
+            prev: None,
+            next: None,
+            _t: PhantomData,
+            _a: PhantomData,
+        });
+        let node2 = Box::new(ListHead::<i32, OffsetOfLh> {
+            prev: None,
+            next: None,
+            _t: PhantomData,
+            _a: PhantomData,
+        });
+
+        let node1_leaked = Box::leak(node1);
+        let node2_leaked = Box::leak(node2);
+        node1_leaked.next = Some(NonNull::from(&mut *node2_leaked));
+
+        let ptr1 = NonNull::from(node1_leaked);
+        let ptr2 = NonNull::from(node2_leaked);
+
+        let mut iter = ListIterator::<i32, OffsetOfLh> {
+            next: Some(ptr1),
+            tail: Some(ptr2),
+        };
+        assert_eq!(iter.next(), Some(ptr1));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Tail node is specified, but encountered None during iteration")]
+    fn test_listiterator_shoild_panic() {
+        let mut dummy = ListHead::<i32, OffsetOfLh>::default();
+        let tail_ptr = NonNull::from(&mut dummy);
+        let mut iter = ListIterator::<i32, OffsetOfLh> {
+            next: None,
+            tail: Some(tail_ptr),
+        };
+        iter.next();
+    }
+
+    #[test]
+    fn test_listreverseiterator() {
+        let list_head = ListHead::<i32, OffsetOfLh>::default();
+        let mut iter = ListReverseIterator::new(&list_head, None);
+
+        let result = iter.next();
+        assert!(result.is_none());
+
+        let mut node1 = Box::new(ListHead::<i32, OffsetOfLh> {
+            prev: None,
+            next: None,
+            _t: PhantomData,
+            _a: PhantomData,
+        });
+        let mut node2 = Box::new(ListHead::<i32, OffsetOfLh> {
+            prev: None,
+            next: None,
+            _t: PhantomData,
+            _a: PhantomData,
+        });
+        let node1_leaked = Box::leak(node1);
+        let node2_leaked = Box::leak(node2);
+        node1_leaked.prev = Some(NonNull::from(&mut *node2_leaked));
+
+        let ptr1 = NonNull::from(node1_leaked);
+        let ptr2 = NonNull::from(node2_leaked);
+        let mut iter = ListReverseIterator::<i32, OffsetOfLh> {
+            prev: Some(ptr1),
+            head: Some(ptr2),
+        };
+        assert_eq!(iter.next(), Some(ptr1));
+        assert!(iter.next().is_none());
     }
 }

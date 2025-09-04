@@ -833,7 +833,8 @@ mod tests {
             rb.init(b.as_mut_ptr(), 4);
 
             // Push some data into the buffer
-            rb.writer().push(|buf| {
+            let mut w = rb.writer();
+            w.push(|buf| {
                 buf[0] = 1;
                 buf[1] = 2;
                 buf[2] = 3;
@@ -850,6 +851,43 @@ mod tests {
 
             // Buffer should be empty now
             assert!(rb.is_empty());
+
+            // Pop slices and pop bufs from empty
+            let ps = r.pop_slices();
+            assert_eq!(0, ps[0].len());
+            assert_eq!(0, ps[1].len());
+
+            let mut w = rb.writer();
+            let ps = w.push(|buf| {
+                buf[0] = 4;
+                1
+            });
+
+            r.pop_done(1);
+
+            let mut w = rb.writer();
+            let ps = w.push(|buf| {
+                buf[0] = 4;
+                1
+            });
+
+            // Start is 4, end is 5
+            let ps = r.pop_slices();
+            assert_eq!(1, ps[0].len());
+            assert_eq!(0, ps[1].len());
+
+            let mut w = rb.writer();
+            w.push(|buf| {
+                buf[0] = 1;
+                buf[1] = 2;
+                buf[2] = 3;
+                3
+            });
+
+            // Start is 0, end is 0
+            let ps = r.pop_slices();
+            assert_eq!(4, ps[0].len());
+            assert_eq!(0, ps[1].len());
         }
     }
 

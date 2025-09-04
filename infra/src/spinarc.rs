@@ -482,7 +482,7 @@ mod tests {
             let tmp = prev.read().next.as_ref().unwrap().clone();
             prev = tmp;
         }
-        let mut cursor = Some(head);
+        let mut cursor = Some(head.clone());
         let mut counter = 0;
         while cursor.is_some() {
             assert_eq!(counter, **cursor.as_ref().unwrap().read());
@@ -490,12 +490,19 @@ mod tests {
             let tmp = cursor.unwrap().read().next.clone();
             cursor = tmp;
         }
+
+        let mut prev = head.clone();
+        for i in 1..2000 {
+            let next = Arc::new(RwLock::new(Node::new(0)));
+            let wrong_version = Node::versioned_insert_after(Some(i), &mut prev, next);
+            assert!(!wrong_version);
+        }
     }
 
     #[test]
     fn insert_before_many() {
         type Node = IlistNode<usize>;
-        let tail = Arc::new(RwLock::new(Node::new(0)));
+        let mut tail = Arc::new(RwLock::new(Node::new(0)));
         let mut me = tail.clone();
         for i in 1..1024 {
             let prev = Arc::new(RwLock::new(Node::new(i)));
@@ -503,10 +510,43 @@ mod tests {
             let tmp = me.read().prev.as_ref().unwrap().clone();
             me = tmp;
         }
-        let mut cursor = Some(tail);
+        let mut cursor = Some(tail.clone());
         let mut counter = 0;
         while cursor.is_some() {
             assert_eq!(counter, **cursor.as_ref().unwrap().read());
+            counter += 1;
+            let tmp = cursor.unwrap().read().prev.clone();
+            cursor = tmp;
+        }
+
+        for i in 0..2000 {
+            if i == 1 {
+                continue;
+            }
+            let prev = Arc::new(RwLock::new(Node::new(0)));
+            let wrong_version = Node::versioned_insert_before(Some(i), &mut me, prev);
+            assert!(!wrong_version);
+        }
+
+        let mut a = Arc::new(RwLock::new(Node::new(0)));
+        let mut b = Arc::new(RwLock::new(Node::new(1)));
+        Node::insert_before(&mut b, a);
+        let insert_not_detached = Node::insert_before(&mut me, b);
+        assert!(!insert_not_detached);
+
+        let prev = Arc::new(RwLock::new(Node::new(1025)));
+        let result = Node::insert_before(&mut tail, prev);
+        assert!(result);
+        let mut cursor = Some(tail.clone());
+        let mut counter = 0;
+        while cursor.is_some() {
+            if counter == 0 {
+                assert_eq!(counter, **cursor.as_ref().unwrap().read());
+            } else if counter == 1 {
+                assert_eq!(1025, **cursor.as_ref().unwrap().read());
+            } else {
+                assert_eq!(counter - 1, **cursor.as_ref().unwrap().read());
+            }
             counter += 1;
             let tmp = cursor.unwrap().read().prev.clone();
             cursor = tmp;
@@ -518,7 +558,7 @@ mod tests {
         type Node = IlistNode<usize>;
         let mut a = Arc::new(RwLock::new(Node::new(0)));
         let mut b = Arc::new(RwLock::new(Node::new(1)));
-        let c = Arc::new(RwLock::new(Node::new(2)));
+        let mut c = Arc::new(RwLock::new(Node::new(2)));
         Node::insert_after(&mut b, c.clone());
         assert!(b.read().prev.is_none());
         assert!(b.read().next.is_some());
@@ -532,10 +572,192 @@ mod tests {
         assert!(a.read().prev.is_none());
         assert_eq!(**a.read().next.as_ref().unwrap().read(), 1);
         assert_eq!(**c.read().prev.as_ref().unwrap().read(), 1);
+
+        for i in 1..1000 {
+            let wrong_version = Node::versioned_detach(Some(i), &mut b);
+            assert!(!wrong_version);
+        }
+
         Node::detach(&mut b);
+
+        let twice_detached = Node::detach(&mut b);
+        assert!(!twice_detached);
+
         assert!(b.read().is_detached());
         assert_eq!(**a.read().next.as_ref().unwrap().read(), 2);
         assert_eq!(**c.read().prev.as_ref().unwrap().read(), 0);
+        // We still have a <-> c, if we don't detach any of them, memory leaks.
+        Node::detach(&mut a);
+    }
+
+    #[test]
+    fn remove_after() {
+        type Node = IlistNode<usize>;
+
+        let mut me = SpinArc::new(RwLock::new(Node::new(0)));
+        let result = Node::remove_after(&mut me);
+        assert!(result.is_none());
+
+        let mut a = Arc::new(RwLock::new(Node::new(0)));
+        let mut b = Arc::new(RwLock::new(Node::new(1)));
+        let mut c = Arc::new(RwLock::new(Node::new(2)));
+        Node::insert_after(&mut b, c.clone());
+        Node::insert_before(&mut b, a.clone());
+
+        let result = Node::remove_after(&mut a);
+        assert_eq!(**result.unwrap().read(), 1);
+        assert!(a.read().next.is_some());
+        assert!(a.read().prev.is_none());
+        assert!(c.read().prev.is_some());
+        assert!(c.read().next.is_none());
+        assert_eq!(**a.read().next.as_ref().unwrap().read(), 2);
+        assert_eq!(**c.read().prev.as_ref().unwrap().read(), 0);
+    }
+
+    #[test]
+    fn mutex_iter() {
+        type Node = IlistNode<usize>;
+
+        let mut node1 = Arc::new(RwLock::new(Node::new(1)));
+        let node2 = Arc::new(RwLock::new(Node::new(2)));
+
+        Node::insert_after(&mut node1, node2);
+
+        let mut iter: MutexIter<'_, usize> = MutexIter::new(&node1);
+
+        let mutex_guard: &WriteGuard<'_, IlistNode<usize>> = &iter.mutex;
+        assert_eq!(***mutex_guard, 1);
+
+        let current = iter.next().unwrap();
+        let current_guard = current.read();
+        assert_eq!(**current_guard, 2);
+
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn threaded_mutex_iter() {
+        use std::time::Duration;
+        type Node = IlistNode<usize>;
+
+        let node1 = Arc::new(RwLock::new(Node::new(1)));
+        let mut node2 = Arc::new(RwLock::new(Node::new(2)));
+        let node3 = Arc::new(RwLock::new(Node::new(3)));
+
+        Node::insert_before(&mut node2, node1.clone());
+        Node::insert_after(&mut node2, node3.clone());
+
+        let shared_head = node1.clone();
+
+        let mut readers = Vec::new();
+        for i in 0..5 {
+            let head = shared_head.clone();
+            readers.push(thread::spawn(move || {
+                for _ in 0..10 {
+                    thread::sleep(Duration::from_millis(5 * i));
+                    let iter = MutexIter::new(&head);
+                    let vals: Vec<_> = iter.map(|n| **n.read()).collect();
+                    assert!(vals == vec![2, 3] || vals == vec![2, 30]);
+                }
+            }));
+        }
+
+        let writer = {
+            let head = shared_head.clone();
+            thread::spawn(move || {
+                for _ in 0..10 {
+                    thread::sleep(Duration::from_millis(20));
+                    {
+                        let mut guard = node3.write();
+                        **guard = 30;
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                    {
+                        let mut guard = node3.write();
+                        **guard = 3;
+                    }
+                }
+            })
+        };
+
+        for r in readers {
+            r.join().unwrap();
+        }
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn vec_iter() {
+        type Node = IlistNode<usize>;
+
+        let mut node1 = Arc::new(RwLock::new(Node::new(1)));
+        let node2 = Arc::new(RwLock::new(Node::new(2)));
+
+        Node::insert_after(&mut node1, node2);
+
+        let mut iter: VerIter<usize> = VerIter::new(&node1);
+
+        let current = iter.next().unwrap();
+        assert_eq!(current.0, 1);
+        assert_eq!(**current.1.read(), 2);
+
+        assert!(iter.next().is_none());
+
+        let mut node1 = Arc::new(RwLock::new(Node::new(1)));
+        let node2 = Arc::new(RwLock::new(Node::new(2)));
+
+        Node::insert_after(&mut node1, node2);
+
+        let mut iter: VerIter<usize> = VerIter::new(&node1);
+
+        {
+            let mut write_guard = node1.write();
+            write_guard.increment_version();
+        }
+
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn i_list() {
+        type Node = IlistNode<usize>;
+
+        let mut i_list: Ilist<usize> = Ilist::new();
+        assert!(i_list.is_empty());
+
+        let a = Arc::new(RwLock::new(Node::new(0)));
+        let b = Arc::new(RwLock::new(Node::new(1)));
+        let c = Arc::new(RwLock::new(Node::new(2)));
+
+        i_list.push_back(a);
+        i_list.push_back(b);
+        i_list.push_back(c);
+
+        let head = i_list.head();
+        assert!(head.read().prev.is_none());
+        assert!(head.read().object.is_none());
+        assert_eq!(**head.read().next.as_ref().unwrap().read(), 0);
+
+        let tail = i_list.tail();
+        assert_eq!(**tail.read().prev.as_ref().unwrap().read(), 2);
+        assert!(tail.read().object.is_none());
+        assert!(tail.read().next.is_none());
+
+        let first = i_list.pop_front();
+        assert_eq!(**first.unwrap().read(), 0);
+
+        let head = i_list.head();
+        assert!(head.read().prev.is_none());
+        assert!(head.read().object.is_none());
+        assert_eq!(**head.read().next.as_ref().unwrap().read(), 1);
+
+        let first = i_list.pop_front();
+        assert_eq!(**first.unwrap().read(), 1);
+
+        let head = i_list.head();
+        assert!(head.read().prev.is_none());
+        assert!(head.read().object.is_none());
+        assert_eq!(**head.read().next.as_ref().unwrap().read(), 2);
     }
 
     #[bench]

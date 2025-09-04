@@ -604,11 +604,15 @@ mod tests {
     impl_simple_intrusive_adapter!(OffsetOfCsl, Thread, control_status_list);
     impl_simple_intrusive_adapter!(OffsetOfTl, Thread, timer_list);
 
+    type ControlStatusList = TinyArcList<Thread, OffsetOfCsl>;
+    type TimerList = TinyArcList<Thread, OffsetOfTl>;
+
     #[derive(Default, Debug)]
     pub struct Thread {
-        pub control_status_list: AtomicListHead<Thread, OffsetOfCsl>,
-        pub timer_list: AtomicListHead<Thread, OffsetOfTl>,
+        pub control_status_list: <ControlStatusList as GenericList>::Node,
+        pub timer_list: <TimerList as GenericList>::Node,
         pub id: usize,
+        pub prio: usize,
     }
 
     impl Thread {
@@ -622,102 +626,130 @@ mod tests {
 
     #[test]
     fn test_basic() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type TlList = TinyArcList<Thread, OffsetOfTl>;
         let mut t = TinyArc::new(Thread::default());
         assert_eq!(&t.control_status_list as *const _, unsafe {
-            CslList::list_head_of_mut_unchecked(&mut t)
+            ControlStatusList::list_head_of_mut_unchecked(&mut t)
         } as *const _,);
-        assert_eq!(
-            &t.timer_list as *const _,
-            unsafe { TlList::list_head_of_mut_unchecked(&mut t) } as *const _,
-        );
+        assert_eq!(&t.timer_list as *const _, unsafe {
+            TimerList::list_head_of_mut_unchecked(&mut t)
+        } as *const _,);
+    }
+
+    #[test]
+    fn test_get_mut() {
+        let mut t = TinyArc::new(0);
+        let _clone1 = t.clone();
+        assert!(TinyArc::<_>::get_mut(&mut t).is_none());
     }
 
     #[test]
     fn test_detach_during_iter() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
+        type L = <ControlStatusList as GenericList>::Node;
         let mut head = RwLock::new(L::default());
         let mut w = head.write();
         let t = TinyArc::new(Thread::default());
-        CslList::insert_after(&mut *w, t);
+        ControlStatusList::insert_after(&mut *w, t);
         for mut e in TinyArcListIterator::new(&*w, None) {
-            CslList::detach(&mut e);
+            ControlStatusList::detach(&mut e);
         }
     }
 
     #[test]
+    fn test_insert_after_false() {
+        type L = <ControlStatusList as GenericList>::Node;
+        let mut head = L::default();
+        let mut t = TinyArc::new(Thread::new(1));
+        unsafe {
+            let mut head2 = ControlStatusList::list_head_of_mut_unchecked(&mut t);
+            AtomicListHead::insert_before(&mut head, head2);
+        }
+
+        let result = ControlStatusList::insert_after(&mut head, t);
+
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_push_back_false() {
+        type L = <ControlStatusList as GenericList>::Node;
+        let mut l = ControlStatusList::default();
+        l.init();
+
+        let mut head = L::default();
+        let mut t = TinyArc::new(Thread::new(1));
+        unsafe {
+            let mut head2 = ControlStatusList::list_head_of_mut_unchecked(&mut t);
+            AtomicListHead::insert_before(&mut head, head2);
+        }
+
+        let result = ControlStatusList::push_back(&mut l, t);
+
+        assert!(!result);
+    }
+
+    #[test]
     fn test_insert_and_detach() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
+        type L = <ControlStatusList as GenericList>::Node;
         let n = 4;
         let mut head = L::default();
         for i in 0..n {
-            let t = Ty::new(Thread::new(i));
-            assert_eq!(Ty::strong_count(&t), 1);
-            CslList::insert_after(&mut head, t.clone());
-            assert_eq!(Ty::strong_count(&t), 2);
+            let t = TinyArc::new(Thread::new(i));
+            assert_eq!(TinyArc::strong_count(&t), 1);
+            ControlStatusList::insert_after(&mut head, t.clone());
+            assert_eq!(TinyArc::strong_count(&t), 2);
         }
         let mut counter = (n - 1) as isize;
         for mut i in TinyArcListIterator::new(&head, None) {
             assert_eq!(i.id, counter as usize);
-            assert_eq!(Ty::strong_count(&i), 2);
+            assert_eq!(TinyArc::strong_count(&i), 2);
             counter -= 1;
-            assert!(CslList::detach(&mut i));
-            assert_eq!(Ty::strong_count(&i), 1);
+            assert!(ControlStatusList::detach(&mut i));
+            assert_eq!(TinyArc::strong_count(&i), 1);
         }
     }
 
     #[test]
     fn test_insert_before_and_detach() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
+        type L = <ControlStatusList as GenericList>::Node;
         let n = 4;
         let mut tail = L::default();
         for i in 0..n {
-            let t = Ty::new(Thread::new(i));
-            assert_eq!(Ty::strong_count(&t), 1);
-            CslList::insert_before(&mut tail, t.clone());
-            assert_eq!(Ty::strong_count(&t), 2);
+            let t = TinyArc::new(Thread::new(i));
+            assert_eq!(TinyArc::strong_count(&t), 1);
+            ControlStatusList::insert_before(&mut tail, t.clone());
+            assert_eq!(TinyArc::strong_count(&t), 2);
         }
         let mut counter = (n - 1) as isize;
         for mut i in TinyArcListReverseIterator::new(&tail, None) {
             assert_eq!(i.id, counter as usize);
-            assert_eq!(Ty::strong_count(&i), 2);
+            assert_eq!(TinyArc::strong_count(&i), 2);
             counter -= 1;
-            assert!(CslList::detach(&mut i));
-            assert_eq!(Ty::strong_count(&i), 1);
+            assert!(ControlStatusList::detach(&mut i));
+            assert_eq!(TinyArc::strong_count(&i), 1);
         }
     }
 
     #[test]
     fn test_push_and_pop() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
+        type L = <ControlStatusList as GenericList>::Node;
         let n = 16;
-        let mut l = CslList::default();
+        let mut l = ControlStatusList::default();
         l.init();
         for i in 0..n {
-            let mut t = Ty::new(Thread::new(i));
-            assert_eq!(Ty::strong_count(&t), 1);
-            let node = unsafe { CslList::list_head_of_mut_unchecked(&mut t) };
+            let mut t = TinyArc::new(Thread::new(i));
+            assert_eq!(TinyArc::strong_count(&t), 1);
+            let node = unsafe { ControlStatusList::list_head_of_mut_unchecked(&mut t) };
             assert!(node.is_detached());
             assert!(l.push_back(t.clone()));
-            assert!(!CslList::insert_before(&mut l.tail, t.clone()));
-            assert_eq!(Ty::strong_count(&t), 2);
+            assert!(!ControlStatusList::insert_before(&mut l.tail, t.clone()));
+            assert_eq!(TinyArc::strong_count(&t), 2);
         }
         for i in 0..n {
             let t = l.pop_front();
             assert!(t.is_some());
             let t = unsafe { t.unwrap_unchecked() };
             assert_eq!(t.id, i);
-            assert_eq!(Ty::strong_count(&t), 1);
+            assert_eq!(TinyArc::strong_count(&t), 1);
         }
         assert!(l.pop_front().is_none());
         assert!(l.is_empty());
@@ -725,44 +757,40 @@ mod tests {
 
     #[test]
     fn test_push_and_drop() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
+        type L = <ControlStatusList as GenericList>::Node;
         let n = 16;
-        let mut l = CslList::default();
+        let mut l = ControlStatusList::default();
         l.init();
         for i in 0..n {
-            let mut t = Ty::new(Thread::new(i));
-            assert_eq!(Ty::strong_count(&t), 1);
-            let node = unsafe { CslList::list_head_of_mut_unchecked(&mut t) };
+            let mut t = TinyArc::new(Thread::new(i));
+            assert_eq!(TinyArc::strong_count(&t), 1);
+            let node = unsafe { ControlStatusList::list_head_of_mut_unchecked(&mut t) };
             assert!(node.is_detached());
             assert!(l.push_back(t.clone()));
-            assert!(!CslList::insert_before(&mut l.tail, t.clone()));
-            assert_eq!(Ty::strong_count(&t), 2);
+            assert!(!ControlStatusList::insert_before(&mut l.tail, t.clone()));
+            assert_eq!(TinyArc::strong_count(&t), 2);
         }
         l.clear();
     }
 
     #[test]
     fn test_detach_during_iter_2() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
-        let mut l = CslList::default();
+        type L = <ControlStatusList as GenericList>::Node;
+        let mut l = ControlStatusList::default();
         l.init();
         let mut n = 16;
         for i in 0..n {
-            let t = Ty::new(Thread::new(i));
-            assert_eq!(Ty::strong_count(&t), 1);
+            let t = TinyArc::new(Thread::new(i));
+            assert_eq!(TinyArc::strong_count(&t), 1);
             assert!(l.push_back(t.clone()));
         }
 
         loop {
             let mut iter = l.iter();
             if let Some(mut t) = iter.next() {
-                assert_eq!(Ty::strong_count(&t), 2);
-                assert!(CslList::detach(&mut t));
-                assert_eq!(Ty::strong_count(&t), 1);
+                assert_eq!(TinyArc::strong_count(&t), 2);
+                assert!(ControlStatusList::detach(&mut t));
+                assert_eq!(TinyArc::strong_count(&t), 1);
                 n -= 1;
             } else {
                 break;
@@ -773,16 +801,14 @@ mod tests {
 
     #[test]
     fn test_detach_and_insert_during_iter() {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
-        let mut l = CslList::default();
+        type L = <ControlStatusList as GenericList>::Node;
+        let mut l = ControlStatusList::default();
         l.init();
         let n = 16;
         for i in 0..n {
-            let mut t = Ty::new(Thread::new(i));
-            assert_eq!(Ty::strong_count(&t), 1);
-            let node = unsafe { CslList::list_head_of_mut_unchecked(&mut t) };
+            let mut t = TinyArc::new(Thread::new(i));
+            assert_eq!(TinyArc::strong_count(&t), 1);
+            let node = unsafe { ControlStatusList::list_head_of_mut_unchecked(&mut t) };
             assert!(node.is_detached());
             assert!(l.push_back(t.clone()));
         }
@@ -790,9 +816,9 @@ mod tests {
         for i in 0..n {
             let mut iter = l.iter();
             if let Some(mut t) = iter.next() {
-                assert_eq!(Ty::strong_count(&t), 2);
-                assert!(CslList::detach(&mut t));
-                assert_eq!(Ty::strong_count(&t), 1);
+                assert_eq!(TinyArc::strong_count(&t), 2);
+                assert!(ControlStatusList::detach(&mut t));
+                assert_eq!(TinyArc::strong_count(&t), 1);
                 // insert back to the list again
                 l.push_back(t.clone());
             }
@@ -800,57 +826,226 @@ mod tests {
         l.clear();
     }
 
+    #[test]
+    fn test_into_raw_and_from_raw() {
+        let t = TinyArc::new(Thread::default());
+        assert_eq!(TinyArc::strong_count(&t), 1);
+        let ptr = TinyArc::into_raw(t);
+        let t2 = unsafe { TinyArc::from_raw(ptr) };
+        assert_eq!(TinyArc::strong_count(&t2), 1);
+    }
+
     #[bench]
     fn bench_insert_and_detach(b: &mut Bencher) {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
+        type L = <ControlStatusList as GenericList>::Node;
         let n = 1 << 16;
         b.iter(|| {
             let mut head = L::default();
             let mut tail = L::default();
             L::insert_after(&mut head, &mut tail);
             for i in 0..n {
-                let mut t = Ty::new(Thread::new(i));
-                assert_eq!(Ty::strong_count(&t), 1);
-                CslList::insert_after(&mut head, t.clone());
-                assert_eq!(Ty::strong_count(&t), 2);
+                let mut t = TinyArc::new(Thread::new(i));
+                assert_eq!(TinyArc::strong_count(&t), 1);
+                ControlStatusList::insert_after(&mut head, t.clone());
+                assert_eq!(TinyArc::strong_count(&t), 2);
             }
             let mut counter = (n - 1) as isize;
             for mut i in TinyArcListIterator::new(&head, Some(NonNull::from_ref(&tail))) {
                 assert_eq!(i.id, counter as usize);
-                assert_eq!(Ty::strong_count(&i), 2);
+                assert_eq!(TinyArc::strong_count(&i), 2);
                 counter -= 1;
-                assert!(CslList::detach(&mut i));
-                assert_eq!(Ty::strong_count(&i), 1);
+                assert!(ControlStatusList::detach(&mut i));
+                assert_eq!(TinyArc::strong_count(&i), 1);
             }
         });
     }
 
     #[bench]
     fn bench_insert_and_detach_1(b: &mut Bencher) {
-        type Ty = TinyArc<Thread>;
-        type CslList = TinyArcList<Thread, OffsetOfCsl>;
-        type L = AtomicListHead<Thread, OffsetOfCsl>;
         let n = 1 << 16;
         b.iter(|| {
+            type L = <ControlStatusList as GenericList>::Node;
             let mut head = L::default();
-            let mut tail = L::default();
-            L::insert_after(&mut head, &mut tail);
             for i in 0..n {
-                let mut t = Ty::new(Thread::new(i));
-                assert_eq!(Ty::strong_count(&t), 1);
-                CslList::insert_before(&mut tail, t.clone());
-                assert_eq!(Ty::strong_count(&t), 2);
+                ControlStatusList::insert_after(&mut head, TinyArc::new(Thread::new(i)));
             }
-            for (counter, mut i) in
-                TinyArcListIterator::new(&head, Some(NonNull::from_ref(&tail))).enumerate()
-            {
-                assert_eq!(i.id, counter);
-                assert_eq!(Ty::strong_count(&i), 2);
-                assert!(CslList::detach(&mut i));
-                assert_eq!(Ty::strong_count(&i), 1);
+            for mut i in TinyArcListIterator::new(&head, None) {
+                ControlStatusList::detach(&mut i);
             }
         });
+    }
+
+    #[bench]
+    fn bench_insert_and_detach_1_std(b: &mut Bencher) {
+        use alloc::{collections::linked_list::LinkedList, sync::Arc};
+        let n = 1 << 16;
+        b.iter(|| {
+            let mut mu = spin::Mutex::new(LinkedList::new());
+            for i in 0..n {
+                let Some(mut guard) = mu.try_lock() else {
+                    continue;
+                };
+                guard.push_back(Arc::new(Thread::new(i)));
+            }
+            for i in 0..n {
+                let Some(mut guard) = mu.try_lock() else {
+                    continue;
+                };
+                guard.pop_front();
+            }
+        });
+    }
+
+    // When a Thread belongs to two lists.
+    #[bench]
+    fn bench_insert_and_detach_2(b: &mut Bencher) {
+        type Csl = <ControlStatusList as GenericList>::Node;
+        type Tl = <TimerList as GenericList>::Node;
+        let n = 1 << 16;
+        b.iter(|| {
+            let mut csl_head = Csl::default();
+            let mut tl_head = Tl::default();
+            for i in 0..n {
+                let t = TinyArc::new(Thread::new(i));
+                ControlStatusList::insert_after(&mut csl_head, t.clone());
+                TimerList::insert_after(&mut tl_head, t);
+            }
+            for mut i in TinyArcListIterator::new(&csl_head, None) {
+                ControlStatusList::detach(&mut i);
+            }
+            for mut i in TinyArcListIterator::new(&tl_head, None) {
+                TimerList::detach(&mut i);
+            }
+        });
+    }
+
+    // When a Thread belongs to two lists.
+    #[bench]
+    fn bench_insert_and_detach_2_std(b: &mut Bencher) {
+        use alloc::{collections::linked_list::LinkedList, sync::Arc};
+        let n = 1 << 16;
+        b.iter(|| {
+            let mut l0 = spin::Mutex::new(LinkedList::new());
+            let mut l1 = spin::Mutex::new(LinkedList::new());
+            for i in 0..n {
+                let t = Arc::new(Thread::new(i));
+                let Some(mut g0) = l0.try_lock() else {
+                    continue;
+                };
+                g0.push_back(t.clone());
+                let Some(mut g1) = l1.try_lock() else {
+                    continue;
+                };
+                g1.push_back(t);
+            }
+            for i in 0..n {
+                let Some(mut g0) = l0.try_lock() else {
+                    continue;
+                };
+                g0.pop_front();
+            }
+            for i in 0..n {
+                let Some(mut g1) = l1.try_lock() else {
+                    continue;
+                };
+                g1.pop_front();
+            }
+        });
+    }
+
+    #[test]
+    fn insert_by_prio() {
+        let mut head = <ControlStatusList as GenericList>::Node::new();
+        let mut t0 = TinyArc::new(Thread::new(0));
+        TinyArc::get_mut(&mut t0).unwrap().prio = 2;
+        let mut t1 = TinyArc::new(Thread::new(1));
+        TinyArc::get_mut(&mut t1).unwrap().prio = 0;
+        let mut t2 = TinyArc::new(Thread::new(2));
+        TinyArc::get_mut(&mut t2).unwrap().prio = 1;
+        let mut t3 = TinyArc::new(Thread::new(3));
+        TinyArc::get_mut(&mut t3).unwrap().prio = 0;
+        let cmp_prio = |l: &Thread, r: &Thread| l.prio.cmp(&r.prio);
+        let ok = ControlStatusList::insert_by(cmp_prio, &mut head, t0.clone());
+        assert!(ok);
+        let ok = ControlStatusList::insert_by(cmp_prio, &mut head, t1.clone());
+        assert!(ok);
+        let ok = ControlStatusList::insert_by(cmp_prio, &mut head, t2.clone());
+        assert!(ok);
+        let ok = ControlStatusList::insert_by(cmp_prio, &mut head, t3.clone());
+        assert!(ok);
+        // We expect the list is sorted as {t1, t3, t2, t0}.
+        let mut it = TinyArcListIterator::new(&head, None);
+        let mut fst = it.next().unwrap();
+        assert_eq!(TinyArc::as_ptr(&fst), TinyArc::as_ptr(&t1));
+        let ok = ControlStatusList::detach(&mut fst);
+        assert!(ok);
+        let mut sec = it.next().unwrap();
+        assert_eq!(TinyArc::as_ptr(&sec), TinyArc::as_ptr(&t3));
+        let ok = ControlStatusList::detach(&mut sec);
+        assert!(ok);
+        let mut third = it.next().unwrap();
+        assert_eq!(TinyArc::as_ptr(&third), TinyArc::as_ptr(&t2));
+        let ok = ControlStatusList::detach(&mut third);
+        assert!(ok);
+        let mut fourth = it.next().unwrap();
+        assert_eq!(TinyArc::as_ptr(&fourth), TinyArc::as_ptr(&t0));
+        let ok = ControlStatusList::detach(&mut fourth);
+        assert!(ok);
+    }
+
+    #[test]
+    fn test_arc_cas_basic() {
+        let t = TinyArc::new(42);
+        let cas = TinyArcCas::default();
+        assert!(cas.cas(None, Some(t.clone()), Ordering::SeqCst, Ordering::Relaxed));
+        assert!(TinyArc::is(&cas.load(Ordering::Relaxed).unwrap(), &t));
+        // 2 owners: t, cas
+        assert_eq!(TinyArc::strong_count(&t), 2);
+        assert!(!cas.cas(None, Some(t.clone()), Ordering::SeqCst, Ordering::Relaxed));
+        // 2 owners: t, cas
+        assert_eq!(TinyArc::strong_count(&t), 2);
+        let s = TinyArc::new(43);
+        // 1 owners: s
+        assert_eq!(TinyArc::strong_count(&s), 1);
+        assert!(cas.cas(
+            Some(t.clone()),
+            Some(s.clone()),
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        ));
+        // 2 owners: s, cas.
+        assert_eq!(TinyArc::strong_count(&s), 2);
+        assert!(TinyArc::is(&cas.load(Ordering::Relaxed).unwrap(), &s));
+        // 1 owner: t
+        assert_eq!(TinyArc::strong_count(&t), 1);
+        assert!(cas.cas(Some(s.clone()), None, Ordering::SeqCst, Ordering::Relaxed));
+        assert_eq!(TinyArc::strong_count(&s), 1);
+    }
+
+    #[test]
+    fn test_swap_basic() {
+        let cas = TinyArcCas::default();
+        let t = TinyArc::new(42);
+        let old = cas.swap(Some(t.clone()), Ordering::SeqCst);
+        assert!(old.is_none());
+        assert_eq!(TinyArc::strong_count(&t), 2);
+        let old = cas.swap(old, Ordering::SeqCst);
+        assert!(TinyArc::is(&old.unwrap(), &t));
+        assert_eq!(TinyArc::strong_count(&t), 1);
+    }
+
+    #[test]
+    fn test_swap_no_none() {
+        let cas = TinyArcCas::from_arc(TinyArc::new(42));
+        let s = TinyArc::new(43);
+        let old = cas.swap(Some(s.clone()), Ordering::SeqCst);
+        assert!(old.is_some());
+        assert_eq!(TinyArc::strong_count(old.as_ref().unwrap()), 1);
+        assert_eq!(TinyArc::strong_count(&s), 2);
+        assert_eq!(*old.unwrap(), 42);
+        let old = cas.swap(None, Ordering::SeqCst);
+        assert!(old.is_some());
+        assert_eq!(*old.unwrap(), 43);
+        assert_eq!(TinyArc::strong_count(&s), 1);
     }
 }

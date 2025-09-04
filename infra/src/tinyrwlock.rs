@@ -1118,4 +1118,51 @@ mod tests {
 
         assert!(m.try_upgradeable_read().unwrap().try_upgrade().is_ok());
     }
+
+    #[test]
+    #[should_panic(expected = "Too many lock readers, cannot safely proceed")]
+    fn test_acquire_reader_panic() {
+        use crate::tinyrwlock::Usize;
+
+        let lock = RwLock::new(0);
+        unsafe {
+            let lock_ptr = &lock.lock as *const AtomicUsize as *mut AtomicUsize;
+            (*lock_ptr).store(Usize::MAX / 2 + 1, Ordering::Relaxed);
+        }
+        let value = lock.acquire_reader();
+    }
+
+    #[test]
+    fn test_reader_writer_count() {
+        let lock = RwLock::new(0);
+        assert_eq!(lock.reader_count(), 0);
+        let read_guard = lock.read();
+        let write_guard = lock.try_write();
+        assert_eq!(lock.reader_count(), 1);
+        assert_eq!(lock.writer_count(), 0);
+        {
+            let read_guard = lock.read();
+            assert_eq!(lock.reader_count(), 2);
+        }
+        assert_eq!(lock.reader_count(), 1);
+    }
+
+    #[test]
+    fn test_get_mut() {
+        let mut lock = RwLock::from(0);
+        *lock.get_mut() = 10;
+        assert_eq!(*lock.read(), 10);
+    }
+
+    #[test]
+    fn test_upgrade() {
+        let lock: RwLock<i32> = RwLock::default();
+        let read_guard = lock.upgradeable_read();
+        assert_eq!(lock.reader_count(), 1);
+        assert_eq!(lock.writer_count(), 0);
+
+        let write_guard = read_guard.upgrade();
+        assert_eq!(lock.reader_count(), 0);
+        assert_eq!(lock.writer_count(), 1);
+    }
 }
