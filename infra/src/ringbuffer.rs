@@ -43,6 +43,22 @@ impl BoxedRingBuffer {
         }
     }
 
+    /// Create a new ring buffer with the given size and given mem
+    pub fn new_with_mem(size: usize, buf: *mut u8) -> Self {
+        let mut buf = unsafe { Box::from_raw(slice::from_raw_parts_mut(buf, size)) };
+        Self {
+            inner: unsafe { RingBuffer::new_with_buffer(buf.as_mut_ptr(), buf.len()) },
+            _box: buf, // hold the buffer to prevent it from being freed
+        }
+    }
+
+    /// reset buffer with hold buffer by self
+    pub fn reset(&mut self) {
+        unsafe { self.inner.reset() };
+        let buf = &mut self._box;
+        self.inner = unsafe { RingBuffer::new_with_buffer(buf.as_mut_ptr(), buf.len()) };
+    }
+
     /// Get a reader for this ring buffer
     /// # Safety
     ///
@@ -374,6 +390,16 @@ impl Writer<'_> {
         // the actual data in the buffer) can be reordered down past it, which
         // will guarantee the reader sees them after reading from `end`.
         self.0.end.store(self.0.wrap(end + n), Ordering::Release);
+    }
+
+    pub fn push_front_done(&mut self, n: usize) {
+        let mut start = self.0.start.load(Ordering::Relaxed);
+        let len = self.0.len.load(Ordering::Relaxed);
+
+        if start <= n {
+            start = start + len * 2 - n;
+        }
+        self.0.start.store(self.0.wrap(start), Ordering::Release);
     }
 
     pub fn is_empty(&self) -> bool {

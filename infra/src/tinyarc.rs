@@ -332,6 +332,65 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
     pub fn iter(&self) -> TinyArcListIterator<T, A> {
         TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
     }
+
+    // Find a stable sorting position.
+    fn find_insert_position_by<Compare>(
+        compare: Compare,
+        it: TinyArcListIterator<T, A>,
+        val: &TinyArc<T>,
+    ) -> Option<TinyArc<T>>
+    where
+        Compare: Fn(&T, &T) -> core::cmp::Ordering,
+    {
+        use core::cmp::Ordering;
+        let mut last = None;
+        for other_val in it {
+            let ord = compare(val, &other_val);
+            if ord == Ordering::Less {
+                return last;
+            }
+            last = Some(other_val);
+        }
+        last
+    }
+
+    // Sort by ascending order.
+    #[inline]
+    pub fn insert_by<Compare>(
+        compare: Compare,
+        head: &mut AtomicListHead<T, A>,
+        val: TinyArc<T>,
+    ) -> bool
+    where
+        Compare: Fn(&T, &T) -> core::cmp::Ordering,
+    {
+        let Some(mut other_val) =
+            Self::find_insert_position_by(compare, TinyArcListIterator::new(head, None), &val)
+        else {
+            return Self::insert_after(head, val);
+        };
+        Self::insert_after(
+            unsafe { Self::list_head_of_mut_unchecked(&mut other_val) },
+            val,
+        )
+    }
+
+    pub fn push_by<Compare>(&mut self, compare: Compare, val: TinyArc<T>) -> bool
+    where
+        Compare: Fn(&T, &T) -> core::cmp::Ordering,
+    {
+        let Some(mut other_val) = Self::find_insert_position_by(
+            compare,
+            TinyArcListIterator::new(&self.head, Some(NonNull::from_ref(&self.tail))),
+            &val,
+        ) else {
+            return Self::insert_after(&mut self.head, val);
+        };
+        Self::insert_after(
+            unsafe { Self::list_head_of_mut_unchecked(&mut other_val) },
+            val,
+        )
+    }
 }
 
 impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {

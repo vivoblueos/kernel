@@ -130,7 +130,9 @@ mod tests {
     extern crate alloc;
     use super::*;
     use crate::{
-        allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
+        allocator, allocator::KernelAllocator, config,
+        support::DisableInterruptGuard, sync, time::WAITING_FOREVER,
+        types::Arc,
     };
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;
@@ -138,11 +140,12 @@ mod tests {
     use core::{
         mem::MaybeUninit,
         panic::PanicInfo,
+        ptr,
         sync::atomic::{AtomicUsize, Ordering},
     };
     #[cfg(use_defmt)]
     use defmt_rtt as _;
-    use spin::Mutex;
+    use spin::Lazy;
     use thread::{Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode};
 
     #[used]
@@ -372,6 +375,40 @@ mod tests {
             }
             sync::atomic_wait::atomic_wait(&TEST_ATOMIC_WAIT, n, None);
         }
+    }
+
+    static MQUEUE: Lazy<Arc<sync::mqueue::MessageQueue>> =
+        Lazy::new(|| Arc::new(sync::mqueue::MessageQueue::new(4, 2, ptr::null_mut())));
+    static TEST_SEND_CNT: AtomicUsize = AtomicUsize::new(0);
+
+    extern "C" fn test_mqueue() {
+        let buffer = [1u8; 4];
+        let result = MQUEUE.send(&buffer, 4, 512, sync::mqueue::SendMode::Normal);
+        assert!(result.is_ok());
+    }
+
+    extern "C" fn test_mqueue_cleanup() {
+        TEST_SEND_CNT.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn stress_mqueue() {
+        MQUEUE.init();
+        reset_and_queue_test_threads(test_mqueue, Some(test_mqueue_cleanup));
+        let l = unsafe { TEST_THREADS.len() };
+        let mut recv_cnt = 0;
+        let mut buffer = [0u8; 4];
+        loop {
+            if recv_cnt == l {
+                break;
+            }
+            let result = MQUEUE.recv(&mut buffer, 4, 512);
+            recv_cnt += 1;
+            assert!(result.is_ok());
+            assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
+            scheduler::yield_me();
+        }
+        while TEST_SEND_CNT.load(Ordering::Acquire) != l {}
     }
 
     static TEST_SWITCH_CONTEXT: AtomicUsize = AtomicUsize::new(0);
