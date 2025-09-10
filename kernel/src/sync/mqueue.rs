@@ -158,11 +158,11 @@ impl MessageQueue {
                 return Err(code::ENOTSUP);
             }
             let mut ticks = time::get_sys_ticks();
-            let mut sendqueue = self.pend_queues[SEND_TYPE].irqsave_lock();
+            let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
 
             drop(queue);
             let out_time =
-                scheduler::suspend_me_with_timeout(sendqueue, timeout, InsertMode::InsertToEnd);
+                scheduler::suspend_me_with_timeout(send_queue, timeout, InsertMode::InsertToEnd);
             if out_time {
                 return Err(code::ETIMEDOUT);
             }
@@ -203,9 +203,9 @@ impl MessageQueue {
         }
 
         queue.increment_recvable_count();
-        let mut recvqueue = queue.pend_queues[RECV_TYPE].irqsave_lock();
-        if MessageQueue::wakeup_pend_receiver(&mut recvqueue) {
-            drop(recvqueue);
+        let mut recv_queue = queue.pend_queues[RECV_TYPE].irqsave_lock();
+        if MessageQueue::wakeup_pend_receiver(&mut recv_queue) {
+            drop(recv_queue);
             drop(queue);
             scheduler::yield_me_now_or_later();
         }
@@ -230,11 +230,11 @@ impl MessageQueue {
                 return Err(code::ENOTSUP);
             }
             let mut ticks = time::get_sys_ticks();
-            let mut recvqueue = self.pend_queues[RECV_TYPE].irqsave_lock();
+            let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
 
             drop(queue);
             let out_time =
-                scheduler::suspend_me_with_timeout(recvqueue, timeout, InsertMode::InsertToEnd);
+                scheduler::suspend_me_with_timeout(recv_queue, timeout, InsertMode::InsertToEnd);
             if out_time {
                 return Err(code::ETIMEDOUT);
             }
@@ -259,9 +259,9 @@ impl MessageQueue {
         receiver.pop_done(queue.node_size);
         queue.increment_sendable_count();
 
-        let mut recvqueue = queue.pend_queues[SEND_TYPE].irqsave_lock();
-        if MessageQueue::wakeup_pend_receiver(&mut recvqueue) {
-            drop(recvqueue);
+        let mut send_queue = queue.pend_queues[SEND_TYPE].irqsave_lock();
+        if MessageQueue::wakeup_pend_receiver(&mut send_queue) {
+            drop(send_queue);
             drop(queue);
             scheduler::yield_me_now_or_later();
         }
@@ -272,13 +272,13 @@ impl MessageQueue {
         let mut queue = self.lock();
 
         // wakeup sender thread
-        let mut sendqueue = self.pend_queues[SEND_TYPE].irqsave_lock();
-        for mut entry in sendqueue.iter() {
+        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+        for mut entry in send_queue.iter() {
             let t = entry.thread.clone();
             scheduler::queue_ready_thread(thread::SUSPENDED, t);
             WaitQueue::detach(&mut entry);
         }
-        drop(sendqueue);
+        drop(send_queue);
         // reset ringbuffer
         queue.queue_buffer.reset();
 
