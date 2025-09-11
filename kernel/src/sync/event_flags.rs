@@ -162,7 +162,7 @@ impl EventFlags {
             locked_thread.set_event_flags_mask(flags);
             locked_thread.set_event_flags_mode(mode);
         }
-        let timed_out = scheduler::suspend_me_with_timeout(w, timeout);
+        let timed_out = scheduler::suspend_me_with_timeout(w, timeout, InsertMode::InsertToEnd);
         if timed_out {
             return Err(code::ETIMEDOUT);
         }
