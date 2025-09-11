@@ -28,7 +28,7 @@ use crate::{
     },
 };
 use core::sync::atomic::{AtomicUsize, Ordering};
-use scheduler::WaitQueue;
+use scheduler::{InsertMode, WaitQueue};
 use support::PerCpu;
 
 impl_simple_intrusive_adapter!(Sync, AtomicWaitEntry, sync_node);
@@ -115,12 +115,12 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         addr
     );
     if let Some(timeout) = timeout {
-        let res = scheduler::suspend_me_with_timeout(we, timeout);
+        let res = scheduler::suspend_me_with_timeout(we, timeout, InsertMode::InsertToEnd);
         if res {
             return Err(code::ETIMEDOUT);
         }
     } else {
-        let _ = scheduler::suspend_me_with_timeout(we, WAITING_FOREVER);
+        let _ = scheduler::suspend_me_with_timeout(we, WAITING_FOREVER, InsertMode::InsertToEnd);
     }
     Ok(())
 }

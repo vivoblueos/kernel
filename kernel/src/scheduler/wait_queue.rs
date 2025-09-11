@@ -12,15 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::InsertMode;
 use crate::{
     sync::SpinLockGuard,
     thread::ThreadNode,
-    types::{impl_simple_intrusive_adapter, ArcList, IlistHead},
+    types::{impl_simple_intrusive_adapter, Arc, ArcList, IlistHead},
 };
 
 impl_simple_intrusive_adapter!(OffsetOfWait, WaitEntry, wait_node);
 
 pub type WaitQueue = ArcList<WaitEntry, OffsetOfWait>;
+
+pub fn insert(wq: &mut WaitQueue, t: ThreadNode, mode: InsertMode) -> bool {
+    let e = Arc::new(WaitEntry {
+        wait_node: IlistHead::new(),
+        thread: t,
+    });
+    if mode == InsertMode::InsertByPrio {
+        return wq.push_by(compare_priority, e);
+    }
+    wq.push_back(e)
+}
 
 #[derive(Debug)]
 pub struct WaitEntry {
@@ -30,6 +42,11 @@ pub struct WaitEntry {
 
 impl !Send for WaitEntry {}
 impl !Sync for WaitEntry {}
+
+#[inline]
+pub(crate) fn compare_priority(lhs: &WaitEntry, rhs: &WaitEntry) -> core::cmp::Ordering {
+    lhs.thread.priority().cmp(&rhs.thread.priority())
+}
 
 pub(crate) struct WaitQueueGuardDropper<'a, const N: usize> {
     guards: [Option<SpinLockGuard<'a, WaitQueue>>; N],

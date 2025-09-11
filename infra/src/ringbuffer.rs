@@ -43,6 +43,7 @@ impl BoxedRingBuffer {
         }
     }
 
+    /// Create a new ring buffer with the given size and given mem
     pub fn new_with_mem(size: usize, buf: *mut u8) -> Self {
         let mut buf = unsafe { Box::from_raw(slice::from_raw_parts_mut(buf, size)) };
         Self {

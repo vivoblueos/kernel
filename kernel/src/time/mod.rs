@@ -19,6 +19,7 @@ use crate::{arch, boards, scheduler, support::DisableInterruptGuard, thread::Thr
 use blueos_kconfig::TICKS_PER_SECOND;
 use systick::SYSTICK;
 
+pub const NO_WAITING: usize = 0;
 pub const WAITING_FOREVER: usize = usize::MAX;
 
 pub fn systick_init(sys_clock: u32) -> bool {
