@@ -43,6 +43,15 @@ pub use fifo::*;
 pub use global_scheduler::*;
 pub(crate) use wait_queue::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum InsertMode {
+    /// Insert by priority
+    InsertByPrio,
+    /// Append to end
+    InsertToEnd,
+}
+
 pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
     [const { MaybeUninit::zeroed() }; NUM_CORES];
 
@@ -325,7 +334,11 @@ pub(crate) fn suspend_me_for(tick: usize) {
     assert!(arch::local_irq_enabled());
 }
 
-pub(crate) fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize) -> bool {
+pub(crate) fn suspend_me_with_timeout(
+    mut w: SpinLockGuard<'_, WaitQueue>,
+    ticks: usize,
+    insert_mode: InsertMode,
+) -> bool {
     assert!(ticks != 0);
     #[cfg(debugging_scheduler)]
     crate::trace!(
@@ -343,11 +356,8 @@ pub(crate) fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks
     let to_sp = next.saved_sp();
     let old = current_thread();
     let from_sp_ptr = old.saved_sp_ptr();
-    let entry = Arc::new(WaitEntry {
-        wait_node: IlistHead::<WaitEntry, OffsetOfWait>::new(),
-        thread: old.clone(),
-    });
-    let ok = w.push_back(entry);
+
+    let ok = wait_queue::insert(&mut w, old.clone(), insert_mode);
     assert!(ok);
     // old's context saving must happen before old is requeued to
     // ready queue.
