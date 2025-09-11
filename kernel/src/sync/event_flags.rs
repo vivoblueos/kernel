@@ -16,7 +16,7 @@ use super::SpinLock;
 use crate::{
     error::{code, Error},
     irq,
-    scheduler::{self, WaitQueue},
+    scheduler::{self, InsertMode, WaitQueue},
     thread,
     thread::Thread,
     time::WAITING_FOREVER,
