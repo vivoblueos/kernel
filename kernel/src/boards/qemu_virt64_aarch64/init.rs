@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::config;
-#[cfg(virtio)]
-use super::uart::{enable_uart, get_serial};
+use super::{
+    config,
+    uart::{enable_uart, get_serial},
+};
 use crate::{
     arch::{self, READY_CORES},
-    devices::{console, tty::n_tty::Tty, virtio},
+    devices::{console, tty::n_tty::Tty},
     error::Error,
     scheduler,
     support::SmpStagedInit,
@@ -26,6 +27,9 @@ use crate::{
 use alloc::{string::String, sync::Arc};
 use blueos_kconfig::NUM_CORES;
 use core::sync::atomic::Ordering;
+
+#[cfg(virtio)]
+use crate::devices::virtio;
 #[cfg(virtio)]
 use flat_device_tree::Fdt;
 
