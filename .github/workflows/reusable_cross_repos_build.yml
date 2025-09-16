@@ -109,7 +109,7 @@ jobs:
 
       - name: Download and unpack prebuilt Rust toolchain
         run: |
-          curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_08_18_04_24.tar.xz
+          curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_09_16_08_50.tar.xz
           tar xvf blueos-toolchain.tar.xz -C sysroot
           rm -rvf blueos-toolchain.tar.xz
           echo "$PWD/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
