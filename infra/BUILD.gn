@@ -20,6 +20,11 @@ group("check_infra") {
   deps = [ ":run_infra_unittest" ]
 }
 
+group("check_infra_by_miri") {
+  testonly = true
+  deps = [ ":infra_miri_test($host_miri_toolchain)" ]
+}
+
 shared_deps = [
   "//external/cfg-if/v1.0.0:cfg_if",
   "//external/memchr/v2.7.4:memchr",
@@ -30,6 +35,11 @@ build_rust("blueos_infra") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
   edition = "2021"
+  deps = shared_deps
+}
+
+miri_test("infra_miri_test") {
+  crate = "src/lib.rs"
   deps = shared_deps
 }
 
