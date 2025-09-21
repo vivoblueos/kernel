@@ -18,6 +18,7 @@ use crate::{
     scheduler::{self, ContextSwitchHookHolder},
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
+    types::IsNotNull,
 };
 use core::{
     arch::{asm, naked_asm},
