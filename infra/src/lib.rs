@@ -53,3 +53,20 @@ impl<T> IsNotNull for *mut T {
         !self.is_null()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_not_null() {
+        let mut a = 42;
+        {
+            let ptr = &a as *const i32;
+            assert!(ptr.is_not_null());
+        }
+        {
+            let ptr = &mut a as *mut i32;
+            assert!(ptr.is_not_null());
+        }
+    }
+}
