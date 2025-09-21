@@ -37,3 +37,19 @@ pub mod spinarc;
 pub mod string;
 pub mod tinyarc;
 pub mod tinyrwlock;
+
+pub trait IsNotNull {
+    fn is_not_null(&self) -> bool;
+}
+
+impl<T> IsNotNull for *const T {
+    fn is_not_null(&self) -> bool {
+        !self.is_null()
+    }
+}
+
+impl<T> IsNotNull for *mut T {
+    fn is_not_null(&self) -> bool {
+        !self.is_null()
+    }
+}
