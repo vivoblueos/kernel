@@ -23,6 +23,7 @@ use crate::{
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
     thread::Thread,
+    types::IsNotNull,
 };
 use core::{
     mem::offset_of,
@@ -185,13 +186,13 @@ extern "C" fn might_switch(from: &Context, to: &Context, mcause: usize) -> usize
     assert_eq!(to_ptr as usize, from.a1);
     let sp = from_ptr as usize;
     let saved_sp_ptr: *mut usize = unsafe { from.a0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
+    if saved_sp_ptr.is_not_null() {
         sideeffect();
         // FIXME: rustc opt the write out if not setting it volatile.
         unsafe { saved_sp_ptr.write_volatile(sp) };
     }
     let hook: *mut ContextSwitchHookHolder = unsafe { from.a2 as *mut ContextSwitchHookHolder };
-    if !hook.is_null() {
+    if hook.is_not_null() {
         sideeffect();
         unsafe {
             scheduler::save_context_finish_hook(Some(&mut *hook));

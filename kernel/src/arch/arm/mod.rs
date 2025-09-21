@@ -22,6 +22,7 @@ use crate::{
     scheduler,
     support::{sideeffect, Region, RegionalObjectBuilder},
     syscalls::{dispatch_syscall, Context as ScContext},
+    types::IsNotNull,
 };
 use core::{
     fmt,
@@ -254,7 +255,7 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     assert_eq!(ctx.r7, NR_SWITCH);
     let sp = ctx as *const _ as usize;
     let saved_sp_ptr: *mut usize = unsafe { ctx.r0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
+    if saved_sp_ptr.is_not_null() {
         // FIXME: rustc opt the write out if not setting it volatile.
         unsafe {
             sideeffect();
@@ -262,7 +263,7 @@ fn handle_svc_switch(ctx: &Context) -> usize {
         };
     }
     let hook: *mut ContextSwitchHookHolder = unsafe { ctx.r2 as *mut ContextSwitchHookHolder<'_> };
-    if !hook.is_null() {
+    if hook.is_not_null() {
         unsafe {
             sideeffect();
             scheduler::save_context_finish_hook(Some(&mut *hook));
