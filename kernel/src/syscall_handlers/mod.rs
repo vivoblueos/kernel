@@ -142,7 +142,9 @@ define_syscall_handler!(
 create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     let spawn_args = unsafe {&*spawn_args_ptr};
     let t = thread::Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
-        .set_stack(Stack::Raw{base:spawn_args.stack_start as usize, size: spawn_args.stack_size})
+        .set_stack(Stack::from_raw(
+            spawn_args.stack_start as *mut u8,
+            spawn_args.stack_size))
         .build();
     let handle = Thread::id(&t);
     if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args); }

@@ -130,9 +130,8 @@ mod tests {
     extern crate alloc;
     use super::*;
     use crate::{
-        allocator, allocator::KernelAllocator, config,
-        support::DisableInterruptGuard, sync, time::WAITING_FOREVER,
-        types::Arc,
+        allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
+        time::WAITING_FOREVER, types::Arc,
     };
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;
@@ -164,12 +163,13 @@ mod tests {
     #[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
     pub const K: usize = 64;
 
-    static TEST_THREAD_STORAGES: [SystemThreadStorage; NUM_CORES * K] =
+    static mut TEST_THREAD_STORAGES: [SystemThreadStorage; NUM_CORES * K] =
         [const { SystemThreadStorage::new(ThreadKind::Normal) }; NUM_CORES * K];
     static mut TEST_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES * K] =
         [const { MaybeUninit::zeroed() }; NUM_CORES * K];
 
-    static MAIN_THREAD_STORAGE: SystemThreadStorage = SystemThreadStorage::new(ThreadKind::Normal);
+    static mut MAIN_THREAD_STORAGE: SystemThreadStorage =
+        SystemThreadStorage::new(ThreadKind::Normal);
     static mut MAIN_THREAD: MaybeUninit<ThreadNode> = MaybeUninit::zeroed();
 
     fn reset_and_queue_test_thread(
@@ -180,11 +180,8 @@ mod tests {
         unsafe {
             let t = TEST_THREADS[i].assume_init_ref();
             let mut w = t.lock();
-            let stack = &TEST_THREAD_STORAGES[i].stack;
-            let stack = thread::Stack::Raw {
-                base: stack.rep.as_ptr() as usize,
-                size: stack.rep.len(),
-            };
+            let stack = &mut TEST_THREAD_STORAGES[i].stack;
+            let stack = thread::Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len());
             w.init(stack, thread::Entry::C(entry));
             if let Some(cleanup) = cleanup {
                 w.set_cleanup(Entry::C(cleanup));
@@ -205,7 +202,7 @@ mod tests {
     fn init_test_thread(i: usize) {
         let t = thread::build_static_thread(
             unsafe { &mut TEST_THREADS[i] },
-            &TEST_THREAD_STORAGES[i],
+            unsafe { &mut TEST_THREAD_STORAGES[i] },
             config::MAX_THREAD_PRIORITY / 2,
             thread::CREATED,
             Entry::C(test_main),
@@ -220,7 +217,7 @@ mod tests {
         }
         let t = thread::build_static_thread(
             unsafe { &mut MAIN_THREAD },
-            &MAIN_THREAD_STORAGE,
+            unsafe { &mut MAIN_THREAD_STORAGE },
             config::MAX_THREAD_PRIORITY / 2,
             thread::CREATED,
             Entry::C(test_main),
