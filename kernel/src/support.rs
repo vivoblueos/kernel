@@ -19,6 +19,7 @@ use crate::{
     types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, Uint},
 };
 use core::{
+    alloc::Layout,
     mem::MaybeUninit,
     ptr::NonNull,
     sync::atomic::{compiler_fence, AtomicUsize, Ordering},
@@ -403,4 +404,69 @@ macro_rules! static_assert {
         // [removed]: https://github.com/rust-lang/rust/commit/c2dad1c6b9f9636198d7c561b47a2974f5103f6d
         const _: () = [()][!($condition) as usize];
     };
+}
+
+#[derive(Debug)]
+pub enum Storage {
+    Alloc(*mut u8, Layout),
+    Raw(*mut u8, usize),
+}
+
+impl Default for Storage {
+    fn default() -> Self {
+        Self::Raw(core::ptr::null_mut(), 0)
+    }
+}
+
+impl Storage {
+    #[inline]
+    pub fn from_layout(layout: Layout) -> Self {
+        let base = unsafe { alloc::alloc::alloc(layout) };
+        Storage::Alloc(base, layout)
+    }
+
+    #[inline]
+    pub fn from_raw(base: *mut u8, size: usize) -> Self {
+        Storage::Raw(base, size)
+    }
+
+    #[inline]
+    pub const fn new() -> Self {
+        Storage::Raw(core::ptr::null_mut(), 0)
+    }
+
+    #[inline]
+    pub fn base(&self) -> *mut u8 {
+        match self {
+            Storage::Alloc(base, _) => *base,
+            Storage::Raw(base, _) => *base,
+        }
+    }
+
+    #[inline]
+    pub fn size(&self) -> usize {
+        match self {
+            Storage::Alloc(_, layout) => layout.size(),
+            Storage::Raw(_, size) => *size,
+        }
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.base(), self.size()) }
+    }
+
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.base(), self.size()) }
+    }
+}
+
+impl Drop for Storage {
+    #[inline]
+    fn drop(&mut self) {
+        if let Storage::Alloc(base, layout) = self {
+            unsafe { alloc::alloc::dealloc(*base, *layout) }
+        }
+    }
 }

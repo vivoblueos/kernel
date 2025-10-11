@@ -58,7 +58,7 @@ impl Tasklet {
 }
 
 type AsyncWorkQueue = ArcBufferingQueue<Tasklet, TaskletNode, 2>;
-static POLLER_STORAGE: SystemThreadStorage = SystemThreadStorage::new(ThreadKind::AsyncPoller);
+static mut POLLER_STORAGE: SystemThreadStorage = SystemThreadStorage::new(ThreadKind::AsyncPoller);
 static mut POLLER: MaybeUninit<ThreadNode> = MaybeUninit::zeroed();
 static POLLER_WAKER: AtomicUsize = AtomicUsize::new(0);
 static_arc! {
@@ -69,7 +69,7 @@ pub(crate) fn init() {
     ASYNC_WORK_QUEUE.init_queues();
     let poller = thread::build_static_thread(
         unsafe { &mut POLLER },
-        &POLLER_STORAGE,
+        unsafe { &mut POLLER_STORAGE },
         MAX_THREAD_PRIORITY,
         thread::CREATED,
         Entry::C(poll),
