@@ -37,3 +37,36 @@ pub mod spinarc;
 pub mod string;
 pub mod tinyarc;
 pub mod tinyrwlock;
+
+pub trait IsNotNull {
+    fn is_not_null(&self) -> bool;
+}
+
+impl<T> IsNotNull for *const T {
+    fn is_not_null(&self) -> bool {
+        !self.is_null()
+    }
+}
+
+impl<T> IsNotNull for *mut T {
+    fn is_not_null(&self) -> bool {
+        !self.is_null()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_not_null() {
+        let mut a = 42;
+        {
+            let ptr = &a as *const i32;
+            assert!(ptr.is_not_null());
+        }
+        {
+            let ptr = &mut a as *mut i32;
+            assert!(ptr.is_not_null());
+        }
+    }
+}
