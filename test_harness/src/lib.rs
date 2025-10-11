@@ -15,10 +15,48 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
+use std::sync::atomic::{AtomicBool, Ordering};
 use syn::{parse_macro_input, FnArg, ItemFn};
 
+static ENABLE_TEST_ONLY: AtomicBool = AtomicBool::new(false);
+static HAS_ONLY_TEST: AtomicBool = AtomicBool::new(false);
+
+#[proc_macro]
+pub fn test_only(_input: TokenStream) -> TokenStream {
+    ENABLE_TEST_ONLY.store(true, Ordering::Release);
+    let expanded = quote! {};
+    TokenStream::from(expanded)
+}
+
 #[proc_macro_attribute]
-pub fn test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if ENABLE_TEST_ONLY.load(Ordering::Acquire) {
+        let expanded = quote! {};
+        return TokenStream::from(expanded);
+    }
+
+    generate_test_case(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn only_test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !ENABLE_TEST_ONLY.load(Ordering::Acquire) {
+        let expanded = quote! {};
+        return TokenStream::from(expanded);
+    }
+
+    if HAS_ONLY_TEST
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+        .is_err()
+    {
+        let expanded = quote! {};
+        return TokenStream::from(expanded);
+    }
+
+    generate_test_case(attr, item)
+}
+
+fn generate_test_case(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
     let test_name = &input.sig.ident;
     let input_block = &input.block;
