@@ -18,6 +18,7 @@ use crate::{
     scheduler::{self, ContextSwitchHookHolder},
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
+    types::IsNotNull,
 };
 use core::{
     arch::{asm, naked_asm},
@@ -123,7 +124,7 @@ extern "C" fn might_switch(to: &Context, from: &Context) -> usize {
         return from_ptr as usize;
     }
     let saved_sp_ptr: *mut usize = unsafe { from.x0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
+    if saved_sp_ptr.is_not_null() {
         unsafe {
             sideeffect();
             saved_sp_ptr.write_volatile(from_ptr as usize)
@@ -131,7 +132,7 @@ extern "C" fn might_switch(to: &Context, from: &Context) -> usize {
     }
     let hook: *mut ContextSwitchHookHolder =
         unsafe { from.x2 as *mut scheduler::ContextSwitchHookHolder<'_> };
-    if !hook.is_null() {
+    if hook.is_not_null() {
         sideeffect();
         unsafe {
             scheduler::save_context_finish_hook(Some(&mut *hook));
