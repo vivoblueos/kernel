@@ -73,7 +73,11 @@ jobs:
           for patch in patches/*.diff; do
             patch_abspath=$(realpath ${patch})
             repo=$(basename ${patch} ".diff")
-            pushd ${repo}
+            if [[ ${repo} -ne "manifests" ]];then
+              pushd ${repo}
+            else
+              pushd .repo/${repo}
+            fi
             git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
             if [[ $? != 0 ]]; then
               exit 1
