@@ -1,0 +1,3 @@
+// TOTAL-TIMEOUT: 8
+// ASSERT-SUCC: Adapter unittest ended
+// ASSERT-FAIL: Oops:

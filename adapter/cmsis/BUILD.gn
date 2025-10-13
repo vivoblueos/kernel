@@ -1,0 +1,75 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+import("//kernel/common_crate_rustflags.gni")
+
+adapter_deps = [
+  "cmsis_header:cmsis_os",
+  "cmsis_header:cmsis_os2",
+  "//kernel/infra:blueos_infra",
+  "//kernel/kconfig:blueos_kconfig",
+  "//kernel/kernel:blueos",
+]
+
+build_rust("cmsis_adapter") {
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  proc_macro_deps = [ "//external/rust-delegate/v0.13.3:delegate" ]
+  deps = adapter_deps
+  configs += [ "//kernel/kconfig:kconfigs" ]
+}
+
+build_rust("cmsis_adapter_unittest") {
+  testonly = true
+  crate_name = "cmsis_adapter_unittest"
+  crate_type = "bin"
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  proc_macro_deps = [
+    "//external/rust-delegate/v0.13.3:delegate",
+    "//kernel/test_harness:blueos_test_macro",
+  ]
+  deps = adapter_deps
+  deps += [
+    ":cmsis_adapter",
+    "//external/semihosting/v0.1.20:semihosting",
+  ]
+  configs += [ "//kernel/kconfig:kconfigs" ]
+  rustflags = common_crate_rustflags
+  rustflags += test_image_rustflags
+}
+
+gen_qemu_runner("cmsis_unittest_runner") {
+  testonly = true
+  img = ":cmsis_adapter_unittest"
+  qemu = "$qemu_exe"
+  machine = "$machine"
+  qemu_args = qemu_extra_args
+  block_img = "cmsis_unittest_block.img"
+  block_args = qemu_block_args
+  semihosting = true
+}
+
+run_qemu_check("run_cmsis_unittest") {
+  testonly = true
+  runner = ":cmsis_unittest_runner"
+  if (coverage) {
+    img = ":cmsis_adapter_unittest"
+    checker = "//kernel/adapter/coverage.checker"
+  } else {
+    checker = "//kernel/adapter/unittests.checker"
+  }
+}

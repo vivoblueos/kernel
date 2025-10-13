@@ -228,7 +228,7 @@ pub(crate) extern "C" fn enable_local_irq_restore(old: usize) {
 }
 
 #[inline]
-pub(crate) extern "C" fn current_sp() -> usize {
+pub extern "C" fn current_sp() -> usize {
     let x: usize;
     unsafe { core::arch::asm!("mv {}, sp", out(reg) x, options(nostack, nomem)) };
     x

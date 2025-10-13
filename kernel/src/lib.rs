@@ -74,7 +74,7 @@ pub mod ffi {
 }
 
 pub mod allocator;
-pub(crate) mod arch;
+pub mod arch;
 pub mod asynk;
 pub(crate) mod boards;
 pub(crate) mod boot;
@@ -93,7 +93,7 @@ pub mod support;
 pub mod sync;
 pub mod syscall_handlers;
 pub mod thread;
-pub(crate) mod time;
+pub mod time;
 pub mod types;
 pub mod vfs;
 

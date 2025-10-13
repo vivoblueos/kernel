@@ -246,7 +246,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Wait for flag that doesn't exist (should timeout)
-        let result = event_flags.wait(0x02, EventFlagsMode::ANY, 100);
+        let result = event_flags.wait(0x02, EventFlagsMode::ALL, 100);
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 

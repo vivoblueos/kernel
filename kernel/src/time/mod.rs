@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) mod systick;
+pub mod systick;
 pub(crate) mod timer;
 
 use crate::{arch, boards, scheduler, support::DisableInterruptGuard, thread::Thread};
