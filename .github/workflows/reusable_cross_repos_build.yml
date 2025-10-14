@@ -8,6 +8,17 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     steps:
+      - name: Notify job started
+        uses: actions/github-script@v8
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Job is started, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
+            })
+
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
@@ -137,3 +148,16 @@ jobs:
       - name: Build and test the kernel
         run: |
           ./build/ci/run_ci.py
+
+      - name: Notify job ended
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const sign = "${{ job.status }}" === 'success' ? '✅' : '❌';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Job ends with ${sign} ${{ job.status }}, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
+            })
