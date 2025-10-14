@@ -73,7 +73,7 @@ jobs:
           for patch in patches/*.diff; do
             patch_abspath=$(realpath ${patch})
             repo=$(basename ${patch} ".diff")
-            if [[ ${repo} -ne "manifests" ]];then
+            if [[ ${repo} != "manifests" ]];then
               pushd ${repo}
             else
               pushd .repo/${repo}
