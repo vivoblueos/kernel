@@ -73,7 +73,7 @@ jobs:
           for patch in patches/*.diff; do
             patch_abspath=$(realpath ${patch})
             repo=$(basename ${patch} ".diff")
-            if [[ ${repo} -ne "manifests" ]];then
+            if [[ ${repo} != "manifests" ]];then
               pushd ${repo}
             else
               pushd .repo/${repo}
@@ -93,7 +93,8 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev libglib2.0-dev
+          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev
+                                  libglib2.0-dev
 
       - name: Install Arm GNU toolchain
         uses: carlosperate/arm-none-eabi-gcc-action@v1
@@ -117,6 +118,10 @@ jobs:
           tar xvf blueos-toolchain.tar.xz -C sysroot
           rm -rvf blueos-toolchain.tar.xz
           echo "$PWD/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
+
+      - name: Install bindgen and cbindgen
+        run: |
+          cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
 
       # FIXME: We should use action's builtin matrix.
       - name: Build and test the kernel
