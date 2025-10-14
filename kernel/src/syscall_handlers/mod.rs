@@ -13,13 +13,13 @@
 // limitations under the License.
 
 extern crate alloc;
-use core::ffi::{c_size_t, c_ssize_t};
 
 use crate::{
     arch, asynk, net, scheduler,
     sync::atomic_wait as futex,
     thread::{self, Builder, Entry, Stack, Thread, ThreadNode},
     time,
+    types::IsNotNull,
     vfs::syscalls as vfs_syscalls,
 };
 use alloc::boxed::Box;
@@ -27,7 +27,10 @@ use blueos_header::{
     syscalls::NR,
     thread::{ExitArgs, SpawnArgs},
 };
-use core::sync::atomic::AtomicUsize;
+use core::{
+    ffi::{c_size_t, c_ssize_t},
+    sync::atomic::AtomicUsize,
+};
 use libc::{
     addrinfo, c_char, c_int, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t, sigset_t, size_t,
     sockaddr, socklen_t, timespec, EINVAL,
@@ -421,14 +424,14 @@ define_syscall_handler!(
 
 define_syscall_handler!(
     accept(sockfd: c_int, addr: *mut sockaddr, len: *mut socklen_t) -> c_int {
-        let orig_len = if !len.is_null() { unsafe { *len } } else { 0 };
+        let orig_len = if len.is_not_null() { unsafe { *len } } else { 0 };
 
         let result = net::syscalls::accept(
             sockfd,
             addr as *const sockaddr,
             orig_len
         );
-        if !len.is_null() && result >= 0 {
+        if len.is_not_null() && result >= 0 {
             unsafe { *len = orig_len };
         }
 
@@ -509,6 +512,30 @@ define_syscall_handler!(
 );
 // Netdb syscall end
 
+define_syscall_handler!(
+    sys_clock_nanosleep(
+        clock_id: i32,
+        flags: i32,
+        rqtp: *const timespec,
+        rmtp: *mut timespec
+    ) -> c_int {
+        // TODO: Valid Clock Id
+
+        // TODO: Valid rqtp
+
+        // TODO: Implement absolute time sleep
+        let duration = timespec {
+            tv_sec: unsafe { rqtp.read().tv_sec },
+            tv_nsec: unsafe { rqtp.read().tv_nsec },
+        };
+
+        // TODO: Implement tv_nsec
+        let ticks = blueos_kconfig::TICKS_PER_SECOND * duration.tv_sec as usize;
+        scheduler::suspend_me_for(ticks);
+        0
+    }
+);
+
 syscall_table! {
     (Echo, echo),
     (Nop, nop),
@@ -565,6 +592,7 @@ syscall_table! {
     (Recvmsg,recvmsg),
     (GetAddrinfo,getaddrinfo),
     (FreeAddrinfo,freeaddrinfo),
+    (NanoSleep,sys_clock_nanosleep),
 }
 
 // Begin syscall modules.

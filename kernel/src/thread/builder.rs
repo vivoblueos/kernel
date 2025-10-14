@@ -14,33 +14,45 @@
 
 extern crate alloc;
 use crate::{
-    arch, config, debug, scheduler, static_arc, thread, trace,
-    types::{ArcInner, ArcList, ArcListIterator, IlistHead as ListHead, Uint},
+    arch, config, debug, scheduler, static_arc,
+    sync::{SpinLock, SpinLockGuard},
+    thread, trace,
+    types::{
+        Arc, ArcInner, ArcList, ArcListIterator, AtomicIlistHead as ListHead, StaticListOwner, Uint,
+    },
 };
 use alloc::boxed::Box;
 use config::SYSTEM_THREAD_STACK_SIZE;
 use core::mem::MaybeUninit;
-use spin::{Mutex, MutexGuard};
 use thread::{
-    AlignedStackStorage, Entry, OffsetOfGlobal, Stack, Thread, ThreadKind, ThreadNode,
-    ThreadPriority,
+    AlignedStackStorage, Entry, GlobalQueueListHead, OffsetOfGlobal, Stack, Thread, ThreadKind,
+    ThreadNode, ThreadPriority,
 };
 
 type Head = ListHead<Thread, OffsetOfGlobal>;
 type ThreadList = ArcList<Thread, OffsetOfGlobal>;
 
 static_arc! {
-    GLOBAL_QUEUE(Mutex<Head>, Mutex::new(Head::new())),
+    GLOBAL_QUEUE(SpinLock<Head>, SpinLock::new(Head::new())),
 }
 
 pub(crate) struct GlobalQueueVisitor<'a> {
-    lock: MutexGuard<'a, Head>,
+    lock: SpinLockGuard<'a, Head>,
     it: ArcListIterator<Thread, OffsetOfGlobal>,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct GlobalQueue;
+
+impl const StaticListOwner<Thread, OffsetOfGlobal> for GlobalQueue {
+    fn get() -> &'static Arc<SpinLock<Head>> {
+        &GLOBAL_QUEUE
+    }
 }
 
 impl GlobalQueueVisitor<'_> {
     pub fn new() -> Self {
-        let lock = GLOBAL_QUEUE.lock();
+        let lock = GLOBAL_QUEUE.irqsave_lock();
         let it = ArcListIterator::new(&*lock, None);
         Self { lock, it }
     }
@@ -50,18 +62,11 @@ impl GlobalQueueVisitor<'_> {
     }
 
     pub fn add(t: ThreadNode) -> bool {
-        let mut w = GLOBAL_QUEUE.lock();
-        ThreadList::insert_after(&mut *w, t.clone())
+        GlobalQueueListHead::insert(t)
     }
 
-    pub fn remove(t: &ThreadNode) -> bool {
-        let mut w = GLOBAL_QUEUE.lock();
-        for mut e in ArcListIterator::new(&*w, None) {
-            if Thread::id(&e) == Thread::id(t) {
-                return ThreadList::detach(&e);
-            }
-        }
-        false
+    pub fn remove(t: &mut ThreadNode) -> bool {
+        GlobalQueueListHead::detach(t)
     }
 }
 

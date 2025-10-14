@@ -24,6 +24,11 @@ group("check_kernel") {
   ]
 }
 
+group("check_kernel_probe") {
+  testonly = true
+  deps = [ ":run_unittest" ]
+}
+
 shared_deps = [
   "//external/bitflags/v2.9.0:bitflags",
   "//external/cfg-if/v1.0.0:cfg_if",
@@ -33,7 +38,6 @@ shared_deps = [
   "//external/log/v0.4.22:log",
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/safe-mmio/v0.2.5:safe_mmio",
-  "//external/semihosting/v0.1.20:semihosting",
   "//external/smoltcp/v0.12.0:smoltcp",
   "//external/spin/v0.9.8:spin",
   "//external/thiserror/v2.0.9:thiserror",
@@ -42,8 +46,25 @@ shared_deps = [
   "//kernel/header:blueos_header",
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
-  "//libc:libc",
+  "//libc",
 ]
+
+if (board == "raspberry_pico2_cortexm") {
+  shared_deps += [ "//external/embedded-hal/v1.0.0:embedded_hal" ]
+}
+
+if (defined(use_defmt) && use_defmt) {
+  shared_deps += [
+    "//external/defmt/v1.0.1:defmt",
+    "//external/defmt_rtt/v1.0.0:defmt_rtt",
+  ]
+  if (defined(use_defmt_test) && use_defmt_test) {
+    shared_deps += [ "//external/defmt_test/v0.4.0:defmt_test" ]
+  }
+} else {
+  shared_deps += [ "//external/semihosting/v0.1.20:semihosting" ]
+}
+
 if (coverage || profile) {
   shared_deps += [
     ":atomic",
@@ -60,7 +81,15 @@ if (direct_syscall_handler) {
   ]
 }
 
-if (board == "qemu_mps2_an385" || board == "qemu_mps3_an547") {
+if (defined(use_defmt) && use_defmt) {
+  shared_rust_build_flags += [
+    "-C",
+    "link-arg=-T" + rebase_path("//external/defmt/v1.0.1/bin/defmt.x"),
+  ]
+}
+
+if (board == "qemu_mps2_an385" || board == "qemu_mps3_an547" ||
+    board == "raspberry_pico2_cortexm") {
   shared_rust_build_flags += [
     "--cfg",
     "hardware_schedule",
@@ -94,6 +123,9 @@ build_rust("kernel_unittest") {
   ]
   cfgs = blueos_default_cfgs
   deps = shared_deps
+  if (defined(use_defmt) && use_defmt) {
+    deps += [ "//external/cortex_m_semihosting/v0.5.0:cortex_m_semihosting" ]
+  }
   configs += [ "//kernel/kconfig:kconfigs" ]
   inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
   rustflags = shared_rust_build_flags
@@ -111,9 +143,9 @@ build_rust("kernel_integration_test") {
     "//external/byteorder/v1.5.0:byteorder",
     "//external/semihosting/v0.1.20:semihosting",
     "//external/smoltcp/v0.12.0:smoltcp",
-    "//kernel/rsrt:rsrt",
+    "//kernel/rsrt",
     "//kernel/scal:blueos_scal",
-    "//libc:libc",
+    "//libc",
   ]
   if (coverage || profile) {
     deps += [ "//external/minicov/v0.3.7:minicov" ]
@@ -230,15 +262,23 @@ run_qemu_check("run_integration_test") {
   }
 }
 
-gen_qemu_runner("unittest_runner") {
-  testonly = true
-  img = ":kernel_unittest"
-  qemu = "$qemu_exe"
-  machine = "$machine"
-  qemu_args = qemu_extra_args
-  block_img = "unittest_block.img"
-  block_args = qemu_block_args
-  semihosting = true
+if (defined(use_defmt) && use_defmt) {
+  gen_probe_runner("unittest_runner") {
+    testonly = true
+    img = ":kernel_unittest"
+    chip = "$chip"
+  }
+} else {
+  gen_qemu_runner("unittest_runner") {
+    testonly = true
+    img = ":kernel_unittest"
+    qemu = "$qemu_exe"
+    machine = "$machine"
+    qemu_args = qemu_extra_args
+    block_img = "unittest_block.img"
+    block_args = qemu_block_args
+    semihosting = true
+  }
 }
 
 run_qemu_check("run_unittest") {

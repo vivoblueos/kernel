@@ -378,6 +378,7 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 1023);
+        assert!(head.remove().is_none());
     }
 
     #[bench]
@@ -435,5 +436,42 @@ mod tests {
             }
             assert!(l.is_empty());
         });
+    }
+
+    #[test]
+    fn singlylinkedlist_pop_from_empty() {
+        let mut l = SinglyLinkedList::default();
+        let result = l.pop();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn singlylinkedlist_iter() {
+        let mut list = SinglyLinkedList::new();
+        let data1: usize = 1;
+        let data2: usize = 2;
+        let ptr1 = &data1 as *const usize as *mut usize;
+        let ptr2 = &data2 as *const usize as *mut usize;
+        unsafe {
+            list.push(ptr2);
+            list.push(ptr1);
+        }
+        let mut iter = list.iter();
+        assert_eq!(iter.next(), Some(ptr1));
+        assert_eq!(iter.next(), Some(ptr2));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn listnode_push_pop() {
+        let mut prev_next = 0x2000usize;
+        let mut curr_next = 0x3000usize;
+        let list_node = ListNode {
+            prev: &mut prev_next as *mut usize,
+            curr: &mut curr_next as *mut usize,
+        };
+        assert!(!list_node.value().is_null());
+        list_node.pop();
+        assert_eq!(prev_next, 0x3000usize);
     }
 }

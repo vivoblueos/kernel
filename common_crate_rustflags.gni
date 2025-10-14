@@ -40,7 +40,7 @@ if (board == "qemu_mps2_an385") {
     "--cfg",
     "armv7m",
   ]
-} else if (board == "qemu_mps3_an547") {
+} else if (board == "qemu_mps3_an547" || board == "raspberry_pico2_cortexm") {
   common_crate_rustflags += [
     "--cfg",
     "cortex_m",
@@ -73,12 +73,24 @@ if ("$board" == "qemu_riscv64") {
   common_image_rustflags += common_crate_rustflags + common_gcc_rustflags
 }
 
+if (!defined(use_defmt)) {
+  use_defmt = false
+}
+
 test_image_rustflags = [
   # unstable rust custom test framework
   "--test",
   "-Z",
   "panic-abort-tests",
 ]
+
+if (use_defmt) {
+  test_image_rustflags += [
+    "--cfg",
+    "use_defmt",
+  ]
+}
+
 test_image_rustflags += common_image_rustflags
 
 qemu_extra_args = []

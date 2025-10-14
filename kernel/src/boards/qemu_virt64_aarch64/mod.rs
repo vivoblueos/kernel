@@ -15,7 +15,7 @@
 pub mod init;
 pub use init::*;
 pub mod uart;
-pub use uart::get_early_uart;
+pub(crate) use uart::get_early_uart; // re-export
 mod config;
 
 use crate::arch::registers::cntfrq_el0::CNTFRQ_EL0;

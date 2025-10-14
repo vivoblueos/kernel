@@ -18,10 +18,12 @@
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
+#![feature(associated_type_defaults)]
 #![feature(async_closure)]
 #![feature(box_as_ptr)]
 #![feature(c_size_t)]
 #![feature(c_variadic)]
+#![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
 #![feature(coverage_attribute)]
 #![feature(fn_align)]
@@ -37,6 +39,7 @@
 #![feature(noop_waker)]
 #![feature(pointer_is_aligned_to)]
 #![feature(trait_upcasting)]
+#![feature(trivial_bounds)]
 // Attributes applied when we're testing the kernel.
 #![cfg_attr(test, no_main)]
 #![cfg_attr(test, feature(custom_test_frameworks))]
@@ -80,6 +83,7 @@ pub(crate) mod console;
 #[cfg(coverage)]
 pub mod coverage;
 pub(crate) mod devices;
+pub(crate) mod drivers;
 pub mod error;
 pub(crate) mod irq;
 pub(crate) mod logger;
@@ -126,7 +130,9 @@ mod tests {
     extern crate alloc;
     use super::*;
     use crate::{
-        allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
+        allocator, allocator::KernelAllocator, config,
+        support::DisableInterruptGuard, sync, time::WAITING_FOREVER,
+        types::Arc,
     };
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;
@@ -134,9 +140,12 @@ mod tests {
     use core::{
         mem::MaybeUninit,
         panic::PanicInfo,
+        ptr,
         sync::atomic::{AtomicUsize, Ordering},
     };
-    use spin::Mutex;
+    #[cfg(use_defmt)]
+    use defmt_rtt as _;
+    use spin::Lazy;
     use thread::{Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode};
 
     #[used]
@@ -234,8 +243,17 @@ mod tests {
     #[panic_handler]
     fn oops(info: &PanicInfo) -> ! {
         let _guard = DisableInterruptGuard::new();
-        semihosting::println!("{}", info);
-        semihosting::println!("Oops: {}", info.message());
+        #[cfg(not(use_defmt))]
+        {
+            semihosting::println!("{}", info);
+            semihosting::println!("Oops: {}", info.message());
+        }
+
+        #[cfg(use_defmt)]
+        {
+            defmt::error!("{}", defmt::Display2Format(info));
+            defmt::error!("Oops: {}", defmt::Display2Format(&info.message()));
+        }
         loop {}
     }
 
@@ -359,6 +377,40 @@ mod tests {
         }
     }
 
+    static MQUEUE: Lazy<Arc<sync::mqueue::MessageQueue>> =
+        Lazy::new(|| Arc::new(sync::mqueue::MessageQueue::new(4, 2, ptr::null_mut())));
+    static TEST_SEND_CNT: AtomicUsize = AtomicUsize::new(0);
+
+    extern "C" fn test_mqueue() {
+        let buffer = [1u8; 4];
+        let result = MQUEUE.send(&buffer, 4, 512, sync::mqueue::SendMode::Normal);
+        assert!(result.is_ok());
+    }
+
+    extern "C" fn test_mqueue_cleanup() {
+        TEST_SEND_CNT.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn stress_mqueue() {
+        MQUEUE.init();
+        reset_and_queue_test_threads(test_mqueue, Some(test_mqueue_cleanup));
+        let l = unsafe { TEST_THREADS.len() };
+        let mut recv_cnt = 0;
+        let mut buffer = [0u8; 4];
+        loop {
+            if recv_cnt == l {
+                break;
+            }
+            let result = MQUEUE.recv(&mut buffer, 4, 512);
+            recv_cnt += 1;
+            assert!(result.is_ok());
+            assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
+            scheduler::yield_me();
+        }
+        while TEST_SEND_CNT.load(Ordering::Acquire) != l {}
+    }
+
     static TEST_SWITCH_CONTEXT: AtomicUsize = AtomicUsize::new(0);
 
     extern "C" fn test_switch_context() {
@@ -465,8 +517,22 @@ mod tests {
     #[inline(never)]
     pub fn kernel_unittest_runner(tests: &[&dyn Fn()]) {
         let t = scheduler::current_thread();
-        semihosting::println!("---- Running {} kernel unittests...", tests.len());
-        semihosting::println!(
+        #[cfg(use_defmt)]
+        use defmt::println;
+        #[cfg(not(use_defmt))]
+        use semihosting::println;
+
+        println!("---- Running {} kernel unittests...", tests.len());
+        #[cfg(use_defmt)]
+        println!(
+            "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
+            Thread::id(&t),
+            ThreadNode::strong_count(&t),
+            defmt::Debug2Format(&ALLOCATOR.memory_info()),
+            arch::current_sp(),
+        );
+        #[cfg(not(use_defmt))]
+        println!(
             "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t),
@@ -476,14 +542,49 @@ mod tests {
         for test in tests {
             test();
         }
-        semihosting::println!(
+        #[cfg(use_defmt)]
+        println!(
             "After test, thread 0x{:x}, heap status: {:?}, sp: 0x{:x}",
+            Thread::id(&t),
+            defmt::Debug2Format(&ALLOCATOR.memory_info()),
+            arch::current_sp()
+        );
+        #[cfg(not(use_defmt))]
+        println!(
+            "After test, thread 0x{:x}, heap status: {:?}, sp:  0x{:x}",
             Thread::id(&t),
             ALLOCATOR.memory_info(),
             arch::current_sp()
         );
-        semihosting::println!("---- Done kernel unittests.");
+        println!("---- Done kernel unittests.");
         #[cfg(coverage)]
         crate::coverage::write_coverage_data();
+        #[cfg(use_defmt)]
+        cortex_m_semihosting::debug::exit(cortex_m_semihosting::debug::EXIT_SUCCESS);
+    }
+
+    #[cfg(event_flags)]
+    static EVENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    #[cfg(event_flags)]
+    static EVENT: sync::event_flags::EventFlags = sync::event_flags::EventFlags::new();
+    #[cfg(event_flags)]
+    extern "C" fn test_event_flags() {
+        EVENT.wait(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
+        EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    }
+    #[cfg(event_flags)]
+    #[test]
+    fn stress_event_flags() {
+        EVENT.init(0);
+        reset_and_queue_test_threads(test_event_flags, None);
+        let l = unsafe { TEST_THREADS.len() };
+        loop {
+            EVENT.set(1 << 0);
+            let n = EVENT_COUNTER.load(Ordering::Relaxed);
+            if n == l {
+                break;
+            }
+            scheduler::yield_me();
+        }
     }
 }

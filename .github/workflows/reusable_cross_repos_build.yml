@@ -1,0 +1,124 @@
+name: Reusable trigger of building cross multiple repositories
+
+on:
+  workflow_call:
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
+    steps:
+      - name: Prepare directories
+        run: |
+          # sysroot/ contains toolchain.
+          mkdir -p sysroot/usr/local/bin
+          echo "$PWD/sysroot/usr/local/bin" >> "$GITHUB_PATH"
+          # patches/ contains patches downloaded.
+          mkdir -p patches
+
+      - name: Download patches
+        id: fetch_prs
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs').promises;
+            const body = context.payload.comment.body;
+            const prRegex = /https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/g;
+            let match;
+            let prs = [];
+            let patchUrls = [];
+            let fetched_prs = [];
+            while ((match = prRegex.exec(body)) !== null) {
+              let owner = match[1];
+              let repo = match[2];
+              let pr_num = match[3];
+              prs.push({owner: owner, repo: repo, pr_num: pr_num});
+              patchUrls.push({repo: repo, url: match[0] + ".diff"});
+            }
+            // Get metadata of the PR.
+            await Promise.all(prs.map(async({ owner, repo, pr_num }) => {
+              const { data: pullRequest } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pr_num,
+              });
+              fetched_prs.push({owner: owner, repo: repo, pr_num: pr_num, sha: pullRequest.head.sha});
+            }));
+
+            // Download diffs.
+            await Promise.all(patchUrls.map(async ({ repo, url }) => {
+              console.log(`Downloading ${url}`);
+              const patchFilename = `patches/${repo}.diff`;
+              const response = await github.request({
+                url: url,
+              });
+              await fs.writeFile(patchFilename, response.data);
+            }));
+            core.setOutput('fetched_prs', JSON.stringify(fetched_prs));
+
+      - name: Download prebuilt Android repo
+        run: |
+          curl -L -o sysroot/usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+          chmod a+x sysroot/usr/local/bin/repo
+
+      - name: Init repo and sync
+        run: |
+          repo init --depth=1 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
+          repo sync -j$(nproc)
+
+      - name: Apply patches
+        run: |
+          set -e
+          set -x
+          for patch in patches/*.diff; do
+            patch_abspath=$(realpath ${patch})
+            repo=$(basename ${patch} ".diff")
+            if [[ ${repo} != "manifests" ]];then
+              pushd ${repo}
+            else
+              pushd .repo/${repo}
+            fi
+            git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
+            if [[ $? != 0 ]]; then
+              exit 1
+            fi
+            popd
+          done
+
+      - name: Re-sync repos
+        # In case manifests repo is changed.
+        run: |
+          repo sync -j$(nproc)
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev libglib2.0-dev
+
+      - name: Install Arm GNU toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: 14.2.Rel1
+
+      - name: Install Arm64 GNU toolchain
+        uses: lawkai-vivo/aarch64-none-elf-gcc-action@v1
+        with:
+          release: 14.2.Rel1
+
+      - name: Download and unpack prebuilt QEMU
+        run: |
+          curl -L -o qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/qemu-2025_08_05_12_17.tar.xz
+          tar xvf qemu.tar.xz -C sysroot
+          rm -rvf qemu.tar.xz
+
+      - name: Download and unpack prebuilt Rust toolchain
+        run: |
+          curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_09_16_08_50.tar.xz
+          tar xvf blueos-toolchain.tar.xz -C sysroot
+          rm -rvf blueos-toolchain.tar.xz
+          echo "$PWD/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
+
+      # FIXME: We should use action's builtin matrix.
+      - name: Build and test the kernel
+        run: |
+          ./build/ci/run_ci.py

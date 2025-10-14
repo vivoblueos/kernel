@@ -18,8 +18,12 @@ build_rust("blueos_test_macro") {
   crate_type = "proc-macro"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  public_deps =
-      [ "//external/semihosting/v0.1.20:semihosting($kernel_toolchain)" ]
+  if (defined(use_defmt) && use_defmt) {
+    public_deps = [ "//external/defmt/v1.0.1:defmt($kernel_toolchain)" ]
+  } else {
+    public_deps =
+        [ "//external/semihosting/v0.1.20:semihosting($kernel_toolchain)" ]
+  }
 
   deps = [
     "//external/proc-macro2/v1.0.89:proc_macro2",

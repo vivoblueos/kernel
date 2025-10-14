@@ -19,25 +19,27 @@
 // Copyright (c) 2024 - present Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+mod config;
 mod uart;
 use crate::{
     arch,
     arch::riscv64::{local_irq_enabled, trap_entry, Context, READY_CORES},
-    devices::{console, dumb, plic::Plic, Device, DeviceManager},
+    devices::{console, dumb, Device, DeviceManager},
+    drivers::ic::plic::Plic,
     scheduler,
     support::SmpStagedInit,
     time,
 };
 use alloc::string::String;
 use core::sync::atomic::Ordering;
-pub(crate) use uart::get_early_uart;
+pub(crate) use uart::get_early_uart; // re-export
+pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 
 const CLOCK_ADDR: usize = 0x0200_0000;
 const CLOCK_TIME: usize = CLOCK_ADDR + 0xBFF8;
 const NUM_TICKS_PER_SECOND: usize = 10_000_000;
 const NUM_TICKS_PER_TIMER: usize = NUM_TICKS_PER_SECOND / 10;
 const NS_PER_TICK: usize = 1_000_000_000 / NUM_TICKS_PER_SECOND;
-static PLIC: Plic = Plic::new(0x0c00_0000);
 
 #[inline]
 fn clock_timecmp_ptr(hart: usize) -> *mut usize {
@@ -133,7 +135,7 @@ pub(crate) fn init() {
 }
 
 fn enumerate_devices() {
-    uart::init();
+    uart::uart_init(0);
 }
 
 fn register_devices_in_vfs() {

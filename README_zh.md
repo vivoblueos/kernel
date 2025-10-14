@@ -34,4 +34,4 @@
 - [内核开发实践](https://github.com/vivoblueos/book/blob/main/src/build-kernel.md)
 
 # 技术书籍
-有关蓝河操作系统内核更多的信息，请参阅[内核开发手册](https://github.com/vivoblueos/book)。
+有关蓝河操作系统内核更多的信息，请参阅[内核开发手册](https://vivoblueos.github.io/book/zh/)。
