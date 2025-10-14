@@ -93,8 +93,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev
-                                  libglib2.0-dev
+          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev libglib2.0-dev
 
       - name: Install Arm GNU toolchain
         uses: carlosperate/arm-none-eabi-gcc-action@v1
