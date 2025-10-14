@@ -130,9 +130,8 @@ mod tests {
     extern crate alloc;
     use super::*;
     use crate::{
-        allocator, allocator::KernelAllocator, config,
-        support::DisableInterruptGuard, sync, time::WAITING_FOREVER,
-        types::Arc,
+        allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
+        time::WAITING_FOREVER, types::Arc,
     };
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;

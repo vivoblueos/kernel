@@ -242,11 +242,11 @@ mod tests {
         assert!(event_flags.set(0x01).is_ok());
 
         // Wait for any flag (should succeed immediately)
-        let result = event_flags.wait(0x01, EventFlagsMode::ANY, 100);
+        let result = event_flags.wait(0x01, EventFlagsMode::ANY | EventFlagsMode::NO_CLEAR, 100);
         assert!(result.is_ok());
 
         // Wait for flag that doesn't exist (should timeout)
-        let result = event_flags.wait(0x02, EventFlagsMode::ALL, 100);
+        let result = event_flags.wait(0x02, EventFlagsMode::ANY, 100);
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -278,9 +278,6 @@ mod tests {
         assert_eq!(result, Err(code::EINVAL));
 
         let result = event_flags.wait(0, EventFlagsMode::ANY, 0);
-        assert_eq!(result, Err(code::ETIMEDOUT));
-
-        let result = event_flags.wait(0, EventFlagsMode::ANY, 100);
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 

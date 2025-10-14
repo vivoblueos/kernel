@@ -513,7 +513,10 @@ pub extern "C" fn restore_context(to_sp: usize) -> ! {
 }
 
 #[inline(always)]
-pub(crate) extern "C" fn restore_context_with_hook(to_sp: usize, hook: *mut ContextSwitchHookHolder) -> ! {
+pub(crate) extern "C" fn restore_context_with_hook(
+    to_sp: usize,
+    hook: *mut ContextSwitchHookHolder,
+) -> ! {
     switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
     unreachable!("Should have switched to another thread");
 }

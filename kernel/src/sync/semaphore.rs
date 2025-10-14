@@ -16,8 +16,9 @@ use super::SpinLock;
 use crate::{
     irq, scheduler,
     scheduler::{InsertMode, WaitQueue},
-    thread, thread::Thread,
-    time::WAITING_FOREVER, 
+    thread,
+    thread::Thread,
+    time::WAITING_FOREVER,
     types::Int,
 };
 use core::cell::Cell;
@@ -73,7 +74,8 @@ impl Semaphore {
                 );
             }
             if old == 0 {
-                let _ = scheduler::suspend_me_with_timeout(w, WAITING_FOREVER, InsertMode::InsertToEnd);
+                let _ =
+                    scheduler::suspend_me_with_timeout(w, WAITING_FOREVER, InsertMode::InsertToEnd);
                 w = self.pending.irqsave_lock();
                 continue;
             } else {

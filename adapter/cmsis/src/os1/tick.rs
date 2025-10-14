@@ -28,7 +28,6 @@ pub extern "C" fn osKernelSysTick() -> u32 {
     time::get_sys_ticks() as u32
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
