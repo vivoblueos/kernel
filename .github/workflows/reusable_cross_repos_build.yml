@@ -6,8 +6,19 @@ on:
 jobs:
   build_and_test:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     steps:
+      - uses: LouisBrunner/checks-action@v2.0.0
+        if: always()
+        with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        name: Run cross repo checks
+        conclusion: ${{ job.status }}
+        output: |
+          {"summary":"${{ job.status }}"}
+
       - name: Prepare directories
         run: |
           # sysroot/ contains toolchain.
