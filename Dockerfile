@@ -50,3 +50,5 @@ RUN curl -L -o /opt/sysroot/usr/local/bin/repo https://storage.googleapis.com/gi
 
 # Set working directory
 WORKDIR /blueos-dev
+
+CMD ["/bin/bash"]
