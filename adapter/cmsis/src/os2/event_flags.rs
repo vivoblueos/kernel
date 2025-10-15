@@ -72,7 +72,7 @@ pub extern "C" fn osEventFlagsNew(attr: *const osEventFlagsAttr_t) -> osEventFla
         return ptr::null_mut();
     }
 
-    // Use provided memory;
+    // Use provided memory.
     unsafe {
         ptr::write(
             attr_ref.cb_mem as *mut ArcInner<OsEventFlags>,
