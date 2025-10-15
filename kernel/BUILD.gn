@@ -24,6 +24,15 @@ group("check_kernel") {
   ]
 }
 
+group("check_kernel_by_clippy") {
+  testonly = true
+  deps = [
+    ":blueos_clippy",
+    ":kernel_integration_test_clippy",
+    ":kernel_unittest_clippy",
+  ]
+}
+
 group("check_kernel_probe") {
   testonly = true
   deps = [ ":run_unittest" ]
@@ -130,6 +139,11 @@ build_rust("kernel_unittest") {
   rustflags += test_image_rustflags
 }
 
+run_clippy("kernel_unittest_clippy") {
+  testonly = true
+  deps = [ ":kernel_unittest" ]
+}
+
 build_rust("kernel_integration_test") {
   testonly = true
   crate_type = "bin"
@@ -154,6 +168,11 @@ build_rust("kernel_integration_test") {
   rustflags = test_image_rustflags
 }
 
+run_clippy("kernel_integration_test_clippy") {
+  testonly = true
+  deps = [ ":kernel_integration_test" ]
+}
+
 build_rust("blueos") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
@@ -167,6 +186,10 @@ build_rust("blueos") {
   configs += [ "//kernel/kconfig:kconfigs" ]
   rustflags = shared_rust_build_flags
   rustflags += common_crate_rustflags
+}
+
+run_clippy("blueos_clippy") {
+  deps = [ ":blueos" ]
 }
 
 cbindgen("rust_wrapper") {
