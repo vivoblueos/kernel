@@ -21,7 +21,6 @@ use blueos::{
 };
 use cmsis_os2::*;
 use core::{mem, ptr};
-use log;
 
 const SEM_WAIT_ERROR: i32 = -1;
 

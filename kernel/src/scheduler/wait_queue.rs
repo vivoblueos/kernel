@@ -14,8 +14,9 @@
 
 use super::InsertMode;
 use crate::{
+    scheduler,
     sync::SpinLockGuard,
-    thread::ThreadNode,
+    thread::{ThreadNode, SUSPENDED},
     types::{impl_simple_intrusive_adapter, Arc, ArcList, IlistHead},
 };
 
@@ -32,6 +33,20 @@ pub fn insert(wq: &mut WaitQueue, t: ThreadNode, mode: InsertMode) -> bool {
         return wq.push_by(compare_priority, e);
     }
     wq.push_back(e)
+}
+
+pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
+    let mut woken = 0;
+    while let Some(next) = wq.pop_front() {
+        let t = next.thread.clone();
+        if let Some(timer) = &t.timer {
+            timer.stop();
+        }
+        let ok = scheduler::queue_ready_thread(SUSPENDED, t);
+        debug_assert!(ok);
+        woken += 1;
+    }
+    woken
 }
 
 #[derive(Debug)]
