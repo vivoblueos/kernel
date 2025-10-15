@@ -451,6 +451,17 @@ pub(crate) fn yield_me_now_or_later() {
     arch::pend_switch_context();
 }
 
+pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
+    #[cfg(debugging_scheduler)]
+    crate::trace!("[TH:0x{:x}] is waking up all threads", current_thread_id());
+    let woken = wait_queue::wake_up_all(&mut w);
+    drop(w);
+    if woken > 0 {
+        yield_me_now_or_later();
+    }
+    woken
+}
+
 // Entry of system idle threads.
 pub(crate) extern "C" fn schedule() -> ! {
     #[cfg(debugging_scheduler)]

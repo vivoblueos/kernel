@@ -26,6 +26,25 @@ use blueos::{
 use core::ptr::NonNull;
 use delegate::delegate;
 
+// Define the OS adapter types
+os_adapter! {
+    "sem" => OsSemaphore: blueos::sync::semaphore::Semaphore,
+}
+
+impl OsSemaphore {
+    delegate! {
+        to self.inner() {
+            pub fn init(&self, counter: Uint);
+            pub fn count(&self) -> blueos::types::Uint;
+            pub fn try_acquire<M: InsertModeTrait>(&self) -> bool;
+            pub fn acquire_notimeout<M: InsertModeTrait>(&self) -> bool;
+            pub fn acquire_timeout<M: InsertModeTrait>(&self, t: usize) -> bool;
+            pub fn acquire<M: InsertModeTrait>(&self, timeout: Option<usize>) -> bool;
+            pub fn release(&self);
+        }
+    }
+}
+
 #[cfg(event_flags)]
 os_adapter! {
     "evt" => OsEventFlags: blueos::sync::event_flags::EventFlags,
