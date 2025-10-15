@@ -169,65 +169,6 @@ build_rust("blueos") {
   rustflags += common_crate_rustflags
 }
 
-build_rust("blueos_std_static") {
-  crate_name = "blueos"
-  crate_type = "staticlib"
-  sources = [ "src/lib.rs" ]
-  edition = "2021"
-  proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
-  ]
-  deps = shared_deps
-  configs += [ "//kernel/kconfig:kconfigs" ]
-  cfgs = blueos_default_cfgs
-  rustflags = shared_rust_build_flags
-  rustflags += common_crate_rustflags
-  rustflags += [
-    "--cfg",
-    "std",
-  ]
-}
-
-build_rust("blueos_std") {
-  crate_name = "blueos"
-  crate_type = "rlib"
-  sources = [ "src/lib.rs" ]
-  edition = "2021"
-  proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
-  ]
-  deps = shared_deps
-  cfgs = blueos_default_cfgs
-  rustflags = shared_rust_build_flags
-  rustflags += common_crate_rustflags
-  rustflags += [
-    "--cfg",
-    "std",
-  ]
-}
-
-build_rust("blueos_posixtestsuite") {
-  testonly = true
-  crate_name = "blueos"
-  crate_type = "rlib"
-  sources = [ "src/lib.rs" ]
-  edition = "2021"
-  proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
-  ]
-  deps = shared_deps
-  cfgs = blueos_default_cfgs
-  rustflags = shared_rust_build_flags
-  rustflags += common_crate_rustflags
-  rustflags += [
-    "--cfg",
-    "posixtestsuite",
-  ]
-}
-
 cbindgen("rust_wrapper") {
   sources = [ "cbindgen.toml" ]
   args = [
