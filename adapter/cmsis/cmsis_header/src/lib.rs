@@ -12,17 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_arch = "arm")]
-pub(crate) mod arm;
-#[cfg(target_arch = "arm")]
-pub use arm::*;
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(dead_code)]
+#![no_std]
 
-#[cfg(target_arch = "riscv64")]
-pub(crate) mod riscv64;
-#[cfg(target_arch = "riscv64")]
-pub use riscv64::*;
+use core::{env, include};
 
-#[cfg(target_arch = "aarch64")]
-pub(crate) mod aarch64;
-#[cfg(target_arch = "aarch64")]
-pub use aarch64::*;
+include!(env!("BINDGEN_DIR"));

@@ -74,7 +74,7 @@ pub mod ffi {
 }
 
 pub mod allocator;
-pub(crate) mod arch;
+pub mod arch;
 pub mod asynk;
 pub(crate) mod boards;
 pub(crate) mod boot;
@@ -93,7 +93,7 @@ pub mod support;
 pub mod sync;
 pub mod syscall_handlers;
 pub mod thread;
-pub(crate) mod time;
+pub mod time;
 pub mod types;
 pub mod vfs;
 
@@ -130,9 +130,8 @@ mod tests {
     extern crate alloc;
     use super::*;
     use crate::{
-        allocator, allocator::KernelAllocator, config,
-        support::DisableInterruptGuard, sync, time::WAITING_FOREVER,
-        types::Arc,
+        allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
+        time::WAITING_FOREVER, types::Arc,
     };
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;

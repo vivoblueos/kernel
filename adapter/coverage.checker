@@ -1,0 +1,3 @@
+// TOTAL-TIMEOUT: 8
+// ASSERT-SUCC: coverage test end.
+// ASSERT-FAIL: Oops:

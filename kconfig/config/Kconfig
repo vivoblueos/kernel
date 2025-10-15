@@ -249,3 +249,24 @@ config DNS_MAX_SERVER_COUNT
       Maximum amount of DNS servers that can be configured in one DNS socket.
 
 endmenu # SMOLTCP
+
+# os adapter configuration
+menu "os adapter configuration"
+    choice
+        prompt "RTOS Adapter Selection"
+        optional
+        help
+          Select which RTOS adapter to use. Only one can be selected.
+
+    config CMSIS_RTOS1_ADAPTER
+        bool "CMSIS RTOS1 Adapter"
+        help
+          os adapter for CMSIS RTOS1
+
+    config CMSIS_RTOS2_ADAPTER
+        bool "CMSIS RTOS2 Adapter"
+        help
+          os adapter for CMSIS RTOS2
+
+    endchoice
+endmenu # os adapter configuration
