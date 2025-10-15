@@ -47,9 +47,43 @@ pub(crate) use wait_queue::*;
 #[repr(u8)]
 pub enum InsertMode {
     /// Insert by priority
-    InsertByPrio,
+    InsertByPrio = 0,
     /// Append to end
-    InsertToEnd,
+    InsertToEnd = 1,
+}
+
+impl InsertMode {
+    /// Convert InsertMode to u8 const
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Const type for InsertByPrio
+pub struct InsertByPrio;
+impl InsertByPrio {
+    pub const MODE: InsertMode = InsertMode::InsertByPrio;
+    pub const VALUE: u8 = 0;
+}
+
+/// Const type for InsertToEnd  
+pub struct InsertToEnd;
+impl InsertToEnd {
+    pub const MODE: InsertMode = InsertMode::InsertToEnd;
+    pub const VALUE: u8 = 1;
+}
+
+/// Trait for InsertMode const types
+pub trait InsertModeTrait {
+    const MODE: InsertMode;
+}
+
+impl InsertModeTrait for InsertByPrio {
+    const MODE: InsertMode = InsertMode::InsertByPrio;
+}
+
+impl InsertModeTrait for InsertToEnd {
+    const MODE: InsertMode = InsertMode::InsertToEnd;
 }
 
 pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
