@@ -553,22 +553,6 @@ mod tests {
         assert_eq!(mutex.nesting_count(), 0);
     }
 
-    // #[test]
-    // #[should_panic(expected = "mutex only can be released by owner")]
-    // fn test_mutex_multi_thread() {
-    //     let mutex = Mutex::create();
-    //     let mutex_consumer = mutex.clone();
-
-    //     let consumer = thread::spawn(move || {
-    //         println!("consumer is posting mutex");
-    //         mutex_consumer.post();
-
-    //     });
-    //     mutex.pend_for(10);
-    //     println!("host is pending mutex");
-    //     scheduler::yield_me();
-    // }
-
     #[test]
     fn test_mutex_multi_thread1() {
         let mutex = Mutex::create();
@@ -652,49 +636,6 @@ mod tests {
         mutex.post();
         while pend_flag.load(Ordering::SeqCst) != 2 {}
     }
-
-    // #[test]
-    // fn test_mutex_multi_thread_priority1() {
-    //     let sync0 = Arc::new(ConstBarrier::<{ 2 }>::new());
-    //     let consumer_sync0 = sync0.clone();
-    //     let sync1 = Arc::new(ConstBarrier::<{ 2 }>::new());
-    //     let consumer_sync1 = sync1.clone();
-    //     let mutex = Mutex::create();
-    //     let mutex_consumer = mutex.clone();
-    //     let current = crate::scheduler::current_thread();
-    //     let origin_priority = current.priority();
-    //     let consumer = thread::spawn(move || {
-    //         // We have to wait the outer thread to change this thread's priority.
-    //         consumer_sync0.wait();
-    //         let current = crate::scheduler::current_thread();
-    //         assert_eq!(origin_priority - 1, current.priority());
-    //         // We have to wait the outer thread to get the mutex first.
-    //         consumer_sync1.wait();
-    //         // Now the outer thread has got the mutex, the following pend_for
-    //         // will promote the priority of the outer thread temporarily.
-    //         let result = mutex_consumer.pend_for(10);
-    //         assert!(result);
-    //         mutex_consumer.post();
-    //     });
-    //     let current = crate::scheduler::current_thread();
-    //     let thread = consumer.unwrap().clone();
-    //     let mut w = thread.lock();
-    //     w.set_priority(origin_priority - 1);
-    //     drop(w);
-    //     sync0.wait();
-    //     mutex.pend_for(10);
-    //     assert_eq!(mutex.nesting_count(), 1);
-    //     sync1.wait();
-    //     // Spin until consumer thread has suspended on the mutex.
-    //     while mutex.pending.irqsave_lock().is_empty() {
-    //         scheduler::yield_me();
-    //         core::hint::spin_loop();
-    //     }
-    //     assert_eq!(origin_priority - 1, current.priority());
-    //     mutex.post();
-    //     assert_eq!(origin_priority, current.priority());
-    //     assert_eq!(current.origin_priority(), current.priority());
-    // }
 
     // Demonstrate a classic PI scene. Event orders,
     // t1[P3] acquires mu0.

@@ -209,11 +209,11 @@ unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
 unsafe impl<T: ?Sized + Sync> Sync for SpinLock<T> {}
 
 #[derive(Default, Debug)]
-pub struct ISpinLock<T: Sized, A: IntrusiveAdapter<T>> {
+pub struct ISpinLock<T: Sized, A: IntrusiveAdapter> {
     lock: IRwLock<T, A>,
 }
 
-impl<T: Sized, A: IntrusiveAdapter<T>> ISpinLock<T, A> {
+impl<T: Sized, A: IntrusiveAdapter> ISpinLock<T, A> {
     pub const fn new() -> Self {
         Self {
             lock: IRwLock::new(),
@@ -257,5 +257,5 @@ impl<T: Sized, A: IntrusiveAdapter<T>> ISpinLock<T, A> {
     }
 }
 
-unsafe impl<T: Sized + Send, A: IntrusiveAdapter<T>> Send for ISpinLock<T, A> {}
-unsafe impl<T: Sized + Sync, A: IntrusiveAdapter<T>> Sync for ISpinLock<T, A> {}
+unsafe impl<T: Sized + Send, A: IntrusiveAdapter> Send for ISpinLock<T, A> {}
+unsafe impl<T: Sized + Sync, A: IntrusiveAdapter> Sync for ISpinLock<T, A> {}

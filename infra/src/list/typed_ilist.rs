@@ -22,19 +22,19 @@ use crate::intrusive::Adapter;
 use core::{marker::PhantomData, ptr::NonNull};
 
 #[derive(Default, Debug)]
-pub struct ListHead<T, A: Adapter<T>> {
+pub struct ListHead<T, A: Adapter> {
     pub prev: Option<NonNull<ListHead<T, A>>>,
     pub next: Option<NonNull<ListHead<T, A>>>,
     _t: PhantomData<T>,
     _a: PhantomData<A>,
 }
 
-pub struct ListIterator<T, A: Adapter<T>> {
+pub struct ListIterator<T, A: Adapter> {
     next: Option<NonNull<ListHead<T, A>>>,
     tail: Option<NonNull<ListHead<T, A>>>,
 }
 
-impl<T, A: Adapter<T>> ListIterator<T, A> {
+impl<T, A: Adapter> ListIterator<T, A> {
     pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             next: head.next,
@@ -43,7 +43,7 @@ impl<T, A: Adapter<T>> ListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter<T>> Iterator for ListIterator<T, A> {
+impl<T, A: Adapter> Iterator for ListIterator<T, A> {
     type Item = NonNull<ListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -59,12 +59,12 @@ impl<T, A: Adapter<T>> Iterator for ListIterator<T, A> {
     }
 }
 
-pub struct ListReverseIterator<T, A: Adapter<T>> {
+pub struct ListReverseIterator<T, A: Adapter> {
     prev: Option<NonNull<ListHead<T, A>>>,
     head: Option<NonNull<ListHead<T, A>>>,
 }
 
-impl<T, A: Adapter<T>> ListReverseIterator<T, A> {
+impl<T, A: Adapter> ListReverseIterator<T, A> {
     pub fn new(tail: &ListHead<T, A>, head: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             prev: tail.prev,
@@ -73,7 +73,7 @@ impl<T, A: Adapter<T>> ListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter<T>> Iterator for ListReverseIterator<T, A> {
+impl<T, A: Adapter> Iterator for ListReverseIterator<T, A> {
     type Item = NonNull<ListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -89,7 +89,7 @@ impl<T, A: Adapter<T>> Iterator for ListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter<T>> ListHead<T, A> {
+impl<T, A: Adapter> ListHead<T, A> {
     pub const fn new() -> Self {
         Self::const_new()
     }
