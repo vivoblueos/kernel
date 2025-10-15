@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/templates/rust.gni")
+import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 import("//kernel/common_crate_rustflags.gni")
 
@@ -39,6 +39,11 @@ build_rust("loader_integration_test") {
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
   rustflags = test_image_rustflags
+}
+
+run_clippy("loader_integration_test_clippy") {
+  testonly = true
+  deps = [ ":loader_integration_test" ]
 }
 
 gen_qemu_runner("loader_integration_test_runner") {

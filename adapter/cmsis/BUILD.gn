@@ -52,6 +52,11 @@ build_rust("cmsis_adapter_unittest") {
   rustflags += test_image_rustflags
 }
 
+run_clippy("cmsis_adapter_unittest_clippy") {
+  testonly = true
+  deps = [ ":cmsis_adapter_unittest" ]
+}
+
 gen_qemu_runner("cmsis_unittest_runner") {
   testonly = true
   img = ":cmsis_adapter_unittest"

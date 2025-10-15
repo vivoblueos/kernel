@@ -32,6 +32,10 @@ build_rust("rsrt") {
   ]
 }
 
+run_clippy("rsrt_clippy") {
+  deps = [ ":rsrt" ]
+}
+
 build_rust("rsrt_std") {
   crate_type = "rlib"
   crate_name = "rsrt"
@@ -41,4 +45,15 @@ build_rust("rsrt_std") {
     "//kernel/kernel:blueos",
   ]
   features = [ "std" ]
+}
+
+run_clippy("rsrt_std_clippy") {
+  deps = [ ":rsrt_std" ]
+}
+
+group("check_rsrt_by_clippy") {
+  deps = [
+    ":rsrt_clippy",
+    ":rsrt_std_clippy",
+  ]
 }

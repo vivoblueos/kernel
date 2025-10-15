@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/templates/rust.gni")
+import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 import("//kernel/common_crate_rustflags.gni")
 
@@ -44,4 +44,19 @@ build_rust("blueos_loader") {
     "//external/goblin/v0.9.3:goblin",
     "//librs:librs",
   ]
+}
+
+run_clippy("blueos_loader_clippy") {
+  deps = [ ":blueos_loader" ]
+}
+
+group("check_loader_by_clippy") {
+  testonly = true
+  deps = [
+    ":blueos_loader_clippy",
+    "tests/integration_test:loader_integration_test_clippy",
+  ]
+  if (coverage || profile) {
+    deps += [ ":common_cov" ]
+  }
 }
