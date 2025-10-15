@@ -13,7 +13,7 @@
 // limitations under the License.
 
 pub mod systick;
-pub(crate) mod timer;
+pub mod timer;
 
 use crate::{arch, boards, scheduler, support::DisableInterruptGuard, thread::Thread};
 use blueos_kconfig::TICKS_PER_SECOND;
@@ -34,11 +34,7 @@ pub fn get_sys_cycles() -> u64 {
     SYSTICK.get_cycles()
 }
 
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    boards::get_cycles_to_duration(cycles)
-}
-
-pub(crate) fn get_cycles_to_ms(cycles: u64) -> u64 {
+pub fn get_cycles_to_ms(cycles: u64) -> u64 {
     boards::get_cycles_to_ms(cycles)
 }
 
@@ -82,7 +78,5 @@ pub fn tick_to_millisecond(ticks: usize) -> usize {
 
 pub fn tick_get_millisecond() -> usize {
     crate::static_assert!(TICKS_PER_SECOND > 0);
-    crate::static_assert!(1000 % TICKS_PER_SECOND == 0);
-
-    get_sys_ticks() * (1000 / TICKS_PER_SECOND)
+    tick_to_millisecond(get_sys_ticks())
 }
