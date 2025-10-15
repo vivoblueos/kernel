@@ -52,3 +52,10 @@ CONFIG_DNS_MAX_NAME_SIZE=255
 CONFIG_DNS_MAX_RESULT_COUNT=1
 CONFIG_DNS_MAX_SERVER_COUNT=1
 # end of smoltcp TCP/IP Stack Configuration
+
+#
+# os adapter configuration
+#
+# CONFIG_CMSIS_RTOS1_ADAPTER is not set
+CONFIG_CMSIS_RTOS2_ADAPTER=y
+# end of os adapter configuration
