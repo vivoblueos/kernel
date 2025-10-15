@@ -20,3 +20,8 @@ group("check_adapter") {
   testonly = true
   deps = [ "cmsis:run_cmsis_unittest($libc_toolchain)" ]
 }
+
+group("check_adapter_by_clippy") {
+  testonly = true
+  deps = [ "cmsis:cmsis_adapter_unittest_clippy" ]
+}
