@@ -8,9 +8,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -21,7 +18,7 @@ jobs:
       - name: Set Image Tags
         id: tags
         run: |
-          echo "IMAGE_NAME=ghcr.io/vivoblueos/$(echo ${{ github.repository }} | awk -F/ '{print $2}')" >> $GITHUB_ENV
+          echo "IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/$(echo ${{ github.repository }} | awk -F/ '{print $2}')" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
           echo "tags=latest,$SHORT_SHA" >> $GITHUB_ENV
           echo "Tags set: ${{ env.tags }}"

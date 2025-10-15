@@ -5,7 +5,7 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest
+    runs-on: ghcr.io/${{ github.repository_owner }}/$(echo ${{ github.repository }}:latest
     permissions:
       contents: read
       checks: write
@@ -83,11 +83,6 @@ jobs:
             }));
             core.setOutput('fetched_prs', JSON.stringify(fetched_prs));
 
-      - name: Download prebuilt Android repo
-        run: |
-          curl -L -o sysroot/usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
-          chmod a+x sysroot/usr/local/bin/repo
-
       - name: Init repo and sync
         run: |
           repo init --depth=1 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
@@ -116,38 +111,6 @@ jobs:
         # In case manifests repo is changed.
         run: |
           repo sync -j$(nproc)
-
-      - name: Install packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang python3-kconfiglib ninja-build generate-ninja curl libfdt-dev libslirp-dev libglib2.0-dev
-
-      - name: Install Arm GNU toolchain
-        uses: carlosperate/arm-none-eabi-gcc-action@v1
-        with:
-          release: 14.2.Rel1
-
-      - name: Install Arm64 GNU toolchain
-        uses: lawkai-vivo/aarch64-none-elf-gcc-action@v1
-        with:
-          release: 14.2.Rel1
-
-      - name: Download and unpack prebuilt QEMU
-        run: |
-          curl -L -o qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/qemu-2025_08_05_12_17.tar.xz
-          tar xvf qemu.tar.xz -C sysroot
-          rm -rvf qemu.tar.xz
-
-      - name: Download and unpack prebuilt Rust toolchain
-        run: |
-          curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_09_16_08_50.tar.xz
-          tar xvf blueos-toolchain.tar.xz -C sysroot
-          rm -rvf blueos-toolchain.tar.xz
-          echo "$PWD/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
-
-      - name: Install bindgen and cbindgen
-        run: |
-          cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
 
       # FIXME: We should use action's builtin matrix.
       - name: Build and test the kernel
