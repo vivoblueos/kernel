@@ -85,7 +85,7 @@ pub mod coverage;
 pub(crate) mod devices;
 pub(crate) mod drivers;
 pub mod error;
-pub(crate) mod irq;
+pub mod irq;
 pub(crate) mod logger;
 pub mod net;
 pub mod scheduler;
@@ -568,7 +568,7 @@ mod tests {
     static EVENT: sync::event_flags::EventFlags = sync::event_flags::EventFlags::new();
     #[cfg(event_flags)]
     extern "C" fn test_event_flags() {
-        EVENT.wait(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
+        EVENT.wait::<scheduler::InsertToEnd>(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
         EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
     }
     #[cfg(event_flags)]

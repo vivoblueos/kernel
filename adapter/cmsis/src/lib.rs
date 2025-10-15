@@ -20,10 +20,15 @@
 #![cfg_attr(test, no_main)]
 
 extern crate alloc;
+pub mod bridge_utils;
+pub mod common_objects;
+pub use blueos::types::Arc;
 #[cfg(cmsis_rtos1_adapter)]
 pub mod os1;
 #[cfg(cmsis_rtos2_adapter)]
 pub mod os2;
+
+pub const MAX_NAME_LEN: usize = 8;
 
 #[cfg(test)]
 mod tests {
@@ -62,7 +67,7 @@ mod tests {
             ALLOCATOR.memory_info(),
             arch::current_sp(),
         );
-        semihosting::println!("Adapter unittest ended");
+        semihosting::println!("CMSIS adapter unittest ended");
 
         #[cfg(coverage)]
         blueos::coverage::write_coverage_data();
