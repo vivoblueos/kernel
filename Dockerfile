@@ -41,8 +41,8 @@ RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/r
     tar xf blueos-toolchain.tar.xz -C /opt/sysroot && \
     rm blueos-toolchain.tar.xz
 
-# Install bindgen and cbindgen
-RUN cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
+# Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
+RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
 
 # Install repo
 RUN curl -L -o /opt/sysroot/usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo && \
