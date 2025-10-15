@@ -503,23 +503,6 @@ mod tests {
         mutex.post();
     }
 
-    // #[test]
-    // #[should_panic(expected = "mutex only can be released by owner")]
-    // fn test_mutex_multi_post_panic() {
-    //     let mutex = Mutex::new();
-    //     mutex.init();
-
-    //     // Test successful pend
-    //     let result = mutex.pend_for(10);
-    //     assert!(result);
-    //     assert_eq!(mutex.nesting_count(), 1);
-
-    //     mutex.post();
-    //     assert_eq!(mutex.nesting_count(), 0);
-
-    //     mutex.post();
-    // }
-
     #[test]
     fn test_mutex_multi_pend_post_success() {
         let mutex = Mutex::create();
