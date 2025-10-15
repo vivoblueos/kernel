@@ -13,5 +13,6 @@
 // limitations under the License.
 
 pub mod event_flags;
+pub mod semaphore;
 pub mod tick;
 pub mod timer;

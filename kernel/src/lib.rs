@@ -325,10 +325,10 @@ mod tests {
     }
 
     static mut SEMA_COUNTER: usize = 0usize;
-    static SEMA: sync::semaphore::Semaphore = sync::semaphore::Semaphore::new(1);
+    static SEMA: sync::semaphore::Semaphore = sync::semaphore::Semaphore::new();
 
     extern "C" fn test_semaphore() {
-        SEMA.acquire_notimeout();
+        SEMA.acquire_notimeout::<scheduler::InsertToEnd>();
         let n = unsafe { SEMA_COUNTER };
         unsafe { SEMA_COUNTER += 1 };
     }
@@ -339,11 +339,11 @@ mod tests {
 
     #[test]
     fn stress_semaphore() {
-        SEMA.init();
+        SEMA.init(1);
         reset_and_queue_test_threads(test_semaphore, Some(test_semaphore_cleanup));
         let l = unsafe { TEST_THREADS.len() };
         loop {
-            SEMA.acquire_notimeout();
+            SEMA.acquire_notimeout::<scheduler::InsertToEnd>();
             let n = unsafe { SEMA_COUNTER };
             if n == l {
                 SEMA.release();

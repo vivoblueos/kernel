@@ -435,6 +435,21 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
             val,
         )
     }
+
+    pub fn remove_if<Predicate>(&mut self, is: Predicate) -> Option<TinyArc<T>>
+    where
+        Predicate: Fn(&TinyArc<T>) -> bool,
+    {
+        for mut e in self.iter() {
+            if !is(&e) {
+                continue;
+            }
+            let ok = Self::detach(&mut e);
+            debug_assert!(ok);
+            return Some(e);
+        }
+        None
+    }
 }
 
 impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
@@ -450,6 +465,7 @@ impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
 
 impl<T: Sized, A: Adapter> GenericList for TinyArcList<T, A> {
     type Node = AtomicListHead<T, A>;
+    type Iter = TinyArcListIterator<T, A>;
 }
 
 pub struct TinyArcListIterator<T, A: Adapter> {
@@ -1047,5 +1063,23 @@ mod tests {
         assert!(old.is_some());
         assert_eq!(*old.unwrap(), 43);
         assert_eq!(TinyArc::strong_count(&s), 1);
+    }
+
+    #[test]
+    fn test_remove_if() {
+        let mut l = ControlStatusList::new();
+        l.init();
+        let mut t0 = TinyArc::new(Thread::new(42));
+        let mut t1 = TinyArc::new(Thread::new(43));
+        let mut t2 = TinyArc::new(Thread::new(47));
+        l.push_back(t0);
+        l.push_back(t1);
+        l.push_back(t2);
+        assert!(l.remove_if(|e| e.id == 42).is_some());
+        assert_eq!(l.front().unwrap().id, 43);
+        l.remove_if(|e| e.id == 47);
+        assert_eq!(l.front().unwrap().id, 43);
+        l.clear();
+        assert!(l.is_empty());
     }
 }

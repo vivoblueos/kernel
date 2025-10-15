@@ -24,6 +24,15 @@ group("check_kernel") {
   ]
 }
 
+group("check_kernel_by_clippy") {
+  testonly = true
+  deps = [
+    ":blueos_clippy",
+    ":kernel_integration_test_clippy",
+    ":kernel_unittest_clippy",
+  ]
+}
+
 group("check_kernel_probe") {
   testonly = true
   deps = [ ":run_unittest" ]
@@ -130,6 +139,11 @@ build_rust("kernel_unittest") {
   rustflags += test_image_rustflags
 }
 
+run_clippy("kernel_unittest_clippy") {
+  testonly = true
+  deps = [ ":kernel_unittest" ]
+}
+
 build_rust("kernel_integration_test") {
   testonly = true
   crate_type = "bin"
@@ -154,6 +168,11 @@ build_rust("kernel_integration_test") {
   rustflags = test_image_rustflags
 }
 
+run_clippy("kernel_integration_test_clippy") {
+  testonly = true
+  deps = [ ":kernel_integration_test" ]
+}
+
 build_rust("blueos") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
@@ -169,63 +188,8 @@ build_rust("blueos") {
   rustflags += common_crate_rustflags
 }
 
-build_rust("blueos_std_static") {
-  crate_name = "blueos"
-  crate_type = "staticlib"
-  sources = [ "src/lib.rs" ]
-  edition = "2021"
-  proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
-  ]
-  deps = shared_deps
-  configs += [ "//kernel/kconfig:kconfigs" ]
-  cfgs = blueos_default_cfgs
-  rustflags = shared_rust_build_flags
-  rustflags += common_crate_rustflags
-  rustflags += [
-    "--cfg",
-    "std",
-  ]
-}
-
-build_rust("blueos_std") {
-  crate_name = "blueos"
-  crate_type = "rlib"
-  sources = [ "src/lib.rs" ]
-  edition = "2021"
-  proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
-  ]
-  deps = shared_deps
-  cfgs = blueos_default_cfgs
-  rustflags = shared_rust_build_flags
-  rustflags += common_crate_rustflags
-  rustflags += [
-    "--cfg",
-    "std",
-  ]
-}
-
-build_rust("blueos_posixtestsuite") {
-  testonly = true
-  crate_name = "blueos"
-  crate_type = "rlib"
-  sources = [ "src/lib.rs" ]
-  edition = "2021"
-  proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
-  ]
-  deps = shared_deps
-  cfgs = blueos_default_cfgs
-  rustflags = shared_rust_build_flags
-  rustflags += common_crate_rustflags
-  rustflags += [
-    "--cfg",
-    "posixtestsuite",
-  ]
+run_clippy("blueos_clippy") {
+  deps = [ ":blueos" ]
 }
 
 cbindgen("rust_wrapper") {
