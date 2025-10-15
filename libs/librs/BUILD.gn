@@ -1,4 +1,4 @@
-import("//build/templates/rust.gni")
+import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 import("//kernel/common_crate_rustflags.gni")
 
@@ -16,6 +16,10 @@ build_rust("librs") {
   rustflags = common_crate_rustflags
 }
 
+run_clippy("librs_clippy") {
+  deps = [ ":librs" ]
+}
+
 build_rust("librs_swi") {
   crate_type = "rlib"
   crate_name = "librs"
@@ -27,6 +31,10 @@ build_rust("librs_swi") {
     "//libc:libc",
   ]
   rustflags = common_crate_rustflags
+}
+
+run_clippy("librs_swi_clippy") {
+  deps = [ ":librs_swi" ]
 }
 
 build_rust("librs_unittest_image") {
@@ -48,6 +56,11 @@ build_rust("librs_unittest_image") {
   inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
   rustflags = test_image_rustflags
   rustflags += common_crate_rustflags
+}
+
+run_clippy("librs_unittest_image_clippy") {
+  testonly = true
+  deps = [ ":librs_unittest_image" ]
 }
 
 gen_qemu_runner("librs_unittest_runner") {
@@ -86,4 +99,13 @@ group("check_librs") {
 group("check_librs_linux_emulation") {
   testonly = true
   deps = [ "tests/linux_emulation_test:run_librs_linux_emulation" ]
+}
+
+group("check_librs_by_clippy") {
+  testonly = true
+  deps = [
+    ":librs_clippy",
+    ":librs_swi_clippy",
+    ":librs_unittest_image_clippy",
+  ]
 }
