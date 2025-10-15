@@ -47,6 +47,7 @@ header: # `header` section is configurations for source codes license header.
       - "kconfig/**/defconfig"
       - "LICENSES/**"
       - "CREDITS/**"
+      - ".github/**"
       - "kernel/src/allocator/buddy/**/*.rs" # special process for kernel imported
       - "kernel/src/allocator/llff/**/*.rs" # special process for kernel imported
       - "kernel/src/allocator/tlsf/**/*.rs" # special process for kernel imported
