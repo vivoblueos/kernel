@@ -35,7 +35,7 @@ mod fifo;
 mod global_scheduler;
 mod idle;
 pub use idle::get_idle_thread;
-mod wait_queue;
+pub(crate) mod wait_queue;
 
 #[cfg(scheduler = "fifo")]
 pub use fifo::*;

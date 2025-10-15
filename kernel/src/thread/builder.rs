@@ -119,6 +119,7 @@ impl Builder {
         );
         w.init(stack, self.entry);
         w.set_priority(self.priority);
+        w.set_origin_priority(self.priority);
         drop(w);
         GlobalQueueVisitor::add(thread.clone());
 
