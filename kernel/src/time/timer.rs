@@ -36,7 +36,7 @@ static SOFT_TIMER_WHEEL: TimerWheel = TimerWheel::const_new();
 #[cfg(soft_timer)]
 static mut SOFT_TIMER_THREAD: MaybeUninit<ThreadNode> = MaybeUninit::zeroed();
 #[cfg(soft_timer)]
-static SOFT_TIMER_THREAD_STACK: SystemThreadStorage =
+static mut SOFT_TIMER_THREAD_STACK: SystemThreadStorage =
     SystemThreadStorage::const_new(ThreadKind::SoftTimer);
 
 #[cfg(soft_timer)]
@@ -67,7 +67,7 @@ pub fn system_timer_init() {
         SOFT_TIMER_WHEEL.init();
         let th = thread::build_static_thread(
             unsafe { &mut SOFT_TIMER_THREAD },
-            &SOFT_TIMER_THREAD_STACK,
+            unsafe { &mut SOFT_TIMER_THREAD_STACK },
             config::SOFT_TIMER_THREAD_PRIORITY,
             thread::CREATED,
             Entry::C(run_soft_timer),
