@@ -44,7 +44,4 @@ RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/r
 RUN cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
 
 # Set working directory
-WORKDIR /workspace
-
-# Default command
-CMD ["/bin/bash"]
+WORKDIR /blueos-dev
