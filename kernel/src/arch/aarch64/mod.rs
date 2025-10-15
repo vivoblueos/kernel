@@ -15,13 +15,7 @@
 // pub(crate) mod asm;
 // pub(crate) mod mmu;
 mod exception;
-#[cfg(not(target_board = "bcm2711"))]
-#[path = "gicv3.rs"]
 pub mod irq;
-#[cfg(target_board = "bcm2711")]
-#[path = "gicv2.rs"]
-pub mod irq;
-
 pub(crate) mod psci;
 pub(crate) mod registers;
 pub(crate) mod vector;
@@ -88,100 +82,11 @@ macro_rules! enter_el1 {
     };
 }
 
-// from any EL to EL1
-#[macro_export]
-macro_rules! enter_el1_bcm2711 {
-    () => {
-        "
-        mrs x9, CurrentEL
-        lsr x9, x9, #2
-        cmp x9, #3
-        beq 3f
-        cmp x9, #2
-        beq 4f
-        // only boot core 0 now, already in EL1
-    1:  mrs x0, mpidr_el1
-        and x0, x0, 0x3
-        ldr x1, =0
-        cmp x0, x1
-        b.ne 2f
-        ldr x0, ={stack_start}
-        ldr x1, ={stack_end}
-        ldr x2, ={cont}
-        adr x3, {entry}
-        br   x3
-    2:
-        wfe
-        b 2b
-    3:
-        mrs x0, mpidr_el1
-        and x0, x0, 0x3
-        ldr x1, =0
-        cmp x0, x1
-        b.ne 2b
-        // Configure EL3 to return to EL2 (NS=1, RW=1), then run the same EL2->EL1 path as enter_el1
-        mov   x10, #(1 << 0) | (1 << 10)  // SCR_EL3.NS=1, RW=1
-        msr   scr_el3, x10
-        msr   cptr_el3, xzr               // no traps to EL3
-        // Return to EL2h with DAIF masked, and continue at label 5 (common EL2 path)
-        mov   x10, #0b1001                // EL2h
-        orr   x10, x10, #(0b1111 << 6)    // mask DAIF
-        msr   spsr_el3, x10
-        adr   x3, 5f
-        msr   elr_el3, x3
-        eret
-    4:
-        mrs x0, mpidr_el1
-        and x0, x0, 0x3
-        ldr x1, =0
-        cmp x0, x1
-        b.ne 2b
-    5:
-        // Reuse the exact EL2->EL1 sequence from enter_el1
-        // Don't trap SIMD/FP instructions in both EL0 and EL1.
-        mov     x1, #0x00300000
-        msr     cpacr_el1, x1
-        // Enable CNTP to EL1 for systick.
-        mrs     x0, cnthctl_el2
-        orr     x0, x0, #3
-        msr     cnthctl_el2, x0
-        msr     cntvoff_el2, xzr
-        // Enable AArch64 in EL1.
-        mov x0, #(1 << 31)
-        orr x0, x0, #(1 << 1)
-        msr hcr_el2, x0
-        // Set EL1 sp and mask daif in EL2.
-        mov x0, #0x3C5
-        msr spsr_el2, x0
-        // Set EL1 entry and enter.
-        ldr x0, ={stack_start}
-        ldr x1, ={stack_end}
-        ldr x2, ={cont}
-        adr x3, {entry}
-        msr elr_el2, x3
-        eret
-        "
-    };
-}
-
 #[macro_export]
 macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
             $crate::enter_el1!(),
-            entry = sym $crate::arch::aarch64::init,
-            stack_start = sym $stack_start,
-            stack_end = sym $stack_end,
-            cont = sym $cont,
-        )
-    };
-}
-
-#[macro_export]
-macro_rules! arch_bootstrap_bcm2711 {
-    ($stack_start:path, $stack_end:path, $cont: path) => {
-        core::arch::naked_asm!(
-            $crate::enter_el1_bcm2711!(),
             entry = sym $crate::arch::aarch64::init,
             stack_start = sym $stack_start,
             stack_end = sym $stack_end,
@@ -436,7 +341,7 @@ pub(crate) extern "C" fn init(_: *mut u8, stack_end: *mut u8, cont: extern "C" f
                 mrs x8, mpidr_el1
                 and x8, x8, #0Xff
                 lsl x8, x8, #14
-                sub sp, x1, x8
+                sub sp, x1, x8 
                 br x2
             "
         )
