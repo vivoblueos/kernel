@@ -22,26 +22,33 @@ use crate::{
 use core::mem::MaybeUninit;
 
 static mut READY_TABLE: MaybeUninit<SpinLock<ReadyTable>> = MaybeUninit::zeroed();
-
+type ReadyQueue = ArcList<Thread, thread::OffsetOfSchedNode>;
 type ReadyTableBitFields = u32;
 
 #[allow(clippy::assertions_on_constants)]
 pub(super) fn init() {
     assert!(ReadyTableBitFields::BITS >= ThreadPriority::BITS);
-    unsafe { READY_TABLE.write(SpinLock::new(ReadyTable::default())) };
+    unsafe { READY_TABLE.write(SpinLock::new(ReadyTable::new())) };
     let mut w = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     for i in 0..(MAX_THREAD_PRIORITY + 1) as usize {
         w.tables[i].init();
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ReadyTable {
     active_tables: ReadyTableBitFields,
-    tables: [ArcList<Thread, thread::OffsetOfSchedNode>; (MAX_THREAD_PRIORITY + 1) as usize],
+    tables: [ReadyQueue; (MAX_THREAD_PRIORITY + 1) as usize],
 }
 
 impl ReadyTable {
+    pub fn new() -> Self {
+        Self {
+            active_tables: 0,
+            tables: [const { ReadyQueue::new() }; (MAX_THREAD_PRIORITY + 1) as usize],
+        }
+    }
+
     #[inline]
     fn clear_active_queue(&mut self, bit: u32) -> &mut Self {
         self.active_tables &= !(1 << bit);

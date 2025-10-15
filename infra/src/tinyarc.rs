@@ -239,12 +239,12 @@ unsafe impl<T: Sized> Sync for TinyArc<T> {}
 // a node from a list, we must be sure that the node being detached exactly
 // belongs to the list we are locking.
 #[derive(Default, Debug)]
-pub struct TinyArcList<T: Sized, A: Adapter> {
+pub struct TinyArcList<T: Sized, A: Adapter<T>> {
     head: AtomicListHead<T, A>,
     tail: AtomicListHead<T, A>,
 }
 
-impl<T: Sized, A: Adapter> TinyArcList<T, A> {
+impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     pub const fn const_new() -> Self {
         Self {
             head: AtomicListHead::<T, A>::new(),
@@ -435,9 +435,24 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
             val,
         )
     }
+
+    pub fn remove_if<Predicate>(&mut self, is: Predicate) -> Option<TinyArc<T>>
+    where
+        Predicate: Fn(&TinyArc<T>) -> bool,
+    {
+        for mut e in self.iter() {
+            if !is(&e) {
+                continue;
+            }
+            let ok = Self::detach(&mut e);
+            debug_assert!(ok);
+            return Some(e);
+        }
+        None
+    }
 }
 
-impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
+impl<T: Sized, A: Adapter<T>> Drop for TinyArcList<T, A> {
     #[inline]
     fn drop(&mut self) {
         // NOTE: Elements should be cleared by calling `clear` method
@@ -448,19 +463,20 @@ impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
     }
 }
 
-impl<T: Sized, A: Adapter> GenericList for TinyArcList<T, A> {
+impl<T: Sized, A: Adapter<T>> GenericList for TinyArcList<T, A> {
     type Node = AtomicListHead<T, A>;
+    type Iter = TinyArcListIterator<T, A>;
 }
 
-pub struct TinyArcListIterator<T, A: Adapter> {
+pub struct TinyArcListIterator<T, A: Adapter<T>> {
     it: ListIterator<T, A>,
 }
 
-pub struct TinyArcListReverseIterator<T, A: Adapter> {
+pub struct TinyArcListReverseIterator<T, A: Adapter<T>> {
     it: ListReverseIterator<T, A>,
 }
 
-impl<T, A: Adapter> TinyArcListIterator<T, A> {
+impl<T, A: Adapter<T>> TinyArcListIterator<T, A> {
     pub fn new(head: &AtomicListHead<T, A>, tail: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListIterator::new(head, tail),
@@ -468,7 +484,7 @@ impl<T, A: Adapter> TinyArcListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> TinyArcListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> TinyArcListReverseIterator<T, A> {
     pub fn new(tail: &AtomicListHead<T, A>, head: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListReverseIterator::new(tail, head),
@@ -476,7 +492,7 @@ impl<T, A: Adapter> TinyArcListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for TinyArcListIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for TinyArcListIterator<T, A> {
     type Item = TinyArc<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -485,7 +501,7 @@ impl<T, A: Adapter> Iterator for TinyArcListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for TinyArcListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for TinyArcListReverseIterator<T, A> {
     type Item = TinyArc<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1047,5 +1063,23 @@ mod tests {
         assert!(old.is_some());
         assert_eq!(*old.unwrap(), 43);
         assert_eq!(TinyArc::strong_count(&s), 1);
+    }
+
+    #[test]
+    fn test_remove_if() {
+        let mut l = ControlStatusList::new();
+        l.init();
+        let mut t0 = TinyArc::new(Thread::new(42));
+        let mut t1 = TinyArc::new(Thread::new(43));
+        let mut t2 = TinyArc::new(Thread::new(47));
+        l.push_back(t0);
+        l.push_back(t1);
+        l.push_back(t2);
+        assert!(l.remove_if(|e| e.id == 42).is_some());
+        assert_eq!(l.front().unwrap().id, 43);
+        l.remove_if(|e| e.id == 47);
+        assert_eq!(l.front().unwrap().id, 43);
+        l.clear();
+        assert!(l.is_empty());
     }
 }

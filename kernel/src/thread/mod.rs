@@ -18,12 +18,15 @@ use crate::sync::event_flags::EventFlagsMode;
 use crate::{
     arch, config, debug, scheduler,
     support::{Region, RegionalObjectBuilder},
-    sync::{ISpinLock, SpinLockGuard},
+    sync::{
+        mutex::{MutexList, MutexListIterator},
+        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
+    },
     thread::builder::GlobalQueue,
     time::timer::Timer,
     types::{
-        impl_simple_intrusive_adapter, Arc, AtomicUint, IlistHead, ThreadPriority, Uint,
-        UniqueListHead,
+        impl_simple_intrusive_adapter, Arc, ArcCas, AtomicUint, IlistHead, ThreadPriority,
+        Uint, UniqueListHead,
     },
 };
 use alloc::boxed::Box;
@@ -133,7 +136,7 @@ impl ThreadStats {
 
 pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, GlobalQueue>;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Thread {
     global: GlobalQueueListHead,
     sched_node: IlistHead<Thread, OffsetOfSchedNode>,
@@ -143,7 +146,10 @@ pub struct Thread {
     kind: ThreadKind,
     stack: Stack,
     saved_sp: usize,
+    // This value may change at runtime.
     priority: ThreadPriority,
+    // This is the static priority of this thread.
+    origin_priority: ThreadPriority,
     state: AtomicUint,
     preempt_count: AtomicUint,
     #[cfg(robin_scheduler)]
@@ -159,6 +165,20 @@ pub struct Thread {
     event_flags_mode: EventFlagsMode,
     #[cfg(event_flags)]
     event_flags_mask: u32,
+    // The mutex this thread is acquiring.
+    pending_on_mutex: ArcCas<Mutex>,
+    // Mutexes this thread has acquired.  It's protected by its own spinlock to
+    // avoid deadlock, since before this change we might have lock pattern
+    // Thread0:
+    // - Lock mutex's spinlock
+    // - Lock this thread
+    // - Change priority
+    // Thread1:
+    // - Lock this thread
+    // - Iterate over acquired mutexes
+    // - Lock mutex's spinlcok
+    // - Check mutex's pending queue
+    acquired_mutexes: SpinLock<MutexList>,
 }
 
 extern "C" fn run_simple_c(f: extern "C" fn()) {
@@ -311,6 +331,34 @@ impl Thread {
         self.cleanup = Some(cleanup);
     }
 
+    #[inline]
+    pub fn add_acquired_mutex(&self, mu: Arc<Mutex>) -> bool {
+        self.acquired_mutexes.irqsave_write().push_back(mu)
+    }
+
+    #[inline]
+    pub fn remove_acquired_mutex(&self, mu: &Arc<Mutex>) -> bool {
+        self.acquired_mutexes
+            .irqsave_write()
+            .remove_if(|e| Arc::is(e, mu))
+            .is_some()
+    }
+
+    #[inline]
+    pub fn has_acquired_mutex(&self) -> bool {
+        !self.acquired_mutexes.irqsave_read().is_empty()
+    }
+
+    #[inline]
+    pub fn acquired_mutexes_mut(&self) -> SpinLockWriteGuard<'_, MutexList> {
+        self.acquired_mutexes.irqsave_write()
+    }
+
+    #[inline]
+    pub fn replace_pending_on_mutex(&self, mu: Option<Arc<Mutex>>) -> Option<Arc<Mutex>> {
+        self.pending_on_mutex.swap(mu, Ordering::Release)
+    }
+
     const fn const_new(kind: ThreadKind) -> Self {
         Self {
             cleanup: None,
@@ -321,6 +369,7 @@ impl Thread {
             global: UniqueListHead::new(),
             saved_sp: 0,
             priority: 0,
+            origin_priority: 0,
             preempt_count: AtomicUint::new(0),
             posix_compat: None,
             stats: ThreadStats::new(),
@@ -332,6 +381,8 @@ impl Thread {
             event_flags_mode: EventFlagsMode::empty(),
             #[cfg(event_flags)]
             event_flags_mask: 0,
+            pending_on_mutex: ArcCas::new(None),
+            acquired_mutexes: SpinLock::new(MutexList::new()),
         }
     }
 
@@ -372,11 +423,18 @@ impl Thread {
         self
     }
 
+    #[inline]
+    pub(crate) fn pending_on_mutex(&self) -> Option<Arc<Mutex>> {
+        self.pending_on_mutex.load(Ordering::Acquire)
+    }
+
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
         self.stack = stack;
         // TODO: Stack sanity check.
         self.saved_sp =
             self.stack.base() + self.stack.size() - core::mem::size_of::<arch::Context>();
+        self.acquired_mutexes.irqsave_write().init();
+
         let region = Region {
             base: self.saved_sp,
             size: core::mem::size_of::<arch::Context>(),
@@ -459,6 +517,7 @@ impl Thread {
     pub fn get_cycles(&self) -> u64 {
         self.stats.get_cycles()
     }
+
     #[cfg(event_flags)]
     #[inline]
     pub fn event_flags_mode(&self) -> EventFlagsMode {
@@ -481,6 +540,32 @@ impl Thread {
     #[inline]
     pub fn set_event_flags_mask(&mut self, mask: u32) {
         self.event_flags_mask = mask;
+    }
+
+    #[inline]
+    pub fn origin_priority(&self) -> ThreadPriority {
+        self.origin_priority
+    }
+
+    #[inline]
+    pub fn set_origin_priority(&mut self, p: ThreadPriority) -> &mut Self {
+        self.origin_priority = p;
+        self
+    }
+
+    #[inline]
+    pub fn recover_priority(&mut self) -> &mut Self {
+        self.priority = self.origin_priority;
+        self
+    }
+
+    #[inline]
+    pub fn promote_priority_to(&mut self, target_priority: ThreadPriority) -> bool {
+        if target_priority >= self.priority {
+            return false;
+        }
+        self.priority = target_priority;
+        true
     }
 }
 

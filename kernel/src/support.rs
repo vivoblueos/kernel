@@ -270,18 +270,18 @@ impl Drop for PerCpuVarAccessGuard {
     }
 }
 
-pub(crate) struct ArcBufferingQueue<T: Sized, A: IntrusiveAdapter, const N: usize> {
+pub(crate) struct ArcBufferingQueue<T: Sized, A: IntrusiveAdapter<T>, const N: usize> {
     queues: [SpinLock<ArcList<T, A>>; N],
     active: AtomicUint,
 }
 
-impl<T: Sized, A: IntrusiveAdapter, const N: usize> Init for ArcBufferingQueue<T, A, N> {
+impl<T: Sized, A: IntrusiveAdapter<T>, const N: usize> Init for ArcBufferingQueue<T, A, N> {
     fn init(&mut self) -> bool {
         self.init_queues() == N
     }
 }
 
-impl<T: Sized, A: IntrusiveAdapter, const N: usize> ArcBufferingQueue<T, A, N> {
+impl<T: Sized, A: IntrusiveAdapter<T>, const N: usize> ArcBufferingQueue<T, A, N> {
     #[inline]
     pub const fn new() -> Self {
         Self {
