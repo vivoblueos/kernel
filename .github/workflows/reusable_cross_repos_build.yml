@@ -5,11 +5,15 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: ghcr.io/${{ github.repository_owner }}/kernel:latest
+    runs-on: ubuntu-latest
+
     permissions:
       contents: read
       checks: write
       pull-requests: write
+
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
 
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     steps:
