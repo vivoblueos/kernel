@@ -24,17 +24,6 @@ jobs:
               body: `Job is started, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
             })
 
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Prepare directories
         run: |
           # sysroot/ contains toolchain.
@@ -116,6 +105,17 @@ jobs:
         # In case manifests repo is changed.
         run: |
           repo sync -j$(nproc)
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
       - name: Install packages
         run: |
