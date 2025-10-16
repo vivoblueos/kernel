@@ -20,9 +20,9 @@ use crate::{
 };
 use blueos_header::syscalls::NR::{
     Accept, Bind, Chdir, ClockGetTime, Close, Connect, FStat, Fcntl, FreeAddrinfo, Ftruncate,
-    GetAddrinfo, GetDents, Getcwd, Getsockopt, Link, Listen, Lseek, Mkdir, Open, Read, Recv,
-    Recvfrom, Recvmsg, Rmdir, Send, Sendmsg, Sendto, Setsockopt, Shutdown, Socket, Statfs, Unlink,
-    Write,
+    GetAddrinfo, GetDents, Getcwd, Getsockopt, Link, Listen, Lseek, Mkdir, NanoSleep, Open, Read,
+    Recv, Recvfrom, Recvmsg, Rmdir, Send, Sendmsg, Sendto, Setsockopt, Shutdown, Socket, Statfs,
+    Unlink, Write,
 };
 use blueos_scal::bk_syscall;
 use libc::{
@@ -76,9 +76,15 @@ impl Syscall for Sys {
         // blueos is not valid for this syscall now
         Ok(())
     }
-    unsafe fn nanosleep(_rqtp: *const timespec, _rmtp: *mut timespec) -> Result<()> {
+    unsafe fn nanosleep(rqtp: *const timespec, rmtp: *mut timespec) -> Result<()> {
+        if rqtp.is_null() {
+            return Err(Errno(-1));
+        }
         // blueos is not valid for this syscall now
-        Ok(())
+        match bk_syscall!(NanoSleep, 1, 0, rqtp, rmtp) {
+            0 => Ok(()),
+            _ => Err(Errno(-1)),
+        }
     }
     unsafe fn clock_nanosleep(
         _clk_id: clockid_t,
