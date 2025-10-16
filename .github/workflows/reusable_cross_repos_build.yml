@@ -43,12 +43,12 @@ jobs:
             let match;
             let prs = [];
             let patchUrls = [];
-            let fetched_prs = [];
+            let fetchedPrs = [];
             while ((match = prRegex.exec(body)) !== null) {
               let owner = match[1];
               let repo = match[2];
-              let pr_num = match[3];
-              prs.push({owner: owner, repo: repo, pr_num: pr_num});
+              let prNo = match[3];
+              prs.push({owner: owner, repo: repo, pr_num: prNo});
               patchUrls.push({repo: repo, url: match[0] + ".diff"});
             }
             // Get metadata of the PR.
@@ -58,7 +58,7 @@ jobs:
                 repo,
                 pull_number: pr_num,
               });
-              fetched_prs.push({owner: owner, repo: repo, pr_num: pr_num, sha: pullRequest.head.sha});
+              fetchedPrs.push({owner: owner, repo: repo, pr_num: pr_num, sha: pullRequest.head.sha});
             }));
 
             // Download diffs.
@@ -70,7 +70,30 @@ jobs:
               });
               await fs.writeFile(patchFilename, response.data);
             }));
-            core.setOutput('fetched_prs', JSON.stringify(fetched_prs));
+            core.setOutput('fetched_prs', JSON.stringify(fetchedPrs));
+
+      - name: Create Check in Dashboard
+        id: create_check
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fetchedPrs = JSON.parse('${{ steps.fetch_prs.outputs.fetched_prs }}');
+            let checks = [];
+            await Promise.all(fetchedPrs.map(async({owner, repo, sha }) => {
+              // FIXME: We're unable to create checks in other repos.
+              if (repo != context.repo.repo) {
+                return;
+              }
+              const resp = await github.rest.checks.create({
+                owner: owner,
+                repo: repo,
+                name: 'Build and test',
+                head_sha: sha,
+                status: 'in_progress',
+              });
+              checks.push({owner: owner, repo: repo, check_run_id: resp.data.id});
+            }));
+            core.setOutput('checks', JSON.stringify(checks));
 
       - name: Download prebuilt Android repo
         run: |
@@ -153,6 +176,22 @@ jobs:
       - name: Build and test the kernel
         run: |
           ./build/ci/run_ci.py
+
+      - name: Update Check in Dashboard
+        id: update_check
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const checks = JSON.parse('${{ steps.create_check.outputs.checks }}');
+            await Promise.all(checks.map(async({owner, repo, check_run_id }) => {
+              await github.rest.checks.update({
+                owner: owner,
+                repo: repo,
+                check_run_id: check_run_id,
+                status: 'completed',
+                conclusion: '${{ job.status }}',
+              });
+            }));
 
       - name: Notify job ended
         if: always()
