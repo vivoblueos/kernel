@@ -35,7 +35,7 @@ mod fifo;
 mod global_scheduler;
 mod idle;
 pub use idle::get_idle_thread;
-mod wait_queue;
+pub(crate) mod wait_queue;
 
 #[cfg(scheduler = "fifo")]
 pub use fifo::*;
@@ -47,9 +47,43 @@ pub(crate) use wait_queue::*;
 #[repr(u8)]
 pub enum InsertMode {
     /// Insert by priority
-    InsertByPrio,
+    InsertByPrio = 0,
     /// Append to end
-    InsertToEnd,
+    InsertToEnd = 1,
+}
+
+impl InsertMode {
+    /// Convert InsertMode to u8 const
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Const type for InsertByPrio
+pub struct InsertByPrio;
+impl InsertByPrio {
+    pub const MODE: InsertMode = InsertMode::InsertByPrio;
+    pub const VALUE: u8 = 0;
+}
+
+/// Const type for InsertToEnd  
+pub struct InsertToEnd;
+impl InsertToEnd {
+    pub const MODE: InsertMode = InsertMode::InsertToEnd;
+    pub const VALUE: u8 = 1;
+}
+
+/// Trait for InsertMode const types
+pub trait InsertModeTrait {
+    const MODE: InsertMode;
+}
+
+impl InsertModeTrait for InsertByPrio {
+    const MODE: InsertMode = InsertMode::InsertByPrio;
+}
+
+impl InsertModeTrait for InsertToEnd {
+    const MODE: InsertMode = InsertMode::InsertToEnd;
 }
 
 pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
@@ -415,6 +449,17 @@ pub(crate) fn suspend_me_with_timeout(
 // perfectly meet this semantics.
 pub(crate) fn yield_me_now_or_later() {
     arch::pend_switch_context();
+}
+
+pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
+    #[cfg(debugging_scheduler)]
+    crate::trace!("[TH:0x{:x}] is waking up all threads", current_thread_id());
+    let woken = wait_queue::wake_up_all(&mut w);
+    drop(w);
+    if woken > 0 {
+        yield_me_now_or_later();
+    }
+    woken
 }
 
 // Entry of system idle threads.

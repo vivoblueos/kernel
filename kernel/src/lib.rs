@@ -85,7 +85,7 @@ pub mod coverage;
 pub(crate) mod devices;
 pub(crate) mod drivers;
 pub mod error;
-pub(crate) mod irq;
+pub mod irq;
 pub(crate) mod logger;
 pub mod net;
 pub mod scheduler;
@@ -325,10 +325,10 @@ mod tests {
     }
 
     static mut SEMA_COUNTER: usize = 0usize;
-    static SEMA: sync::semaphore::Semaphore = sync::semaphore::Semaphore::new(1);
+    static SEMA: sync::semaphore::Semaphore = sync::semaphore::Semaphore::new();
 
     extern "C" fn test_semaphore() {
-        SEMA.acquire_notimeout();
+        SEMA.acquire_notimeout::<scheduler::InsertToEnd>();
         let n = unsafe { SEMA_COUNTER };
         unsafe { SEMA_COUNTER += 1 };
     }
@@ -339,11 +339,11 @@ mod tests {
 
     #[test]
     fn stress_semaphore() {
-        SEMA.init();
+        SEMA.init(1);
         reset_and_queue_test_threads(test_semaphore, Some(test_semaphore_cleanup));
         let l = unsafe { TEST_THREADS.len() };
         loop {
-            SEMA.acquire_notimeout();
+            SEMA.acquire_notimeout::<scheduler::InsertToEnd>();
             let n = unsafe { SEMA_COUNTER };
             if n == l {
                 SEMA.release();
@@ -568,7 +568,7 @@ mod tests {
     static EVENT: sync::event_flags::EventFlags = sync::event_flags::EventFlags::new();
     #[cfg(event_flags)]
     extern "C" fn test_event_flags() {
-        EVENT.wait(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
+        EVENT.wait::<scheduler::InsertToEnd>(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
         EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
     }
     #[cfg(event_flags)]

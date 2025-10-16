@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::marker::PhantomData;
+
 #[const_trait]
 pub trait Adapter {
     fn offset() -> usize;
@@ -27,5 +29,13 @@ macro_rules! impl_simple_intrusive_adapter {
                 core::mem::offset_of!($ty, $($fields)+)
             }
         }
+    }
+}
+
+pub struct Relative<From: const Adapter, To: const Adapter>(PhantomData<From>, PhantomData<To>);
+
+impl<From: const Adapter, To: const Adapter> const Adapter for Relative<From, To> {
+    fn offset() -> usize {
+        To::offset() - From::offset()
     }
 }

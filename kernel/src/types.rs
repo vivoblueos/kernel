@@ -15,12 +15,13 @@
 use crate::sync::{ISpinLock, SpinLock, SpinLockGuard};
 pub use blueos_infra::{
     impl_simple_intrusive_adapter,
-    intrusive::Adapter as IntrusiveAdapter,
+    intrusive::{Adapter as IntrusiveAdapter, Relative as RelativeAdapter},
     list::{
         typed_atomic_ilist::AtomicListHead as AtomicIlistHead, typed_ilist::ListHead as IlistHead,
+        GenericList,
     },
     tinyarc::{
-        TinyArc as Arc, TinyArcInner as ArcInner, TinyArcList as ArcList,
+        TinyArc as Arc,  TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
         TinyArcListIterator as ArcListIterator,
     },
     tinyrwlock::{IRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -139,45 +140,22 @@ impl<T: 'static, A: IntrusiveAdapter + 'static, O: StaticListOwner<T, A>> Unique
     }
 }
 
-// FIXME: Enhance IntrusiveAdapter so that T's info is carried.
-pub(crate) struct MutexToNode<T, Mutex: const IntrusiveAdapter, Node: const IntrusiveAdapter>(
-    PhantomData<T>,
-    PhantomData<Mutex>,
-    PhantomData<Node>,
-);
-
-impl<T, Mutex: const IntrusiveAdapter, Node: const IntrusiveAdapter> const IntrusiveAdapter
-    for MutexToNode<T, Mutex, Node>
-{
-    fn offset() -> usize {
-        Mutex::offset() - Node::offset()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use blueos_test_macro::test;
 
-    impl_simple_intrusive_adapter!(NodeOffset, Foobar, node);
-    impl_simple_intrusive_adapter!(LockOffset, Foobar, node_lock);
+    impl_simple_intrusive_adapter!(Node, Foobar, node);
+    impl_simple_intrusive_adapter!(Lock, Foobar, node_lock);
 
     struct Foobar {
-        node_lock: ISpinLock<
-            AtomicIlistHead<Foobar, NodeOffset>,
-            MutexToNode<Foobar, LockOffset, NodeOffset>,
-        >,
-        node: AtomicIlistHead<Foobar, NodeOffset>,
-    }
-
-    #[test]
-    fn test_intrusive_mutex_arc_list_head() {
-        type L = ArcList<Foobar, NodeOffset>;
+        node: AtomicIlistHead<Foobar, Node>,
+        node_lock: ISpinLock<AtomicIlistHead<Foobar, Node>, RelativeAdapter<Node, Lock>>,
     }
 
     #[test]
     fn test_intrusive_mutex_list_head() {
-        type L = AtomicIlistHead<Foobar, NodeOffset>;
+        type L = AtomicIlistHead<Foobar, Node>;
         let head = Arc::new(Foobar {
             node: AtomicIlistHead::new(),
             node_lock: ISpinLock::new(),
