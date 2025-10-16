@@ -14,3 +14,4 @@
 
 pub mod semaphore;
 pub mod tick;
+pub mod timer;

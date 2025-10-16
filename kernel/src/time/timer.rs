@@ -36,7 +36,7 @@ static SOFT_TIMER_WHEEL: TimerWheel = TimerWheel::const_new();
 #[cfg(soft_timer)]
 static mut SOFT_TIMER_THREAD: MaybeUninit<ThreadNode> = MaybeUninit::zeroed();
 #[cfg(soft_timer)]
-static SOFT_TIMER_THREAD_STACK: SystemThreadStorage =
+static mut SOFT_TIMER_THREAD_STACK: SystemThreadStorage =
     SystemThreadStorage::const_new(ThreadKind::SoftTimer);
 
 #[cfg(soft_timer)]
@@ -67,12 +67,13 @@ pub fn system_timer_init() {
         SOFT_TIMER_WHEEL.init();
         let th = thread::build_static_thread(
             unsafe { &mut SOFT_TIMER_THREAD },
-            &SOFT_TIMER_THREAD_STACK,
+            unsafe { &mut SOFT_TIMER_THREAD_STACK },
             config::SOFT_TIMER_THREAD_PRIORITY,
             thread::CREATED,
             Entry::C(run_soft_timer),
             ThreadKind::SoftTimer,
         );
+        unsafe { SOFT_TIMER_THREAD.write(th.clone()) };
         let ok = scheduler::queue_ready_thread(thread::CREATED, th);
         debug_assert!(ok);
     }
@@ -83,8 +84,8 @@ fn wakeup_soft_timer_thread() {
     if let Some(timer) = &th.timer {
         timer.stop();
     }
-    let ok = scheduler::queue_ready_thread(thread::SUSPENDED, th.clone());
-    debug_assert!(ok);
+    // soft timer thread may running when add timer, no need to check return value
+    let _woke = scheduler::queue_ready_thread(thread::SUSPENDED, th.clone());
 }
 
 struct TimerWheel {
@@ -195,6 +196,15 @@ bitflags! {
     }
 }
 
+pub enum TimerEntry {
+    Closure(Box<dyn Fn() + Send + Sync>),
+    Once(Box<dyn FnOnce() + Send + Sync>),
+    C(
+        unsafe extern "C" fn(*mut core::ffi::c_void),
+        *mut core::ffi::c_void,
+    ),
+}
+
 impl_simple_intrusive_adapter!(OffsetOfWheelNode, Timer, wheel_node);
 type WheelTimerList = ArcList<Timer, OffsetOfWheelNode>;
 
@@ -208,7 +218,7 @@ pub struct Timer {
 struct Inner {
     interval: usize,
     timeout_ticks: usize,
-    callback: Option<Box<dyn Fn() + Send + Sync>>,
+    callback: Option<TimerEntry>,
 }
 
 impl fmt::Debug for Inner {
@@ -223,12 +233,13 @@ impl fmt::Debug for Inner {
 
 impl Timer {
     #[cfg(soft_timer)]
-    pub fn new_soft_oneshot(interval: usize, callback: Box<dyn Fn() + Send + Sync>) -> Arc<Self> {
+    pub fn new_soft_oneshot(interval: usize, callback: TimerEntry) -> Arc<Self> {
         Self::new(interval, TimerFlags::SOFT_TIMER, callback)
     }
 
     #[cfg(soft_timer)]
-    pub fn new_soft_periodic(interval: usize, callback: Box<dyn Fn() + Send + Sync>) -> Arc<Self> {
+    pub fn new_soft_periodic(interval: usize, callback: TimerEntry) -> Arc<Self> {
+        assert!(!matches!(callback, TimerEntry::Once(_)));
         Self::new(
             interval,
             TimerFlags::SOFT_TIMER | TimerFlags::PERIODIC,
@@ -236,15 +247,16 @@ impl Timer {
         )
     }
 
-    pub fn new_hard_oneshot(interval: usize, callback: Box<dyn Fn() + Send + Sync>) -> Arc<Self> {
+    pub fn new_hard_oneshot(interval: usize, callback: TimerEntry) -> Arc<Self> {
         Self::new(interval, TimerFlags::empty(), callback)
     }
 
-    pub fn new_hard_periodic(interval: usize, callback: Box<dyn Fn() + Send + Sync>) -> Arc<Self> {
+    pub fn new_hard_periodic(interval: usize, callback: TimerEntry) -> Arc<Self> {
+        assert!(!matches!(callback, TimerEntry::Once(_)));
         Self::new(interval, TimerFlags::PERIODIC, callback)
     }
 
-    fn new(interval: usize, flags: TimerFlags, callback: Box<dyn Fn() + Send + Sync>) -> Arc<Self> {
+    fn new(interval: usize, flags: TimerFlags, callback: TimerEntry) -> Arc<Self> {
         Arc::new(Self {
             wheel_node: IlistHead::new(),
             flags: AtomicU32::new(flags.bits()),
@@ -272,8 +284,18 @@ impl Timer {
         self.flags.load(Ordering::Relaxed) & TimerFlags::ACTIVATED.bits() != 0
     }
 
-    pub fn set_callback(&self, callback: Box<dyn Fn() + Send + Sync>) {
-        self.inner.irqsave_lock().callback = Some(callback);
+    // Only Once Closure callback need to reset the callback
+    pub fn set_callback(&self, callback: TimerEntry) {
+        let mut inner = self.inner.irqsave_lock();
+        inner.callback = Some(callback);
+    }
+
+    pub fn set_interval(&self, interval: usize) {
+        self.inner.irqsave_lock().interval = interval;
+    }
+
+    pub fn get_interval(&self) -> usize {
+        self.inner.irqsave_lock().interval
     }
 
     pub fn start(&self) {
@@ -299,15 +321,12 @@ impl Timer {
         }
 
         let mut inner = self.inner.irqsave_lock();
-        if inner.callback.is_none() {
-            warn!("timer callback is None");
-            return;
-        }
         if inner.interval == 0 {
-            // just run the callback and return
-            inner.callback.take().unwrap()();
+            drop(inner);
+            self.run();
             return;
         }
+
         inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
         self.flags
             .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
@@ -441,26 +460,37 @@ impl Timer {
 
     // this function can only used in check_timer and tests
     pub fn run(&self) {
-        if self.is_activated() {
-            self.flags
-                .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
-            let mut inner = self.inner.irqsave_lock();
-            if let Some(callback) = inner.callback.take() {
-                callback();
-                if self.is_periodic() {
-                    inner.callback = Some(callback);
-                }
+        self.flags
+            .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
+        let mut inner = self.inner.irqsave_lock();
+        let callback = inner.callback.take();
+        drop(inner);
+        let Some(callback) = callback else {
+            warn!("timer callback is None");
+            return;
+        };
+        match callback {
+            TimerEntry::Closure(cb) => {
+                cb();
+                self.set_callback(TimerEntry::Closure(cb));
+            }
+            TimerEntry::C(f, arg) => {
+                unsafe { f(arg) };
+                self.set_callback(TimerEntry::C(f, arg));
+            }
+            TimerEntry::Once(cb) => {
+                cb();
             }
         }
     }
 }
 
 // used for systick
-pub(crate) fn check_hard_timer(tick: usize) -> bool {
+pub fn check_hard_timer(tick: usize) -> bool {
     HARD_TIMER_WHEEL.check_timer(tick)
 }
 // used for tickless
-pub(crate) fn get_next_timer_ticks() -> usize {
+pub fn get_next_timer_ticks() -> usize {
     #[cfg(soft_timer)]
     {
         cmp::min(
@@ -483,10 +513,29 @@ mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     // Helper function to create a simple callback
-    fn create_test_callback(counter: Arc<AtomicUsize>) -> Box<dyn Fn() + Send + Sync + 'static> {
-        Box::new(move || {
+    fn create_test_callback(counter: Arc<AtomicUsize>) -> TimerEntry {
+        TimerEntry::Closure(Box::new(move || {
             counter.fetch_add(1, Ordering::Relaxed);
-        })
+        }))
+    }
+
+    fn create_test_callback_once(counter: Arc<AtomicUsize>) -> TimerEntry {
+        TimerEntry::Once(Box::new(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        }))
+    }
+
+    #[test]
+    fn test_timer_callback_once() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let callback = create_test_callback_once(counter.clone());
+        let timer = Timer::new_hard_oneshot(10, callback);
+        timer.start();
+
+        scheduler::suspend_me_for(10);
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+        // fn is gone, do nothing.
+        timer.start();
     }
 
     #[test]
@@ -603,15 +652,8 @@ mod tests {
         let callback = create_test_callback(counter.clone());
         let timer = Timer::new_hard_oneshot(10, callback);
 
-        // Timer not activated, callback should not run
-        timer.run();
-        assert_eq!(counter.load(Ordering::Relaxed), 0);
-
         // Activate timer and run callback
         timer.start();
-        timer.run();
-        assert_eq!(counter.load(Ordering::Relaxed), 1);
-
         scheduler::suspend_me_for(10);
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
@@ -1016,16 +1058,10 @@ mod tests {
         timer.stop();
         assert!(!timer.is_activated());
 
-        // Try to run stopped timer
-        timer.run();
-        assert_eq!(counter.load(Ordering::Relaxed), 0); // Should not execute
-
         // Restart timer
         timer.start();
         assert!(timer.is_activated());
-        timer.run();
-        assert_eq!(counter.load(Ordering::Relaxed), 1); // Should execute now
-                                                        // will inactive after run
+
         scheduler::suspend_me_for(10);
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
