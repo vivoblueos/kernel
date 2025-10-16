@@ -26,18 +26,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: `Job is started, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
-            })
-
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+            })  
 
       - name: Prepare directories
         run: |
