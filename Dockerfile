@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin/:/opt/skywalking-license-eye-0.7.0-bin/bin/linux/:${PATH}"
+ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin/:/opt/skywalking-license-eye-0.7.0-bin/bin/linux/:/opt/yamlfmt_0.18.0_Linux_x86_64/:${PATH}"
 
 # Install system packages
 RUN apt-get update && \
@@ -50,6 +50,11 @@ RUN curl -L -o /opt/sysroot/usr/local/bin/repo https://storage.googleapis.com/gi
 RUN curl -L -o skywalking-license-eye.tgz https://github.com/apache/skywalking-eyes/releases/download/v0.7.0/skywalking-license-eye-0.7.0-bin.tgz && \
     tar xf skywalking-license-eye.tgz -C /opt && \
     rm skywalking-license-eye.tgz
+
+# Install yamlfmt
+RUN curl -L -o yamlfmt.tar.gz https://github.com/google/yamlfmt/releases/download/v0.18.0/yamlfmt_0.18.0_Linux_x86_64.tar.gz && \
+    tar xf yamlfmt.tar.gz -C /opt && \
+    rm yamlfmt.tar.gz
 
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
 RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
