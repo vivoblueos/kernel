@@ -93,7 +93,7 @@ pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
     core::time::Duration::from_nanos(cycles)
 }
 
-pub(crate) fn get_cycles_to_ms(cycles: u64) -> u64 {
+pub fn get_cycles_to_ms(cycles: u64) -> u64 {
     cycles / 1_000
 }
 

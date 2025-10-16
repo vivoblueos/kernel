@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod delay;
 pub mod event_flags;
 pub mod semaphore;
+pub mod kernel;
 pub mod tick;
+pub mod timer;

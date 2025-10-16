@@ -26,6 +26,6 @@ pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
     )
 }
 
-pub(crate) fn get_cycles_to_ms(cycles: u64) -> u64 {
+pub fn get_cycles_to_ms(cycles: u64) -> u64 {
     (cycles as f64 * (1_000f64 / CNTFRQ_EL0.get() as f64)) as u64
 }
