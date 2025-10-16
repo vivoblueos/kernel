@@ -8,7 +8,7 @@ ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-u
 RUN apt-get update && \
     apt-get install -y \
         git \
-        clang \
+        clang lld \
         python3-kconfiglib \
         ninja-build \
         generate-ninja \
