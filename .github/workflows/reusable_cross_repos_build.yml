@@ -4,16 +4,12 @@ on:
   workflow_call:
 
 jobs:
-  build_and_test:
+  prepare:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       checks: write
       pull-requests: write
-
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
 
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     steps:
@@ -26,14 +22,10 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: `Job is started, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
-            })  
+            })
 
-      - name: Prepare directories
+      - name: Create patches directory
         run: |
-          # sysroot/ contains toolchain.
-          mkdir -p sysroot/usr/local/bin
-          echo "$PWD/sysroot/usr/local/bin" >> "$GITHUB_PATH"
-          # patches/ contains patches downloaded.
           mkdir -p patches
 
       - name: Download patches
@@ -76,6 +68,25 @@ jobs:
             }));
             core.setOutput('fetched_prs', JSON.stringify(fetched_prs));
 
+      - name: Upload patches
+        uses: actions/upload-artifact@v4
+        with:
+          name: patches
+          path: patches/
+
+  setup:
+    runs-on: ubuntu-latest
+    needs: prepare
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download patches
+        uses: actions/download-artifact@v4
+        with:
+          name: patches
+          path: patches/
+
       - name: Init repo and sync
         run: |
           repo init --depth=1 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
@@ -105,20 +116,541 @@ jobs:
         run: |
           repo sync -j$(nproc)
 
-      # FIXME: We should use action's builtin matrix.
-      - name: Build and test the kernel
-        run: |
-          ./build/ci/run_ci.py
+      - name: Upload workspace
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace
+          path: .
+          include-hidden-files: true
 
-      - name: Notify job ended
-        if: always()
+  check_format:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Check format
         uses: actions/github-script@v8
         with:
           script: |
-            const sign = "${{ job.status }}" === 'success' ? '✅' : '❌';
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Get list of patch files
+            const patchesDir = 'patches';
+            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.diff'));
+            
+            if (patchFiles.length === 0) {
+              console.log('No patch files found for format check');
+              return;
+            }
+            
+            let formatErrors = [];
+            let totalCheckedFiles = 0;
+            
+            for (const patchFile of patchFiles) {
+              const repo = patchFile.replace(/\.diff$/, '');
+              let repoPath = repo;
+              
+              // Handle manifests repo special case
+              if (repo === 'manifests') {
+                continue;
+              }
+              
+              console.log(`\nChecking format in repo: ${repo} (${repoPath})`);
+              
+              // Check if repo directory exists
+              if (!fs.existsSync(repoPath)) {
+                console.log(`Repo directory ${repoPath} not found, skipping`);
+                continue;
+              }
+              
+              // Get modified files in this repo
+              let modifiedFiles = [];
+              try {
+                // Change to repo directory and run git status
+                const originalCwd = process.cwd();
+                process.chdir(repoPath);
+                const gitStatus = execSync('git status --porcelain', { 
+                  encoding: 'utf-8'
+                });
+                process.chdir(originalCwd);
+                
+                modifiedFiles = gitStatus
+                  .split('\n')
+                  .filter(line => line.trim())
+                  .map(line => line.substring(3).trim()) // Remove status prefix
+                  .filter(file => file && file.length > 0);
+              } catch (error) {
+                console.log(`No git status available in ${repoPath}, skipping`);
+                continue;
+              }
+              
+              if (modifiedFiles.length === 0) {
+                console.log(`No modified files found in ${repo}`);
+                continue;
+              }
+              
+              console.log(`Found ${modifiedFiles.length} modified files in ${repo}:`);
+              modifiedFiles.forEach(file => console.log(`  - ${file}`));
+              
+              // Check format for each modified file
+              for (const file of modifiedFiles) {
+                const filePath = path.resolve(repoPath, file);
+                const ext = path.extname(file).toLowerCase();
+                
+                // Skip if file doesn't exist
+                if (!fs.existsSync(filePath)) {
+                  console.log(`File ${filePath} doesn't exist, skipping`);
+                  continue;
+                }
+                
+                try {
+                  if (ext === '.gn' || ext === '.gni') {
+                    console.log(`Checking GN format for: ${repo}/${file}`);
+                    const out = execSync(`gn format --dry-run "${filePath}"`, { 
+                      encoding: 'utf-8',
+                      stdio: ['inherit', 'pipe', 'pipe']
+                    });
+                    if (out.trim()) {
+                      formatErrors.push(`GN formatting issue in ${repo}/${file}:\n${out}`);
+                    }
+                  } else if (ext === '.py') {
+                    console.log(`Checking Python format for: ${repo}/${file}`);
+                    const out = execSync(`yapf3 -d "${filePath}"`, { 
+                      encoding: 'utf-8',
+                      stdio: ['inherit', 'pipe', 'pipe']
+                    });
+                    if (out.trim()) {
+                      formatErrors.push(`Python formatting issue in ${repo}/${file}:\n${out}`);
+                    }
+                  } else if (ext === '.rs') {
+                    console.log(`Checking Rust format for: ${repo}/${file}`);
+                    const out = execSync(`rustfmt --edition=2021 --check --unstable-features --skip-children "${filePath}"`, { 
+                      encoding: 'utf-8',
+                      stdio: ['inherit', 'pipe', 'pipe']
+                    });
+                    if (out.trim()) {
+                      formatErrors.push(`Rust formatting issue in ${repo}/${file}:\n${out}`);
+                    }
+                  }
+                  totalCheckedFiles++;
+                } catch (error) {
+                  // Check if it's a formatting error or other error
+                  const output = (error.stdout || '') + (error.stderr || '');
+                  if (output.includes('format') || output.includes('Format')) {
+                    formatErrors.push(`Formatting issue in ${repo}/${file}:\n${output}`);
+                  } else {
+                    console.log(`Skipping format check for ${repo}/${file}: ${error.message}`);
+                  }
+                }
+              }
+            }
+            
+            console.log(`\nTotal files checked: ${totalCheckedFiles}`);
+            
+            if (formatErrors.length > 0) {
+              console.log('❌ Format check failed:');
+              formatErrors.forEach(error => console.log(error));
+              core.setFailed('Format check failed');
+              process.exit(1);
+            } else {
+              console.log('✅ All modified files pass format check');
+            }
+
+  check_license:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Check license
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            const patchesDir = 'patches';
+            let failedRepos = [];
+            let checkedRepos = [];
+
+            // Find all .diff files in patches/
+            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.diff'));
+
+            for (const patchFile of patchFiles) {
+              const repo = patchFile.replace(/\.diff$/, '');
+              let repoPath = repo;
+              // Skip invalid repos for license check
+              if (repo.includes('manifests') || repo.includes('libc') || repo.includes('book') || repo.includes('external')) {
+                console.log(`Skipping ${repo} for license check.`);
+                continue;
+              }
+
+              try {
+                // Run license-eye header check in each repo directory
+                const originalCwd = process.cwd();
+                process.chdir(repoPath);
+                const result = execSync('license-eye header check', {
+                  encoding: 'utf-8',
+                  stdio: ['inherit', 'pipe', 'pipe']
+                });
+                process.chdir(originalCwd);
+                if (result.includes('ERROR one or more files does not have a valid license header')) {
+                  console.log(`License issue in ${repoPath}:\n${result}`);
+                  failedRepos.push(repoPath);
+                }
+              } catch (e) {
+                // Always log output for diagnosis
+                const out = (e.stdout ? e.stdout.toString() : '') + (e.stderr ? e.stderr.toString() : '');
+                if (out.includes('ERROR one or more files does not have a valid license header')) {
+                  console.log(`License issue in ${repoPath}:\n${out}`);
+                  failedRepos.push(repoPath);
+                } else {
+                  console.log(`Error running license-eye in ${repoPath}:\n${out}`);
+                  failedRepos.push(repoPath);
+                }
+              }
+            }
+
+            if (failedRepos.length > 0) {
+              core.setFailed(`❌ License header issues found in these repos: ${failedRepos.join(', ')}`);
+              process.exit(1);
+            } else if (checkedRepos.length === 0) {
+              console.log('✅ No repos to check license for.');
+            } else {
+              console.log('✅ All checked repos have valid license headers!');
+            }
+
+  build_host:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Build and test kernel for host
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            
+            const board = 'host';
+            const configs = [
+              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
+              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
+            ];
+            
+            for (const config of configs) {
+              console.log(`\nBuilding ${board} ${config.name} version...`);
+              
+              const outDir = `out/${board}.${config.name}`;
+              const args = `bsp="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
+              
+              try {
+                // Generate build files
+                console.log(`Running: gn gen ${outDir} --args='${args}'`);
+                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
+                
+                // Build and test
+                console.log(`Running: ninja -C ${outDir} check_all`);
+                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
+                
+                console.log(`✅ ${board} ${config.name} build completed successfully`);
+              } catch (error) {
+                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
+                process.exit(1);
+              }
+            }
+
+  build_qemu_mps2_an385:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Build and test kernel for qemu_mps2_an385
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            
+            const board = 'qemu_mps2_an385';
+            const configs = [
+              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
+              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
+              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
+              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
+            ];
+            
+            for (const config of configs) {
+              console.log(`\nBuilding ${board} ${config.name} version...`);
+              
+              const outDir = `out/${board}.${config.name}`;
+              const args = `bsp="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
+              
+              try {
+                // Generate build files
+                console.log(`Running: gn gen ${outDir} --args='${args}'`);
+                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
+                
+                // Build and test
+                console.log(`Running: ninja -C ${outDir} check_all`);
+                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
+                
+                console.log(`✅ ${board} ${config.name} build completed successfully`);
+              } catch (error) {
+                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
+                process.exit(1);
+              }
+            }
+
+  build_qemu_mps3_an547:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Build and test kernel for qemu_mps3_an547
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            
+            const board = 'qemu_mps3_an547';
+            const configs = [
+              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
+              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
+              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
+              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
+            ];
+            
+            for (const config of configs) {
+              console.log(`\nBuilding ${board} ${config.name} version...`);
+              
+              const outDir = `out/${board}.${config.name}`;
+              const args = `bsp="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
+              
+              try {
+                // Generate build files
+                console.log(`Running: gn gen ${outDir} --args='${args}'`);
+                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
+                
+                // Build and test
+                console.log(`Running: ninja -C ${outDir} check_all`);
+                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
+                
+                console.log(`✅ ${board} ${config.name} build completed successfully`);
+              } catch (error) {
+                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
+                process.exit(1);
+              }
+            }
+
+  build_qemu_riscv64:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Build and test kernel for qemu_riscv64
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            
+            const board = 'qemu_riscv64';
+            const configs = [
+              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
+              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
+              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
+              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
+            ];
+            
+            for (const config of configs) {
+              console.log(`\nBuilding ${board} ${config.name} version...`);
+              
+              const outDir = `out/${board}.${config.name}`;
+              const args = `bsp="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
+              
+              try {
+                // Generate build files
+                console.log(`Running: gn gen ${outDir} --args='${args}'`);
+                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
+                
+                // Build and test
+                console.log(`Running: ninja -C ${outDir} check_all`);
+                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
+                
+                console.log(`✅ ${board} ${config.name} build completed successfully`);
+              } catch (error) {
+                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
+                process.exit(1);
+              }
+            }
+
+  build_qemu_aarch64:
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+
+      - name: Build and test kernel for qemu_virt64_aarch64
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            
+            const board = 'qemu_virt64_aarch64';
+            const configs = [
+              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
+              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
+              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
+              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
+            ];
+            
+            for (const config of configs) {
+              console.log(`\nBuilding ${board} ${config.name} version...`);
+              
+              const outDir = `out/${board}.${config.name}`;
+              const args = `bsp="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
+              
+              try {
+                // Generate build files
+                console.log(`Running: gn gen ${outDir} --args='${args}'`);
+                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
+                
+                // Build and test
+                console.log(`Running: ninja -C ${outDir} check_all`);
+                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
+                
+                console.log(`✅ ${board} ${config.name} build completed successfully`);
+              } catch (error) {
+                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
+                process.exit(1);
+              }
+            }
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [prepare, setup, check_format, check_license, build_host, build_qemu_mps2_an385, build_qemu_mps3_an547, build_qemu_riscv64, build_qemu_aarch64]
+    if: always()
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Notify job ended
+        uses: actions/github-script@v8
+        with:
+          script: |
+            // Check if any job failed
+            const jobStatuses = {
+              prepare: "${{ needs.prepare.result }}",
+              setup: "${{ needs.setup.result }}",
+              check_format: "${{ needs.check_format.result }}",
+              check_license: "${{ needs.check_license.result }}",
+              build_host: "${{ needs.build_host.result }}",
+              build_qemu_mps2_an385: "${{ needs.build_qemu_mps2_an385.result }}",
+              build_qemu_mps3_an547: "${{ needs.build_qemu_mps3_an547.result }}",
+              build_qemu_riscv64: "${{ needs.build_qemu_riscv64.result }}",
+              build_qemu_aarch64: "${{ needs.build_qemu_aarch64.result }}"
+            };
+            
+            // Debug: Log all job statuses
+            console.log('Job statuses:', JSON.stringify(jobStatuses, null, 2));
+            
+            const failedJobs = Object.entries(jobStatuses)
+              .filter(([job, status]) => {
+                const isFailed = status === 'failure' || status === 'cancelled';
+                if (isFailed) {
+                  console.log(`Job ${job} failed with status: ${status}`);
+                }
+                return isFailed;
+              })
+              .map(([job, status]) => `${job} (${status})`);
+            
+            const skippedJobs = Object.entries(jobStatuses)
+              .filter(([job, status]) => {
+                const isSkipped = status === 'skipped';
+                if (isSkipped) {
+                  console.log(`Job ${job} was skipped with status: ${status}`);
+                }
+                return isSkipped;
+              })
+              .map(([job, status]) => `${job} (${status})`);
+            
+            console.log(`Failed jobs: ${failedJobs.length}, Skipped jobs: ${skippedJobs.length}`);
+            
+            let statusMessage;
+            let sign;
+            
+            if (failedJobs.length > 0) {
+              sign = '❌';
+              statusMessage = `Job failed. Failed jobs: ${failedJobs.join(', ')}`;
+              if (skippedJobs.length > 0) {
+                statusMessage += `. Skipped jobs: ${skippedJobs.join(', ')}`;
+              }
+            } else if (skippedJobs.length > 0) {
+              sign = '⚠️';
+              statusMessage = `Job completed with skipped jobs: ${skippedJobs.join(', ')}`;
+            } else {
+              sign = '✅';
+              statusMessage = 'All jobs completed successfully';
+            }
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Job ends with ${sign} ${{ job.status }}, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
+              body: `${sign} ${statusMessage}, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
             })

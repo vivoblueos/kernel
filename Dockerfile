@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin/:${PATH}"
+ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin/:/opt/skywalking-license-eye-0.7.0-bin/bin/linux/:${PATH}"
 
 # Install system packages
 RUN apt-get update && \
@@ -18,6 +18,7 @@ RUN apt-get update && \
         libglib2.0-dev \
         build-essential \
         pkg-config \
+        clang-format yapf3 \
         && rm -rf /var/lib/apt/lists/*
 
 # Install Arm GNU toolchain (ARM Cortex-M)
@@ -41,12 +42,17 @@ RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/r
     tar xf blueos-toolchain.tar.xz -C /opt/sysroot && \
     rm blueos-toolchain.tar.xz
 
-# Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
-RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
-
 # Install repo
 RUN curl -L -o /opt/sysroot/usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo && \
     chmod a+x /opt/sysroot/usr/local/bin/repo
+
+# Install license-eye
+RUN curl -L -o skywalking-license-eye.tgz https://github.com/apache/skywalking-eyes/releases/download/v0.7.0/skywalking-license-eye-0.7.0-bin.tgz && \
+    tar xf skywalking-license-eye.tgz -C /opt && \
+    rm skywalking-license-eye.tgz
+
+# Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
+RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
 
 # Set working directory
 WORKDIR /blueos-dev
