@@ -10,6 +10,7 @@ jobs:
       contents: read
       checks: write
       pull-requests: write
+      packages: read
 
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     container:
@@ -108,6 +109,10 @@ jobs:
   check_format:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
@@ -249,6 +254,10 @@ jobs:
   check_license:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
@@ -330,6 +339,10 @@ jobs:
   build_host:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
@@ -380,6 +393,10 @@ jobs:
   build_qemu_mps2_an385:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
@@ -432,6 +449,10 @@ jobs:
   build_qemu_mps3_an547:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
@@ -484,6 +505,10 @@ jobs:
   build_qemu_riscv64:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
@@ -536,6 +561,10 @@ jobs:
   build_qemu_aarch64:
     runs-on: ubuntu-latest
     needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
       credentials:
