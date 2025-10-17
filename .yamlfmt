@@ -1,0 +1,5 @@
+formatter:
+    type: basic
+    retain_line_breaks: true
+    retain_line_breaks_single: true
+    pad_line_comments: 2
