@@ -14,6 +14,7 @@
 
 use super::ProcFileOps;
 use crate::{
+    boards,
     error::Error,
     irq::irq_trace::{IrqTraceInfo, IRQ_COUNTERS, PER_CPU_TRACE_INFO},
     scheduler, thread, time,
@@ -22,7 +23,7 @@ use alloc::{string::String, vec::Vec};
 use blueos_kconfig::NUM_CORES;
 use core::{
     fmt::{self, Write},
-    sync::atomic::Ordering::Relaxed,
+    sync::atomic::Ordering,
 };
 
 pub(crate) struct SystemStat;
@@ -61,7 +62,7 @@ impl fmt::Display for CpuStat {
         if self.cpu_id == NUM_CORES {
             write!(
                 f,
-                "cpu {} {} {} {} {} {} {} {} {} {}",
+                "cpu {} {} {} {} {} {} {} {} {} {}\r\n",
                 self.user,
                 self.nice,
                 self.system,
@@ -76,7 +77,7 @@ impl fmt::Display for CpuStat {
         } else {
             write!(
                 f,
-                "cpu{}  {} {} {} {} {} {} {} {} {} {}",
+                "cpu{}  {} {} {} {} {} {} {} {} {} {}\r\n",
                 self.cpu_id,
                 self.user,
                 self.nice,
@@ -109,11 +110,16 @@ fn format_cpu_time() -> String {
         let total_cycle: u64 = time::get_sys_cycles();
         for cpu_id in 0..NUM_CORES {
             let idle_thread = scheduler::get_idle_thread(cpu_id);
-            let idle_cycle = idle_thread.get_cycles();
-            let system_time = time::get_cycles_to_ms(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
-            let idle_time = time::get_cycles_to_ms(idle_cycle) / 10;
+            let idle_cycle = if idle_thread.state() == thread::RUNNING {
+                idle_thread.get_cycles() + total_cycle - idle_thread.start_cycles()
+            } else {
+                idle_thread.get_cycles()
+            };
+            let system_time =
+                boards::clock_cycles_to_millis(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
+            let idle_time = boards::clock_cycles_to_millis(idle_cycle) / 10;
             let irq_trace: &IrqTraceInfo = unsafe { &PER_CPU_TRACE_INFO[cpu_id] };
-            let irq_time = time::get_cycles_to_ms(irq_trace.total_irq_process_cycles) / 10;
+            let irq_time = boards::clock_cycles_to_millis(irq_trace.total_irq_process_cycles) / 10;
             total_system_time += system_time;
             total_idle_time += idle_time;
             total_irq_time += irq_time;
@@ -140,7 +146,7 @@ fn format_irq_counts() -> String {
     let mut total_count: u64 = 0;
     let mut non_zero_count: usize = 0;
     for atomic in &IRQ_COUNTERS {
-        let count = atomic.load(Relaxed) as u64;
+        let count = atomic.load(Ordering::Relaxed) as u64;
         total_count = total_count.saturating_add(count);
         if count > 0 {
             non_zero_count += 1;
@@ -156,7 +162,7 @@ fn format_irq_counts() -> String {
     let mut result = String::with_capacity(capacity);
     write!(result, "{} {}", PREFIX, total_count).unwrap();
     for element in &IRQ_COUNTERS {
-        let count = element.load(Relaxed);
+        let count = element.load(Ordering::Relaxed);
         write!(result, " {}", count).unwrap();
     }
     result

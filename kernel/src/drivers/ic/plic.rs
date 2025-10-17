@@ -14,7 +14,7 @@
 
 // TODO: Use safe_mmio.
 
-use crate::arch::riscv64;
+use crate::arch::riscv;
 
 pub(crate) type CallbackFn = extern "C" fn(irqno: usize) -> i32;
 

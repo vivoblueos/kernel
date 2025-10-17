@@ -13,29 +13,27 @@
 // limitations under the License.
 
 #[cfg(target_board = "qemu_mps2_an385")]
-mod qemu_mps2_an385;
+pub mod qemu_mps2_an385;
 #[cfg(target_board = "qemu_mps2_an385")]
-pub(crate) use qemu_mps2_an385::{get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init};
+pub(crate) use qemu_mps2_an385::{clock_cycles_to_millis, get_early_uart, init};
 
 #[cfg(target_board = "qemu_riscv64")]
 mod qemu_riscv64;
 #[cfg(target_board = "qemu_riscv64")]
 pub(crate) use qemu_riscv64::{
-    current_cycles, current_ticks, get_cycles_to_duration, get_cycles_to_ms, get_early_uart,
-    handle_plic_irq, init, set_timeout_after,
+    clock_cycles_to_millis, current_clock_cycles, get_early_uart, handle_irq, init,
+    set_timeout_after_nanos,
 };
 
 #[cfg(target_board = "qemu_mps3_an547")]
 mod qemu_mps3_an547;
 #[cfg(target_board = "qemu_mps3_an547")]
-pub(crate) use qemu_mps3_an547::{get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init};
+pub(crate) use qemu_mps3_an547::{clock_cycles_to_millis, get_early_uart, init};
 
 #[cfg(target_board = "qemu_virt64_aarch64")]
 mod qemu_virt64_aarch64;
 #[cfg(target_board = "qemu_virt64_aarch64")]
-pub(crate) use qemu_virt64_aarch64::{
-    get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init,
-};
+pub(crate) use qemu_virt64_aarch64::{clock_cycles_to_millis, get_early_uart, init};
 
 #[cfg(target_board = "raspberry_pico2_cortexm")]
 mod raspberry_pico2_cortexm;
@@ -43,3 +41,14 @@ mod raspberry_pico2_cortexm;
 pub(crate) use raspberry_pico2_cortexm::{
     get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init,
 };
+
+#[inline]
+pub fn clock_cycles_to_duration(cycles: u64) -> core::time::Duration {
+    core::time::Duration::from_millis(clock_cycles_to_millis(cycles))
+}
+
+// Boards should implement this method to provide accurate information.
+#[inline]
+pub(crate) fn uptime() -> core::time::Duration {
+    core::time::Duration::from_millis(0)
+}
