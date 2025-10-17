@@ -817,13 +817,13 @@ fn compare_exchange(
 }
 
 #[derive(Default, Debug)]
-pub struct IRwLock<T: Sized, A: Adapter> {
+pub struct IRwLock<T: Sized, A: Adapter<T>> {
     rwlock: RwLock<()>,
     _t: PhantomData<T>,
     _a: PhantomData<A>,
 }
 
-impl<T: Sized, A: Adapter> IRwLock<T, A> {
+impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
     pub const fn const_new() -> Self {
         Self {
             rwlock: RwLock::new(()),

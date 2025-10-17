@@ -22,19 +22,19 @@ use crate::intrusive::Adapter;
 use core::{marker::PhantomData, ptr::NonNull};
 
 #[derive(Default, Debug)]
-pub struct ListHead<T, A: Adapter> {
+pub struct ListHead<T, A: Adapter<T>> {
     pub prev: Option<NonNull<ListHead<T, A>>>,
     pub next: Option<NonNull<ListHead<T, A>>>,
     _t: PhantomData<T>,
     _a: PhantomData<A>,
 }
 
-pub struct ListIterator<T, A: Adapter> {
+pub struct ListIterator<T, A: Adapter<T>> {
     next: Option<NonNull<ListHead<T, A>>>,
     tail: Option<NonNull<ListHead<T, A>>>,
 }
 
-impl<T, A: Adapter> ListIterator<T, A> {
+impl<T, A: Adapter<T>> ListIterator<T, A> {
     pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             next: head.next,
@@ -43,7 +43,7 @@ impl<T, A: Adapter> ListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for ListIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for ListIterator<T, A> {
     type Item = NonNull<ListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -59,12 +59,12 @@ impl<T, A: Adapter> Iterator for ListIterator<T, A> {
     }
 }
 
-pub struct ListReverseIterator<T, A: Adapter> {
+pub struct ListReverseIterator<T, A: Adapter<T>> {
     prev: Option<NonNull<ListHead<T, A>>>,
     head: Option<NonNull<ListHead<T, A>>>,
 }
 
-impl<T, A: Adapter> ListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> ListReverseIterator<T, A> {
     pub fn new(tail: &ListHead<T, A>, head: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             prev: tail.prev,
@@ -73,7 +73,7 @@ impl<T, A: Adapter> ListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for ListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for ListReverseIterator<T, A> {
     type Item = NonNull<ListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -89,7 +89,7 @@ impl<T, A: Adapter> Iterator for ListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> ListHead<T, A> {
+impl<T, A: Adapter<T>> ListHead<T, A> {
     pub const fn new() -> Self {
         Self::const_new()
     }
@@ -196,17 +196,10 @@ impl<T, A> !Sync for ListHead<T, A> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::impl_simple_intrusive_adapter;
     use core::mem::offset_of;
 
-    #[derive(Default, Debug)]
-    struct OffsetOfLh;
-
-    impl const Adapter for OffsetOfLh {
-        #[inline]
-        fn offset() -> usize {
-            offset_of!(Foo, lh)
-        }
-    }
+    impl_simple_intrusive_adapter!(OffsetOfLh, Foo, lh);
 
     #[derive(Default, Debug)]
     pub struct Foo {
@@ -258,19 +251,19 @@ mod tests {
 
     #[test]
     fn test_listiterator() {
-        let list_head = ListHead::<i32, OffsetOfLh>::default();
+        let list_head = ListHead::<Foo, OffsetOfLh>::default();
         let mut iter = ListIterator::new(&list_head, None);
 
         let result = iter.next();
         assert!(result.is_none());
 
-        let node1 = Box::new(ListHead::<i32, OffsetOfLh> {
+        let node1 = Box::new(ListHead::<Foo, OffsetOfLh> {
             prev: None,
             next: None,
             _t: PhantomData,
             _a: PhantomData,
         });
-        let node2 = Box::new(ListHead::<i32, OffsetOfLh> {
+        let node2 = Box::new(ListHead::<Foo, OffsetOfLh> {
             prev: None,
             next: None,
             _t: PhantomData,
@@ -284,7 +277,7 @@ mod tests {
         let ptr1 = NonNull::from(node1_leaked);
         let ptr2 = NonNull::from(node2_leaked);
 
-        let mut iter = ListIterator::<i32, OffsetOfLh> {
+        let mut iter = ListIterator::<Foo, OffsetOfLh> {
             next: Some(ptr1),
             tail: Some(ptr2),
         };
@@ -295,9 +288,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Tail node is specified, but encountered None during iteration")]
     fn test_listiterator_shoild_panic() {
-        let mut dummy = ListHead::<i32, OffsetOfLh>::default();
+        let mut dummy = ListHead::<Foo, OffsetOfLh>::default();
         let tail_ptr = NonNull::from(&mut dummy);
-        let mut iter = ListIterator::<i32, OffsetOfLh> {
+        let mut iter = ListIterator::<Foo, OffsetOfLh> {
             next: None,
             tail: Some(tail_ptr),
         };
@@ -306,19 +299,19 @@ mod tests {
 
     #[test]
     fn test_listreverseiterator() {
-        let list_head = ListHead::<i32, OffsetOfLh>::default();
+        let list_head = ListHead::<Foo, OffsetOfLh>::default();
         let mut iter = ListReverseIterator::new(&list_head, None);
 
         let result = iter.next();
         assert!(result.is_none());
 
-        let mut node1 = Box::new(ListHead::<i32, OffsetOfLh> {
+        let mut node1 = Box::new(ListHead::<Foo, OffsetOfLh> {
             prev: None,
             next: None,
             _t: PhantomData,
             _a: PhantomData,
         });
-        let mut node2 = Box::new(ListHead::<i32, OffsetOfLh> {
+        let mut node2 = Box::new(ListHead::<Foo, OffsetOfLh> {
             prev: None,
             next: None,
             _t: PhantomData,
@@ -330,11 +323,30 @@ mod tests {
 
         let ptr1 = NonNull::from(node1_leaked);
         let ptr2 = NonNull::from(node2_leaked);
-        let mut iter = ListReverseIterator::<i32, OffsetOfLh> {
+        let mut iter = ListReverseIterator::<Foo, OffsetOfLh> {
             prev: Some(ptr1),
             head: Some(ptr2),
         };
         assert_eq!(iter.next(), Some(ptr1));
         assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_adapter() {
+        impl_simple_intrusive_adapter!(Node, A, node);
+
+        struct A {
+            node: ListHead<A, Node>,
+        }
+
+        struct B;
+
+        // Deny following code
+        //struct A {
+        //    node: ListHead<B, Node>,
+        //}
+        //struct C {
+        //    node: ListHead<B, Node>,
+        //}
     }
 }
