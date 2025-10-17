@@ -75,6 +75,7 @@ header: # `header` section is configurations for source codes license header.
       - ".github/**"
       - "adapter/cmsis/cmsis_header/**"
       - "Dockerfile"
+      - ".yamlfmt"
 
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
 
