@@ -83,16 +83,16 @@ jobs:
           for patch in patches/*.diff; do
             patch_abspath=$(realpath ${patch})
             repo=$(basename ${patch} ".diff")
-          if [ "${repo}" != "manifests" ]; then
-            cd ${repo}
+            if [[ ${repo} != "manifests" ]];then
+              cd ${repo}
             else
-            cd .repo/${repo}
+              cd .repo/${repo}
             fi
             git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
             if [[ $? != 0 ]]; then
               exit 1
             fi
-          cd - > /dev/null
+            cd - > /dev/null
           done
 
       - name: Upload workspace
@@ -627,5 +627,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-            body: `${sign} ${statusMessage}, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
+              body: `${sign} ${statusMessage}, see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.`
             })
