@@ -23,7 +23,7 @@ mod config;
 mod uart;
 use crate::{
     arch,
-    arch::riscv64::{local_irq_enabled, trap_entry, Context, READY_CORES},
+    arch::riscv::{local_irq_enabled, trap_entry, Context},
     devices::{console, dumb, Device, DeviceManager},
     drivers::ic::plic::Plic,
     scheduler,
@@ -32,39 +32,40 @@ use crate::{
 };
 use alloc::string::String;
 use core::sync::atomic::Ordering;
-pub(crate) use uart::get_early_uart; // re-export
+pub(crate) use uart::get_early_uart;
 pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 
 const CLOCK_ADDR: usize = 0x0200_0000;
 const CLOCK_TIME: usize = CLOCK_ADDR + 0xBFF8;
-const NUM_TICKS_PER_SECOND: usize = 10_000_000;
-const NUM_TICKS_PER_TIMER: usize = NUM_TICKS_PER_SECOND / 10;
-const NS_PER_TICK: usize = 1_000_000_000 / NUM_TICKS_PER_SECOND;
+const CLOCK_HZ: u64 = 10_000_000;
+const CLOCK_PERIOD_NANOS: u64 = 1_000_000_000 / CLOCK_HZ;
 
 #[inline]
-fn clock_timecmp_ptr(hart: usize) -> *mut usize {
-    unsafe { (CLOCK_ADDR + 0x4000 + 8 * hart) as *mut usize }
+fn clock_timecmp_ptr(hart: usize) -> *mut u64 {
+    unsafe { (CLOCK_ADDR + 0x4000 + 8 * hart) as *mut u64 }
 }
 
 #[inline]
-pub fn current_ticks() -> usize {
-    unsafe { (CLOCK_TIME as *const usize).read_volatile() }
+pub fn current_clock_cycles() -> u64 {
+    unsafe { (CLOCK_TIME as *const u64).read_volatile() }
 }
 
 #[inline]
-pub fn current_cycles() -> usize {
-    let x: usize;
+pub fn current_cpu_cycles() -> u64 {
+    let x: u64;
     unsafe {
-        core::arch::asm!("csrr {}, cycle",
-                         out(reg) x,
-                         options(nostack, nomem))
+        core::arch::asm!(
+            "rdcycle {}",
+            out(reg) x,
+            options(nostack, nomem),
+        )
     }
     x
 }
 
-fn set_timecmp(tick: usize) {
+fn set_timecmp(deadline: u64) {
     let hart = arch::current_cpu_id();
-    unsafe { clock_timecmp_ptr(hart).write_volatile(tick) };
+    unsafe { clock_timecmp_ptr(hart).write_volatile(deadline) };
 }
 
 #[inline]
@@ -80,36 +81,29 @@ fn init_vector_table() {
     }
 }
 
-pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
+pub(crate) fn handle_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
     PLIC.complete(cpu_id, PLIC.claim(cpu_id))
 }
 
-pub(crate) fn set_timeout_after(ns: usize) {
-    set_timecmp(current_ticks() + ns / NS_PER_TICK);
+#[inline]
+pub(crate) fn set_timeout_after_nanos(nanos: u64) {
+    set_timecmp(current_clock_cycles() + nanos / CLOCK_PERIOD_NANOS);
 }
 
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    core::time::Duration::from_nanos(cycles)
+#[inline]
+pub(crate) fn clock_cycles_to_millis(interval: u64) -> u64 {
+    interval * CLOCK_PERIOD_NANOS / 1_000_000
 }
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    cycles / 1_000
+#[inline]
+pub(crate) fn clock_cycles_to_duration(cycles: u64) -> core::time::Duration {
+    core::time::Duration::from_nanos(cycles * CLOCK_PERIOD_NANOS)
 }
 
-pub(crate) fn ticks_to_duration(ticks: usize) -> core::time::Duration {
-    core::time::Duration::from_nanos((ticks * NS_PER_TICK) as u64)
-}
-
-pub(crate) fn current_duration() -> core::time::Duration {
-    ticks_to_duration(current_ticks())
-}
-
-fn wait_and_then_start_schedule() {
-    while READY_CORES.load(Ordering::Acquire) == 0 {
-        core::hint::spin_loop();
-    }
-    arch::start_schedule(scheduler::schedule);
+#[inline]
+pub(crate) fn uptime() -> core::time::Duration {
+    clock_cycles_to_duration(current_clock_cycles())
 }
 
 static STAGING: SmpStagedInit = SmpStagedInit::new();
@@ -125,7 +119,7 @@ pub(crate) fn init() {
     STAGING.run(4, false, time::reset_systick);
     // From now on, all work will be done by core 0.
     if arch::current_cpu_id() != 0 {
-        wait_and_then_start_schedule();
+        scheduler::wait_and_then_start_schedule();
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
     enumerate_devices();

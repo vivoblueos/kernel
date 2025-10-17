@@ -14,19 +14,22 @@
 
 extern crate alloc;
 use crate::{
-    arch, config, debug, scheduler, static_arc,
-    sync::{SpinLock, SpinLockGuard},
+    arch,
+    arch::Context,
+    config, debug, scheduler, static_arc,
+    support::Storage,
+    sync::spinlock::{SpinLock, SpinLockGuard},
     thread, trace,
     types::{
         Arc, ArcInner, ArcList, ArcListIterator, AtomicIlistHead as ListHead, StaticListOwner, Uint,
     },
 };
 use alloc::boxed::Box;
-use config::SYSTEM_THREAD_STACK_SIZE;
-use core::mem::MaybeUninit;
+use config::{DEFAULT_STACK_SIZE, SYSTEM_THREAD_STACK_SIZE};
+use core::{alloc::Layout, mem::MaybeUninit};
 use thread::{
-    AlignedStackStorage, Entry, GlobalQueueListHead, OffsetOfGlobal, Stack, Thread, ThreadKind,
-    ThreadNode, ThreadPriority,
+    Entry, GlobalQueueListHead, OffsetOfGlobal, Stack, Thread, ThreadKind, ThreadNode,
+    ThreadPriority,
 };
 
 type Head = ListHead<Thread, OffsetOfGlobal>;
@@ -36,7 +39,7 @@ static_arc! {
     GLOBAL_QUEUE(SpinLock<Head>, SpinLock::new(Head::new())),
 }
 
-pub(crate) struct GlobalQueueVisitor<'a> {
+pub struct GlobalQueueVisitor<'a> {
     lock: SpinLockGuard<'a, Head>,
     it: ArcListIterator<Thread, OffsetOfGlobal>,
 }
@@ -57,6 +60,7 @@ impl GlobalQueueVisitor<'_> {
         Self { lock, it }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<ThreadNode> {
         self.it.next()
     }
@@ -113,13 +117,13 @@ impl Builder {
     pub fn build(mut self) -> ThreadNode {
         let thread = ThreadNode::new(Thread::new(ThreadKind::Normal));
         let mut w = thread.lock();
-        let stack = self.stack.take().map_or_else(
-            || Stack::Boxed(unsafe { Box::<AlignedStackStorage>::new_uninit().assume_init() }),
-            |v| v,
-        );
+        let stack = self
+            .stack
+            .take()
+            .map_or_else(|| Stack::create(DEFAULT_STACK_SIZE), |v| v);
         w.init(stack, self.entry);
-        w.set_priority(self.priority);
         w.set_origin_priority(self.priority);
+        w.set_priority(self.priority);
         drop(w);
         GlobalQueueVisitor::add(thread.clone());
 
@@ -133,7 +137,10 @@ impl Builder {
 
     pub fn start(self) -> ThreadNode {
         let t = self.build();
-        scheduler::queue_ready_thread(super::CREATED, t.clone());
+        let ok = scheduler::queue_ready_thread(super::CREATED, t.clone());
+        debug_assert!(ok);
+        // TODO: Invoke yield_me_now_or_later for better realtime performance. However
+        // this breaks some existed tests and need TBI.
         t
     }
 }
@@ -169,25 +176,23 @@ pub(crate) fn build_static_thread(
     t: &'static mut MaybeUninit<ThreadNode>,
     // It must be 'static, since the ThreadNode returned doesn't
     // carry lifetime relationship to the SystemThreadStorage.
-    s: &'static SystemThreadStorage,
+    s: &'static mut SystemThreadStorage,
     p: ThreadPriority,
     init_state: Uint,
     entry: Entry,
     kind: ThreadKind,
 ) -> ThreadNode {
     let inner = &s.arc;
-    let stack = &s.stack;
+    let stack = &mut s.stack;
     let arc = unsafe { ThreadNode::const_new(inner) };
     assert_eq!(ThreadNode::strong_count(&arc), 1);
     let _id = Thread::id(&arc);
     let mut w = arc.lock();
     w.init(
-        Stack::Raw {
-            base: stack.rep.as_ptr() as usize,
-            size: stack.rep.len(),
-        },
+        Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()),
         entry,
     );
+    w.set_origin_priority(p);
     w.set_priority(p);
     w.set_kind(kind);
     assert!((thread::CREATED..=thread::RETIRED).contains(&init_state));
@@ -204,4 +209,32 @@ pub(crate) fn build_static_thread(
     t.write(arc.clone());
     GlobalQueueVisitor::add(arc.clone());
     arc
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::ConstBarrier;
+    use blueos_test_macro::test;
+    use core::alloc::Layout;
+
+    #[test]
+    fn test_use_alloc_stack() {
+        const SIZE: usize = 1600;
+        const ALIGN: usize = 8;
+        let layout = Layout::from_size_align(SIZE, ALIGN).unwrap();
+        let base = unsafe { alloc::alloc::alloc(layout) };
+        assert!(!base.is_null());
+        let stack = Stack::Alloc(base, layout);
+        let sync_me = Arc::new(ConstBarrier::<{ 2 }>::new());
+        let sync_other = sync_me.clone();
+        let _other = Builder::new(Entry::Closure(Box::new(move || {
+            let current = scheduler::current_thread();
+            assert_eq!(current.stack_size(), SIZE);
+            sync_other.wait()
+        })))
+        .set_stack(stack)
+        .start();
+        sync_me.wait();
+    }
 }

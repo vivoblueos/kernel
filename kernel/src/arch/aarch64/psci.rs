@@ -30,12 +30,7 @@ pub enum PsciFuncName {
 // Return the version of PSCI implemented
 pub fn get_psci_version(psci_base: u32) -> usize {
     let func_id = psci_base + (PsciFuncName::Version as u32);
-    unsafe {
-        psci_call(func_id, 0, 0, 0, 0, 0, 0, 0);
-        let mut version: usize;
-        core::arch::asm!("mov {0}, x0", out(reg) version);
-        version
-    }
+    unsafe { psci_call(func_id, 0, 0, 0, 0, 0, 0, 0) }
 }
 
 // Suspend execution on a core or higher-level topology node.
@@ -116,10 +111,7 @@ pub fn affinity_info(
             0,
             0,
             0,
-        );
-        let mut state: usize;
-        core::arch::asm!("mov {0}, x0", out(reg) state);
-        state
+        )
     }
 }
 
@@ -138,23 +130,13 @@ pub fn migrate(psci_base: u32, target_cpu: usize) {
 // This function allows a caller to identify the level of multicore support present in the Trusted OS.
 pub fn migrate_info_type(psci_base: u32) -> usize {
     let func_id = psci_base + (PsciFuncName::MigrateInfoType as u32);
-    unsafe {
-        psci_call(func_id, 0, 0, 0, 0, 0, 0, 0);
-        let mut migrate_info_type: usize;
-        core::arch::asm!("mov {0}, x0", out(reg) migrate_info_type);
-        migrate_info_type
-    }
+    unsafe { psci_call(func_id, 0, 0, 0, 0, 0, 0, 0) }
 }
 
 // For a uniprocessor Trusted OS, this function returns the current resident core.
 pub fn migrate_info_up_cpu(psci_base: u32) -> usize {
     let func_id = psci_base + (PsciFuncName::MigrateInfoUpCpu as u32);
-    unsafe {
-        psci_call(func_id, 0, 0, 0, 0, 0, 0, 0);
-        let mut cpu: usize;
-        core::arch::asm!("mov {0}, x0", out(reg) cpu);
-        cpu
-    }
+    unsafe { psci_call(func_id, 0, 0, 0, 0, 0, 0, 0) }
 }
 
 // Shut down the system.
@@ -175,7 +157,7 @@ pub fn system_reset(psci_base: u32) -> ! {
     core::unreachable!()
 }
 
-#[naked]
+#[inline]
 unsafe extern "C" fn psci_call(
     func_id: u32,
     arg0: usize,
@@ -185,9 +167,20 @@ unsafe extern "C" fn psci_call(
     arg4: usize,
     arg5: usize,
     arg6: usize,
-) {
-    core::arch::naked_asm!(
+) -> usize {
+    let ret: usize;
+    core::arch::asm!(
         // Select the calling method according to PSCI implementation
-        "smc #0", "ret",
+        "smc #0",
+        inlateout("x0") func_id as usize => ret,
+        inlateout("x1") arg0 => _,
+        in("x2") arg1,
+        in("x3") arg2,
+        in("x4") arg3,
+        in("x5") arg4,
+        in("x6") arg5,
+        in("x7") arg6,
+        options(nostack)
     );
+    ret
 }

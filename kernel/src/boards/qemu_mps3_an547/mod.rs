@@ -74,7 +74,16 @@ unsafe fn copy_data() {
     INIT_BSS_DONE = true;
 }
 
+unsafe fn enable_fpu() {
+    const SCB_CPACR_PTR: *mut u32 = 0xE000_ED88 as *mut u32;
+    let mut temp = SCB_CPACR_PTR.read_volatile();
+    temp |= 0x00F00000;
+    SCB_CPACR_PTR.write_volatile(temp);
+}
+
 pub(crate) fn init() {
+    unsafe { enable_fpu() };
+
     unsafe {
         copy_data();
     }
@@ -101,11 +110,11 @@ pub(crate) fn init() {
 
 // FIXME: support float
 pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    return core::time::Duration::from_nanos(
+    core::time::Duration::from_nanos(
         (cycles as u128 * 1_000_000_000 as u128 / config::SYSTEM_CORE_CLOCK as u128) as u64,
-    );
+    )
 }
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    return (cycles as u128 * 1_000 as u128 / config::SYSTEM_CORE_CLOCK as u128) as u64;
+pub(crate) fn clock_cycles_to_millis(cycles: u64) -> u64 {
+    (cycles as u128 * 1_000 as u128 / config::SYSTEM_CORE_CLOCK as u128) as u64
 }

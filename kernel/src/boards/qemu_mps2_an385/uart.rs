@@ -27,7 +27,6 @@ use crate::{
     drivers::uart::cmsdk_uart::Driver,
     irq::IrqTrace,
     sync::SpinLock,
-    vfs::AccessMode,
 };
 use alloc::{string::String, sync::Arc};
 use embedded_io::ErrorKind;
