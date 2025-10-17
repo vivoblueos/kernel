@@ -67,27 +67,27 @@ macro_rules! static_arc {
 }
 
 #[const_trait]
-pub(crate) trait StaticListOwner<T, A: IntrusiveAdapter> {
+pub(crate) trait StaticListOwner<T, A: IntrusiveAdapter<T>> {
     type List = ArcList<T, A>;
     fn get() -> &'static Arc<SpinLock<AtomicIlistHead<T, A>>>;
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct UniqueListHead<T, A: IntrusiveAdapter, O: StaticListOwner<T, A>>(
+pub(crate) struct UniqueListHead<T, A: IntrusiveAdapter<T>, O: StaticListOwner<T, A>>(
     AtomicIlistHead<T, A>,
     PhantomData<O>,
 );
 
 pub(crate) struct UniqueListHeadAccessGuard<
     T: 'static,
-    A: IntrusiveAdapter + 'static,
+    A: IntrusiveAdapter<T> + 'static,
     O: StaticListOwner<T, A>,
 >(
     SpinLockGuard<'static, AtomicIlistHead<T, A>>,
     PhantomData<O>,
 );
 
-impl<T: 'static, A: IntrusiveAdapter + 'static, O: StaticListOwner<T, A>>
+impl<T: 'static, A: IntrusiveAdapter<T> + 'static, O: StaticListOwner<T, A>>
     UniqueListHeadAccessGuard<T, A, O>
 {
     #[inline]
@@ -116,7 +116,9 @@ impl<T: 'static, A: IntrusiveAdapter + 'static, O: StaticListOwner<T, A>>
     }
 }
 
-impl<T: 'static, A: IntrusiveAdapter + 'static, O: StaticListOwner<T, A>> UniqueListHead<T, A, O> {
+impl<T: 'static, A: IntrusiveAdapter<T> + 'static, O: StaticListOwner<T, A>>
+    UniqueListHead<T, A, O>
+{
     pub const fn new() -> Self {
         Self(AtomicIlistHead::<T, A>::new(), PhantomData)
     }
@@ -148,9 +150,13 @@ mod tests {
     impl_simple_intrusive_adapter!(Node, Foobar, node);
     impl_simple_intrusive_adapter!(Lock, Foobar, node_lock);
 
+    #[allow(clippy::type_complexity)]
     struct Foobar {
         node: AtomicIlistHead<Foobar, Node>,
-        node_lock: ISpinLock<AtomicIlistHead<Foobar, Node>, RelativeAdapter<Node, Lock>>,
+        node_lock: ISpinLock<
+            AtomicIlistHead<Foobar, Node>,
+            RelativeAdapter<Foobar, AtomicIlistHead<Foobar, Node>, Node, Lock>,
+        >,
     }
 
     #[test]
