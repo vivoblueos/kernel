@@ -14,6 +14,9 @@ jobs:
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Notify job started
@@ -107,6 +110,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
@@ -245,6 +251,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
@@ -323,6 +332,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
@@ -370,6 +382,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
@@ -419,6 +434,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
@@ -468,6 +486,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
@@ -517,6 +538,9 @@ jobs:
     needs: setup
     container:
       image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download workspace
