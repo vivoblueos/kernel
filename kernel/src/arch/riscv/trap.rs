@@ -14,23 +14,22 @@
 
 use super::{disable_local_irq, enable_local_irq, Context, IsrContext, NR_SWITCH};
 use crate::{
-    boards::{handle_plic_irq, set_timeout_after},
+    boards::handle_irq,
     debug,
     irq::{enter_irq, leave_irq},
-    rv64_restore_context, rv64_restore_context_epilogue, rv64_save_context,
-    rv64_save_context_prologue, scheduler,
+    rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
+    scheduler,
     scheduler::ContextSwitchHookHolder,
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
     thread::Thread,
-    types::IsNotNull,
 };
 use core::{
     mem::offset_of,
     sync::atomic::{compiler_fence, fence, Ordering},
 };
 
-pub(crate) const INTERRUPT_MASK: usize = 1usize << 63;
+pub(crate) const INTERRUPT_MASK: usize = 1usize << (usize::BITS - 1);
 pub(crate) const TIMER_INT: usize = INTERRUPT_MASK | 0x7;
 pub(crate) const ECALL: usize = 0xB;
 pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
@@ -41,8 +40,8 @@ pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
 pub(crate) unsafe extern "C" fn trap_entry() {
     core::arch::naked_asm!(
         concat!(
-            rv64_save_context_prologue!(),
-            rv64_save_context!(),
+            rv_save_context_prologue!(),
+            rv_save_context!(),
             "
             mv s1, sp
             csrr s2, mcause
@@ -60,8 +59,8 @@ pub(crate) unsafe extern "C" fn trap_entry() {
             call {might_switch}
             mv sp, a0
             ",
-            rv64_restore_context!(),
-            rv64_restore_context_epilogue!(),
+            rv_restore_context!(),
+            rv_restore_context_epilogue!(),
             "
             fence rw, rw
             mret
@@ -186,13 +185,13 @@ extern "C" fn might_switch(from: &Context, to: &Context, mcause: usize) -> usize
     assert_eq!(to_ptr as usize, from.a1);
     let sp = from_ptr as usize;
     let saved_sp_ptr: *mut usize = unsafe { from.a0 as *mut usize };
-    if saved_sp_ptr.is_not_null() {
+    if !saved_sp_ptr.is_null() {
         sideeffect();
         // FIXME: rustc opt the write out if not setting it volatile.
         unsafe { saved_sp_ptr.write_volatile(sp) };
     }
     let hook: *mut ContextSwitchHookHolder = unsafe { from.a2 as *mut ContextSwitchHookHolder };
-    if hook.is_not_null() {
+    if !hook.is_null() {
         sideeffect();
         unsafe {
             scheduler::save_context_finish_hook(Some(&mut *hook));
@@ -213,7 +212,7 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize) -> usi
     let sp = ctx as *const _ as usize;
     match mcause {
         EXTERN_INT => {
-            handle_plic_irq(ctx, mcause, mtval);
+            handle_irq(ctx, mcause, mtval);
             sp
         }
         TIMER_INT => {

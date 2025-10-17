@@ -119,6 +119,9 @@ config TIMER_THREAD_STACK_SIZE
     default 2048
     int "The stack size of timer thread"
 
+config ENABLE_SYSCALL
+    default y
+    bool "Enable support for syscall"
 config FDT
     default n
     bool "Enable Flat Device Tree"

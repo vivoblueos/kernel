@@ -16,21 +16,29 @@ extern crate alloc;
 #[cfg(event_flags)]
 use crate::sync::event_flags::EventFlagsMode;
 use crate::{
-    arch, config, debug, scheduler,
-    support::{Region, RegionalObjectBuilder},
+    arch,
+    arch::Context,
+    config,
+    config::DEFAULT_STACK_SIZE,
+    debug, scheduler,
+    support::{Region, RegionalObjectBuilder, Storage},
     sync::{
         mutex::{MutexList, MutexListIterator},
-        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
+        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard,
     },
     thread::builder::GlobalQueue,
     time::timer::Timer,
     types::{
-        impl_simple_intrusive_adapter, Arc, ArcCas, AtomicUint, IlistHead, ThreadPriority,
+        impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, AtomicUint, IlistHead, ThreadPriority,
         Uint, UniqueListHead,
     },
 };
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use core::{
+    alloc::Layout,
+    ptr::NonNull,
+    sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
+};
 
 mod builder;
 mod posix;
@@ -54,7 +62,7 @@ impl core::fmt::Debug for Entry {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ThreadKind {
     AsyncPoller,
     Idle,
@@ -64,35 +72,18 @@ pub enum ThreadKind {
     SoftTimer,
 }
 
-#[derive(Debug, Copy, Clone)]
-#[repr(align(16))]
-pub struct AlignedStackStorage([u8; config::DEFAULT_STACK_SIZE]);
-
-#[derive(Debug)]
-pub enum Stack {
-    Raw { base: usize, size: usize },
-    Boxed(Box<AlignedStackStorage>),
-}
-
-impl Default for Stack {
-    fn default() -> Self {
-        Stack::Raw { base: 0, size: 0 }
-    }
-}
+pub type Stack = Storage;
 
 impl Stack {
-    pub fn base(&self) -> usize {
-        match self {
-            Self::Boxed(ref boxed) => boxed.0.as_ptr() as usize,
-            Self::Raw { base, .. } => *base,
-        }
+    #[inline]
+    pub fn top(&self) -> *mut u8 {
+        unsafe { self.base().add(self.size()) }
     }
 
-    pub fn size(&self) -> usize {
-        match self {
-            Self::Boxed(ref boxed) => boxed.0.len(),
-            Self::Raw { size, .. } => *size,
-        }
+    #[inline]
+    pub fn create(size: usize) -> Self {
+        let layout = Layout::from_size_align(size, core::mem::align_of::<Context>()).unwrap();
+        Self::from_layout(layout)
     }
 }
 
@@ -129,6 +120,10 @@ impl ThreadStats {
         self.start = start;
     }
 
+    pub fn start_cycles(&self) -> u64 {
+        self.start
+    }
+
     pub fn get_cycles(&self) -> u64 {
         self.cycles
     }
@@ -136,6 +131,21 @@ impl ThreadStats {
 
 pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, GlobalQueue>;
 
+#[derive(Default)]
+pub(crate) struct SignalContext {
+    pending_signals: u32,
+    active: bool,
+    // Will recover thread_context at recover_sp on exiting of signal handler.
+    recover_sp: usize,
+    thread_context: arch::Context,
+    once_action: [Option<Box<dyn FnOnce()>>; 32],
+}
+
+impl core::fmt::Debug for SignalContext {
+    fn fmt(&self, _f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Ok(())
+    }
+}
 #[derive(Debug)]
 pub struct Thread {
     global: GlobalQueueListHead,
@@ -144,6 +154,7 @@ pub struct Thread {
     // Cleanup function will be invoked when retiring.
     cleanup: Option<Entry>,
     kind: ThreadKind,
+    // Thread owns Stack::Alloc. It calls dealloc when dropping its self.
     stack: Stack,
     saved_sp: usize,
     // This value may change at runtime.
@@ -165,6 +176,10 @@ pub struct Thread {
     event_flags_mode: EventFlagsMode,
     #[cfg(event_flags)]
     event_flags_mask: u32,
+    // An opaque pointer used by C extensions. Must be noted, these C extensions
+    // are aware of kernel's APIs, while POSIX are not. So librs' POSIX
+    // implementation should not rely on this field.
+    alien_ptr: Option<NonNull<core::ffi::c_void>>,
     // The mutex this thread is acquiring.
     pending_on_mutex: ArcCas<Mutex>,
     // Mutexes this thread has acquired.  It's protected by its own spinlock to
@@ -179,6 +194,7 @@ pub struct Thread {
     // - Lock mutex's spinlcok
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
+    signal_context: Option<Box<SignalContext>>,
 }
 
 extern "C" fn run_simple_c(f: extern "C" fn()) {
@@ -193,6 +209,8 @@ extern "C" fn run_posix(f: extern "C" fn(*mut core::ffi::c_void), arg: *mut core
 
 // FIXME: If the closure doesn't get run, memory leaks.
 extern "C" fn run_closure(raw: *mut Box<dyn FnOnce()>) {
+    // FIXME: If `retire_me` is called in the closure, we are unable to recycle
+    // the Box and memory leaks.
     unsafe { Box::from_raw(raw)() };
     scheduler::retire_me();
 }
@@ -209,32 +227,37 @@ impl Thread {
         self.lock.irqsave_lock()
     }
 
+    #[inline]
+    pub fn lock_for_read(&self) -> SpinLockReadGuard<'_, Self> {
+        self.lock.irqsave_read()
+    }
+
     #[inline(always)]
     pub fn stack_usage(&self) -> usize {
         let sp = arch::current_sp();
-        self.stack.base() + self.stack.size() - sp
+        self.stack.top() as usize - sp
     }
 
     #[inline(always)]
     pub fn validate_sp(&self) -> bool {
         let sp = arch::current_sp();
-        sp >= self.stack.base() && sp <= self.stack.base() + self.stack.size()
+        sp >= self.stack.base() as usize && sp <= self.stack.top() as usize
     }
 
     #[inline(always)]
     pub fn validate_saved_sp(&self) -> bool {
         let sp = self.saved_sp;
-        sp >= self.stack.base() && sp <= self.stack.base() + self.stack.size()
+        sp >= self.stack.base() as usize && sp <= self.stack.top() as usize
     }
 
     #[inline(always)]
     pub fn saved_stack_usage(&self) -> usize {
-        self.stack.base() + self.stack.size() - self.saved_sp()
+        self.stack.top() as usize - self.saved_sp()
     }
 
     #[inline]
     pub fn stack_base(&self) -> usize {
-        self.stack.base()
+        self.stack.base() as usize
     }
 
     #[inline]
@@ -362,7 +385,7 @@ impl Thread {
     const fn const_new(kind: ThreadKind) -> Self {
         Self {
             cleanup: None,
-            stack: Stack::Raw { base: 0, size: 0 },
+            stack: Stack::new(),
             state: AtomicUint::new(CREATED),
             lock: ISpinLock::new(),
             sched_node: IlistHead::<Thread, OffsetOfSchedNode>::new(),
@@ -381,8 +404,10 @@ impl Thread {
             event_flags_mode: EventFlagsMode::empty(),
             #[cfg(event_flags)]
             event_flags_mask: 0,
+            alien_ptr: None,
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
+            signal_context: None,
         }
     }
 
@@ -413,7 +438,7 @@ impl Thread {
 
     #[inline]
     pub(crate) fn reset_saved_sp(&mut self) -> &mut Self {
-        self.saved_sp = self.stack.base() + self.stack.size();
+        self.saved_sp = self.stack.top() as usize;
         self
     }
 
@@ -428,24 +453,97 @@ impl Thread {
         self.pending_on_mutex.load(Ordering::Acquire)
     }
 
+    #[inline]
+    fn get_or_create_signal_context(&mut self) -> &mut SignalContext {
+        match self.signal_context {
+            Some(ref mut ctx) => ctx,
+            _ => {
+                let mut ctx = Box::new(SignalContext::default());
+                ctx.active = false;
+                self.signal_context = Some(ctx);
+                self.signal_context.as_mut().unwrap()
+            }
+        }
+    }
+
+    pub fn kill_with_once_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) -> bool {
+        if !self.kill(signum) {
+            return false;
+        }
+        self.register_once_signal_handler(signum, f);
+        true
+    }
+
+    pub fn kill(&mut self, signum: i32) -> bool {
+        let sig_ctx = self.get_or_create_signal_context();
+        let old = sig_ctx.pending_signals;
+        sig_ctx.pending_signals |= 1 << signum;
+        // Return false if there is signum pending.
+        (old & 1 << signum) == 0
+    }
+
+    pub fn register_once_signal_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.once_action[signum as usize] = Some(Box::new(f));
+    }
+
+    pub fn take_signal_handler(&mut self, signum: i32) -> Option<Box<dyn FnOnce()>> {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.once_action[signum as usize].take()
+    }
+
+    pub(crate) fn activate_signal_context(&mut self) -> bool {
+        let saved_sp = self.saved_sp();
+        let sig_ctx = self.get_or_create_signal_context();
+        // Nested signal handling is not supported.
+        if sig_ctx.active {
+            return false;
+        }
+        // Save the context being restored first.
+        sig_ctx.recover_sp = saved_sp;
+        let ctx = saved_sp as *const arch::Context;
+        unsafe { core::ptr::copy(ctx, &mut sig_ctx.thread_context as *mut _, 1) };
+        sig_ctx.active = true;
+        true
+    }
+
+    fn is_in_signal_context(&self) -> bool {
+        let Some(ref ctx) = self.signal_context else {
+            return false;
+        };
+        ctx.active
+    }
+
+    pub(crate) fn deactivate_signal_context(&mut self) {
+        let sig_ctx = self.get_or_create_signal_context();
+        debug_assert!(sig_ctx.active);
+        let saved_sp = sig_ctx.recover_sp;
+        let ctx = saved_sp as *mut arch::Context;
+        unsafe { core::ptr::copy(&sig_ctx.thread_context as *const _, ctx, 1) };
+        sig_ctx.active = false;
+        self.saved_sp = saved_sp;
+    }
+
+    pub(crate) fn signal_handler_sp(&mut self) -> usize {
+        debug_assert_eq!(self.saved_sp % core::mem::align_of::<Context>(), 0);
+        self.saved_sp - core::mem::size_of::<Context>()
+    }
+
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
         self.stack = stack;
         // TODO: Stack sanity check.
-        self.saved_sp =
-            self.stack.base() + self.stack.size() - core::mem::size_of::<arch::Context>();
+        let maybe_sp = self.stack.top() as usize
+            - (core::mem::size_of::<arch::Context>() + core::mem::align_of::<arch::Context>());
         self.acquired_mutexes.irqsave_write().init();
 
         let region = Region {
-            base: self.saved_sp,
-            size: core::mem::size_of::<arch::Context>(),
+            base: maybe_sp,
+            size: core::mem::size_of::<arch::Context>() + core::mem::align_of::<arch::Context>(),
         };
         let mut builder = RegionalObjectBuilder::new(region);
-        let ctx = unsafe {
-            builder
-                .zeroed_after_start::<arch::Context>()
-                .unwrap_unchecked()
-        };
-        assert_eq!(ctx as *const _ as usize, self.saved_sp);
+        let ctx = unsafe { builder.zeroed_after_start::<arch::Context>().unwrap() };
+        self.saved_sp = ctx as *const _ as usize;
+
         ctx.init();
         // TODO: We should provide the thread a more rusty environment
         // to run the function safely.
@@ -460,7 +558,7 @@ impl Thread {
                 // platform, aka, it's a fat pointer.
                 let raw = Box::into_raw(Box::new(boxed));
                 ctx.set_return_address(run_closure as usize)
-                    .set_arg(0, raw as *mut u8 as usize)
+                    .set_arg(0, raw as *mut Box<dyn FnOnce()> as usize)
             }
             Entry::Posix(f, arg) => ctx
                 .set_return_address(run_posix as usize)
@@ -514,6 +612,11 @@ impl Thread {
     }
 
     #[inline]
+    pub fn start_cycles(&self) -> u64 {
+        self.stats.start_cycles()
+    }
+
+    #[inline]
     pub fn get_cycles(&self) -> u64 {
         self.stats.get_cycles()
     }
@@ -543,6 +646,22 @@ impl Thread {
     }
 
     #[inline]
+    pub fn set_alien_ptr(&mut self, ptr: NonNull<core::ffi::c_void>) {
+        self.alien_ptr = Some(ptr);
+    }
+
+    #[inline]
+    pub fn reset_alien_ptr(&mut self) -> &mut Self {
+        self.alien_ptr = None;
+        self
+    }
+
+    #[inline]
+    pub fn get_alien_ptr(&self) -> Option<NonNull<core::ffi::c_void>> {
+        self.alien_ptr
+    }
+
+    #[inline]
     pub fn origin_priority(&self) -> ThreadPriority {
         self.origin_priority
     }
@@ -550,6 +669,36 @@ impl Thread {
     #[inline]
     pub fn set_origin_priority(&mut self, p: ThreadPriority) -> &mut Self {
         self.origin_priority = p;
+        self
+    }
+
+    #[inline]
+    pub fn pending_signals(&mut self) -> u32 {
+        self.signal_context
+            .as_ref()
+            .map_or_else(|| 0, |c| c.pending_signals)
+    }
+
+    #[inline]
+    pub fn has_pending_signals(&mut self) -> bool {
+        self.pending_signals() != 0
+    }
+
+    #[inline]
+    pub fn clear_signal(&mut self, signum: i32) -> &Self {
+        let Some(c) = &mut self.signal_context else {
+            return self;
+        };
+        c.pending_signals &= !(1 << signum);
+        self
+    }
+
+    #[inline]
+    pub fn clear_all_signals(&mut self) -> &Self {
+        let Some(c) = &mut self.signal_context else {
+            return self;
+        };
+        c.pending_signals = 0;
         self
     }
 

@@ -23,7 +23,6 @@ use core::{
 };
 pub use trap::*;
 
-pub(crate) static READY_CORES: AtomicU8 = AtomicU8::new(0);
 pub(crate) const NR_SWITCH: usize = !0;
 
 // See https://five-embeddev.com/riscv-priv-isa-manual/Priv-v1.12/machine.html#machine-status-registers-mstatus-and-mstatush
@@ -59,6 +58,7 @@ macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
             "csrci mstatus, 0x8",
+            "la gp, __global_pointer$",
             "csrr t0, mhartid",
             "la sp, {stack_end}",
             "slli t0, t0, 14",
@@ -67,14 +67,15 @@ macro_rules! arch_bootstrap {
             "la t0, {cont}",
             "jalr x0, t0, 0",
             stack_end = sym $stack_end,
-            bootstrap = sym $crate::arch::riscv64::bootstrap,
+            bootstrap = sym $crate::arch::riscv::bootstrap,
             cont = sym $cont,
         );
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 #[macro_export]
-macro_rules! rv64_save_context_prologue {
+macro_rules! rv_save_context_prologue {
     () => {
         "
         addi sp, sp, -{stack_size}
@@ -83,8 +84,9 @@ macro_rules! rv64_save_context_prologue {
     };
 }
 
+#[cfg(target_arch = "riscv64")]
 #[macro_export]
-macro_rules! rv64_restore_context_epilogue {
+macro_rules! rv_restore_context_epilogue {
     () => {
         "
         ld ra, {ra}(sp)
@@ -109,8 +111,9 @@ macro_rules! set_mstatus_mie {
     };
 }
 
+#[cfg(target_arch = "riscv64")]
 #[macro_export]
-macro_rules! rv64_restore_context {
+macro_rules! rv_restore_context {
     () => {
         "
         ld t0, {mepc}(sp)
@@ -148,8 +151,9 @@ macro_rules! rv64_restore_context {
     };
 }
 
+#[cfg(target_arch = "riscv64")]
 #[macro_export]
-macro_rules! rv64_save_context {
+macro_rules! rv_save_context {
     () => {
         "
         sd gp, {gp}(sp)
@@ -188,13 +192,13 @@ macro_rules! rv64_save_context {
 }
 
 #[inline]
-pub(crate) extern "C" fn disable_local_irq() {
+pub extern "C" fn disable_local_irq() {
     compiler_fence(Ordering::SeqCst);
     unsafe { core::arch::asm!(clear_mstatus_mie!(), options(nostack)) };
 }
 
 #[inline]
-pub(crate) extern "C" fn enable_local_irq() {
+pub extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!(set_mstatus_mie!(), options(nostack)) };
     compiler_fence(Ordering::SeqCst);
 }
@@ -205,7 +209,7 @@ pub(crate) extern "C" fn idle() {
 }
 
 #[inline]
-pub(crate) extern "C" fn disable_local_irq_save() -> usize {
+pub extern "C" fn disable_local_irq_save() -> usize {
     compiler_fence(Ordering::SeqCst);
     let old: usize;
     unsafe {
@@ -219,7 +223,7 @@ pub(crate) extern "C" fn disable_local_irq_save() -> usize {
 }
 
 #[inline]
-pub(crate) extern "C" fn enable_local_irq_restore(old: usize) {
+pub extern "C" fn enable_local_irq_restore(old: usize) {
     unsafe {
         core::arch::asm!("csrw mstatus, {old}", old = in(reg) old,
                          options(nostack))
@@ -273,7 +277,7 @@ pub(crate) extern "C" fn restore_context_with_hook(
     hook: *mut ContextSwitchHookHolder,
 ) -> ! {
     switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
-    loop {}
+    unreachable!("Should have switched to another thread");
 }
 
 // This context is used when we are performing context switching in
@@ -373,7 +377,6 @@ pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     current.lock().reset_saved_sp();
     let sp = current.saved_sp();
     drop(current);
-    READY_CORES.fetch_add(1, Ordering::Relaxed);
     unsafe {
         core::arch::asm!(
             "li ra, 0",
@@ -394,4 +397,20 @@ pub(crate) extern "C" fn current_cpu_id() -> usize {
                               options(nostack))
     };
     id
+}
+#[naked]
+pub(crate) extern "C" fn switch_stack(
+    to_sp: usize,
+    cont: extern "C" fn(sp: usize, old_sp: usize),
+) -> ! {
+    unsafe {
+        core::arch::naked_asm!(
+            "
+            mv t0, a1
+            mv a1, sp
+            mv sp, a0
+            jalr x0, t0, 0
+            "
+        )
+    }
 }
