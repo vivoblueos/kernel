@@ -42,20 +42,6 @@ build_rust("blueos_kconfig") {
 }
 
 config("kconfigs") {
-  args = [
-    "--kconfig",
-    rebase_path("config/Kconfig"),
-    "--board",
-    "$board",
-    "--build_type",
-    "$build_type",
-  ]
-  inputs = [
-    "config/Kconfig",
-    "config/$board/$build_type/defconfig",
-  ]
-  parse_configs = rebase_path("//kernel/kconfig/src/parse_rustflags.py")
-  kernel_configs = exec_script(parse_configs, args, "list lines")
   rustflags = []
   foreach(_config, kernel_configs) {
     rustflags += [

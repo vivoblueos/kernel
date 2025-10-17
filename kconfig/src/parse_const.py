@@ -39,8 +39,18 @@ def parse_int_configs(kconfig_path, board, build_type):
             continue
 
         # check depends on
-        if sym.direct_dep is not None and sym.direct_dep.tri_value == 0:
-            continue
+        if sym.direct_dep is not None:
+            # Handle both single dependency and tuple of dependencies
+            if isinstance(sym.direct_dep, tuple):
+                # If it's a tuple, check if any dependency is false
+                if any(dep.tri_value == 0 for dep in sym.direct_dep
+                       if hasattr(dep, 'tri_value')):
+                    continue
+            else:
+                # If it's a single dependency
+                if hasattr(sym.direct_dep,
+                           'tri_value') and sym.direct_dep.tri_value == 0:
+                    continue
 
         value = None
         try:
