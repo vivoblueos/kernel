@@ -42,12 +42,14 @@ mod procfs;
 #[cfg(procfs)]
 pub use procfs::{trace_thread_close, trace_thread_create};
 mod root;
+#[cfg(enable_net)]
 mod sockfs;
 pub mod syscalls;
 mod tmpfs;
 mod utils;
 use alloc::string::String;
 pub use file::AccessMode;
+#[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 
 /// Initialize the virtual file system  
