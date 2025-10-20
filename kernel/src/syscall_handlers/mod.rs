@@ -15,18 +15,22 @@
 extern crate alloc;
 
 use crate::{
-    arch, asynk, net, scheduler,
+    scheduler,
     sync::atomic_wait as futex,
-    thread::{self, Builder, Entry, Stack, Thread, ThreadNode},
+    thread::{self, Builder, Entry, Stack, Thread},
     time,
-    types::IsNotNull,
-    vfs::syscalls as vfs_syscalls,
 };
+#[cfg(kernel_async)]
+use crate::asynk;
+#[cfg(enable_net)]
+use crate::net::syscalls as net_syscalls;
+#[cfg(enable_vfs)]
+use crate::vfs::syscalls as vfs_syscalls;
+#[cfg(enable_vfs)]
+pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
+
 use alloc::boxed::Box;
-use blueos_header::{
-    syscalls::NR,
-    thread::{ExitArgs, SpawnArgs},
-};
+use blueos_header::{syscalls::NR, thread::{ExitArgs, SpawnArgs}};
 use core::{
     ffi::{c_size_t, c_ssize_t},
     sync::atomic::AtomicUsize,
@@ -36,6 +40,173 @@ use libc::{
     sockaddr, socklen_t, timespec, EINVAL,
 };
 
+#[cfg(not(enable_vfs))]
+mod vfs_syscalls {
+    use super::*;
+    pub struct Stat;
+    pub struct StatFs;
+    pub fn write(_fd: i32, _buf: *const u8, _size: usize) -> isize {
+        -libc::ENOTSUP as isize
+    }
+    pub fn read(_fd: i32, _buf: *mut u8, _size: usize) -> isize {
+        -libc::ENOTSUP as isize
+    }
+    pub fn lseek(_fd: i32, _offset: i64, _whence: i32) -> i64 {
+        -libc::ENOTSUP as i64
+    }
+    pub fn close(_fd: i32) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn open(_path: *const c_char, _flags: c_int, _mode: mode_t) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn rmdir(_path: *const c_char) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn link(_oldpath: *const c_char, _newpath: *const c_char) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn unlink(_path: *const c_char) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn fcntl(_fildes: c_int, _cmd: c_int, _arg: usize) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn stat(_path: *const c_char, _buf: *mut Stat) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn fstat(_fd: c_int, _buf: *mut Stat) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn mkdir(_path: *const c_char, _mode: mode_t) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn statfs(_path: *const c_char, _buf: *mut StatFs) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn fstatfs(_fd: c_int, _buf: *mut StatFs) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn getdents(_fd: c_int, _buf: *mut u8, _size: usize) -> isize {
+        -libc::ENOTSUP as isize
+    }
+    pub fn chdir(_path: *const c_char) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn getcwd(_buf: *mut c_char, _size: size_t) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn ftruncate(_fd: c_int, _length: off_t) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn mount(
+        _source: *const c_char,
+        _target: *const c_char,
+        _fstype: *const c_char,
+        _flags: core::ffi::c_ulong,
+        _data: *const core::ffi::c_void,
+    ) -> i32 {
+        -libc::ENOTSUP
+    }
+    pub fn umount(_target: *const c_char) -> i32 {
+        -libc::ENOTSUP
+    }
+}
+#[cfg(not(enable_vfs))]
+use vfs_syscalls::{Stat, StatFs};
+
+#[cfg(not(enable_net))]
+mod net_syscalls {
+    use super::*;
+    pub fn socket(_domain: c_int, _type: c_int, _protocol: c_int) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn bind(_socket: c_int, _address: *const sockaddr, _address_len: socklen_t) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn connect(_socket: c_int, _address: *const sockaddr, _address_len: socklen_t) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn listen(_socket: c_int, _backlog: c_int) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn accept(_socket: c_int, _address: *const sockaddr, _address_len: u32) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn send(
+        _socket: c_int,
+        _buffer: *const core::ffi::c_void,
+        _length: c_size_t,
+        _flags: c_int,
+    ) -> c_ssize_t {
+        -libc::ENOTSUP as c_ssize_t
+    }
+    pub fn sendto(
+        _socket: c_int,
+        _buffer: *const core::ffi::c_void,
+        _length: c_size_t,
+        _flags: c_int,
+        _dest_addr: *const sockaddr,
+        _dest_len: socklen_t,
+    ) -> c_ssize_t {
+        -libc::ENOTSUP as c_ssize_t
+    }
+    pub fn recv(
+        _socket: c_int,
+        _buffer: *mut core::ffi::c_void,
+        _length: c_size_t,
+        _flags: c_int,
+    ) -> c_ssize_t {
+        -libc::ENOTSUP as c_ssize_t
+    }
+    pub fn recvfrom(
+        _socket: c_int,
+        _buffer: *mut core::ffi::c_void,
+        _length: c_size_t,
+        _flags: c_int,
+        _address: *mut sockaddr,
+        _address_len: *mut socklen_t,
+    ) -> c_ssize_t {
+        -libc::ENOTSUP as c_ssize_t
+    }
+    pub fn shutdown(_socket: c_int, _how: c_int) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn setsockopt(
+        _socket: c_int,
+        _level: c_int,
+        _option_name: c_int,
+        _option_value: *const core::ffi::c_void,
+        _option_len: socklen_t,
+    ) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn getsockopt(
+        _socket: c_int,
+        _level: c_int,
+        _option_name: c_int,
+        _option_value: *mut core::ffi::c_void,
+        _option_len: *mut socklen_t,
+    ) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn sendmsg(_socket: c_int, _message: *const msghdr, _flags: c_int) -> c_ssize_t {
+        -libc::ENOTSUP as c_ssize_t
+    }
+    pub fn recvmsg(_socket: c_int, _message: *mut msghdr, _flags: c_int) -> c_ssize_t {
+        -libc::ENOTSUP as c_ssize_t
+    }
+    pub fn getaddrinfo(
+        _node: *const c_char,
+        _service: *const c_char,
+        _hints: *const addrinfo,
+        _res: *mut *mut addrinfo,
+    ) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn freeaddrinfo(_res: *mut addrinfo) -> usize { 0 }
+}
+
 #[repr(C)]
 #[derive(Default)]
 pub struct Context {
@@ -43,7 +214,6 @@ pub struct Context {
     pub args: [usize; 6],
 }
 
-pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
 /// this signal data structure will be used in signal handling
 /// now add attributes to disable warnings
 /// copy from librs/signal/mod.rs
@@ -397,41 +567,41 @@ define_syscall_handler!(
 define_syscall_handler!(
     socket(domain: c_int, type_: c_int, protocol_: c_int) -> c_int {
         unsafe{
-            net::syscalls::socket(domain, type_, protocol_)
+            net_syscalls::socket(domain, type_, protocol_)
         }
     }
 );
 
 define_syscall_handler!(
     bind(sockfd: c_int, addr: *const sockaddr, len: socklen_t) -> c_int {
-        net::syscalls::bind(sockfd, addr, len)
+        net_syscalls::bind(sockfd, addr, len)
     }
 );
 
 define_syscall_handler!(
     connect(sockfd: c_int, addr: *const sockaddr, len: socklen_t) -> c_int {
-        net::syscalls::connect(sockfd, addr, len)
+        net_syscalls::connect(sockfd, addr, len)
     }
 );
 
 define_syscall_handler!(
     listen(sockfd: c_int, backlog: c_int) -> c_int {
         unsafe {
-            net::syscalls::listen(sockfd, backlog)
+            net_syscalls::listen(sockfd, backlog)
         }
     }
 );
 
 define_syscall_handler!(
     accept(sockfd: c_int, addr: *mut sockaddr, len: *mut socklen_t) -> c_int {
-        let orig_len = if len.is_not_null() { unsafe { *len } } else { 0 };
+        let orig_len = if !len.is_null() { unsafe { *len } } else { 0 };
 
-        let result = net::syscalls::accept(
+        let result = net_syscalls::accept(
             sockfd,
             addr as *const sockaddr,
             orig_len
         );
-        if len.is_not_null() && result >= 0 {
+        if !len.is_null() && result >= 0 {
             unsafe { *len = orig_len };
         }
 
@@ -441,57 +611,57 @@ define_syscall_handler!(
 
 define_syscall_handler!(
     send(sockfd: c_int, buffer: *const core::ffi::c_void, length: c_size_t, flags: c_int) -> c_ssize_t {
-        net::syscalls::send(sockfd, buffer, length, flags)
+        net_syscalls::send(sockfd, buffer, length, flags)
     }
 );
 
 define_syscall_handler!(
     sendto(sockfd: c_int, message: *const core::ffi::c_void, length: c_size_t, flags: c_int, dest_addr: *const sockaddr, dest_len: socklen_t) -> c_ssize_t {
-        net::syscalls::sendto(sockfd, message, length, flags, dest_addr, dest_len)
+        net_syscalls::sendto(sockfd, message, length, flags, dest_addr, dest_len)
     }
 );
 
 define_syscall_handler!(
     recv(sockfd: c_int, buffer: *mut core::ffi::c_void, length: c_size_t, flags: c_int) -> c_ssize_t {
-        net::syscalls::recv(sockfd, buffer, length, flags)
+        net_syscalls::recv(sockfd, buffer, length, flags)
     }
 );
 
 define_syscall_handler!(
     recvfrom(sockfd: c_int, buffer: *mut core::ffi::c_void, length: c_size_t, flags: c_int, address: *mut sockaddr, address_len: *mut socklen_t) -> c_ssize_t {
-        net::syscalls::recvfrom(sockfd, buffer, length, flags, address, address_len)
+        net_syscalls::recvfrom(sockfd, buffer, length, flags, address, address_len)
     }
 );
 
 define_syscall_handler!(
     shutdown(sockfd: c_int, how: c_int) -> c_int {
         unsafe {
-            net::syscalls::shutdown(sockfd, how)
+            net_syscalls::shutdown(sockfd, how)
         }
     }
 );
 
 define_syscall_handler!(
     setsockopt(sockfd: c_int, level: c_int, option_name: c_int, option_value: *const core::ffi::c_void, option_len: socklen_t) -> c_int {
-        net::syscalls::setsockopt(sockfd, level, option_name, option_value, option_len)
+        net_syscalls::setsockopt(sockfd, level, option_name, option_value, option_len)
     }
 );
 
 define_syscall_handler!(
     getsockopt(sockfd: c_int, level: c_int, option_name: c_int, option_value: *mut core::ffi::c_void, option_len: *mut socklen_t) -> c_int {
-        net::syscalls::getsockopt(sockfd, level, option_name, option_value, option_len)
+        net_syscalls::getsockopt(sockfd, level, option_name, option_value, option_len)
     }
 );
 
 define_syscall_handler!(
     sendmsg(sockfd: c_int, message: *const msghdr, flags: c_int) -> c_ssize_t {
-        net::syscalls::sendmsg(sockfd, message, flags)
+        net_syscalls::sendmsg(sockfd, message, flags)
     }
 );
 
 define_syscall_handler!(
     recvmsg(sockfd: c_int, message: *mut msghdr, flags: c_int) -> c_ssize_t {
-        net::syscalls::recvmsg(sockfd, message, flags)
+        net_syscalls::recvmsg(sockfd, message, flags)
     }
 );
 // Socket syscall end
@@ -502,12 +672,13 @@ define_syscall_handler!(
         service: *const c_char,
         hints: *const addrinfo,
         res: *mut *mut addrinfo) -> c_int {
-        net::syscalls::getaddrinfo(node, service, hints, res)
+        net_syscalls::getaddrinfo(node, service, hints, res)
     }
 );
 define_syscall_handler!(
     freeaddrinfo(res: *mut addrinfo) -> usize {
-        net::syscalls::freeaddrinfo(res)
+        net_syscalls::freeaddrinfo(res);
+        0
     }
 );
 // Netdb syscall end
@@ -593,6 +764,11 @@ syscall_table! {
     (GetAddrinfo,getaddrinfo),
     (FreeAddrinfo,freeaddrinfo),
     (NanoSleep,sys_clock_nanosleep),
+}
+
+#[cfg(not(enable_syscall))]
+pub fn dispatch_syscall(ctx: &Context) -> usize {
+    0
 }
 
 // Begin syscall modules.

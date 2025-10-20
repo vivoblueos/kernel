@@ -47,7 +47,6 @@ shared_deps = [
   "//external/log/v0.4.22:log",
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/safe-mmio/v0.2.5:safe_mmio",
-  "//external/smoltcp/v0.12.0:smoltcp",
   "//external/spin/v0.9.8:spin",
   "//external/thiserror/v2.0.9:thiserror",
   "//external/tock-registers/v0.9.0:tock_registers",
@@ -57,6 +56,10 @@ shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//libc",
 ]
+
+if (use_net) {
+  shared_deps += [ "//external/smoltcp/v0.12.0:smoltcp" ]
+}
 
 if (board == "raspberry_pico2_cortexm") {
   shared_deps += [ "//external/embedded-hal/v1.0.0:embedded_hal" ]
@@ -154,11 +157,13 @@ build_rust("kernel_integration_test") {
     ":blueos",
     "//external/byteorder/v1.5.0:byteorder",
     "//external/semihosting/v0.1.20:semihosting",
-    "//external/smoltcp/v0.12.0:smoltcp",
     "//kernel/rsrt",
     "//kernel/scal:blueos_scal",
     "//libc",
   ]
+  if (use_net) {
+    deps += [ "//external/smoltcp/v0.12.0:smoltcp" ]
+  }
   if (coverage || profile) {
     deps += [ "//external/minicov/v0.3.7:minicov" ]
   }

@@ -1,4 +1,4 @@
-mainmenu "Blue Kernel"
+mainmenu "BlueOS Kernel"
 
 source "$KCONFIG_DIR/$BOARD/Kconfig"
 
@@ -19,44 +19,9 @@ config NUM_CORES
     default 1 if !SMP
     int "Number of CPUs"
 
-config THREAD_PRIORITY
-    default y 
-    depends on THREAD_PRIORITY_256
-    bool "use thread stack priority"
-
-choice
-    prompt "The async output thread stack priority"
-    default THREAD_PRIORITY_256
-    help
-      Choose between 32 or 256 for the async output thread priority.
-    config THREAD_PRIORITY_32
-        bool "32"
-        help
-          Set async thread priority to 32 (lower priority).
-    config THREAD_PRIORITY_256
-        bool "256"
-        help
-          Set async thread priority to 256 (higher priority).
-endchoice
-
-config MAIN_THREAD_PRIORITY
-    default 100 if THREAD_PRIORITY_256
-    default 10 if THREAD_PRIORITY_32
-    int "Set main thread priority"
-
-config THREAD_PRIORITY_MAX
-    default 256 if THREAD_PRIORITY_256
-    default 32 if THREAD_PRIORITY_32
-    depends on THREAD_PRIORITY
-    int "The async output thread stack priority, Valid values are ONLY 32 or 256."
-
-config SERIAL_RX_FIFO_SIZE
-    default 512
-    int "The serial rx fifo size"
-
-config SERIAL_TX_FIFO_SIZE
-    default 512
-    int "The serial tx fifo size"
+config USE_KERNEL_BOOT
+    default y
+    bool "Use kernel default boot"
 
 choice
     prompt "Memory allocation algorithm"
@@ -78,11 +43,15 @@ config ALLOCATOR
     default "llff" if ALLOCATOR_LLFF
     default "buddy" if ALLOCATOR_BUDDY
 
+
+menu "Kernel Core Features"
+
 config SOFT_TIMER
     default y
     bool "Enable soft timer"
 
 config EVENT_FLAGS
+    default y if CMSIS_RTOS1_ADAPTER || CMSIS_RTOS2_ADAPTER
     default n
     bool "Enable event flags"
 
@@ -119,6 +88,59 @@ config TIMER_THREAD_STACK_SIZE
     default 2048
     int "The stack size of timer thread"
 
+config KERNEL_ASYNC
+    default y
+    bool "Enable async kernel"
+
+config THREAD_PRIORITY
+    default y 
+    bool "use thread stack priority"
+
+choice
+    prompt "Thread priority range"
+    default THREAD_PRIORITY_256
+    depends on THREAD_PRIORITY
+    help
+      Choose the maximum thread priority value.
+    config THREAD_PRIORITY_32
+        bool "32"
+        help
+          Set maximum thread priority to 32.
+    config THREAD_PRIORITY_256
+        bool "256"
+        help
+          Set maximum thread priority to 256.
+endchoice
+
+config THREAD_PRIORITY_MAX
+    default 256 if THREAD_PRIORITY_256
+    default 32 if THREAD_PRIORITY_32
+    depends on THREAD_PRIORITY
+    int "Maximum thread priority value"
+
+config MAIN_THREAD_PRIORITY
+    depends on THREAD_PRIORITY
+    default 100 if THREAD_PRIORITY_256
+    default 10 if THREAD_PRIORITY_32
+    int "Set main thread priority"
+    range 1 THREAD_PRIORITY_MAX
+
+config ASYNC_OUTPUT_THREAD_PRIORITY
+    depends on KERNEL_ASYNC
+    depends on THREAD_PRIORITY
+    default 255 if THREAD_PRIORITY_256
+    default 31 if THREAD_PRIORITY_32
+    int "The async output thread stack priority"
+    range 1 THREAD_PRIORITY_MAX
+    help
+      Set the priority for the async output thread. Maximum value depends on THREAD_PRIORITY_MAX.
+
+endmenu
+
+config ENABLE_SYSCALL
+    default y
+    bool "Enable support for syscall"
+
 config FDT
     default n
     bool "Enable Flat Device Tree"
@@ -127,21 +149,40 @@ config VIRTIO
     default n
     bool "Enable VirtIO"
 
+config SERIAL_RX_FIFO_SIZE
+    default 256
+    int "The serial rx fifo size"
+
+config SERIAL_TX_FIFO_SIZE
+    default 256
+    int "The serial tx fifo size"
+
+config ENABLE_VFS
+    bool "Enable Virtual File System"
+    default y
+    help
+      Enable virtual file system support. When enabled, vfs will be available.
+
 config PROCFS
+    depends on ENABLE_VFS
     default n
     bool "Enable proc file system"
 
+# Network Stack Configuration
+config ENABLE_NET
+    bool "Enable Network Stack"
+    default y
+    help
+      Enable network stack support. When enabled, smoltcp TCP/IP stack will be available.
+
 config NETWORK_STACK_SIZE
-    default 32768
+    depends on ENABLE_NET
+    default 24576
     int "The stack size of network stack thread"
 
 # smoltcp IP Stack Configuration , default and range from smoltcp:gen_config.py
 menu "smoltcp TCP/IP Stack Configuration"
-    config SMOLTCP
-        bool
-        default y
-        help
-          smoltcp TCP/IP stack is mandatory for this system
+    depends on ENABLE_NET
 
 config ASSEMBLER_MAX_SEGMENT_COUNT
     int "Maximum non-contiguous segments count for reassembly"

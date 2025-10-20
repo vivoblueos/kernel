@@ -75,8 +75,10 @@ pub mod ffi {
 
 pub mod allocator;
 pub mod arch;
+#[cfg(kernel_async)]
 pub mod asynk;
 pub(crate) mod boards;
+#[cfg(use_kernel_boot)]
 pub(crate) mod boot;
 pub(crate) mod config;
 pub(crate) mod console;
@@ -86,7 +88,8 @@ pub(crate) mod devices;
 pub(crate) mod drivers;
 pub mod error;
 pub mod irq;
-pub(crate) mod logger;
+pub mod logger;
+#[cfg(enable_net)]
 pub mod net;
 pub mod scheduler;
 pub mod support;
@@ -95,6 +98,7 @@ pub mod syscall_handlers;
 pub mod thread;
 pub mod time;
 pub mod types;
+#[cfg(enable_vfs)]
 pub mod vfs;
 
 pub use syscall_handlers as syscalls;
