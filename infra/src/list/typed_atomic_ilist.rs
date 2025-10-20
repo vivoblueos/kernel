@@ -26,14 +26,14 @@ use core::{
 // indicate if a list operation is ongoing.
 #[repr(C)]
 #[derive(Default, Debug)]
-pub struct AtomicListHead<T: Sized, A: Adapter> {
+pub struct AtomicListHead<T: Sized, A: Adapter<T>> {
     prev: AtomicPtr<AtomicListHead<T, A>>,
     next: Option<NonNull<AtomicListHead<T, A>>>,
     _t: PhantomData<T>,
     _a: PhantomData<A>,
 }
 
-impl<T, A: Adapter> AtomicListHead<T, A> {
+impl<T, A: Adapter<T>> AtomicListHead<T, A> {
     #[inline]
     pub const fn new() -> Self {
         Self {
@@ -175,15 +175,15 @@ impl<T, A: Adapter> AtomicListHead<T, A> {
     }
 }
 
-unsafe impl<T, A: crate::intrusive::Adapter> Sync for AtomicListHead<T, A> {}
+unsafe impl<T, A: crate::intrusive::Adapter<T>> Sync for AtomicListHead<T, A> {}
 impl<T, A> !Send for AtomicListHead<T, A> {}
 
-pub struct AtomicListIterator<T, A: Adapter> {
+pub struct AtomicListIterator<T, A: Adapter<T>> {
     next: Option<NonNull<AtomicListHead<T, A>>>,
     tail: Option<NonNull<AtomicListHead<T, A>>>,
 }
 
-impl<T, A: Adapter> AtomicListIterator<T, A> {
+impl<T, A: Adapter<T>> AtomicListIterator<T, A> {
     pub fn new(head: &AtomicListHead<T, A>, tail: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             next: head.next,
@@ -192,7 +192,7 @@ impl<T, A: Adapter> AtomicListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for AtomicListIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for AtomicListIterator<T, A> {
     type Item = NonNull<AtomicListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -208,12 +208,12 @@ impl<T, A: Adapter> Iterator for AtomicListIterator<T, A> {
     }
 }
 
-pub struct AtomicListReverseIterator<T, A: Adapter> {
+pub struct AtomicListReverseIterator<T, A: Adapter<T>> {
     prev: *mut AtomicListHead<T, A>,
     head: *mut AtomicListHead<T, A>,
 }
 
-impl<T, A: Adapter> AtomicListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> AtomicListReverseIterator<T, A> {
     pub fn new(tail: &AtomicListHead<T, A>, head: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             prev: tail.prev_ptr(),
@@ -222,7 +222,7 @@ impl<T, A: Adapter> AtomicListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for AtomicListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for AtomicListReverseIterator<T, A> {
     type Item = NonNull<AtomicListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -238,19 +238,11 @@ impl<T, A: Adapter> Iterator for AtomicListReverseIterator<T, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{tinyarc::TinyArc as Arc, tinyrwlock::RwLock};
+    use crate::{impl_simple_intrusive_adapter, tinyarc::TinyArc as Arc, tinyrwlock::RwLock};
     use core::mem::offset_of;
     use std::thread;
 
-    #[derive(Default, Debug)]
-    struct OffsetOfLh;
-
-    impl const Adapter for OffsetOfLh {
-        #[inline]
-        fn offset() -> usize {
-            offset_of!(Foo, lh)
-        }
-    }
+    impl_simple_intrusive_adapter!(OffsetOfLh, Foo, lh);
 
     #[derive(Default, Debug)]
     pub struct Foo {

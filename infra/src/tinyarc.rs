@@ -141,12 +141,19 @@ impl<T> TinyArc<T> {
         Self::get_handle(this) == Self::get_handle(that)
     }
 
+    #[inline]
     #[must_use]
     pub fn as_ptr(this: &Self) -> *const T {
         let ptr: *mut TinyArcInner<T> = NonNull::as_ptr(this.inner);
 
         // SAFETY: This cannot go through Deref::deref because this is required to retain raw/mut provenance
         unsafe { &raw mut (*ptr).data }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn ptr_eq(this: &Self, other: &Self) -> bool {
+        core::ptr::addr_eq(Self::as_ptr(this), Self::as_ptr(other))
     }
 
     pub fn into_raw(this: Self) -> *const T {
@@ -239,12 +246,12 @@ unsafe impl<T: Sized> Sync for TinyArc<T> {}
 // a node from a list, we must be sure that the node being detached exactly
 // belongs to the list we are locking.
 #[derive(Default, Debug)]
-pub struct TinyArcList<T: Sized, A: Adapter> {
+pub struct TinyArcList<T: Sized, A: Adapter<T>> {
     head: AtomicListHead<T, A>,
     tail: AtomicListHead<T, A>,
 }
 
-impl<T: Sized, A: Adapter> TinyArcList<T, A> {
+impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     pub const fn const_new() -> Self {
         Self {
             head: AtomicListHead::<T, A>::new(),
@@ -452,7 +459,7 @@ impl<T: Sized, A: Adapter> TinyArcList<T, A> {
     }
 }
 
-impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
+impl<T: Sized, A: Adapter<T>> Drop for TinyArcList<T, A> {
     #[inline]
     fn drop(&mut self) {
         // NOTE: Elements should be cleared by calling `clear` method
@@ -463,20 +470,20 @@ impl<T: Sized, A: Adapter> Drop for TinyArcList<T, A> {
     }
 }
 
-impl<T: Sized, A: Adapter> GenericList for TinyArcList<T, A> {
+impl<T: Sized, A: Adapter<T>> GenericList for TinyArcList<T, A> {
     type Node = AtomicListHead<T, A>;
     type Iter = TinyArcListIterator<T, A>;
 }
 
-pub struct TinyArcListIterator<T, A: Adapter> {
+pub struct TinyArcListIterator<T, A: Adapter<T>> {
     it: ListIterator<T, A>,
 }
 
-pub struct TinyArcListReverseIterator<T, A: Adapter> {
+pub struct TinyArcListReverseIterator<T, A: Adapter<T>> {
     it: ListReverseIterator<T, A>,
 }
 
-impl<T, A: Adapter> TinyArcListIterator<T, A> {
+impl<T, A: Adapter<T>> TinyArcListIterator<T, A> {
     pub fn new(head: &AtomicListHead<T, A>, tail: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListIterator::new(head, tail),
@@ -484,7 +491,7 @@ impl<T, A: Adapter> TinyArcListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> TinyArcListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> TinyArcListReverseIterator<T, A> {
     pub fn new(tail: &AtomicListHead<T, A>, head: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListReverseIterator::new(tail, head),
@@ -492,7 +499,7 @@ impl<T, A: Adapter> TinyArcListReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for TinyArcListIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for TinyArcListIterator<T, A> {
     type Item = TinyArc<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -501,7 +508,7 @@ impl<T, A: Adapter> Iterator for TinyArcListIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter> Iterator for TinyArcListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> Iterator for TinyArcListReverseIterator<T, A> {
     type Item = TinyArc<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
