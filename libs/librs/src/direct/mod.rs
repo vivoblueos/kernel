@@ -286,6 +286,7 @@ mod tests {
     use crate::println;
     use blueos_test_macro::test;
 
+    #[cfg(enable_vfs)]
     #[test]
     fn test_scandir() {
         let path = CStr::from_bytes_with_nul(b"/\0").unwrap();
