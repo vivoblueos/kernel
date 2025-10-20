@@ -26,6 +26,7 @@ pub mod block;
 pub mod console;
 pub(crate) mod dumb;
 mod error;
+#[cfg(enable_net)]
 pub(crate) mod net;
 mod null;
 pub mod tty;

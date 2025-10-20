@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{allocator, arch, asynk, boards, logger, net, scheduler, thread, time, vfs};
+#[cfg(kernel_async)]
+use crate::asynk;
+#[cfg(enable_net)]
+use crate::net;
+#[cfg(enable_vfs)]
+use crate::vfs;
+use crate::{allocator, arch, boards, logger, scheduler, thread, time};
 use core::ptr::{addr_of, addr_of_mut};
 
 pub(crate) static mut INIT_BSS_DONE: bool = false;
@@ -53,8 +59,11 @@ extern "C" fn init() {
     #[cfg(not(target_arch = "riscv64"))]
     logger::logger_init();
     time::timer::system_timer_init();
+    #[cfg(kernel_async)]
     asynk::init();
+    #[cfg(enable_net)]
     net::net_manager::init();
+    #[cfg(enable_vfs)]
     init_vfs();
     init_apps();
     arch::start_schedule(scheduler::schedule);
@@ -66,6 +75,7 @@ pub(crate) fn init_runtime() {
     run_init_array();
 }
 
+#[cfg(enable_vfs)]
 pub(crate) fn init_vfs() {
     unsafe {
         if INIT_VFS_DONE {

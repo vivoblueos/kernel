@@ -13,7 +13,12 @@
 // limitations under the License.
 
 #![allow(dead_code)]
+
+#[cfg(enable_net)]
 use crate::net::net_utils;
+#[cfg(enable_net)]
+use blueos::net;
+
 use alloc::{boxed::Box, ffi::CString, format, string::String, vec};
 use blueos::{
     allocator,
@@ -21,7 +26,7 @@ use blueos::{
         code::{EEXIST, ENOENT, ENOTEMPTY},
         Error,
     },
-    net, scheduler,
+    scheduler,
     sync::atomic_wait as futex,
     thread::{Builder as ThreadBuilder, Entry, Stack},
     vfs::{
@@ -614,6 +619,7 @@ fn read_fd_content(path_str: &str, fd: i32) -> usize {
 
 static TCP_SOCKET_FILE_DONE: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(enable_net)]
 #[test]
 fn test_socket_file() {
     net_utils::start_test_thread_with_cleanup(
@@ -630,6 +636,7 @@ fn test_socket_file() {
     let _ = futex::atomic_wait(&TCP_SOCKET_FILE_DONE, 0, None);
 }
 
+#[cfg(enable_net)]
 fn tcp_socket_file_thread() {
     let (server_fd, client_fd) = create_connected_sockets();
     println!(
@@ -683,6 +690,7 @@ fn tcp_socket_file_thread() {
     close(client_fd);
 }
 
+#[cfg(enable_net)]
 fn create_connected_sockets() -> (i32, i32) {
     // Create server socket without O_NONBLOCK flag
     let server_fd = net::syscalls::socket(AF_INET, libc::SOCK_STREAM, 0);
@@ -731,6 +739,7 @@ const TEST_NONBLOCK_MODE: usize = 20;
 static TCP_CLIENT_DONE: AtomicUsize = AtomicUsize::new(0);
 static TCP_SERVER_DONE: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(enable_net)]
 #[test]
 fn test_socket_file_nonblock() {
     TCP_CLIENT_DONE.store(0, Ordering::Release);
@@ -746,6 +755,7 @@ fn test_socket_file_nonblock() {
     let _ = futex::atomic_wait(&TCP_CLIENT_DONE, 0, None);
 }
 
+#[cfg(enable_net)]
 fn socket_server_thread() {
     let (server_fd, client_fd) = create_connected_sockets();
     println!(
@@ -800,6 +810,7 @@ fn socket_server_thread() {
     let _ = futex::atomic_wake(&TCP_SERVER_DONE, 1);
 }
 
+#[cfg(enable_net)]
 fn socket_client_thread(client_fd: i32) {
     // call fcntl func to set client nonblock
     let flags = fcntl(client_fd, libc::F_GETFL, usize::MAX);
