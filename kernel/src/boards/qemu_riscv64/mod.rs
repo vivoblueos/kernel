@@ -23,7 +23,7 @@ mod config;
 mod uart;
 use crate::{
     arch,
-    arch::riscv64::{local_irq_enabled, trap_entry, Context, READY_CORES},
+    arch::riscv::{local_irq_enabled, trap_entry, Context, READY_CORES},
     devices::{console, dumb, Device, DeviceManager},
     drivers::ic::plic::Plic,
     scheduler,

@@ -53,10 +53,7 @@ if (board == "qemu_mps2_an385") {
   ]
 }
 
-common_gcc_rustflags = [
-  "-Clink-arg=-nostartfiles",
-  "-Clink-arg=-lgcc",
-]
+common_gcc_rustflags = [ "-Clink-arg=-nostartfiles" ]
 
 common_image_rustflags = [
   "-Cpanic=abort",
@@ -67,11 +64,7 @@ common_image_rustflags = [
   "-Clink-arg=-T" + rebase_path("//kernel/kernel/src/boards/$board/link.x"),
 ]
 
-if ("$board" == "qemu_riscv64") {
-  common_image_rustflags += common_crate_rustflags
-} else {
-  common_image_rustflags += common_crate_rustflags + common_gcc_rustflags
-}
+common_image_rustflags += common_crate_rustflags + common_gcc_rustflags
 
 if (!defined(use_defmt)) {
   use_defmt = false
@@ -102,6 +95,11 @@ if ("$board" == "qemu_riscv64") {
     "none",
     "-smp",
     "32",
+  ]
+} else if ("$board" == "qemu_riscv32") {
+  qemu_extra_args += [
+    "-bios",
+    "none",
   ]
 } else if ("$board" == "qemu_virt64_aarch64") {
   qemu_extra_args += [

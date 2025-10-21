@@ -384,7 +384,8 @@ pub(crate) extern "C" fn restore_context_with_hook(
 
 // This context is used when we are performing context switching in
 // thread mode or in the first level ISR.
-#[repr(C, align(16))]
+#[cfg_attr(target_pointer_width = "64", repr(C, align(16)))]
+#[cfg_attr(target_pointer_width = "32", repr(C, align(8)))]
 #[derive(Default, Debug)]
 pub(crate) struct Context {
     pub ra: usize,

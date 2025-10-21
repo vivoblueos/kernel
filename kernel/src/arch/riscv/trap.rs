@@ -41,8 +41,8 @@ pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
 pub(crate) unsafe extern "C" fn trap_entry() {
     core::arch::naked_asm!(
         concat!(
-            rv64_save_context_prologue!(),
-            rv64_save_context!(),
+            rv_save_context_prologue!(),
+            rv_save_context!(),
             "
             mv s1, sp
             csrr s2, mcause
@@ -60,8 +60,8 @@ pub(crate) unsafe extern "C" fn trap_entry() {
             call {might_switch}
             mv sp, a0
             ",
-            rv64_restore_context!(),
-            rv64_restore_context_epilogue!(),
+            rv_restore_context!(),
+            rv_restore_context_epilogue!(),
             "
             fence rw, rw
             mret
