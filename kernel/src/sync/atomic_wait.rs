@@ -171,7 +171,10 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
         scheduler::current_thread_id(),
         woken
     );
-    scheduler::yield_me_now_or_later();
+
+    if woken > 0 {
+        scheduler::yield_me_now_or_later();
+    }
     Ok(woken)
 }
 
