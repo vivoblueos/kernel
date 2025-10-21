@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin/:/opt/xpack-riscv-none-elf-gcc-14.2.0-3/riscv-none-elf/bin/:/opt/skywalking-license-eye-0.7.0-bin/bin/linux/:${PATH}"
+ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/bin:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin/:/opt/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-elf/bin/:/opt/xpack-riscv-none-elf-gcc-14.2.0-3/bin/:/opt/skywalking-license-eye-0.7.0-bin/bin/linux/:${PATH}"
 
 # Install system packages
 RUN apt-get update \
