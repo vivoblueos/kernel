@@ -17,8 +17,8 @@ use crate::{
     boards::{handle_plic_irq, set_timeout_after},
     debug,
     irq::{enter_irq, leave_irq},
-    rv64_restore_context, rv64_restore_context_epilogue, rv64_save_context,
-    rv64_save_context_prologue, scheduler,
+    rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
+    scheduler,
     scheduler::ContextSwitchHookHolder,
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
@@ -30,7 +30,7 @@ use core::{
     sync::atomic::{compiler_fence, fence, Ordering},
 };
 
-pub(crate) const INTERRUPT_MASK: usize = 1usize << 63;
+pub(crate) const INTERRUPT_MASK: usize = 1usize << (usize::BITS - 1);
 pub(crate) const TIMER_INT: usize = INTERRUPT_MASK | 0x7;
 pub(crate) const ECALL: usize = 0xB;
 pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;

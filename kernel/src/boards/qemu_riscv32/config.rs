@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_arch = "arm")]
-pub(crate) mod arm;
-#[cfg(target_arch = "arm")]
-pub use arm::*;
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
-pub(crate) mod riscv;
-#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
-pub use riscv::*;
+use crate::arch::irq::IrqNumber;
 
-#[cfg(target_arch = "aarch64")]
-pub(crate) mod aarch64;
-#[cfg(target_arch = "aarch64")]
-pub use aarch64::*;
+pub const PLIC_BASE: usize = 0x0c00_0000;
+
+pub const UART0: u32 = 0x1000_0000;
+pub const UART0_IRQ: IrqNumber = IrqNumber::new(10);

@@ -67,14 +67,15 @@ macro_rules! arch_bootstrap {
             "la t0, {cont}",
             "jalr x0, t0, 0",
             stack_end = sym $stack_end,
-            bootstrap = sym $crate::arch::riscv64::bootstrap,
+            bootstrap = sym $crate::arch::riscv::bootstrap,
             cont = sym $cont,
         );
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 #[macro_export]
-macro_rules! rv64_save_context_prologue {
+macro_rules! rv_save_context_prologue {
     () => {
         "
         addi sp, sp, -{stack_size}
@@ -83,11 +84,34 @@ macro_rules! rv64_save_context_prologue {
     };
 }
 
+#[cfg(target_pointer_width = "32")]
 #[macro_export]
-macro_rules! rv64_restore_context_epilogue {
+macro_rules! rv_save_context_prologue {
+    () => {
+        "
+        addi sp, sp, -{stack_size}
+        sw ra, {ra}(sp)
+        "
+    };
+}
+
+#[cfg(target_pointer_width = "64")]
+#[macro_export]
+macro_rules! rv_restore_context_epilogue {
     () => {
         "
         ld ra, {ra}(sp)
+        addi sp, sp, {stack_size}
+        "
+    };
+}
+
+#[cfg(target_pointer_width = "32")]
+#[macro_export]
+macro_rules! rv_restore_context_epilogue {
+    () => {
+        "
+        lw ra, {ra}(sp)
         addi sp, sp, {stack_size}
         "
     };
@@ -109,8 +133,9 @@ macro_rules! set_mstatus_mie {
     };
 }
 
+#[cfg(target_pointer_width = "64")]
 #[macro_export]
-macro_rules! rv64_restore_context {
+macro_rules! rv_restore_context {
     () => {
         "
         ld t0, {mepc}(sp)
@@ -148,8 +173,49 @@ macro_rules! rv64_restore_context {
     };
 }
 
+#[cfg(target_pointer_width = "32")]
 #[macro_export]
-macro_rules! rv64_save_context {
+macro_rules! rv_restore_context {
+    () => {
+        "
+        lw t0, {mepc}(sp)
+        csrw  mepc, t0
+        lw gp, {gp}(sp)
+        lw tp, {tp}(sp)
+        lw t0, {t0}(sp)
+        lw t1, {t1}(sp)
+        lw t2, {t2}(sp)
+        lw t3, {t3}(sp)
+        lw t4, {t4}(sp)
+        lw t5, {t5}(sp)
+        lw t6, {t6}(sp)
+        lw a0, {a0}(sp)
+        lw a1, {a1}(sp)
+        lw a2, {a2}(sp)
+        lw a3, {a3}(sp)
+        lw a4, {a4}(sp)
+        lw a5, {a5}(sp)
+        lw a6, {a6}(sp)
+        lw a7, {a7}(sp)
+        lw fp, {fp}(sp)
+        lw s1, {s1}(sp)
+        lw s2, {s2}(sp)
+        lw s3, {s3}(sp)
+        lw s4, {s4}(sp)
+        lw s5, {s5}(sp)
+        lw s6, {s6}(sp)
+        lw s7, {s7}(sp)
+        lw s8, {s8}(sp)
+        lw s9, {s9}(sp)
+        lw s10, {s10}(sp)
+        lw s11, {s11}(sp)
+        "
+    };
+}
+
+#[cfg(target_pointer_width = "64")]
+#[macro_export]
+macro_rules! rv_save_context {
     () => {
         "
         sd gp, {gp}(sp)
@@ -183,6 +249,46 @@ macro_rules! rv64_save_context {
         sd s11, {s11}(sp)
         csrr t0, mepc
         sd t0, {mepc}(sp)
+        "
+    };
+}
+
+#[cfg(target_pointer_width = "32")]
+#[macro_export]
+macro_rules! rv_save_context {
+    () => {
+        "
+        sw gp, {gp}(sp)
+        sw tp, {tp}(sp)
+        sw t0, {t0}(sp)
+        sw t1, {t1}(sp)
+        sw t2, {t2}(sp)
+        sw t3, {t3}(sp)
+        sw t4, {t4}(sp)
+        sw t5, {t5}(sp)
+        sw t6, {t6}(sp)
+        sw a0, {a0}(sp)
+        sw a1, {a1}(sp)
+        sw a2, {a2}(sp)
+        sw a3, {a3}(sp)
+        sw a4, {a4}(sp)
+        sw a5, {a5}(sp)
+        sw a6, {a6}(sp)
+        sw a7, {a7}(sp)
+        sw fp, {fp}(sp)
+        sw s1, {s1}(sp)
+        sw s2, {s2}(sp)
+        sw s3, {s3}(sp)
+        sw s4, {s4}(sp)
+        sw s5, {s5}(sp)
+        sw s6, {s6}(sp)
+        sw s7, {s7}(sp)
+        sw s8, {s8}(sp)
+        sw s9, {s9}(sp)
+        sw s10, {s10}(sp)
+        sw s11, {s11}(sp)
+        csrr t0, mepc
+        sw t0, {mepc}(sp)
         "
     };
 }
