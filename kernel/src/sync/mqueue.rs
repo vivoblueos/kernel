@@ -159,7 +159,7 @@ impl MessageQueue {
             }
             let mut ticks = time::get_sys_ticks();
             let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
-
+            send_queue.take_irq_guard(&mut queue);
             drop(queue);
             let out_time =
                 scheduler::suspend_me_with_timeout(send_queue, timeout, InsertMode::InsertToEnd);
@@ -231,7 +231,7 @@ impl MessageQueue {
             }
             let mut ticks = time::get_sys_ticks();
             let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
-
+            recv_queue.take_irq_guard(&mut queue);
             drop(queue);
             let out_time =
                 scheduler::suspend_me_with_timeout(recv_queue, timeout, InsertMode::InsertToEnd);
