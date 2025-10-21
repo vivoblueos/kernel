@@ -75,6 +75,12 @@ pub mod syscalls {
         GetAddrinfo,
         FreeAddrinfo,
         NanoSleep,
+        MqOpen,
+        MqClose,
+        MqUnlink,
+        MqTimedSend,
+        MqTimedReceive,
+        MqGetSetAttr,
         LastNR,
     }
 }

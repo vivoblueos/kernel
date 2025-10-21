@@ -29,6 +29,7 @@ use crate::vfs::syscalls as vfs_syscalls;
 #[cfg(enable_vfs)]
 pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
 
+pub use crate::sync::posix_mqueue;
 use alloc::boxed::Box;
 use blueos_header::{syscalls::NR, thread::{ExitArgs, SpawnArgs}};
 use core::{
@@ -36,7 +37,7 @@ use core::{
     sync::atomic::AtomicUsize,
 };
 use libc::{
-    addrinfo, c_char, c_int, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t, sigset_t, size_t,
+    addrinfo, c_char, c_int, c_uint, c_long, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t, sigset_t, size_t,
     sockaddr, socklen_t, timespec, EINVAL,
 };
 
@@ -246,6 +247,14 @@ pub struct sigaction {
     pub sa_mask: sigset_t,
 }
 
+#[repr(C)]
+pub struct mq_attr {
+    pub mq_flags: c_long,
+    pub mq_maxmsg: c_long,
+    pub mq_msgsize: c_long,
+    pub mq_curmsgs: c_long,
+    pub pad: [c_long; 4],
+}
 // For every syscall number in NR, we have to define a module to
 // handle the syscall request.  `handle_context` serves as the
 // dispatcher if syscall is invoked via software interrupt.
@@ -354,6 +363,14 @@ atomic_wake(addr: usize, count: *mut usize) -> c_long {
 // Only for posix testsuite, we need to implement a stub for clock_gettime
 define_syscall_handler!(
     clock_gettime(_clk_id: clockid_t, tp: *mut timespec) -> c_long {
+        // only support CLOCK_MONOTONIC
+        const TICK_TO_NANOSECOND: usize = 1_000_000_000 / blueos_kconfig::TICKS_PER_SECOND;
+        let ticks = time::get_sys_ticks();
+        let seconds = ticks / blueos_kconfig::TICKS_PER_SECOND;
+        let nanoseconds = (ticks % blueos_kconfig::TICKS_PER_SECOND) * TICK_TO_NANOSECOND;
+        unsafe {
+            *tp = timespec { tv_sec: seconds as c_int, tv_nsec: nanoseconds as c_int };
+        }
         0
 });
 
@@ -701,12 +718,60 @@ define_syscall_handler!(
         };
 
         // TODO: Implement tv_nsec
-        let ticks = blueos_kconfig::TICKS_PER_SECOND * duration.tv_sec as usize;
-        scheduler::suspend_me_for(ticks);
+        let ticks = blueos_kconfig::TICKS_PER_SECOND * duration.tv_sec as usize +
+                    duration.tv_nsec as usize / (1000000000 / blueos_kconfig::TICKS_PER_SECOND);
+        if ticks == 0 {
+            scheduler::yield_me();
+        } else {
+            scheduler::suspend_me_for(ticks);
+        }
         0
     }
 );
 
+define_syscall_handler!(
+    mq_open(name: *const c_char, oflag: c_int, mode: mode_t, attr: *const c_void) -> c_int {
+        posix_mqueue::mq_open(name, oflag, mode, attr as *const mq_attr)
+    }
+);
+
+define_syscall_handler!(
+    mq_close(mqdes: c_int) -> c_int {
+        posix_mqueue::mq_close(mqdes)
+    }
+);
+define_syscall_handler!(
+    mq_unlink(name: *const c_char) -> c_int {
+        posix_mqueue::mq_unlink(name)
+    }
+);
+define_syscall_handler!(
+    mq_send(mqdes: c_int, msg_ptr: *const c_char, msg_len: size_t, msg_prio: c_uint) -> c_int {
+        posix_mqueue::mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, core::ptr::null())
+    }
+);
+define_syscall_handler!(
+    mq_timedsend(mqdes: c_int, msg_ptr: *const c_char, msg_len: size_t, msg_prio: c_uint, timeout: *const timespec) -> c_int {
+        posix_mqueue::mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, timeout)
+    }
+);
+define_syscall_handler!(
+    mq_receive(mqdes: c_int, msg_ptr: *mut c_char, msg_len: size_t, msg_prio: *mut c_uint) -> c_int {
+        posix_mqueue::mq_timedrecv(mqdes, msg_ptr, msg_len, msg_prio, core::ptr::null())
+    }
+);
+define_syscall_handler!(
+    mq_timedreceive(mqdes: c_int, msg_ptr: *mut c_char, msg_len: size_t, msg_prio: *mut c_uint, timeout: *const timespec) -> c_int {
+        posix_mqueue::mq_timedrecv(mqdes, msg_ptr, msg_len, msg_prio, timeout)
+    }
+);
+define_syscall_handler!(
+    mq_getsetattr(mqdes: c_int, new: *const c_void, old: *mut c_void) -> c_int {
+        posix_mqueue::mq_getsetattr(mqdes, new as *const mq_attr, old as *mut mq_attr)
+    }
+);
+
+#[cfg(enable_syscall)]
 syscall_table! {
     (Echo, echo),
     (Nop, nop),
@@ -764,6 +829,12 @@ syscall_table! {
     (GetAddrinfo,getaddrinfo),
     (FreeAddrinfo,freeaddrinfo),
     (NanoSleep,sys_clock_nanosleep),
+    (MqOpen, mq_open),
+    (MqClose, mq_close),
+    (MqUnlink, mq_unlink),
+    (MqTimedSend, mq_timedsend),
+    (MqTimedReceive, mq_timedreceive),
+    (MqGetSetAttr, mq_getsetattr),
 }
 
 #[cfg(not(enable_syscall))]
