@@ -465,7 +465,7 @@ jobs:
         with:
           script: |
             // Check if any job failed
-            let jobStatuses = {
+            const jobStatuses = {
               setup: "${{ needs.setup.result }}",
               check_format: "${{ needs.check_format.result }}",
               check_license: "${{ needs.check_license.result }}",
