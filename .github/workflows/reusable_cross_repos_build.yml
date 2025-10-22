@@ -394,7 +394,7 @@ jobs:
               }
             }
 
-  build_qemu_mps2_an385:
+  build_and_check_virtual_boards:
     runs-on: ubuntu-latest
     needs: setup
     permissions:
@@ -406,6 +406,11 @@ jobs:
       credentials:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      matrix:
+        board: [qemu_mps2_an385, qemu_mps3_an547, qemu_riscv64, qemu_virt64_aarch64]
+        build_type: [release, debug]
+        syscall_mode: [swi, dsc]
 
     steps:
       - name: Download workspace
@@ -414,213 +419,40 @@ jobs:
           name: workspace
           path: .
 
-      - name: Build and test kernel for qemu_mps2_an385
+      - name: Build and test kernel for ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
         uses: actions/github-script@v8
+        env:
+          BOARD: '${{ matrix.board }}'
+          BUILD_TYPE: '${{ matrix.build_type }}'
+          SYSCALL_MODE: '${{ matrix.syscall_mode }}'
         with:
           script: |
             const { execSync } = require('child_process');
-
-            const board = 'qemu_mps2_an385';
-            const configs = [
-              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
-              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
-              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
-              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
-            ];
-
-            for (const config of configs) {
-              console.log(`\nBuilding ${board} ${config.name} version...`);
-
-              const outDir = `out/${board}.${config.name}`;
-              const args = `board="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
-
-              try {
-                // Generate build files
+            const board = process.env.BOARD;
+            const buildType = process.env.BUILD_TYPE;
+            const syscallMode = process.env.SYSCALL_MODE;
+            const profile = `${board}.${buildType}.${syscallMode}`;
+            const outDir = `out/${profile}`;
+            const isDirectSyscall = syscallMode === 'dsc';
+            const args = `board="${board}" build_type="${buildType}" direct_syscall_handler=${isDirectSyscall}`;
+            try {
+                // Generate build files.
                 console.log(`Running: gn gen ${outDir} --args='${args}'`);
                 execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
 
-                // Build and test
+                // Build and test.
                 console.log(`Running: ninja -C ${outDir} check_all`);
                 execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
 
-                console.log(`✅ ${board} ${config.name} build completed successfully`);
-              } catch (error) {
-                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
+                console.log(`✅ ${profile} build completed successfully`);
+            } catch (error) {
+                console.error(`❌ ${profile} build failed:`, error.message);
                 process.exit(1);
-              }
-            }
-
-  build_qemu_mps3_an547:
-    runs-on: ubuntu-latest
-    needs: setup
-    permissions:
-      contents: read
-      checks: write
-      packages: read
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
-      credentials:
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    steps:
-      - name: Download workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace
-          path: .
-
-      - name: Build and test kernel for qemu_mps3_an547
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { execSync } = require('child_process');
-
-            const board = 'qemu_mps3_an547';
-            const configs = [
-              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
-              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
-              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
-              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
-            ];
-
-            for (const config of configs) {
-              console.log(`\nBuilding ${board} ${config.name} version...`);
-
-              const outDir = `out/${board}.${config.name}`;
-              const args = `board="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
-
-              try {
-                // Generate build files
-                console.log(`Running: gn gen ${outDir} --args='${args}'`);
-                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
-
-                // Build and test
-                console.log(`Running: ninja -C ${outDir} check_all`);
-                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
-
-                console.log(`✅ ${board} ${config.name} build completed successfully`);
-              } catch (error) {
-                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
-                process.exit(1);
-              }
-            }
-
-  build_qemu_riscv64:
-    runs-on: ubuntu-latest
-    needs: setup
-    permissions:
-      contents: read
-      checks: write
-      packages: read
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
-      credentials:
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    steps:
-      - name: Download workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace
-          path: .
-
-      - name: Build and test kernel for qemu_riscv64
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { execSync } = require('child_process');
-
-            const board = 'qemu_riscv64';
-            const configs = [
-              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
-              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
-              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
-              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
-            ];
-
-            for (const config of configs) {
-              console.log(`\nBuilding ${board} ${config.name} version...`);
-
-              const outDir = `out/${board}.${config.name}`;
-              const args = `board="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
-
-              try {
-                // Generate build files
-                console.log(`Running: gn gen ${outDir} --args='${args}'`);
-                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
-
-                // Build and test
-                console.log(`Running: ninja -C ${outDir} check_all`);
-                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
-
-                console.log(`✅ ${board} ${config.name} build completed successfully`);
-              } catch (error) {
-                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
-                process.exit(1);
-              }
-            }
-
-  build_qemu_aarch64:
-    runs-on: ubuntu-latest
-    needs: setup
-    permissions:
-      contents: read
-      checks: write
-      packages: read
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
-      credentials:
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    steps:
-      - name: Download workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace
-          path: .
-
-      - name: Build and test kernel for qemu_virt64_aarch64
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { execSync } = require('child_process');
-
-            const board = 'qemu_virt64_aarch64';
-            const configs = [
-              { name: 'debug.dsc', build_type: 'debug', direct_syscall_handler: 'true' },
-              { name: 'debug', build_type: 'debug', direct_syscall_handler: 'false' },
-              { name: 'release.dsc', build_type: 'release', direct_syscall_handler: 'true' },
-              { name: 'release', build_type: 'release', direct_syscall_handler: 'false' }
-            ];
-
-            for (const config of configs) {
-              console.log(`\nBuilding ${board} ${config.name} version...`);
-
-              const outDir = `out/${board}.${config.name}`;
-              const args = `board="${board}" build_type="${config.build_type}" direct_syscall_handler=${config.direct_syscall_handler}`;
-
-              try {
-                // Generate build files
-                console.log(`Running: gn gen ${outDir} --args='${args}'`);
-                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
-
-                // Build and test
-                console.log(`Running: ninja -C ${outDir} check_all`);
-                execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
-
-                console.log(`✅ ${board} ${config.name} build completed successfully`);
-              } catch (error) {
-                console.error(`❌ ${board} ${config.name} build failed:`, error.message);
-                process.exit(1);
-              }
             }
 
   notify:
     runs-on: ubuntu-latest
-    needs: [setup, check_format, check_license, build_host, build_qemu_mps2_an385, build_qemu_mps3_an547, build_qemu_riscv64, build_qemu_aarch64]
+    needs: [setup, check_format, check_license, build_host, build_and_check_virtual_boards]
     if: always()
     permissions:
       contents: read
@@ -633,15 +465,12 @@ jobs:
         with:
           script: |
             // Check if any job failed
-            const jobStatuses = {
+            let jobStatuses = {
               setup: "${{ needs.setup.result }}",
               check_format: "${{ needs.check_format.result }}",
               check_license: "${{ needs.check_license.result }}",
               build_host: "${{ needs.build_host.result }}",
-              build_qemu_mps2_an385: "${{ needs.build_qemu_mps2_an385.result }}",
-              build_qemu_mps3_an547: "${{ needs.build_qemu_mps3_an547.result }}",
-              build_qemu_riscv64: "${{ needs.build_qemu_riscv64.result }}",
-              build_qemu_aarch64: "${{ needs.build_qemu_aarch64.result }}"
+              build_and_check_virtual_boards: "${{ needs.build_and_check_virtual_boards.result }}",
             };
             // Debug: Log all job statuses
             console.log('Job statuses:', JSON.stringify(jobStatuses, null, 2));
