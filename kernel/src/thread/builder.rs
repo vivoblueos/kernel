@@ -73,6 +73,19 @@ impl GlobalQueueVisitor<'_> {
     pub fn remove(t: &mut ThreadNode) -> bool {
         GlobalQueueListHead::detach(t)
     }
+
+    pub fn find_if<F>(mut predicate: F) -> Option<ThreadNode>
+    where
+        F: FnMut(&ThreadNode) -> bool,
+    {
+        let mut visitor = GlobalQueueVisitor::new();
+        while let Some(t) = visitor.next() {
+            if predicate(&t) {
+                return Some(t);
+            }
+        }
+        None
+    }
 }
 
 pub fn spawn<F>(f: F) -> Option<ThreadNode>
