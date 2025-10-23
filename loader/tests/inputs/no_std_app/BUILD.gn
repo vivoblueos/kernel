@@ -27,12 +27,8 @@ build_rust("everyting") {
     "-Cpanic=abort",
     "-Crelocation-model=pie",
   ]
-  if ("$board" != "qemu_riscv64") {
-    rustflags += [
-      "-Clink-arg=-nostartfiles",
-      "-Clink-arg=-lgcc",
-    ]
-  }
+
+  rustflags += [ "-Clink-arg=-nostartfiles" ]
 
   if (coverage) {
     deps += [ "//kernel/loader:common_cov" ]

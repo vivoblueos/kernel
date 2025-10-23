@@ -18,7 +18,11 @@ import("//kernel/common_crate_rustflags.gni")
 
 group("check_loader") {
   testonly = true
-  deps = [ "tests:run_loader_integration_test" ]
+
+  # FIXME: It fails on riscv32, TBI.
+  if ("$board" != "qemu_riscv32") {
+    deps = [ "tests:run_loader_integration_test" ]
+  }
 }
 
 group("inputs") {

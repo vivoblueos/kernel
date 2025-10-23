@@ -55,6 +55,12 @@ extern void enable_local_irq_restore(size_t);
 #define true 1
 #define false 0
 
+// If RISCV's A extension is not featured, we are unable to use CAS locks.
+// Atomic is guaranteed by disabling IRQs.
+#if (!defined(__riscv) || defined(__riscv_atomic))
+#define HAS_LOCK_FREE_CAS
+#endif
+
 #include "assembly.h"
 
 // We use __builtin_mem* here to avoid dependencies on libc-provided headers.
@@ -71,6 +77,7 @@ extern void enable_local_irq_restore(size_t);
 #pragma redefine_extname __atomic_is_lock_free_c SYMBOL_NAME(                  \
     __atomic_is_lock_free)
 
+#ifdef HAS_LOCK_FREE_CAS
 /// Number of locks.  This allocates one page on 32-bit platforms, two on
 /// 64-bit.  This can be specified externally if a different trade between
 /// memory usage and contention probability is required for a given platform.
@@ -121,6 +128,23 @@ static __inline Lock *lock_for_pointer(void *ptr) {
   // Return a pointer to the word to use
   return locks + (hash & SPINLOCK_MASK);
 }
+
+#else
+
+typedef int Lock;
+
+static __inline Lock *lock_for_pointer(void *ptr) { return 0; }
+
+__inline static void unlock(Lock *l, size_t irq_status) {
+  enable_local_irq_restore(irq_status);
+}
+
+__inline static size_t lock(Lock *l) {
+  size_t irq_status = disable_local_irq_save();
+  return irq_status;
+}
+
+#endif // HAS_LOCK_FREE_CAS
 
 /// Macros for determining whether a size is lock free.
 #define ATOMIC_ALWAYS_LOCK_FREE_OR_ALIGNED_LOCK_FREE(size, p)                  \

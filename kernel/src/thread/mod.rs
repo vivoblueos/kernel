@@ -25,8 +25,8 @@ use crate::{
     thread::builder::GlobalQueue,
     time::timer::Timer,
     types::{
-        impl_simple_intrusive_adapter, Arc, ArcCas, AtomicUint, IlistHead, ThreadPriority,
-        Uint, UniqueListHead,
+        impl_simple_intrusive_adapter, Arc, ArcCas, AtomicUint, IlistHead, ThreadPriority, Uint,
+        UniqueListHead,
     },
 };
 use alloc::boxed::Box;

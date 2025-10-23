@@ -39,6 +39,7 @@ group("check_kernel_probe") {
 }
 
 shared_deps = [
+  ":atomic",
   "//external/bitflags/v2.9.0:bitflags",
   "//external/cfg-if/v1.0.0:cfg_if",
   "//external/const-default/v1.0.0:const_default",
@@ -79,7 +80,6 @@ if (defined(use_defmt) && use_defmt) {
 
 if (coverage || profile) {
   shared_deps += [
-    ":atomic",
     "//external/minicov/v0.3.7:minicov",
     "//external/semihosting/v0.1.20:semihosting",
   ]

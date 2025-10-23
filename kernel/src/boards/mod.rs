@@ -25,6 +25,14 @@ pub(crate) use qemu_riscv64::{
     handle_plic_irq, init, set_timeout_after,
 };
 
+#[cfg(target_board = "qemu_riscv32")]
+mod qemu_riscv32;
+#[cfg(target_board = "qemu_riscv32")]
+pub(crate) use qemu_riscv32::{
+    current_cycles, current_ticks, get_cycles_to_duration, get_cycles_to_ms, get_early_uart,
+    handle_plic_irq, init, set_timeout_after,
+};
+
 #[cfg(target_board = "qemu_mps3_an547")]
 mod qemu_mps3_an547;
 #[cfg(target_board = "qemu_mps3_an547")]

@@ -17,7 +17,7 @@
 #[cfg(target_arch = "arm")]
 pub(crate) mod cmsdk_uart;
 
-#[cfg(target_arch = "riscv64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
 pub(crate) mod ns16550a;
 
 #[cfg(target_arch = "aarch64")]
