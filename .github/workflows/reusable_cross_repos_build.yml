@@ -46,12 +46,12 @@ jobs:
             let match;
             let prs = [];
             let patchUrls = [];
-            let fetched_prs = [];
+            let fetchedPrs = [];
             while ((match = prRegex.exec(body)) !== null) {
               let owner = match[1];
               let repo = match[2];
-              let pr_num = match[3];
-              prs.push({owner: owner, repo: repo, pr_num: pr_num});
+              let prNum = match[3];
+              prs.push({owner: owner, repo: repo, pr_num: prNum});
               patchUrls.push({repo: repo, url: match[0] + ".diff"});
             }
             // Get metadata of the PR.
@@ -61,7 +61,7 @@ jobs:
                 repo,
                 pull_number: pr_num,
               });
-              fetched_prs.push({owner: owner, repo: repo, pr_num: pr_num, sha: pullRequest.head.sha});
+              fetchedPrs.push({owner: owner, repo: repo, pr_num: pr_num, sha: pullRequest.head.sha});
             }));
             // Download diffs.
             await Promise.all(patchUrls.map(async ({ repo, url }) => {
@@ -72,7 +72,7 @@ jobs:
               });
               await fs.writeFile(patchFilename, response.data);
             }));
-            core.setOutput('fetched_prs', JSON.stringify(fetched_prs));
+            core.setOutput('fetched_prs', JSON.stringify(fetchedPrs));
 
       - name: Init repo and sync
         run: |
