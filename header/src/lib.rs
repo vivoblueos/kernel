@@ -23,6 +23,8 @@ pub mod syscalls {
         Nop,
         Echo,
         GetTid,
+        GetSchedParam,
+        SetSchedParam,
         CreateThread,
         ExitThread,
         AtomicWait,
