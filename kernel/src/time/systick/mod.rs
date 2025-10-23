@@ -26,8 +26,8 @@ use core::{
 include!("cortex_m.rs");
 #[cfg(target_arch = "aarch64")]
 include!("aarch64.rs");
-#[cfg(target_arch = "riscv64")]
-include!("riscv64.rs");
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+include!("riscv.rs");
 
 pub(crate) static SYSTICK: Systick = Systick::new(SYSTICK_IRQ_NUM);
 
@@ -60,6 +60,10 @@ impl Systick {
 
     pub fn get_tick(&self) -> usize {
         self.tick.load(Ordering::Relaxed)
+    }
+
+    pub fn set_tick(&self, tick: usize) {
+        self.tick.store(tick, Ordering::Relaxed)
     }
 
     pub fn increment_ticks(&self) -> usize {

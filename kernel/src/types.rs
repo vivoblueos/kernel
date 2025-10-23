@@ -21,11 +21,10 @@ pub use blueos_infra::{
         GenericList,
     },
     tinyarc::{
-        TinyArc as Arc,  TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
+        TinyArc as Arc, TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
         TinyArcListIterator as ArcListIterator,
     },
     tinyrwlock::{IRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    IsNotNull,
 };
 use core::marker::PhantomData;
 
@@ -45,10 +44,7 @@ mod inner {
     pub type AtomicInt = core::sync::atomic::AtomicIsize;
 }
 
-#[cfg(target_pointer_width = "64")]
-pub type ThreadPriority = u16;
-#[cfg(target_pointer_width = "32")]
-pub type ThreadPriority = u8;
+pub type ThreadPriority = u32;
 
 pub use inner::*;
 
@@ -178,13 +174,13 @@ mod tests {
         let mut head_lock = head.node_lock.irqsave_lock();
         {
             let mut lock_a = a.node_lock.irqsave_lock();
-            L::insert_after(&mut *head_lock, &mut *lock_a);
+            L::insert_after(&mut head_lock, &mut lock_a);
             drop(lock_a);
             assert_eq!(Arc::<Foobar>::strong_count(&a), 1);
         }
         {
             let mut lock_b = b.node_lock.irqsave_lock();
-            L::insert_after(&mut *head_lock, &mut *lock_b);
+            L::insert_after(&mut head_lock, &mut lock_b);
         }
     }
 }

@@ -30,12 +30,12 @@ pub fn get_sys_ticks() -> usize {
     SYSTICK.get_tick()
 }
 
-pub fn get_sys_cycles() -> u64 {
-    SYSTICK.get_cycles()
+pub fn set_sys_ticks(tick: usize) {
+    SYSTICK.set_tick(tick);
 }
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    boards::get_cycles_to_ms(cycles)
+pub fn get_sys_cycles() -> u64 {
+    SYSTICK.get_cycles()
 }
 
 pub fn reset_systick() {
@@ -43,7 +43,7 @@ pub fn reset_systick() {
 }
 
 pub extern "C" fn handle_tick_increment() {
-    let _guard = DisableInterruptGuard::new();
+    let _dig = DisableInterruptGuard::new();
     let mut need_schedule = false;
     // FIXME: aarch64 and riscv64 need to be supported
     if arch::current_cpu_id() == 0 {

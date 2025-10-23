@@ -91,24 +91,21 @@ pub fn start_test_thread_with_cleanup(
     on_cleanup_finish: Option<NetThreadClosure>,
 ) {
     let stack_size = 16 << 10;
-    let thread_stack_base = allocator::malloc_align(stack_size, 16) as usize;
+    let thread_stack_base = allocator::malloc_align(stack_size, 16);
 
     println!(
-        "start_test_thread [{}] at base 0x{:x}",
+        "start_test_thread [{}] at base {:?}",
         thread_name, thread_stack_base
     );
 
     let t = ThreadBuilder::new(Entry::Closure(worker))
-        .set_stack(Stack::Raw {
-            base: thread_stack_base,
-            size: stack_size,
-        })
+        .set_stack(Stack::from_raw(thread_stack_base, stack_size))
         .build();
     t.lock()
         .set_cleanup(Entry::Closure(Box::new(move || unsafe {
-            println!("clean up begin 0x{:x}", thread_stack_base);
+            println!("clean up begin {:?}", thread_stack_base);
             allocator::free_align(thread_stack_base as *mut u8, 16);
-            println!("clean up finish 0x{:x}", thread_stack_base);
+            println!("clean up finish {:?}", thread_stack_base);
 
             if let Some(closure) = on_cleanup_finish {
                 closure();

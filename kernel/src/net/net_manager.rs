@@ -24,6 +24,7 @@ use crate::{
         SocketDomain, SocketFd, SocketProtocol, SocketType,
     },
     scheduler,
+    support::Storage,
     thread::{self, Builder as ThreadBuilder, Entry, Stack, SystemThreadStorage, ThreadNode},
     time::{tick_from_millisecond, tick_get_millisecond},
 };
@@ -302,9 +303,9 @@ static mut NETWORK_STACK: NetworkStack = NetworkStack {
 
 pub(crate) fn init() {
     let t = ThreadBuilder::new(Entry::C(net_stack_main_loop))
-        .set_stack(Stack::Raw {
-            base: unsafe { NETWORK_STACK.rep.as_ptr() } as usize,
-            size: NETWORK_STACK_SIZE,
-        })
+        .set_stack(Stack::from_raw(
+            unsafe { NETWORK_STACK.rep.as_mut_ptr() },
+            unsafe { NETWORK_STACK.rep.len() },
+        ))
         .start();
 }
