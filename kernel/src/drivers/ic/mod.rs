@@ -14,5 +14,5 @@
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#[cfg(target_arch = "riscv64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
 pub(crate) mod plic;

@@ -71,6 +71,12 @@ pub mod ffi {
         }
         s
     }
+
+    // TODO: Implement an edidx unwinder for BlueOS.
+    #[coverage(off)]
+    #[no_mangle]
+    #[linkage = "weak"]
+    pub unsafe extern "C" fn __aeabi_unwind_cpp_pr0() {}
 }
 
 pub mod allocator;

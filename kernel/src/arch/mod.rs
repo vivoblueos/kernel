@@ -17,10 +17,10 @@ pub(crate) mod arm;
 #[cfg(target_arch = "arm")]
 pub use arm::*;
 
-#[cfg(target_arch = "riscv64")]
-pub(crate) mod riscv64;
-#[cfg(target_arch = "riscv64")]
-pub use riscv64::*;
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+pub(crate) mod riscv;
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+pub use riscv::*;
 
 #[cfg(target_arch = "aarch64")]
 pub(crate) mod aarch64;
