@@ -57,6 +57,7 @@ header: # `header` section is configurations for source codes license header.
       - "kernel/src/sync/futex.rs"
       - "scal/src/platform/**"
       - ".gitignore"
+      - ".gitattributes"
       - "**/*.md"
       - "**/*.x" # ld link script
       - "**/*.bak"
