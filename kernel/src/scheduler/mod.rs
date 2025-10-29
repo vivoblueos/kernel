@@ -14,7 +14,7 @@
 
 extern crate alloc;
 use crate::{
-    arch,
+    arch, signal,
     support::DisableInterruptGuard,
     sync::SpinLockGuard,
     thread,
@@ -149,6 +149,20 @@ impl<'a> ContextSwitchHookHolder<'a> {
     }
 }
 
+fn prepare_signal_handling(t: &ThreadNode) {
+    // Save the context being restored first.
+    let mut l = t.lock();
+    if !l.activate_signal_context() {
+        return;
+    };
+    let ctx = l.saved_sp() as *mut arch::Context;
+    let ctx = unsafe { &mut *ctx };
+    // Update ctx so that signal context will be restored.
+    ctx.set_return_address(arch::switch_stack as usize)
+        .set_arg(0, l.signal_handler_sp())
+        .set_arg(1, signal::handler_entry as usize);
+}
+
 // Must use next's thread's stack or system stack to exeucte this function.
 // We assume this hook is invoked with local irq disabled.
 // FIXME: rustc miscompiles it if inlined.
@@ -191,6 +205,10 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
         let cycles = time::get_sys_cycles();
         old.lock().increment_cycles(cycles);
         next.lock().set_start_cycles(cycles);
+
+        if next.lock().has_pending_signals() {
+            prepare_signal_handling(&next);
+        }
     }
     compiler_fence(Ordering::SeqCst);
     if let Some(t) = ready_thread {

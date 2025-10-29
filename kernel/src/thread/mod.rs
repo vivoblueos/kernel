@@ -16,7 +16,9 @@ extern crate alloc;
 #[cfg(event_flags)]
 use crate::sync::event_flags::EventFlagsMode;
 use crate::{
-    arch, config, debug, scheduler,
+    arch,
+    arch::Context,
+    config, debug, scheduler,
     support::{Region, RegionalObjectBuilder},
     sync::{
         mutex::{MutexList, MutexListIterator},
@@ -136,6 +138,22 @@ impl ThreadStats {
 
 pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, GlobalQueue>;
 
+#[derive(Default)]
+pub(crate) struct SignalContext {
+    pending_signals: u32,
+    active: bool,
+    // Will recover thread_context at recover_sp on exiting of signal handler.
+    recover_sp: usize,
+    thread_context: arch::Context,
+    once_action: [Option<Box<dyn FnOnce()>>; 32],
+}
+
+impl core::fmt::Debug for SignalContext {
+    fn fmt(&self, _f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Thread {
     global: GlobalQueueListHead,
@@ -179,6 +197,7 @@ pub struct Thread {
     // - Lock mutex's spinlcok
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
+    signal_context: Option<Box<SignalContext>>,
 }
 
 extern "C" fn run_simple_c(f: extern "C" fn()) {
@@ -383,6 +402,7 @@ impl Thread {
             event_flags_mask: 0,
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
+            signal_context: None,
         }
     }
 
@@ -426,6 +446,82 @@ impl Thread {
     #[inline]
     pub(crate) fn pending_on_mutex(&self) -> Option<Arc<Mutex>> {
         self.pending_on_mutex.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    fn get_or_create_signal_context(&mut self) -> &mut SignalContext {
+        match self.signal_context {
+            Some(ref mut ctx) => ctx,
+            _ => {
+                let mut ctx = Box::new(SignalContext::default());
+                ctx.active = false;
+                self.signal_context = Some(ctx);
+                self.signal_context.as_mut().unwrap()
+            }
+        }
+    }
+
+    pub fn kill_with_once_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) -> bool {
+        if !self.kill(signum) {
+            return false;
+        }
+        self.register_once_signal_handler(signum, f);
+        true
+    }
+
+    pub fn kill(&mut self, signum: i32) -> bool {
+        let sig_ctx = self.get_or_create_signal_context();
+        let old = sig_ctx.pending_signals;
+        sig_ctx.pending_signals |= 1 << signum;
+        // Return false if there is signum pending.
+        (old & 1 << signum) == 0
+    }
+
+    pub fn register_once_signal_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.once_action[signum as usize] = Some(Box::new(f));
+    }
+
+    pub fn take_signal_handler(&mut self, signum: i32) -> Option<Box<dyn FnOnce()>> {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.once_action[signum as usize].take()
+    }
+
+    pub(crate) fn activate_signal_context(&mut self) -> bool {
+        let saved_sp = self.saved_sp();
+        let sig_ctx = self.get_or_create_signal_context();
+        // Nested signal handling is not supported.
+        if sig_ctx.active {
+            return false;
+        }
+        // Save the context being restored first.
+        sig_ctx.recover_sp = saved_sp;
+        let ctx = saved_sp as *const arch::Context;
+        unsafe { core::ptr::copy(ctx, &mut sig_ctx.thread_context as *mut _, 1) };
+        sig_ctx.active = true;
+        true
+    }
+
+    fn is_in_signal_context(&self) -> bool {
+        let Some(ref ctx) = self.signal_context else {
+            return false;
+        };
+        ctx.active
+    }
+
+    pub(crate) fn deactivate_signal_context(&mut self) {
+        let sig_ctx = self.get_or_create_signal_context();
+        debug_assert!(sig_ctx.active);
+        let saved_sp = sig_ctx.recover_sp;
+        let ctx = saved_sp as *mut arch::Context;
+        unsafe { core::ptr::copy(&sig_ctx.thread_context as *const _, ctx, 1) };
+        sig_ctx.active = false;
+        self.saved_sp = saved_sp;
+    }
+
+    pub(crate) fn signal_handler_sp(&mut self) -> usize {
+        debug_assert_eq!(self.saved_sp % core::mem::align_of::<Context>(), 0);
+        self.saved_sp - core::mem::size_of::<Context>()
     }
 
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
@@ -550,6 +646,36 @@ impl Thread {
     #[inline]
     pub fn set_origin_priority(&mut self, p: ThreadPriority) -> &mut Self {
         self.origin_priority = p;
+        self
+    }
+
+    #[inline]
+    pub fn pending_signals(&mut self) -> u32 {
+        self.signal_context
+            .as_ref()
+            .map_or_else(|| 0, |c| c.pending_signals)
+    }
+
+    #[inline]
+    pub fn has_pending_signals(&mut self) -> bool {
+        self.pending_signals() != 0
+    }
+
+    #[inline]
+    pub fn clear_signal(&mut self, signum: i32) -> &Self {
+        let Some(c) = &mut self.signal_context else {
+            return self;
+        };
+        c.pending_signals &= !(1 << signum);
+        self
+    }
+
+    #[inline]
+    pub fn clear_all_signals(&mut self) -> &Self {
+        let Some(c) = &mut self.signal_context else {
+            return self;
+        };
+        c.pending_signals = 0;
         self
     }
 

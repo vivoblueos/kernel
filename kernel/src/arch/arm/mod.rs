@@ -561,3 +561,20 @@ pub extern "C" fn local_irq_enabled() -> bool {
 pub extern "C" fn is_in_interrupt() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
 }
+
+#[naked]
+pub(crate) extern "C" fn switch_stack(
+    to_sp: usize,
+    cont: extern "C" fn(sp: usize, old_sp: usize),
+) -> ! {
+    unsafe {
+        core::arch::naked_asm!(
+            "
+            mov r12, r1
+            mrs r1, psp
+            msr psp, r0
+            bx r12
+            "
+        )
+    }
+}
