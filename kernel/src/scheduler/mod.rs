@@ -236,18 +236,10 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     }
 }
 
-// It's usually used in cortex-m's pendsv handler. It assumes current
-// thread's context is already saved.
-pub(crate) extern "C" fn yield_me_and_return_next_sp(old_sp: usize) -> usize {
-    assert!(!arch::local_irq_enabled());
-    let Some(next) = next_ready_thread() else {
-        #[cfg(debugging_scheduler)]
-        crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
-        return old_sp;
-    };
+fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
     let to_sp = next.saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
-    assert!(ok);
+    debug_assert!(ok);
     let old = set_current_thread(next.clone());
     #[cfg(debugging_scheduler)]
     crate::trace!(
@@ -259,10 +251,48 @@ pub(crate) extern "C" fn yield_me_and_return_next_sp(old_sp: usize) -> usize {
         next.saved_sp(),
         next.priority(),
     );
-    old.lock().set_saved_sp(old_sp);
-    let ok = queue_ready_thread(thread::RUNNING, old);
-    assert!(ok);
+    let cycles = time::get_sys_cycles();
+    next.lock().set_start_cycles(cycles);
+
+    {
+        let mut old_lock = old.lock();
+        old_lock.increment_cycles(cycles);
+        old_lock.set_saved_sp(old_sp);
+    }
+
+    if Thread::id(&old) == Thread::id(idle::current_idle_thread()) {
+        let ok = old.transfer_state(thread::RUNNING, thread::READY);
+        debug_assert!(ok);
+        drop(old);
+    } else {
+        let ok = queue_ready_thread(thread::RUNNING, old);
+        debug_assert!(ok);
+    }
     to_sp
+}
+
+pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
+    debug_assert!(!arch::local_irq_enabled());
+    debug_assert!(!crate::irq::is_in_irq());
+    let Some(next) = next_preferred_thread(current_thread().priority()) else {
+        #[cfg(debugging_scheduler)]
+        crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
+        return old_sp;
+    };
+    switch_current_thread(old_sp, next)
+}
+
+// It's usually used in cortex-m's pendsv handler. It assumes current
+// thread's context is already saved.
+pub(crate) extern "C" fn yield_me_and_return_next_sp(old_sp: usize) -> usize {
+    debug_assert!(!arch::local_irq_enabled());
+    debug_assert!(!crate::irq::is_in_irq());
+    let Some(next) = next_ready_thread() else {
+        #[cfg(debugging_scheduler)]
+        crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
+        return old_sp;
+    };
+    switch_current_thread(old_sp, next)
 }
 
 pub fn retire_me() -> ! {
@@ -320,6 +350,56 @@ fn yield_unconditionally() {
     assert!(arch::local_irq_enabled());
 }
 
+pub(crate) fn relinquish_me() {
+    debug_assert!(arch::local_irq_enabled());
+    let old = current_thread();
+    let Some(next) = next_preferred_thread(old.priority()) else {
+        return;
+    };
+    let to_sp = next.saved_sp();
+    let from_sp_ptr = old.saved_sp_ptr();
+    let mut hook_holder = ContextSwitchHookHolder::new(next);
+    hook_holder.set_ready_thread(old);
+    arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
+    debug_assert!(arch::local_irq_enabled());
+}
+
+fn setup_timer(
+    thread: &ThreadNode,
+    ticks: usize,
+    hook_holder: &mut ContextSwitchHookHolder,
+) -> Arc<AtomicBool> {
+    let timeout = Arc::new(AtomicBool::new(false));
+    let timeout_in_callback = timeout.clone();
+    let thread_in_callback = thread.clone();
+    let timeout_callback = TimerEntry::Once(Box::new(move || {
+        #[cfg(debugging_scheduler)]
+        crate::trace!(
+            "Add thread 0x{:x} to ready queue after {} ticks",
+            Thread::id(&th),
+            ticks,
+        );
+        queue_ready_thread_with_post_action(thread::SUSPENDED, thread_in_callback, || {
+            timeout_in_callback.store(true, Ordering::Release)
+        });
+    }));
+    let thread_in_hook = thread.clone();
+    let timeout_in_hook = timeout.clone();
+    let hook = Box::new(move || {
+        if let Some(tm) = &thread_in_hook.timer {
+            tm.set_callback(timeout_callback);
+            tm.start_new_interval(ticks);
+        } else {
+            let tm = Timer::new_hard_oneshot(ticks, timeout_callback);
+            thread_in_hook.lock().timer = Some(tm.clone());
+            compiler_fence(Ordering::SeqCst);
+            tm.start();
+        };
+    });
+    hook_holder.set_closure(hook);
+    timeout
+}
+
 pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
     let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
     let to_sp = next.saved_sp();
@@ -329,47 +409,22 @@ pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
     let hook = Box::new(hook);
     hook_holder.set_closure(hook);
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
-    assert!(arch::local_irq_enabled());
+    debug_assert!(arch::local_irq_enabled());
 }
 
 pub fn suspend_me_for(ticks: usize) {
-    assert_ne!(ticks, 0);
+    debug_assert_ne!(ticks, 0);
     let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
     let to_sp = next.saved_sp();
     let old = current_thread();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     hook_holder.set_pending_thread(old.clone());
-
     if ticks != WAITING_FOREVER {
-        let th = old.clone();
-        let timer_callback = TimerEntry::Once(Box::new(move || {
-            #[cfg(debugging_scheduler)]
-            crate::trace!(
-                "Add thread 0x{:x} to ready queue after timeout",
-                Thread::id(&th)
-            );
-            let _ = queue_ready_thread(thread::SUSPENDED, th.clone());
-        }));
-        let hook = Box::new(move || {
-            match &old.timer {
-                Some(t) => {
-                    t.set_callback(timer_callback);
-                    t.start_new_interval(ticks);
-                }
-                None => {
-                    let timer = Timer::new_hard_oneshot(ticks, timer_callback);
-                    old.lock().timer = Some(timer.clone());
-                    compiler_fence(Ordering::SeqCst);
-                    timer.start();
-                }
-            };
-        });
-        hook_holder.set_closure(hook);
+        setup_timer(&old, ticks, &mut hook_holder);
     }
-
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
-    assert!(arch::local_irq_enabled());
+    debug_assert!(arch::local_irq_enabled());
 }
 
 pub fn suspend_me_with_timeout(
@@ -377,7 +432,7 @@ pub fn suspend_me_with_timeout(
     ticks: usize,
     insert_mode: InsertMode,
 ) -> bool {
-    assert_ne!(ticks, 0);
+    debug_assert_ne!(ticks, 0);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] is looking for the next thread",
@@ -396,7 +451,7 @@ pub fn suspend_me_with_timeout(
     let from_sp_ptr = old.saved_sp_ptr();
 
     let ok = wait_queue::insert(&mut w, old.clone(), insert_mode);
-    assert!(ok);
+    debug_assert!(ok);
     // old's context saving must happen before old is requeued to
     // ready queue.
     // Ideally, we need an API like
@@ -412,39 +467,13 @@ pub fn suspend_me_with_timeout(
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     hook_holder.set_dropper(dropper);
     hook_holder.set_pending_thread(old.clone());
-    let timeout = Arc::new(AtomicBool::new(false));
-
-    if ticks != WAITING_FOREVER {
-        let th = old.clone();
-        let timeout = timeout.clone();
-
-        let timer_callback = TimerEntry::Once(Box::new(move || {
-            #[cfg(debugging_scheduler)]
-            crate::trace!(
-                "Add thread 0x{:x} to ready queue after timeout",
-                Thread::id(&th)
-            );
-            let _ = queue_ready_thread(thread::SUSPENDED, th.clone());
-            timeout.store(true, Ordering::Release);
-        }));
-        let hook = Box::new(move || {
-            match &old.timer {
-                Some(t) => {
-                    t.set_callback(timer_callback);
-                    t.start_new_interval(ticks);
-                }
-                None => {
-                    let timer = Timer::new_hard_oneshot(ticks, timer_callback);
-                    old.lock().timer = Some(timer.clone());
-                    compiler_fence(Ordering::SeqCst);
-                    timer.start();
-                }
-            };
-        });
-        hook_holder.set_closure(hook);
-    }
+    let timeout = if ticks != WAITING_FOREVER {
+        setup_timer(&old, ticks, &mut hook_holder)
+    } else {
+        Arc::new(AtomicBool::new(false))
+    };
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
-    assert!(arch::local_irq_enabled());
+    debug_assert!(arch::local_irq_enabled());
     timeout.load(Ordering::Acquire)
 }
 
