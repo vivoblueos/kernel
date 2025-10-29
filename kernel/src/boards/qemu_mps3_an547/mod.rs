@@ -74,7 +74,16 @@ unsafe fn copy_data() {
     INIT_BSS_DONE = true;
 }
 
+unsafe fn enable_fpu() {
+    const SCB_CPACR_PTR: *mut u32 = 0xE000_ED88 as *mut u32;
+    let mut temp = SCB_CPACR_PTR.read_volatile();
+    temp |= 0x00F00000;
+    SCB_CPACR_PTR.write_volatile(temp);
+}
+
 pub(crate) fn init() {
+    unsafe { enable_fpu() };
+
     unsafe {
         copy_data();
     }

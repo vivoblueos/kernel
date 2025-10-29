@@ -549,6 +549,26 @@ mod tests {
         }
     }
 
+    #[cfg(target_abi = "eabihf")]
+    #[test]
+    fn test_basic_float_add_sub() {
+        let a: f32 = 1.0;
+        let b = 2.0;
+        let c = 3.0;
+        let epsilon = 1e-6;
+        assert!((a + b - c).abs() <= epsilon);
+    }
+
+    #[cfg(target_abi = "eabihf")]
+    #[test]
+    fn test_basic_float_mul_div() {
+        let a: f32 = 2.0;
+        let b = 3.0;
+        let c = 6.0;
+        let epsilon = 1e-6;
+        assert!((a * b / c - 1.0).abs() <= epsilon);
+    }
+
     #[inline(never)]
     pub fn kernel_unittest_runner(tests: &[&dyn Fn()]) {
         let t = scheduler::current_thread();
