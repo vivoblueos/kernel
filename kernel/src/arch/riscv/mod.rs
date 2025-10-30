@@ -502,3 +502,20 @@ pub(crate) extern "C" fn current_cpu_id() -> usize {
     };
     id
 }
+
+#[naked]
+pub(crate) extern "C" fn switch_stack(
+    to_sp: usize,
+    cont: extern "C" fn(sp: usize, old_sp: usize),
+) -> ! {
+    unsafe {
+        core::arch::naked_asm!(
+            "
+            mv t0, a1
+            mv a1, sp
+            mv sp, a0
+            jalr x0, t0, 0
+            "
+        )
+    }
+}

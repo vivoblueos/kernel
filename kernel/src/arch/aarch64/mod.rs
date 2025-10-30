@@ -437,3 +437,20 @@ pub fn secondary_cpu_setup(psci_base: u32) {
         psci::cpu_on(psci_base, i as usize, crate::boot::_start as usize, 0);
     }
 }
+
+#[naked]
+pub(crate) extern "C" fn switch_stack(
+    to_sp: usize,
+    cont: extern "C" fn(sp: usize, old_sp: usize),
+) -> ! {
+    unsafe {
+        core::arch::naked_asm!(
+            "
+            mov x19, x1
+            mov x1, sp
+            mov sp, x0
+            br x19
+            "
+        )
+    }
+}

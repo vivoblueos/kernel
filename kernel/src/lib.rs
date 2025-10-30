@@ -98,6 +98,7 @@ pub mod logger;
 #[cfg(enable_net)]
 pub mod net;
 pub mod scheduler;
+pub(crate) mod signal;
 pub mod support;
 pub mod sync;
 pub mod syscall_handlers;
@@ -141,7 +142,7 @@ mod tests {
     use super::*;
     use crate::{
         allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
-        time::WAITING_FOREVER, types::Arc,
+        sync::ConstBarrier, time::WAITING_FOREVER, types::Arc,
     };
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;
@@ -498,6 +499,31 @@ mod tests {
             }
             scheduler::yield_me();
         }
+    }
+
+    // Should not hang.
+    #[test]
+    fn test_simple_signal() {
+        let a = Arc::new(ConstBarrier::<{ 2 }>::new());
+        let a_cloned = a.clone();
+        let b = Arc::new(AtomicUsize::new(0));
+        let b_cloned = b.clone();
+        let t = crate::thread::spawn(move || {
+            a.wait();
+            sync::atomic_wait::atomic_wait(&b, 0, None);
+        })
+        .unwrap();
+        // Send SIGTERM after t enters its entry function.
+        a_cloned.wait();
+        t.lock().kill(libc::SIGTERM as i32);
+        // At this point, t is either
+        // 0: waking up from a or
+        // 1: is suspended on b.
+        // We solve both cases by invoking yield_me and atomic_wake, which
+        // should not hang.
+        b_cloned.store(1, Ordering::Release);
+        sync::atomic_wait::atomic_wake(&b_cloned, 1);
+        scheduler::yield_me();
     }
 
     async fn foo(i: usize) -> usize {
