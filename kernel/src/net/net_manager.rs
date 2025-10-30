@@ -303,7 +303,7 @@ static mut NETWORK_STACK: NetworkStack = NetworkStack {
 pub(crate) fn init() {
     let t = ThreadBuilder::new(Entry::C(net_stack_main_loop))
         .set_stack(Stack::from_raw(
-            NETWORK_STACK.rep.as_mut_ptr(),
+            unsafe { NETWORK_STACK.rep.as_mut_ptr() },
             NETWORK_STACK_SIZE,
         ))
         .start();
