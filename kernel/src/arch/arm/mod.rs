@@ -454,7 +454,7 @@ pub unsafe extern "C" fn handle_pendsv() {
             bx lr
             "
         ),
-        next_thread_sp = sym scheduler::yield_me_and_return_next_sp,
+        next_thread_sp = sym scheduler::relinquish_me_and_return_next_sp,
         basepri = const DISABLE_LOCAL_IRQ_BASEPRI,
     )
 }
