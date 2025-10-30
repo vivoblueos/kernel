@@ -33,9 +33,14 @@ use cortex_m::peripheral::SCB;
 use scheduler::ContextSwitchHookHolder;
 
 pub const EXCEPTION_LR: usize = 0xFFFFFFFD;
-pub const CONTROL: usize = 0x2;
+// See https://developer.arm.com/documentation/100235/0100/The-Cortex-M33-Processor/Programmer-s-model/Core-registers/CONTROL-register.
+#[cfg(not(target_abi = "eabihf"))]
+pub const CONTROL: usize = 0b10;
+#[cfg(target_abi = "eabihf")]
+pub const CONTROL: usize = 0b110;
 pub const THUMB_MODE: usize = 0x01000000;
 pub const NR_SWITCH: usize = !0;
+pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
 
 #[macro_export]
@@ -104,6 +109,7 @@ pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     }
 }
 
+#[cfg(not(target_abi = "eabihf"))]
 #[repr(C, align(8))]
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Context {
@@ -128,6 +134,66 @@ pub struct Context {
     pub xpsr: usize,
 }
 
+#[cfg(target_abi = "eabihf")]
+#[repr(C, align(8))]
+#[derive(Default, Debug, Copy, Clone)]
+pub struct Context {
+    pub r4: usize,
+    pub r5: usize,
+    pub r6: usize,
+    pub r7: usize,
+    pub r8: usize,
+    pub r9: usize,
+    pub r10: usize,
+    pub r11: usize,
+    pub s16: usize,
+    pub s17: usize,
+    pub s18: usize,
+    pub s19: usize,
+    pub s20: usize,
+    pub s21: usize,
+    pub s22: usize,
+    pub s23: usize,
+    pub s24: usize,
+    pub s25: usize,
+    pub s26: usize,
+    pub s27: usize,
+    pub s28: usize,
+    pub s29: usize,
+    pub s30: usize,
+    pub s31: usize,
+    // Cortex-m saves R0, R1, R2, R3, R12, LR, PC, xPSR automatically
+    // on psp, so they don't appear in the Context. Additionally, sp
+    // == R13, lr == R14, pc == R15.
+    pub r0: usize,
+    pub r1: usize,
+    pub r2: usize,
+    pub r3: usize,
+    pub r12: usize,
+    pub lr: usize,
+    pub pc: usize,
+    pub xpsr: usize,
+    pub s0: usize,
+    pub s1: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub s9: usize,
+    pub s10: usize,
+    pub s11: usize,
+    pub s12: usize,
+    pub s13: usize,
+    pub s14: usize,
+    pub s15: usize,
+    pub fpscr: usize,
+    pub vpr: usize,
+}
+
+#[cfg(not(target_abi = "eabihf"))]
 #[repr(C, align(8))]
 #[derive(Default)]
 pub struct IsrContext {
@@ -141,6 +207,39 @@ pub struct IsrContext {
     pub xpsr: usize,
 }
 
+// See https://developer.arm.com/documentation/107706/0100/Exceptions-and-interrupts-overview/Stack-frames.
+#[cfg(target_abi = "eabihf")]
+#[repr(C, align(8))]
+#[derive(Default)]
+pub struct IsrContext {
+    pub r0: usize,
+    pub r1: usize,
+    pub r2: usize,
+    pub r3: usize,
+    pub r12: usize,
+    pub lr: usize,
+    pub pc: usize,
+    pub xpsr: usize,
+    pub s0: usize,
+    pub s1: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub s9: usize,
+    pub s10: usize,
+    pub s11: usize,
+    pub s12: usize,
+    pub s13: usize,
+    pub s14: usize,
+    pub s15: usize,
+    pub fpscr: usize,
+    pub vpr: usize,
+}
+
 impl fmt::Debug for IsrContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "IsrContext {{")?;
@@ -152,6 +251,11 @@ impl fmt::Debug for IsrContext {
         write!(f, "lr: 0x{:x} ", self.lr)?;
         write!(f, "pc: 0x{:x} ", self.pc)?;
         write!(f, "xpsr: 0x{:x} ", self.xpsr)?;
+        #[cfg(target_abi = "eabihf")]
+        {
+            write!(f, "fpscr: 0x{:x} ", self.fpscr)?;
+            write!(f, "vpr: 0x{:x} ", self.vpr)?;
+        }
         write!(f, "}}")?;
         Ok(())
     }
@@ -159,6 +263,7 @@ impl fmt::Debug for IsrContext {
 
 // FIXME: We need to pass a scratch register to perform saving.
 // Use r12 as scratch register now.
+#[cfg(not(target_abi = "eabihf"))]
 macro_rules! store_callee_saved_regs {
     () => {
         "
@@ -168,10 +273,33 @@ macro_rules! store_callee_saved_regs {
     };
 }
 
+#[cfg(not(target_abi = "eabihf"))]
 macro_rules! load_callee_saved_regs {
     () => {
         "
         ldmia r12!, {{r4-r11}}
+        msr psp, r12
+        "
+    };
+}
+
+#[cfg(target_abi = "eabihf")]
+macro_rules! store_callee_saved_regs {
+    () => {
+        "
+        mrs r12, psp
+        vstmdb r12!, {{s16-s31}}
+        stmdb r12!, {{r4-r11}}
+        "
+    };
+}
+
+#[cfg(target_abi = "eabihf")]
+macro_rules! load_callee_saved_regs {
+    () => {
+        "
+        ldmia r12!, {{r4-r11}}
+        vldmia r12!, {{s16-s31}}
         msr psp, r12
         "
     };
@@ -183,7 +311,7 @@ pub(crate) extern "C" fn post_pendsv() {
 }
 
 #[naked]
-pub(crate) unsafe extern "C" fn handle_svc() {
+pub unsafe extern "C" fn handle_svc() {
     core::arch::naked_asm!(
         concat!(
             "
@@ -202,6 +330,7 @@ pub(crate) unsafe extern "C" fn handle_svc() {
             "
             ldr r12, =0
             msr basepri, r12
+            isb
             bx lr
             ",
         ),
@@ -220,28 +349,19 @@ extern "C" fn syscall_handler(ctx: &mut Context) {
 }
 
 #[naked]
-unsafe extern "C" fn syscall_stub(ctx: *mut Context) {
+unsafe extern "C" fn syscall_stub(ctx: *mut Context) -> ! {
     core::arch::naked_asm!(
         concat!(
             "
-            push {{r0, lr}}
+            push {{r0}}
             bl {syscall_handler}
-            pop {{r0, lr}}
-            mov r12, r0
-            ",
-            load_callee_saved_regs!(),
-            "
-            pop {{r0-r3, r12}}
-            pop {{lr}}
-            tst lr, #0x200
-            beq 1f
-            pop {{lr}}
-            1:
-            pop {{lr}}
-            pop {{pc}}
+            pop {{r0}}
+            ldr r7, ={syscall_ret}
+            svc 0
             ",
         ),
         syscall_handler = sym syscall_handler,
+        syscall_ret = const NR_RET_FROM_SYSCALL,
     )
 }
 
@@ -272,21 +392,30 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     ctx.r1
 }
 
-extern "C" fn handle_syscall(ctx: &mut Context) -> usize {
+extern "C" fn handle_syscall(ctx: &Context) -> usize {
     if ctx.r7 == NR_SWITCH {
         return handle_svc_switch(ctx);
     }
+    if ctx.r7 == NR_RET_FROM_SYSCALL {
+        // We are using syscall(NR_RET_FROM_SYSCALL, ctx_before_syscall) to
+        // return from syscall. ctx_before_syscall is contained in r0.
+        return ctx.r0;
+    }
+    // Due to cortex-m's limitation, we split syscall handling into 2 phases:
+    // P0:
+    //   Switch stack, go back to thread mode and run handler. Then syscalls
+    //   NR_RET_FROM_SYSCALL to go back to ISR mode.
+    // P1:
+    //   Switch stack and return to the normal control flow of thread mode.
+
     // Duplicate ctx so that we can exit to thread mode to
     // handle syscalls.
-    let mut base = ctx as *const _ as usize;
     let size = core::mem::size_of::<Context>();
-    base -= size;
+    let base = unsafe { (ctx as *const Context).byte_offset(-(size as isize)) as usize };
+    debug_assert_eq!(base % core::mem::align_of::<Context>(), 0);
     let region = Region { base, size };
     let mut rb = RegionalObjectBuilder::new(region);
     let dup_ctx = rb.write_after_start::<Context>(*ctx).unwrap() as *mut Context as *mut usize;
-    // Check if re-alignment happened.
-    // See https://developer.arm.com/documentation/ddi0403/d/System-Level-Architecture/System-Level-Programmers--Model/ARMv7-M-exception-model/Stack-alignment-on-exception-entry
-    let realigned = (ctx.xpsr & (1 << 9)) != 0;
     unsafe {
         sideeffect();
         dup_ctx
@@ -295,28 +424,9 @@ extern "C" fn handle_syscall(ctx: &mut Context) -> usize {
         dup_ctx
             .byte_offset(offset_of!(Context, r0) as isize)
             .write_volatile(ctx as *const _ as usize);
-        // The duplicated context doesn't need realignment.
         dup_ctx
             .byte_offset(offset_of!(Context, xpsr) as isize)
             .write_volatile(ctx.xpsr & !(1 << 9))
-    }
-    // We are playing a trick here, so that we can use `pop {{pc}}`
-    // instruction, without using any scratch register.
-    // Enforce thumb mode.
-    let pc = ctx.pc | 1;
-    let lr = ctx.lr;
-    ctx.lr = ctx.xpsr;
-    ctx.pc = lr;
-    if realigned {
-        unsafe {
-            sideeffect();
-            ctx.xpsr = lr;
-            let reserved_ptr: *mut usize =
-                (ctx as *mut _ as *mut usize).byte_offset(core::mem::size_of::<Context>() as isize);
-            reserved_ptr.write_volatile(pc);
-        }
-    } else {
-        ctx.xpsr = pc;
     }
     base
 }
@@ -373,9 +483,20 @@ impl Context {
         self
     }
 
+    #[cfg(not(target_abi = "eabihf"))]
     #[inline]
     pub fn init(&mut self) -> &mut Self {
         self.xpsr = THUMB_MODE;
+        self
+    }
+
+    // See https://developer.arm.com/documentation/100235/0004/the-cortex-m33-peripherals/floating-point-unit/floating-point-status-control-register.
+    #[cfg(target_abi = "eabihf")]
+    #[inline]
+    pub fn init(&mut self) -> &mut Self {
+        self.xpsr = THUMB_MODE;
+        self.fpscr = 1 << 25;
+        self.vpr = 0xc0dec0de;
         self
     }
 }
@@ -576,5 +697,38 @@ pub(crate) extern "C" fn switch_stack(
             bx r12
             "
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    // See https://developer.arm.com/documentation/107706/0100/Exceptions-and-interrupts-overview/Stack-frames.
+    #[test]
+    fn test_abi() {
+        #[cfg(target_abi = "eabihf")]
+        {
+            assert_eq!(
+                core::mem::size_of::<IsrContext>(),
+                core::mem::size_of::<usize>() * 26
+            );
+            assert_eq!(
+                core::mem::size_of::<Context>(),
+                core::mem::size_of::<IsrContext>() + 8 * 4 + 16 * 4
+            );
+        }
+        #[cfg(not(target_abi = "eabihf"))]
+        {
+            assert_eq!(
+                core::mem::size_of::<IsrContext>(),
+                core::mem::size_of::<usize>() * 8
+            );
+            assert_eq!(
+                core::mem::size_of::<Context>(),
+                core::mem::size_of::<IsrContext>() + 8 * 4
+            );
+        }
     }
 }
