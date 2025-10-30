@@ -14,7 +14,7 @@
 
 use crate::{
     config::MAX_THREAD_PRIORITY,
-    sync::spinlock::SpinLock,
+    sync::spinlock::{SpinLock, SpinLockGuard},
     thread,
     thread::{Thread, ThreadNode},
     types::{ArcList, ThreadPriority, Uint},
@@ -67,6 +67,27 @@ impl ReadyTable {
     }
 }
 
+#[inline]
+fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Option<ThreadNode> {
+    let q = &mut tbl.tables[index];
+    let next = q.pop_front();
+    assert!(next.is_some());
+    if q.is_empty() {
+        tbl.clear_active_queue(index as u32);
+    }
+    assert!(next.as_ref().unwrap().validate_saved_sp());
+    next
+}
+
+pub fn next_preferred_thread(prio: ThreadPriority) -> Option<ThreadNode> {
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    let highest_active = tbl.highest_active();
+    if highest_active > prio as u32 {
+        return None;
+    }
+    inner_next_thread(tbl, highest_active as usize)
+}
+
 pub fn next_ready_thread() -> Option<ThreadNode> {
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     let highest_active = tbl.highest_active();
@@ -79,38 +100,57 @@ pub fn next_ready_thread() -> Option<ThreadNode> {
     if highest_active > MAX_THREAD_PRIORITY as u32 {
         return None;
     }
-    let q = &mut tbl.tables[highest_active as usize];
-    let next = q.pop_front();
-    assert!(next.is_some());
-    if q.is_empty() {
-        tbl.clear_active_queue(highest_active);
+    inner_next_thread(tbl, highest_active as usize)
+}
+
+pub fn queue_ready_thread_with_post_action<R, F>(
+    old_state: Uint,
+    t: ThreadNode,
+    post_action: F,
+) -> Option<R>
+where
+    F: Fn() -> R,
+{
+    assert_ne!(old_state, thread::READY);
+    if !t.transfer_state(old_state, thread::READY) {
+        return None;
     }
-    assert!(next.as_ref().unwrap().validate_saved_sp());
-    next
+    assert!(t.validate_saved_sp());
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    if !queue_ready_thread_inner(&mut tbl, t) {
+        return None;
+    }
+    Some(post_action())
+}
+
+#[inline]
+fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNode) -> bool {
+    let priority = t.priority();
+    assert!(priority <= MAX_THREAD_PRIORITY);
+    let q = &mut tbl.tables[priority as usize];
+    if !q.push_back(t.clone()) {
+        return false;
+    }
+    tbl.set_active_queue(priority as u32);
+    #[cfg(debugging_scheduler)]
+    {
+        use crate::arch;
+        crate::trace!(
+            "Current highest PRI {}, added PRI {}",
+            tbl.highest_active(),
+            priority,
+        );
+    }
+    true
 }
 
 // We only queue the thread if old_state equals thread's current state.
 pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
-    assert!(old_state != thread::READY);
+    assert_ne!(old_state, thread::READY);
     if !t.transfer_state(old_state, thread::READY) {
         return false;
     }
     assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
-    let priority = t.priority();
-    assert!(priority <= MAX_THREAD_PRIORITY);
-    let q = &mut tbl.tables[priority as usize];
-    q.push_back(t.clone());
-    tbl.set_active_queue(priority as u32);
-
-    #[cfg(debugging_scheduler)]
-    {
-        use crate::arch;
-        crate::trace!(
-            "add pri {} get highest pri {}",
-            priority,
-            tbl.highest_active()
-        );
-    }
-    true
+    queue_ready_thread_inner(&mut tbl, t)
 }
