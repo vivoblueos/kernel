@@ -23,7 +23,7 @@ use crate::{
 use blueos_kconfig::NUM_CORES;
 use core::mem::MaybeUninit;
 
-static IDLE_THREAD_BLOCKS: [SystemThreadStorage; NUM_CORES] =
+static mut IDLE_THREAD_BLOCKS: [SystemThreadStorage; NUM_CORES] =
     [const { SystemThreadStorage::new(ThreadKind::Idle) }; NUM_CORES];
 static mut IDLE_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
     [const { MaybeUninit::zeroed() }; NUM_CORES];
@@ -35,7 +35,7 @@ extern "C" fn fake_idle_thread_entry() {
 fn init_idle_thread(i: usize) {
     let arc = thread::build_static_thread(
         unsafe { &mut IDLE_THREADS[i] },
-        &IDLE_THREAD_BLOCKS[i],
+        unsafe { &mut IDLE_THREAD_BLOCKS[i] },
         MAX_THREAD_PRIORITY,
         thread::RUNNING,
         Entry::C(fake_idle_thread_entry),

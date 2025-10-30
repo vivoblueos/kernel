@@ -14,20 +14,24 @@
 
 extern crate alloc;
 use crate::{
-    arch, config, debug, scheduler, static_arc,
+    arch,
+    arch::Context,
+    config,
+    config::{DEFAULT_STACK_SIZE, SYSTEM_THREAD_STACK_SIZE},
+    debug, scheduler, static_arc,
+    support::Storage,
     sync::{SpinLock, SpinLockGuard},
-    thread, trace,
+    thread,
+    thread::{
+        Entry, GlobalQueueListHead, OffsetOfGlobal, Stack, Thread, ThreadKind, ThreadNode,
+        ThreadPriority,
+    },
     types::{
         Arc, ArcInner, ArcList, ArcListIterator, AtomicIlistHead as ListHead, StaticListOwner, Uint,
     },
 };
 use alloc::boxed::Box;
-use config::SYSTEM_THREAD_STACK_SIZE;
-use core::mem::MaybeUninit;
-use thread::{
-    AlignedStackStorage, Entry, GlobalQueueListHead, OffsetOfGlobal, Stack, Thread, ThreadKind,
-    ThreadNode, ThreadPriority,
-};
+use core::{alloc::Layout, mem::MaybeUninit};
 
 type Head = ListHead<Thread, OffsetOfGlobal>;
 type ThreadList = ArcList<Thread, OffsetOfGlobal>;
@@ -113,10 +117,10 @@ impl Builder {
     pub fn build(mut self) -> ThreadNode {
         let thread = ThreadNode::new(Thread::new(ThreadKind::Normal));
         let mut w = thread.lock();
-        let stack = self.stack.take().map_or_else(
-            || Stack::Boxed(unsafe { Box::<AlignedStackStorage>::new_uninit().assume_init() }),
-            |v| v,
-        );
+        let stack = self
+            .stack
+            .take()
+            .map_or_else(|| Stack::create(DEFAULT_STACK_SIZE), |v| v);
         w.init(stack, self.entry);
         w.set_priority(self.priority);
         w.set_origin_priority(self.priority);
@@ -169,23 +173,20 @@ pub(crate) fn build_static_thread(
     t: &'static mut MaybeUninit<ThreadNode>,
     // It must be 'static, since the ThreadNode returned doesn't
     // carry lifetime relationship to the SystemThreadStorage.
-    s: &'static SystemThreadStorage,
+    s: &'static mut SystemThreadStorage,
     p: ThreadPriority,
     init_state: Uint,
     entry: Entry,
     kind: ThreadKind,
 ) -> ThreadNode {
     let inner = &s.arc;
-    let stack = &s.stack;
+    let stack = &mut s.stack;
     let arc = unsafe { ThreadNode::const_new(inner) };
     assert_eq!(ThreadNode::strong_count(&arc), 1);
     let _id = Thread::id(&arc);
     let mut w = arc.lock();
     w.init(
-        Stack::Raw {
-            base: stack.rep.as_ptr() as usize,
-            size: stack.rep.len(),
-        },
+        Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()),
         entry,
     );
     w.set_priority(p);
