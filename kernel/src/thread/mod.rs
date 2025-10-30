@@ -19,7 +19,7 @@ use crate::{
     arch,
     arch::Context,
     config, debug, scheduler,
-    support::{Region, RegionalObjectBuilder},
+    support::{Region, RegionalObjectBuilder, Storage},
     sync::{
         mutex::{MutexList, MutexListIterator},
         ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
@@ -32,7 +32,10 @@ use crate::{
     },
 };
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use core::{
+    alloc::Layout,
+    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
+};
 
 mod builder;
 mod posix;
@@ -66,35 +69,18 @@ pub enum ThreadKind {
     SoftTimer,
 }
 
-#[derive(Debug, Copy, Clone)]
-#[repr(align(16))]
-pub struct AlignedStackStorage([u8; config::DEFAULT_STACK_SIZE]);
-
-#[derive(Debug)]
-pub enum Stack {
-    Raw { base: usize, size: usize },
-    Boxed(Box<AlignedStackStorage>),
-}
-
-impl Default for Stack {
-    fn default() -> Self {
-        Stack::Raw { base: 0, size: 0 }
-    }
-}
+pub type Stack = Storage;
 
 impl Stack {
-    pub fn base(&self) -> usize {
-        match self {
-            Self::Boxed(ref boxed) => boxed.0.as_ptr() as usize,
-            Self::Raw { base, .. } => *base,
-        }
+    #[inline]
+    pub fn top(&self) -> *mut u8 {
+        unsafe { self.base().add(self.size()) }
     }
 
-    pub fn size(&self) -> usize {
-        match self {
-            Self::Boxed(ref boxed) => boxed.0.len(),
-            Self::Raw { size, .. } => *size,
-        }
+    #[inline]
+    pub fn create(size: usize) -> Self {
+        let layout = Layout::from_size_align(size, core::mem::align_of::<Context>()).unwrap();
+        Self::from_layout(layout)
     }
 }
 
@@ -231,29 +217,29 @@ impl Thread {
     #[inline(always)]
     pub fn stack_usage(&self) -> usize {
         let sp = arch::current_sp();
-        self.stack.base() + self.stack.size() - sp
+        self.stack.top() as usize - sp
     }
 
     #[inline(always)]
     pub fn validate_sp(&self) -> bool {
         let sp = arch::current_sp();
-        sp >= self.stack.base() && sp <= self.stack.base() + self.stack.size()
+        sp >= self.stack.base() as usize && sp <= self.stack.top() as usize
     }
 
     #[inline(always)]
     pub fn validate_saved_sp(&self) -> bool {
         let sp = self.saved_sp;
-        sp >= self.stack.base() && sp <= self.stack.base() + self.stack.size()
+        sp >= self.stack.base() as usize && sp <= self.stack.top() as usize
     }
 
     #[inline(always)]
     pub fn saved_stack_usage(&self) -> usize {
-        self.stack.base() + self.stack.size() - self.saved_sp()
+        self.stack.top() as usize - self.saved_sp()
     }
 
     #[inline]
     pub fn stack_base(&self) -> usize {
-        self.stack.base()
+        self.stack.base() as usize
     }
 
     #[inline]
@@ -381,7 +367,7 @@ impl Thread {
     const fn const_new(kind: ThreadKind) -> Self {
         Self {
             cleanup: None,
-            stack: Stack::Raw { base: 0, size: 0 },
+            stack: Stack::new(),
             state: AtomicUint::new(CREATED),
             lock: ISpinLock::new(),
             sched_node: IlistHead::<Thread, OffsetOfSchedNode>::new(),
@@ -433,7 +419,7 @@ impl Thread {
 
     #[inline]
     pub(crate) fn reset_saved_sp(&mut self) -> &mut Self {
-        self.saved_sp = self.stack.base() + self.stack.size();
+        self.saved_sp = self.stack.top() as usize;
         self
     }
 
@@ -527,8 +513,7 @@ impl Thread {
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
         self.stack = stack;
         // TODO: Stack sanity check.
-        self.saved_sp =
-            self.stack.base() + self.stack.size() - core::mem::size_of::<arch::Context>();
+        self.saved_sp = self.stack.top() as usize - core::mem::size_of::<arch::Context>();
         self.acquired_mutexes.irqsave_write().init();
 
         let region = Region {
