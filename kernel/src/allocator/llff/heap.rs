@@ -77,4 +77,14 @@ impl LlffHeap {
             max_used: (*heap).maximum(),
         }
     }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> usize {
+        let mut heap = self.heap.irqsave_lock();
+        heap.size_of_allocation(ptr).unwrap_or(0)
+    }
+
+    pub fn get_max_free_block_size(&self) -> usize {
+        let heap = self.heap.irqsave_lock();
+        heap.get_max_free_block_size()
+    }
 }

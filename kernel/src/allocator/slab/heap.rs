@@ -16,7 +16,7 @@ use super::SlabHeap as Slab;
 use crate::{allocator::MemoryInfo, sync::spinlock::SpinLock};
 use core::{alloc::Layout, ptr::NonNull};
 
-type SlabHeap = Slab<2, 2, 2, 2, 2>;
+type SlabHeap = Slab<4, 2, 1, 1, 1, 1, 1>;
 pub struct Heap {
     heap: SpinLock<SlabHeap>,
 }
@@ -39,8 +39,7 @@ impl Heap {
     // try to allocate memory with the given layout
     pub fn alloc(&self, layout: Layout) -> Option<NonNull<u8>> {
         let mut heap = self.heap.irqsave_lock();
-        let ptr = heap.allocate(&layout);
-        ptr
+        heap.allocate(&layout)
     }
 
     // deallocate the memory pointed by ptr with the given layout
@@ -67,8 +66,7 @@ impl Heap {
     ) -> Option<NonNull<u8>> {
         let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
         let mut heap = self.heap.irqsave_lock();
-        let new_ptr = heap.reallocate(NonNull::new_unchecked(ptr), &new_layout);
-        new_ptr
+        heap.reallocate(NonNull::new_unchecked(ptr), &new_layout)
     }
 
     // reallocate memory with the given size but with out align
@@ -79,8 +77,7 @@ impl Heap {
         new_size: usize,
     ) -> Option<NonNull<u8>> {
         let mut heap = self.heap.irqsave_lock();
-        let new_ptr = heap.reallocate_unknown_align(NonNull::new_unchecked(ptr), new_size);
-        new_ptr
+        heap.reallocate_unknown_align(NonNull::new_unchecked(ptr), new_size)
     }
 
     // Retrieves various statistics about the current state of the heap's memory usage.
@@ -91,5 +88,15 @@ impl Heap {
             used: heap.allocated(),
             max_used: heap.maximum(),
         }
+    }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> usize {
+        let mut heap = self.heap.irqsave_lock();
+        heap.size_of_allocation(ptr).unwrap_or(0)
+    }
+
+    pub fn get_max_free_block_size(&self) -> usize {
+        let heap = self.heap.irqsave_lock();
+        heap.get_max_free_block_size()
     }
 }

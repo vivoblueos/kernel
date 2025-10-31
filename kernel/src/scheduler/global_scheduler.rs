@@ -150,7 +150,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
     if !t.transfer_state(old_state, thread::READY) {
         return false;
     }
-    assert!(t.validate_saved_sp());
+    debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     queue_ready_thread_inner(&mut tbl, t)
 }
