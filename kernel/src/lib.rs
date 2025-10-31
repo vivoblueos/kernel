@@ -623,13 +623,16 @@ mod tests {
     #[cfg(event_flags)]
     extern "C" fn test_event_flags() {
         EVENT.wait::<scheduler::InsertToEnd>(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
+    }
+    #[cfg(event_flags)]
+    extern "C" fn test_event_flags_cleanup() {
         EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
     }
     #[cfg(event_flags)]
     #[test]
     fn stress_event_flags() {
         EVENT.init(0);
-        reset_and_queue_test_threads(test_event_flags, None);
+        reset_and_queue_test_threads(test_event_flags, Some(test_event_flags_cleanup));
         let l = unsafe { TEST_THREADS.len() };
         loop {
             EVENT.set(1 << 0);
