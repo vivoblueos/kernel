@@ -869,3 +869,13 @@ pub unsafe extern "C" fn sscanf(
     let reader = (s as *const u8).into();
     scanf::scanf(reader, format, __valist.as_va_list())
 }
+
+pub fn init() {
+    unsafe {
+        // Initialize stdin/stdout/stderr.
+        // TODO: const fn initialization of FILE
+        stdin = default_stdin().get();
+        stdout = default_stdout().get();
+        stderr = default_stderr().get();
+    }
+}

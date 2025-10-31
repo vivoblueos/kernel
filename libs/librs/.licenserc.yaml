@@ -1,11 +1,10 @@
 header: # `header` section is configurations for source codes license header.
   - paths:
-    - '**'
+      - '**'
     license:
       spdx-id: Apache-2.0 # the spdx id of the license, it's convenient when your license is standard SPDX license.
       copyright-owner: vivo Mobile Communication Co., Ltd # the copyright owner to replace the [owner] in the `spdx-id` template.
-      content:
-        | # `license` will be used as the content when `fix` command needs to insert a license header.
+      content: | # `license` will be used as the content when `fix` command needs to insert a license header.
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
 
         Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +18,6 @@ header: # `header` section is configurations for source codes license header.
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
-
       # `pattern` is optional regexp if all the file headers are the same as `license` or the license of `spdx-id` and `copyright-owner`.
       pattern: |
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
@@ -35,7 +33,6 @@ header: # `header` section is configurations for source codes license header.
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
-
     paths-ignore: # `paths-ignore` are the path list that will be ignored by license-eye.
       - "licenses"
       - ".gitignore"
@@ -68,13 +65,11 @@ header: # `header` section is configurations for source codes license header.
       - "**/*.publickey"
       - "**/*.lds"
       - "**/lib64"
-
+      - ".github/workflows/**"
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
-
     # license-location-threshold specifies the index threshold where the license header can be located,
     # after all, a "header" cannot be TOO far from the file start.
     license-location-threshold: 75
-
     language:
       Rust:
         extensions:
@@ -89,14 +84,12 @@ header: # `header` section is configurations for source codes license header.
           - ".cc"
           - ".hpp"
         comment_style_id: SlashAsterisk
-
   - paths:
-    - 'src/ctype'
+      - 'src/ctype'
     license:
       spdx-id: Apache-2.0 # the spdx id of the license, it's convenient when your license is standard SPDX license.
       copyright-owner: vivo Mobile Communication Co., Ltd # the copyright owner to replace the [owner] in the `spdx-id` template.
-      content:
-        | # `license` will be used as the content when `fix` command needs to insert a license header.
+      content: | # `license` will be used as the content when `fix` command needs to insert a license header.
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
 
         Licensed under the Apache License, Version 2.0 (the "License");
@@ -115,7 +108,6 @@ header: # `header` section is configurations for source codes license header.
         This code is based on musl (original license follows):
         https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT
         standard MIT license
-
       # `pattern` is optional regexp if all the file headers are the same as `license` or the license of `spdx-id` and `copyright-owner`.
       pattern: |
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
@@ -140,11 +132,9 @@ header: # `header` section is configurations for source codes license header.
       - "src/mqueue/**" # special process for librs
       - "src/syscall/**" # special process for librs
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
-
     # license-location-threshold specifies the index threshold where the license header can be located,
     # after all, a "header" cannot be TOO far from the file start.
     license-location-threshold: 75
-
     language:
       Rust:
         extensions:
@@ -159,19 +149,17 @@ header: # `header` section is configurations for source codes license header.
           - ".cc"
           - ".hpp"
         comment_style_id: SlashAsterisk
-
   - paths:
-    - 'src/mqueue'
-    - 'src/syscall'
-    - 'src/net'
-    - "src/stdlib/malloc.rs"
-    - "src/lib.rs"
-    - "tests/**"
+      - 'src/mqueue'
+      - 'src/syscall'
+      - 'src/net'
+      - "src/stdlib/malloc.rs"
+      - "src/lib.rs"
+      - "tests/**"
     license:
       spdx-id: Apache-2.0 # the spdx id of the license, it's convenient when your license is standard SPDX license.
       copyright-owner: vivo Mobile Communication Co., Ltd # the copyright owner to replace the [owner] in the `spdx-id` template.
-      content:
-        | # `license` will be used as the content when `fix` command needs to insert a license header.
+      content: | # `license` will be used as the content when `fix` command needs to insert a license header.
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
 
         Licensed under the Apache License, Version 2.0 (the "License");
@@ -185,7 +173,6 @@ header: # `header` section is configurations for source codes license header.
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
-
       # `pattern` is optional regexp if all the file headers are the same as `license` or the license of `spdx-id` and `copyright-owner`.
       pattern: |
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
@@ -208,11 +195,9 @@ header: # `header` section is configurations for source codes license header.
       - "**/*.checker"
       - "**/*.test"
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
-
     # license-location-threshold specifies the index threshold where the license header can be located,
     # after all, a "header" cannot be TOO far from the file start.
     license-location-threshold: 75
-
     language:
       Rust:
         extensions:

@@ -100,6 +100,7 @@ extern "C" fn start_posix_main(_arg: *mut core::ffi::c_void) -> *mut core::ffi::
 
 #[no_mangle]
 pub extern "C" fn __librs_start_main() {
+    crate::stdio::init();
     let mut init_thread: libc::pthread_t = 0;
     let rc = crate::pthread::pthread_create(
         &mut init_thread as *mut libc::pthread_t,
