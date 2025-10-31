@@ -91,24 +91,17 @@ pub mod thread {
     #[cfg(release)]
     pub const DEFAULT_STACK_SIZE: usize = 12288; // 12 kb
     #[cfg(target_pointer_width = "32")]
-    pub const STACK_ALIGN: usize = core::mem::size_of::<usize>();
+    pub const STACK_ALIGN: usize = 8;
     #[cfg(target_pointer_width = "64")]
     pub const STACK_ALIGN: usize = 16;
 
     #[repr(C)]
     pub struct SpawnArgs {
-        pub spawn_hook: Option<fn(tid: usize, spawn_args: &SpawnArgs)>,
-        pub entry: extern "C" fn(*mut core::ffi::c_void),
-        pub arg: *mut core::ffi::c_void,
+        pub spawn_hook: Option<extern "C" fn(tid: usize, spawn_args: *const SpawnArgs)>,
         pub stack_start: *mut u8,
         pub stack_size: usize,
-    }
-
-    #[repr(C)]
-    #[derive(Clone, Debug)]
-    pub struct ExitArgs {
-        pub exit_hook: Option<fn(exit_args: &ExitArgs)>,
-        pub tid: usize,
-        pub stack_start: &'static u8,
+        pub entry: extern "C" fn(*mut core::ffi::c_void),
+        pub arg: *mut core::ffi::c_void,
+        pub cleanup: Option<extern "C" fn(*mut core::ffi::c_void)>,
     }
 }
