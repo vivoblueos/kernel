@@ -457,6 +457,32 @@ impl HoleList {
         })
     }
 
+    /// Returns information about the largest hole.
+    ///
+    /// Since the hole list is sorted by address (not by size), we need to
+    /// traverse the entire list to find the maximum size hole.
+    ///
+    /// Returns `None` if there are no holes, otherwise returns `Some((address, size))`.
+    pub fn max_hole(&self) -> Option<(*const u8, usize)> {
+        let mut max_size = 0;
+        let mut max_addr = None;
+
+        // Traverse the entire hole list
+        let mut current = self.first.next;
+        while let Some(hole) = current {
+            unsafe {
+                let size = hole.as_ref().size;
+                if size > max_size {
+                    max_size = size;
+                    max_addr = Some(hole.as_ptr() as *mut u8 as *const u8);
+                }
+                current = hole.as_ref().next;
+            }
+        }
+
+        max_addr.map(|addr| (addr, max_size))
+    }
+
     pub(crate) unsafe fn extend(&mut self, by: usize) {
         assert!(!self.top.is_null(), "tried to extend an empty heap");
 

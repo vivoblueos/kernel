@@ -91,6 +91,15 @@ pub struct Tlsf<'pool, FLBitmap, SLBitmap, const FLLEN: usize, const SLLEN: usiz
     allocated: usize,
     maximum: usize,
     total: usize,
+    #[cfg(debugging_allocator)]
+    inited: bool,
+    #[cfg(debugging_allocator)]
+    heap_start: usize,
+    #[cfg(debugging_allocator)]
+    heap_end: usize,
+    #[cfg(debugging_allocator)]
+    magic_end: u64,
+
     _phantom: PhantomData<&'pool ()>,
 }
 
@@ -150,6 +159,14 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
             allocated: 0,
             maximum: 0,
             total: 0,
+            #[cfg(debugging_allocator)]
+            inited: false,
+            #[cfg(debugging_allocator)]
+            magic_end: 0x5b5b5b5b_5b5b5b5b,
+            #[cfg(debugging_allocator)]
+            heap_start: 0,
+            #[cfg(debugging_allocator)]
+            heap_end: 0,
         }
     }
 
@@ -411,6 +428,13 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         let pool_len = self.insert_free_block_ptr_aligned(NonNull::new_unchecked(
             core::ptr::slice_from_raw_parts_mut(start as *mut u8, len),
         ))?;
+
+        #[cfg(debugging_allocator)]
+        {
+            self.inited = true;
+            self.heap_start = start;
+            self.heap_end = start.wrapping_add(len);
+        }
 
         // Safety: The sum should not wrap around because it represents the size
         //         of a memory pool on memory
@@ -1314,6 +1338,29 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         self.total - self.allocated
     }
 
+    #[cfg(debugging_allocator)]
+    pub fn is_inited(&self) -> bool {
+        self.inited
+    }
+
+    #[cfg(debugging_allocator)]
+    pub fn heap_start(&self) -> usize {
+        self.heap_start
+    }
+    #[cfg(debugging_allocator)]
+    pub fn heap_end(&self) -> usize {
+        self.heap_end
+    }
+
+    #[cfg(debugging_allocator)]
+    pub fn is_valid_ptr(&self, ptr: *mut u8) -> bool {
+        assert_eq!(self.magic_start, 0xcacacaca_cacacaca);
+        assert_eq!(self.magic_end, 0x5b5b5b5b_5b5b5b5b);
+
+        let ptr = ptr as usize;
+        ptr >= self.heap_start && ptr < self.heap_end
+    }
+
     /// Enumerate memory blocks in the specified memory pool.
     ///
     /// # Safety
@@ -1394,6 +1441,65 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
             // Exclude sentinel blocks
             (block_info.block_hdr.size & SIZE_SENTINEL) == 0
         })
+    }
+
+    /// Get the maximum size of free blocks by searching through fl_bitmap and sl_bitmap.
+    ///
+    /// This method efficiently finds the largest free block by:
+    /// 1. Searching from the highest fl (first level) index downward
+    /// 2. For each fl with free blocks, searching from the highest sl (second level) index downward
+    /// 3. Traversing the free block list at each (fl, sl) to find the maximum block size
+    ///
+    /// Returns 0 if no free blocks are available.
+    pub fn get_max_free_block_size(&self) -> usize {
+        let mut max_size = 0;
+
+        // Search from the highest fl index downward
+        // We iterate from FLLEN-1 down to 0 to prioritize larger blocks
+        for fl in (0..FLLEN).rev() {
+            // Check if this fl has any free blocks
+            if !self.fl_bitmap.get_bit(fl as u32) {
+                continue;
+            }
+
+            // For this fl, search from the highest sl index downward
+            for sl in (0..SLLEN).rev() {
+                // Check if this (fl, sl) has any free blocks
+                if !self.sl_bitmap[fl].get_bit(sl as u32) {
+                    continue;
+                }
+
+                // Traverse the free block list at this (fl, sl)
+                // Note: blocks in the same (fl, sl) may have different sizes due to mapping range
+                let mut current_block = self.first_free[fl][sl];
+                while let Some(block) = current_block {
+                    unsafe {
+                        let block_size = block.as_ref().common.size & SIZE_SIZE_MASK;
+                        if block_size > max_size {
+                            max_size = block_size;
+                        }
+                        current_block = block.as_ref().next_free;
+                    }
+                }
+
+                // Early exit optimization: if we've found a block in the highest (fl, sl),
+                // we can potentially skip checking smaller (fl, sl) pairs
+                // However, since blocks in the same (fl, sl) can vary in size,
+                // we continue to ensure we find the absolute maximum
+            }
+        }
+
+        // Return max_payload_size (size minus header overhead)
+        if max_size > 0 {
+            // max_payload_size = block_size - GRANULARITY / 2
+            max_size.saturating_sub(GRANULARITY / 2)
+        } else {
+            0
+        }
+    }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
+        unsafe { size_of_allocation_unknown_align(ptr) }
     }
 }
 

@@ -26,6 +26,9 @@ use log::{debug, warn};
 
 pub mod heap;
 
+const PAGE_SIZE: usize = 4096;
+const PAGE_SHIFT: usize = 12;
+
 pub struct Slab {
     block_size: usize,
     len: usize,
@@ -123,6 +126,8 @@ pub enum HeapAllocator {
     Slab64Bytes,
     Slab128Bytes,
     Slab256Bytes,
+    Slab512Bytes,
+    Slab1024Bytes,
     SystemAllocator,
 }
 
@@ -134,6 +139,8 @@ impl HeapAllocator {
             HeapAllocator::Slab64Bytes => 64,
             HeapAllocator::Slab128Bytes => 128,
             HeapAllocator::Slab256Bytes => 256,
+            HeapAllocator::Slab512Bytes => 512,
+            HeapAllocator::Slab1024Bytes => 1024,
             _ => unreachable!("not a block!"),
         }
     }
@@ -145,12 +152,16 @@ pub struct SlabHeap<
     const SLAB_64: usize,
     const SLAB_128: usize,
     const SLAB_256: usize,
+    const SLAB_512: usize,
+    const SLAB_1024: usize,
 > {
     slab_16_bytes: Slab,
     slab_32_bytes: Slab,
     slab_64_bytes: Slab,
     slab_128_bytes: Slab,
     slab_256_bytes: Slab,
+    slab_512_bytes: Slab,
+    slab_1024_bytes: Slab,
     system_allocator: tlsf::heap::TlsfHeap,
     slab_begin_addr: usize,
     slab_total_size: usize,
@@ -166,13 +177,17 @@ impl<
         const SLAB_64: usize,
         const SLAB_128: usize,
         const SLAB_256: usize,
-    > SlabHeap<SLAB_16, SLAB_32, SLAB_64, SLAB_128, SLAB_256>
+        const SLAB_512: usize,
+        const SLAB_1024: usize,
+    > SlabHeap<SLAB_16, SLAB_32, SLAB_64, SLAB_128, SLAB_256, SLAB_512, SLAB_1024>
 {
     // Constants for slab boundaries
     const SLAB_32_END: usize = SLAB_16 + SLAB_32;
     const SLAB_64_END: usize = Self::SLAB_32_END + SLAB_64;
     const SLAB_128_END: usize = Self::SLAB_64_END + SLAB_128;
     const SLAB_256_END: usize = Self::SLAB_128_END + SLAB_256;
+    const SLAB_512_END: usize = Self::SLAB_256_END + SLAB_512;
+    const SLAB_1024_END: usize = Self::SLAB_512_END + SLAB_1024;
 
     /// Create an empty heap
     pub const fn new() -> Self {
@@ -182,6 +197,8 @@ impl<
             slab_64_bytes: Slab::new(),
             slab_128_bytes: Slab::new(),
             slab_256_bytes: Slab::new(),
+            slab_512_bytes: Slab::new(),
+            slab_1024_bytes: Slab::new(),
             system_allocator: tlsf::heap::TlsfHeap::new(),
             slab_begin_addr: 0,
             slab_total_size: 0,
@@ -198,26 +215,32 @@ impl<
         self.total = size;
 
         // allocate slabs
-        self.slab_total_size = (SLAB_16 + SLAB_32 + SLAB_64 + SLAB_128 + SLAB_256) * 4096;
+        self.slab_total_size =
+            (SLAB_16 + SLAB_32 + SLAB_64 + SLAB_128 + SLAB_256 + SLAB_512 + SLAB_1024) * PAGE_SIZE;
         assert!(self.slab_total_size < size);
-        let slab_layout = Layout::from_size_align(self.slab_total_size, 4096).unwrap();
+        let slab_layout = Layout::from_size_align(self.slab_total_size, PAGE_SIZE).unwrap();
         let slab_ptr = self.system_allocator.allocate(&slab_layout).unwrap();
 
         // init slabs
         let mut start_addr = slab_ptr.as_ptr() as usize;
         self.slab_begin_addr = start_addr;
         self.slab_16_bytes.init(start_addr, SLAB_16 << (12 - 4), 16);
-        start_addr += SLAB_16 * 4096;
+        start_addr += SLAB_16 * PAGE_SIZE;
         self.slab_32_bytes.init(start_addr, SLAB_32 << (12 - 5), 32);
-        start_addr += SLAB_32 * 4096;
+        start_addr += SLAB_32 * PAGE_SIZE;
         self.slab_64_bytes.init(start_addr, SLAB_64 << (12 - 6), 64);
-        start_addr += SLAB_64 * 4096;
+        start_addr += SLAB_64 * PAGE_SIZE;
         self.slab_128_bytes
             .init(start_addr, SLAB_128 << (12 - 7), 128);
-        start_addr += SLAB_128 * 4096;
+        start_addr += SLAB_128 * PAGE_SIZE;
         self.slab_256_bytes
             .init(start_addr, SLAB_256 << (12 - 8), 256);
-        start_addr += SLAB_256 * 4096;
+        start_addr += SLAB_256 * PAGE_SIZE;
+        self.slab_512_bytes
+            .init(start_addr, SLAB_512 << (12 - 9), 512);
+        start_addr += SLAB_512 * PAGE_SIZE;
+        self.slab_1024_bytes
+            .init(start_addr, SLAB_1024 << (12 - 10), 1024);
     }
 
     pub fn allocate(&mut self, layout: &Layout) -> Option<NonNull<u8>> {
@@ -261,6 +284,22 @@ impl<
                     if self.slab_256_bytes.len > 0 {
                         ptr = self.slab_256_bytes.allocate(layout);
                         self.allocated += 256;
+                    } else {
+                        current_allocator = HeapAllocator::Slab512Bytes;
+                    }
+                }
+                HeapAllocator::Slab512Bytes => {
+                    if self.slab_512_bytes.len > 0 {
+                        ptr = self.slab_512_bytes.allocate(layout);
+                        self.allocated += 512;
+                    } else {
+                        current_allocator = HeapAllocator::Slab1024Bytes;
+                    }
+                }
+                HeapAllocator::Slab1024Bytes => {
+                    if self.slab_1024_bytes.len > 0 {
+                        ptr = self.slab_1024_bytes.allocate(layout);
+                        self.allocated += 1024;
                     } else {
                         current_allocator = HeapAllocator::SystemAllocator;
                     }
@@ -333,6 +372,16 @@ impl<
                 self.allocated -= 256;
                 256
             }
+            HeapAllocator::Slab512Bytes => {
+                self.slab_512_bytes.deallocate(ptr);
+                self.allocated -= 512;
+                512
+            }
+            HeapAllocator::Slab1024Bytes => {
+                self.slab_1024_bytes.deallocate(ptr);
+                self.allocated -= 1024;
+                1024
+            }
         }
     }
 
@@ -369,6 +418,16 @@ impl<
                 self.allocated -= 256;
                 256
             }
+            HeapAllocator::Slab512Bytes => {
+                self.slab_512_bytes.deallocate(ptr);
+                self.allocated -= 512;
+                512
+            }
+            HeapAllocator::Slab1024Bytes => {
+                self.slab_1024_bytes.deallocate(ptr);
+                self.allocated -= 1024;
+                1024
+            }
         }
     }
 
@@ -379,9 +438,7 @@ impl<
     ) -> Option<NonNull<u8>> {
         let allocator = self.ptr_to_allocator(ptr.as_ptr() as usize);
         match allocator {
-            HeapAllocator::SystemAllocator => {
-                return self.system_allocator.reallocate(ptr, new_layout);
-            }
+            HeapAllocator::SystemAllocator => self.system_allocator.reallocate(ptr, new_layout),
             block_allocator => {
                 let block_size = block_allocator.block_size();
                 if new_layout.size() <= block_size {
@@ -389,9 +446,9 @@ impl<
                 }
                 let new_ptr = self.allocate(new_layout)?;
                 core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), block_size);
-                let old_size = self.deallocate(ptr, &new_layout);
+                let old_size = self.deallocate(ptr, new_layout);
                 self.allocated += new_layout.size() - old_size;
-                return Some(new_ptr);
+                Some(new_ptr)
             }
         }
     }
@@ -403,11 +460,9 @@ impl<
     ) -> Option<NonNull<u8>> {
         let allocator = self.ptr_to_allocator(ptr.as_ptr() as usize);
         match allocator {
-            HeapAllocator::SystemAllocator => {
-                return self
-                    .system_allocator
-                    .reallocate_unknown_align(ptr, new_size);
-            }
+            HeapAllocator::SystemAllocator => self
+                .system_allocator
+                .reallocate_unknown_align(ptr, new_size),
             block_allocator => {
                 let block_size = block_allocator.block_size();
                 if new_size <= block_size {
@@ -419,7 +474,7 @@ impl<
                 core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), block_size);
                 let old_size = self.deallocate(ptr, &new_layout);
                 self.allocated += new_size - old_size;
-                return Some(new_ptr);
+                Some(new_ptr)
             }
         }
     }
@@ -430,7 +485,7 @@ impl<
     // - For sizes > 256 bytes, use the system allocator
     // - For smaller sizes, use the smallest slab that can accommodate both size and alignment
     fn layout_to_allocator(size: usize, align: usize) -> HeapAllocator {
-        if size > 256 {
+        if size > 1024 {
             HeapAllocator::SystemAllocator
         } else if size <= 16 && align <= 16 {
             HeapAllocator::Slab16Bytes
@@ -440,8 +495,12 @@ impl<
             HeapAllocator::Slab64Bytes
         } else if size <= 128 && align <= 128 {
             HeapAllocator::Slab128Bytes
-        } else {
+        } else if size <= 256 && align <= 256 {
             HeapAllocator::Slab256Bytes
+        } else if size <= 512 && align <= 512 {
+            HeapAllocator::Slab512Bytes
+        } else {
+            HeapAllocator::Slab1024Bytes
         }
     }
 
@@ -450,7 +509,7 @@ impl<
             return HeapAllocator::SystemAllocator;
         }
         let offset = ptr - self.slab_begin_addr;
-        let slab_index = offset >> 12;
+        let slab_index = offset >> PAGE_SHIFT;
 
         if slab_index < SLAB_16 {
             HeapAllocator::Slab16Bytes
@@ -462,6 +521,10 @@ impl<
             HeapAllocator::Slab128Bytes
         } else if slab_index < Self::SLAB_256_END {
             HeapAllocator::Slab256Bytes
+        } else if slab_index < Self::SLAB_512_END {
+            HeapAllocator::Slab512Bytes
+        } else if slab_index < Self::SLAB_1024_END {
+            HeapAllocator::Slab1024Bytes
         } else {
             HeapAllocator::SystemAllocator
         }
@@ -480,5 +543,61 @@ impl<
     // Return the total number of bytes in the heap
     pub fn total(&self) -> usize {
         self.total
+    }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
+        let raw_ptr = ptr.as_ptr() as usize;
+        if raw_ptr < self.slab_begin_addr {
+            return self.system_allocator.size_of_allocation(ptr);
+        }
+        let offset = raw_ptr - self.slab_begin_addr;
+        let slab_index = offset >> 12;
+
+        if slab_index < SLAB_16 {
+            Some(16)
+        } else if slab_index < Self::SLAB_32_END {
+            Some(32)
+        } else if slab_index < Self::SLAB_64_END {
+            Some(64)
+        } else if slab_index < Self::SLAB_128_END {
+            Some(128)
+        } else if slab_index < Self::SLAB_256_END {
+            Some(256)
+        } else if slab_index < Self::SLAB_512_END {
+            Some(512)
+        } else if slab_index < Self::SLAB_1024_END {
+            Some(1024)
+        } else {
+            self.system_allocator.size_of_allocation(ptr)
+        }
+    }
+
+    pub fn get_max_free_block_size(&self) -> usize {
+        let max_free = self.system_allocator.get_max_free_block_size();
+        if max_free > 1024 {
+            return max_free;
+        }
+        if self.slab_1024_bytes.len > 0 {
+            return 1024;
+        }
+        if self.slab_512_bytes.len > 0 {
+            return core::cmp::max(max_free, 512);
+        }
+        if self.slab_256_bytes.len > 0 {
+            return core::cmp::max(max_free, 256);
+        }
+        if self.slab_128_bytes.len > 0 {
+            return core::cmp::max(max_free, 128);
+        }
+        if self.slab_64_bytes.len > 0 {
+            return core::cmp::max(max_free, 64);
+        }
+        if self.slab_32_bytes.len > 0 {
+            return core::cmp::max(max_free, 32);
+        }
+        if self.slab_16_bytes.len > 0 {
+            return core::cmp::max(max_free, 16);
+        }
+        max_free
     }
 }
