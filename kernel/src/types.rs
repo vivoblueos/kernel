@@ -21,7 +21,7 @@ pub use blueos_infra::{
         GenericList,
     },
     tinyarc::{
-        TinyArc as Arc,  TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
+        TinyArc as Arc, TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
         TinyArcListIterator as ArcListIterator,
     },
     tinyrwlock::{IRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard},

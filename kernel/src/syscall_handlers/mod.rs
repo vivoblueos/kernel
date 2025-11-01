@@ -14,12 +14,6 @@
 
 extern crate alloc;
 
-use crate::{
-    scheduler,
-    sync::atomic_wait as futex,
-    thread::{self, Builder, Entry, Stack, Thread},
-    time,
-};
 #[cfg(kernel_async)]
 use crate::asynk;
 #[cfg(enable_net)]
@@ -28,17 +22,26 @@ use crate::net::syscalls as net_syscalls;
 use crate::vfs::syscalls as vfs_syscalls;
 #[cfg(enable_vfs)]
 pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
+use crate::{
+    config, scheduler,
+    sync::atomic_wait as futex,
+    thread::{self, Builder, Entry, Stack, Thread},
+    time,
+};
 
 pub use crate::sync::posix_mqueue;
 use alloc::boxed::Box;
-use blueos_header::{syscalls::NR, thread::{ExitArgs, SpawnArgs}};
+use blueos_header::{
+    syscalls::NR,
+    thread::{ExitArgs, SpawnArgs},
+};
 use core::{
     ffi::{c_size_t, c_ssize_t},
     sync::atomic::AtomicUsize,
 };
 use libc::{
-    addrinfo, c_char, c_int, c_uint, c_long, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t, sigset_t, size_t,
-    sockaddr, socklen_t, timespec, EINVAL,
+    addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t,
+    sigset_t, size_t, sockaddr, socklen_t, timespec, EINVAL, ESRCH,
 };
 
 #[cfg(not(enable_vfs))]
@@ -205,7 +208,9 @@ mod net_syscalls {
     ) -> c_int {
         -libc::ENOTSUP
     }
-    pub fn freeaddrinfo(_res: *mut addrinfo) -> usize { 0 }
+    pub fn freeaddrinfo(_res: *mut addrinfo) -> usize {
+        0
+    }
 }
 
 #[repr(C)]
@@ -318,6 +323,70 @@ get_tid() -> c_long {
     let t = scheduler::current_thread();
     let handle = Thread::id(&t);
     handle as c_long
+});
+
+define_syscall_handler!(
+get_sched_param(tid: usize) -> c_long {
+
+    // same as find_process_by_pid
+    let mut it = thread::GlobalQueueVisitor::new();
+    while let Some(t) = it.next() {
+        if thread::Thread::id(&t) == tid {
+            return t.priority() as c_long;
+        }
+    }
+    // Not found
+    -(ESRCH as c_long)
+});
+
+define_syscall_handler!(
+set_sched_param(tid: usize, prio: c_int) -> c_long {
+    if prio < 0 || (prio as u32) > (config::MAX_THREAD_PRIORITY as u32) {
+        return -(EINVAL as c_long);
+    }
+
+    // same as find_process_by_pid
+    let mut it = thread::GlobalQueueVisitor::new();
+    while let Some(t) = it.next() {
+        if thread::Thread::id(&t) == tid {
+            let current_state = t.state();
+            let p = prio as crate::types::ThreadPriority;
+
+            match current_state {
+                thread::READY => {
+                    // Remove from ready queue, change priority, then re-add
+                    if scheduler::remove_from_ready_queue(&t) {
+                        let mut w = t.lock();
+                        w.set_origin_priority(p);
+                        w.set_priority(p);
+                        drop(w);
+                        // Re-add to ready queue with new priority
+                        let ok = scheduler::queue_ready_thread(thread::READY, t);
+                        assert!(ok);
+                    } else {
+                        // Failed to remove from ready queue, just set priority directly
+                        let mut w = t.lock();
+                        w.set_origin_priority(p);
+                        w.set_priority(p);
+                    }
+                    return 0;
+                }
+                thread::RUNNING => {
+                    // Don't change priority of running thread, just return
+                    return 0;
+                }
+                _ => {
+                    // For other states (CREATED, SUSPENDED, RETIRED), set priority directly
+                    let mut w = t.lock();
+                    w.set_origin_priority(p);
+                    w.set_priority(p);
+                    return 0;
+                }
+            }
+        }
+    }
+    // Not found
+    -(ESRCH as c_long)
 });
 
 define_syscall_handler!(
@@ -778,6 +847,8 @@ syscall_table! {
     (Echo, echo),
     (Nop, nop),
     (GetTid, get_tid),
+    (GetSchedParam, get_sched_param),
+    (SetSchedParam, set_sched_param),
     (CreateThread, create_thread),
     (ExitThread, exit_thread),
     (AtomicWake, atomic_wake),
