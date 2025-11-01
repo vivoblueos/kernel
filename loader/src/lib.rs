@@ -16,7 +16,7 @@
 #![feature(c_size_t)]
 
 mod memory_mapper;
-use goblin::elf::Elf;
+use goblin::elf::{reloc::R_RISCV_RELATIVE, Elf, Reloc};
 use librs::string::memcpy;
 pub use memory_mapper::MemoryMapper;
 
@@ -68,6 +68,28 @@ fn copy_content_to_memory(buffer: &[u8], binary: &Elf, mapper: &mut MemoryMapper
     Ok(())
 }
 
+fn handle_riscv_relative_reloc(base: *mut u8, reloc: &Reloc) -> Result {
+    let target_address = unsafe { base.add(reloc.r_offset as usize) as *mut usize };
+    let content = unsafe { base.offset(reloc.r_addend.unwrap_or(0) as isize) as usize };
+    unsafe { target_address.write(content) };
+    Ok(())
+}
+
+#[allow(clippy::single_match)]
+fn relocate(binary: &Elf, mapper: &mut MemoryMapper) -> Result {
+    let reloc_section = &binary.dynrelas;
+    let base = mapper.real_start_mut().unwrap();
+    for reloc in reloc_section.iter() {
+        match reloc.r_type {
+            R_RISCV_RELATIVE => {
+                handle_riscv_relative_reloc(base, &reloc)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 // FIXME: We should use lseek to parse ELF files to achieve low footprint.
 pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
     let Ok(binary) = goblin::elf::Elf::parse(buffer) else {
@@ -75,5 +97,6 @@ pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
     };
     build_memory_layout(&binary, mapper)?;
     allocate_memory_for_segments(&binary, mapper)?;
-    copy_content_to_memory(buffer, &binary, mapper)
+    copy_content_to_memory(buffer, &binary, mapper)?;
+    relocate(&binary, mapper)
 }
