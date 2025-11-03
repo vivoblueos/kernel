@@ -20,19 +20,19 @@ use core::{alloc::GlobalAlloc, ptr};
 
 pub mod block;
 #[cfg(any(allocator = "tlsf", allocator = "slab"))]
-pub(crate) mod tlsf;
+mod tlsf;
 #[cfg(allocator = "tlsf")]
-pub(crate) use tlsf::heap::Heap;
+pub use tlsf::heap::Heap;
 
 #[cfg(allocator = "llff")]
-pub(crate) mod llff;
+mod llff;
 #[cfg(allocator = "llff")]
-pub(crate) use llff::heap::LlffHeap as Heap;
+pub use llff::heap::LlffHeap as Heap;
 
 #[cfg(allocator = "slab")]
-pub(crate) mod slab;
+mod slab;
 #[cfg(allocator = "slab")]
-pub(crate) use slab::heap::Heap;
+pub use slab::heap::Heap;
 
 pub struct KernelAllocator;
 static_arc! {
@@ -56,31 +56,7 @@ impl KernelAllocator {
     }
 }
 
-mod allocator_api {
-    use super::*;
-    use core::{
-        alloc::{AllocError, Allocator},
-        ptr::NonNull,
-    };
-
-    unsafe impl Allocator for KernelAllocator {
-        fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-            match layout.size() {
-                0 => Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0)),
-                size => HEAP.alloc(layout).map_or(Err(AllocError), |allocation| {
-                    Ok(NonNull::slice_from_raw_parts(allocation, size))
-                }),
-            }
-        }
-        unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            if layout.size() != 0 {
-                HEAP.dealloc(ptr.as_ptr(), layout);
-            }
-        }
-    }
-}
-
-pub(crate) fn init_heap(start: *mut u8, end: *mut u8) {
+pub fn init_heap(start: *mut u8, end: *mut u8) {
     let start_addr = start as usize;
     let size = unsafe { end.offset_from(start) as usize };
     unsafe {
@@ -192,6 +168,10 @@ pub fn free_align(ptr: *mut u8, align: usize) {
         let layout = Layout::from_size_align_unchecked(0, align);
         HEAP.dealloc(ptr, layout);
     }
+}
+
+pub(crate) fn get_max_free_block_size() -> usize {
+    unsafe { HEAP.get_max_free_block_size() }
 }
 
 /// Returns the offset of the address within the alignment.

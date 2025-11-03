@@ -22,7 +22,7 @@ use allocator::MemoryInfo;
 pub type TlsfHeap = Tlsf<'static, usize, usize, { usize::BITS as usize }, { usize::BITS as usize }>;
 
 /// A two-Level segregated fit heap.
-pub(crate) struct Heap {
+pub struct Heap {
     heap: SpinLock<TlsfHeap>,
 }
 
@@ -38,23 +38,35 @@ impl Heap {
     pub unsafe fn init(&self, start_addr: usize, size: usize) {
         let block: &[u8] = core::slice::from_raw_parts(start_addr as *const u8, size);
         let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(!heap.is_inited());
         heap.insert_free_block_ptr(block.into());
     }
 
     // try to allocate memory with the given layout
     pub fn alloc(&self, layout: Layout) -> Option<NonNull<u8>> {
         let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_inited());
         heap.allocate(&layout)
     }
 
     // deallocate the memory pointed by ptr with the given layout
     pub unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_inited());
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_valid_ptr(ptr));
         heap.deallocate(NonNull::new_unchecked(ptr), layout.align());
     }
 
     pub unsafe fn deallocate_unknown_align(&self, ptr: *mut u8) {
         let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_inited());
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_valid_ptr(ptr));
         heap.deallocate_unknown_align(NonNull::new_unchecked(ptr));
     }
 
@@ -67,6 +79,8 @@ impl Heap {
     ) -> Option<NonNull<u8>> {
         let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
         let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_inited());
         heap.reallocate(NonNull::new_unchecked(ptr), &new_layout)
     }
 
@@ -77,16 +91,60 @@ impl Heap {
         new_size: usize,
     ) -> Option<NonNull<u8>> {
         let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_inited());
         heap.reallocate_unknown_align(NonNull::new_unchecked(ptr), new_size)
     }
 
     // Retrieves various statistics about the current state of the heap's memory usage.
     pub fn memory_info(&self) -> MemoryInfo {
         let heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_inited());
         MemoryInfo {
             total: heap.total(),
             used: heap.allocated(),
             max_used: heap.maximum(),
         }
+    }
+
+    // Get size of max free block in this Heap
+    pub unsafe fn get_max_free_block_size(&self) -> usize {
+        let heap = self.heap.irqsave_lock();
+        heap.get_max_free_block_size()
+    }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> usize {
+        let mut heap = self.heap.irqsave_lock();
+        #[cfg(debugging_allocator)]
+        debug_assert!(heap.is_valid_ptr(ptr.as_ptr()));
+        heap.size_of_allocation(ptr).unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::alloc::Layout;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn max_free_block_comprehensive() {
+        // Test 1: Basic behavior - check max free block after pool initialization
+        let max_free = allocator::get_max_free_block_size();
+        assert!(
+            max_free > 0,
+            "max free block should be positive after pool insert"
+        );
+
+        // Max free block decreases on allocation
+        let layout = Layout::from_size_align(1024 * 64, 8).unwrap();
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
+        let after = allocator::get_max_free_block_size();
+        assert!(
+            after <= max_free,
+            "max free block should decrease after allocation"
+        );
+        unsafe { alloc::alloc::dealloc(ptr, layout) };
     }
 }
