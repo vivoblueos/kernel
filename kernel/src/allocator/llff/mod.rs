@@ -319,4 +319,12 @@ impl Heap {
     pub unsafe fn extend(&mut self, by: usize) {
         self.holes.extend(by);
     }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
+        size_of_allocation_unknown_align(ptr)
+    }
+
+    pub fn get_max_free_block_size(&self) -> usize {
+        self.holes.max_hole()
+    }
 }
