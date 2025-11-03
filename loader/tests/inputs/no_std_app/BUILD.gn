@@ -20,12 +20,16 @@ build_rust("everyting") {
   crate_type = "bin"
   sources = [ "src/main.rs" ]
   deps = [
-    "//libc:libc",
+    "//libc",
     "//librs:librs_swi",
   ]
+
   rustflags = [
     "-Cpanic=abort",
     "-Crelocation-model=pie",
+    "-Clink-arg=-Wl,-static",
+    "-Clink-arg=-Wl,-pie",
+    "-Clink-arg=-Wl,-no-dynamic-linker",
   ]
 
   rustflags += [ "-Clink-arg=-nostartfiles" ]
