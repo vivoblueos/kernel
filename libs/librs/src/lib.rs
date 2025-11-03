@@ -28,6 +28,7 @@
 #![feature(atomic_from_mut)]
 #![feature(c_variadic)]
 #![feature(array_ptr_get)]
+#![feature(sync_unsafe_cell)]
 
 #[macro_use]
 extern crate alloc;

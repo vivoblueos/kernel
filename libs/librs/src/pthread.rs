@@ -16,22 +16,24 @@
 // https://github.com/redox-os/relibc/blob/master/LICENSE
 // standard MIT license
 
-use crate::{
-    stdlib::malloc::{free, posix_memalign},
-    sync::{
-        barrier::{Barrier, BarrierAttr, WaitResult},
-        cond::{Cond, CondAttr},
-        mutex::{Mutex, MutexAttr},
-        rwlock::{Pshared, Rwlock as RsRwLock, RwlockAttr},
-        waitval::Waitval,
-    },
+use crate::sync::{
+    barrier::{Barrier, BarrierAttr, WaitResult},
+    cond::{Cond, CondAttr},
+    mutex::{Mutex, MutexAttr},
+    rwlock::{Pshared, Rwlock as RsRwLock, RwlockAttr},
+    waitval::Waitval,
 };
+use alloc::alloc::alloc as system_alloc;
+use alloc::alloc::dealloc as system_dealloc;
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use blueos_header::{
     syscalls::NR::{CreateThread, ExitThread, GetTid, SchedYield},
-    thread::{ExitArgs, SpawnArgs, DEFAULT_STACK_SIZE, STACK_ALIGN},
+    thread::{SpawnArgs, DEFAULT_STACK_SIZE, STACK_ALIGN},
 };
 use blueos_scal::bk_syscall;
+use core::alloc::Layout;
+use core::cell::SyncUnsafeCell;
+use core::num::NonZero;
 use core::{
     ffi::{c_int, c_size_t, c_uint, c_void},
     intrinsics::transmute,
@@ -44,6 +46,7 @@ use libc::{
     pthread_rwlockattr_t, pthread_spinlock_t, pthread_t, sched_param, timespec, EBUSY, EDEADLK,
     EINVAL, ESRCH,
 };
+use spin::RwLock;
 
 pub use crate::semaphore::RsSemaphore;
 pub use libc::sem_t;
@@ -51,15 +54,11 @@ pub use libc::sem_t;
 pub const PTHREAD_BARRIER_SERIAL_THREAD: c_int = -1;
 pub const PTHREAD_PROCESS_SHARED: c_int = 1;
 pub const PTHREAD_PROCESS_PRIVATE: c_int = 0;
-
 pub const SCHED_RR: c_int = 1;
-
 pub const PTHREAD_CANCEL_ASYNCHRONOUS: c_int = 0;
 pub const PTHREAD_CANCEL_ENABLE: c_int = 1;
 pub const PTHREAD_CANCEL_DEFERRED: c_int = 2;
 pub const PTHREAD_CANCEL_DISABLE: c_int = 3;
-
-use spin::RwLock;
 
 pub type PosixRoutineEntry = extern "C" fn(arg: *mut c_void) -> *mut c_void;
 
@@ -69,59 +68,67 @@ struct InnerPthreadAttr {
     padding: [usize; 4],
 }
 
-// TODO: Current BlueOS kernel doesn't feature using thread-pointer pointing to TCB. Use a global map temporarily.
-static TCBS: RwLock<BTreeMap<pthread_t, Arc<RwLock<PthreadTcb>>>> = RwLock::new(BTreeMap::new());
-// TODO: Maybe store KEYS in BlueProcess.
+// TODO: Current BlueOS kernel doesn't feature using thread-pointer pointing to
+// TCB. Use a global map temporarily.
+static TCBS: RwLock<BTreeMap<pthread_t, Arc<PthreadTcb>>> = RwLock::new(BTreeMap::new());
 static KEYS: RwLock<BTreeMap<pthread_key_t, Dtor>> = RwLock::new(BTreeMap::new());
 struct Dtor(Option<extern "C" fn(value: *mut c_void)>);
 static KEY_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-// We are not exposing kernel thread to user level libc, maintain pthread's tcb by libc itself.
+// We are not exposing kernel thread to user level libc, maintain pthread's tcb
+// by libc itself.
 struct PthreadTcb {
+    // Store pthread's Key-Value.
     // FIXME: Rust doesn't allow *mut T in Send trait, use usize here.
-    /// Store pthread's Key-Value.
     kv: RwLock<BTreeMap<pthread_key_t, usize>>,
-    stack_start: usize,
-    // 0 indicates joinable, 1 indicates detached. -1 indicates the state is frozen and is set in pthread_exit.
+    // 0 indicates joinable, 1 indicates detached. -1 indicates the state is
+    // frozen and is set in pthread_exit.
     detached: AtomicI8,
     cancel_enabled: AtomicBool,
-    waitval: Waitval<usize>,
-    waitexit: Waitval<usize>,
+    retval: SyncUnsafeCell<usize>,
+    joint: Barrier,
 }
 
-#[inline(always)]
-fn get_tcb(tid: pthread_t) -> Option<Arc<RwLock<PthreadTcb>>> {
+#[inline]
+fn get_tcb(tid: pthread_t) -> Option<Arc<PthreadTcb>> {
     TCBS.read().get(&tid).map(Arc::clone)
 }
 
 #[inline(always)]
-fn get_my_tcb() -> Option<Arc<RwLock<PthreadTcb>>> {
+fn get_my_tcb() -> Option<Arc<PthreadTcb>> {
     let tid = pthread_self();
     get_tcb(tid)
 }
 
-fn drop_my_tcb() {
-    let tid = pthread_self();
-    drop_tcb(tid);
-}
-
-fn drop_tcb(tid: pthread_t) {
-    let mut lock = TCBS.write();
-    lock.remove(&tid);
+#[inline]
+fn remove_tcb(tid: pthread_t) {
+    TCBS.write().remove(&tid);
 }
 
 // Prefer using C ABI here since it's stablized.
-// FIXME: Alignment should be target dependent.
-#[repr(C, align(4))]
+#[cfg_attr(target_pointer_width = "32", repr(C, align(4)))]
+#[cfg_attr(target_pointer_width = "64", repr(C, align(8)))]
 struct PosixRoutineInfo {
     pub entry: extern "C" fn(arg: *mut c_void) -> *mut c_void,
     pub arg: *mut c_void,
+    pub storage_start: *mut u8,
+    pub storage_size: usize,
 }
 
 extern "C" fn posix_start_routine(arg: *mut c_void) {
-    let routine = arg.cast::<PosixRoutineInfo>();
-    let retval = unsafe { ((*routine).entry)((*routine).arg) };
+    let routine = unsafe { &*arg.cast::<PosixRoutineInfo>() };
+    let retval = (routine.entry)(routine.arg);
     pthread_exit(retval);
+}
+
+// This routine will be executed on another stack by kernel.
+// The PosixRoutineInfo is stored between [storage_start, storage_start + storage_size),
+// that doesn't matter, after the `system_dealloc`, we don't use it anymore.
+extern "C" fn posix_cleanup_routine(arg: *mut c_void) {
+    assert_ne!(arg, core::ptr::null_mut());
+    let routine = unsafe { &*arg.cast::<PosixRoutineInfo>() };
+    let layout = Layout::from_size_align(routine.storage_size, STACK_ALIGN).unwrap();
+    unsafe { system_dealloc(routine.storage_start, layout) };
 }
 
 #[linkage = "weak"]
@@ -210,7 +217,7 @@ pub unsafe extern "C" fn pthread_cancel(thread: pthread_t) -> c_int {
     let Some(tcb) = get_tcb(thread) else {
         panic!("{:x}: target tcb is gone!", thread)
     };
-    tcb.write().cancel_enabled.store(true, Ordering::SeqCst);
+    tcb.cancel_enabled.store(true, Ordering::SeqCst);
     0
 }
 
@@ -224,15 +231,15 @@ pub unsafe extern "C" fn pthread_setcancelstate(state: c_int, oldstate: *mut c_i
         panic!("{:x}: My tcb is gone!", tid)
     };
     if !oldstate.is_null() {
-        *oldstate = if tcb.read().cancel_enabled.load(Ordering::SeqCst) {
+        *oldstate = if tcb.cancel_enabled.load(Ordering::SeqCst) {
             PTHREAD_CANCEL_ENABLE
         } else {
             PTHREAD_CANCEL_DISABLE
         }
     }
     match state {
-        PTHREAD_CANCEL_ENABLE => tcb.write().cancel_enabled.store(true, Ordering::SeqCst),
-        PTHREAD_CANCEL_DISABLE => tcb.write().cancel_enabled.store(false, Ordering::SeqCst),
+        PTHREAD_CANCEL_ENABLE => tcb.cancel_enabled.store(true, Ordering::SeqCst),
+        PTHREAD_CANCEL_DISABLE => tcb.cancel_enabled.store(false, Ordering::SeqCst),
         _ => return EINVAL,
     }
     0
@@ -253,7 +260,7 @@ pub extern "C" fn pthread_testcancel() {
     let Some(tcb) = get_tcb(tid) else {
         panic!("{:x}: My tcb is gone!", tid)
     };
-    if tcb.read().cancel_enabled.load(Ordering::SeqCst) {
+    if tcb.cancel_enabled.load(Ordering::SeqCst) {
         // We should exit this thread.
         pthread_exit(core::ptr::null_mut());
     }
@@ -266,39 +273,31 @@ pub extern "C" fn pthread_detach(t: pthread_t) -> c_int {
         return ESRCH;
     };
     let old_val = tcb
-        .read()
         .detached
         .compare_exchange(0, 1, Ordering::SeqCst, Ordering::Relaxed);
-    if let Err(failed_val) = old_val {
-        if failed_val != 1 {
-            EINVAL
-        } else {
-            0
-        }
-    } else {
-        0
+    let Err(failed_val) = old_val else {
+        return 0;
+    };
+    if failed_val != 1 {
+        return EINVAL;
     }
+    0
 }
 
-fn register_posix_tcb(tid: usize, clone_args: &SpawnArgs) {
+extern "C" fn register_posix_tcb(tid: usize, _spawn_args_ptr: *const SpawnArgs) {
     let tid: pthread_t = unsafe { core::mem::transmute(tid) };
     {
-        let tcb = Arc::new(RwLock::new(PthreadTcb {
+        let tcb = Arc::new(PthreadTcb {
             kv: RwLock::new(BTreeMap::new()),
-            stack_start: clone_args.stack_start as usize,
             cancel_enabled: AtomicBool::new(false),
             detached: AtomicI8::new(0),
-            waitval: Waitval::new(),
-            waitexit: Waitval::new(),
-        }));
+            retval: SyncUnsafeCell::new(0),
+            joint: Barrier::new(unsafe { NonZero::new(2).unwrap_unchecked() }),
+        });
         let mut write = TCBS.write();
         let ret = write.insert(tid, tcb);
         assert!(ret.is_none());
     }
-}
-
-fn cleanup_on_exiting(exit_args: &ExitArgs) {
-    unsafe { free(exit_args.stack_start as *const u8 as *mut libc::c_void) }
 }
 
 #[linkage = "weak"]
@@ -314,18 +313,13 @@ pub extern "C" fn pthread_create(
     } else {
         unsafe { (*(attr as *const InnerPthreadAttr)).stack_size }
     };
-    // We'll put PosixRoutineInfo on stack.
-    let size = stack_size + core::mem::size_of::<PosixRoutineInfo>();
-    let mut stack_start: *mut u8 = core::ptr::null_mut();
-    unsafe {
-        posix_memalign(
-            &mut stack_start as *mut *mut u8 as *mut *mut libc::c_void,
-            STACK_ALIGN,
-            size,
-        )
-    };
-    assert!(!stack_start.is_null());
-    let posix_routine_info_ptr = unsafe { stack_start.add(stack_size) as *mut c_void };
+    assert_eq!(stack_size % STACK_ALIGN, 0);
+    // We'll put PosixRoutineInfo on the stack.
+    let storage_size = stack_size + core::mem::size_of::<PosixRoutineInfo>();
+    let layout = Layout::from_size_align(storage_size, STACK_ALIGN).unwrap();
+    let storage_start = unsafe { system_alloc(layout) };
+    assert_ne!(storage_start, core::ptr::null_mut());
+    let posix_routine_info_ptr = unsafe { storage_start.add(stack_size) as *mut c_void };
     assert_eq!(
         posix_routine_info_ptr.align_offset(core::mem::align_of::<PosixRoutineInfo>()),
         0
@@ -333,16 +327,19 @@ pub extern "C" fn pthread_create(
     let posix_routine_info = unsafe { &mut *(posix_routine_info_ptr as *mut PosixRoutineInfo) };
     posix_routine_info.entry = start_routine;
     posix_routine_info.arg = arg;
-    let spawn_args = SpawnArgs {
+    posix_routine_info.storage_start = storage_start;
+    posix_routine_info.storage_size = storage_size;
+    let mut spawn_args = SpawnArgs {
         spawn_hook: Some(register_posix_tcb),
         entry: posix_start_routine,
         arg: posix_routine_info_ptr,
-        stack_start,
+        cleanup: Some(posix_cleanup_routine),
+        stack_start: storage_start,
         stack_size,
     };
-    let tid = bk_syscall!(CreateThread, &spawn_args as *const SpawnArgs) as pthread_t;
+    let tid = bk_syscall!(CreateThread, &mut spawn_args as *mut SpawnArgs) as pthread_t;
     if tid == !0 {
-        unsafe { free(stack_start as *mut libc::c_void) };
+        unsafe { system_dealloc(storage_start, layout) };
         return -1;
     }
     unsafe { thread.write_volatile(tid) };
@@ -358,11 +355,10 @@ pub extern "C" fn pthread_join(tid: pthread_t, retval: *mut *mut c_void) -> c_in
     let Some(tcb) = get_tcb(tid) else {
         return ESRCH;
     };
-    let val = *tcb.read().waitval.wait();
+    let val = tcb.joint.wait();
     if !retval.is_null() {
-        unsafe { *retval = val as *mut c_void };
+        unsafe { retval.write(tcb.retval.get().read() as *mut c_void) };
     }
-    tcb.read().waitexit.post(1);
     0
 }
 
@@ -374,15 +370,10 @@ pub extern "C" fn pthread_exit(retval: *mut c_void) -> ! {
     let Some(tcb) = get_tcb(tid) else {
         panic!("{:x}: My tcb is gone!", tid)
     };
-    let detached = tcb.read().detached.swap(-1, Ordering::SeqCst);
-    assert_ne!(detached, -1, "pthread_exit should be only called once");
-    if detached == 0 {
-        tcb.read().waitval.post(retval as usize);
-    }
-    // We have to cleanup all resources allocated.
+    // We have to cleanup all resources allocated. It *MUST* happen-before `remove_tcb` since
+    // dtors might expect the current tcb is still in the TCBS.
     {
-        let read_tcb = tcb.read();
-        let read_tcb_kv = read_tcb.kv.read();
+        let read_tcb_kv = tcb.kv.read();
         // We have to collect dtors and vals first, since some dtors might write KEYS.
         let mut dtors = Vec::new();
         let mut vals = Vec::new();
@@ -397,25 +388,23 @@ pub extern "C" fn pthread_exit(retval: *mut c_void) -> ! {
             }
         }
         drop(read_tcb_kv);
-        drop(read_tcb);
         for i in 0..dtors.len() {
             dtors[i](vals[i].1);
         }
     }
-
-    if detached == 0 {
-        tcb.read().waitexit.wait();
+    {
+        let detached = tcb.detached.swap(-1, Ordering::SeqCst);
+        assert_ne!(detached, -1, "pthread_exit should be only called once");
+        if detached == 0 {
+            unsafe { tcb.retval.get().write(retval as usize) };
+            tcb.joint.wait();
+        }
     }
-
-    drop_my_tcb();
-
-    let exit_args = ExitArgs {
-        exit_hook: Some(cleanup_on_exiting),
-        tid: tid as usize,
-        stack_start: unsafe { &*(tcb.read().stack_start as *const u8) },
-    };
-
-    bk_syscall!(ExitThread, &exit_args as *const _);
+    // Must drop in advance since ExitThread never returns.
+    drop(tcb);
+    // After removing my tcb, other POSIX threads are unable to find me.
+    remove_tcb(tid);
+    bk_syscall!(ExitThread);
     unreachable!("We have called system call to exit this thread, so should not reach here");
 }
 
@@ -429,7 +418,7 @@ pub extern "C" fn pthread_setspecific(key: pthread_key_t, val: *const c_void) ->
     let Some(tcb) = get_tcb(tid) else {
         panic!("{:x}: My tcb is gone!", tid)
     };
-    tcb.read().kv.write().insert(key, val as usize);
+    tcb.kv.write().insert(key, val as usize);
     0
 }
 
@@ -444,14 +433,12 @@ pub extern "C" fn pthread_getspecific(key: pthread_key_t) -> *mut c_void {
         panic!("0x{:x}: My tcb is gone!", tid)
     };
     {
-        let read_tcb = tcb.read();
-        let read_tcb_kv = read_tcb.kv.read();
+        let read_tcb_kv = tcb.kv.read();
         let Some(val) = read_tcb_kv.get(&key) else {
             return core::ptr::null_mut();
         };
         let val = *val;
         drop(read_tcb_kv);
-        drop(read_tcb);
         unsafe { val as *mut c_void }
     }
 }

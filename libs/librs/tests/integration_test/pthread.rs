@@ -13,9 +13,8 @@
 // limitations under the License.
 
 extern crate alloc;
-use crate::println;
 use alloc::vec::Vec;
-use blueos_test_macro::test;
+use blueos_test_macro::{only_test, test};
 use core::{
     cell::{Cell, RefCell},
     ffi::c_void,
@@ -93,7 +92,7 @@ extern "C" fn cond_wait(arg: *mut c_void) -> *mut c_void {
 }
 
 #[test]
-fn test_mult_thread_cond() {
+fn test_multi_thread_cond() {
     let mut cond: pthread_cond_t = unsafe { MaybeUninit::zeroed().assume_init() };
     let condattr: CondAttr = CondAttr::default();
     pthread_cond_init(

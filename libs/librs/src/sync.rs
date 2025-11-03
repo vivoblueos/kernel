@@ -280,6 +280,9 @@ impl<T> GenericMutex<T> {
     }
 }
 
+unsafe impl<T: Send + Sync> Send for GenericMutex<T> {}
+unsafe impl<T: Send + Sync> Sync for GenericMutex<T> {}
+
 pub struct MutexGuard<'a, T: 'a> {
     pub(crate) mutex: &'a GenericMutex<T>,
     content: &'a mut T,
