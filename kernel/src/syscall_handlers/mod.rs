@@ -14,12 +14,6 @@
 
 extern crate alloc;
 
-use crate::{
-    scheduler,
-    sync::atomic_wait as futex,
-    thread::{self, Builder, Entry, Stack, Thread},
-    time,
-};
 #[cfg(kernel_async)]
 use crate::asynk;
 #[cfg(enable_net)]
@@ -28,17 +22,23 @@ use crate::net::syscalls as net_syscalls;
 use crate::vfs::syscalls as vfs_syscalls;
 #[cfg(enable_vfs)]
 pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
+use crate::{
+    scheduler,
+    sync::atomic_wait as futex,
+    thread::{self, Builder, Entry, Stack, Thread},
+    time,
+};
 
 pub use crate::sync::posix_mqueue;
 use alloc::boxed::Box;
-use blueos_header::{syscalls::NR, thread::{ExitArgs, SpawnArgs}};
+use blueos_header::{syscalls::NR, thread::SpawnArgs};
 use core::{
     ffi::{c_size_t, c_ssize_t},
     sync::atomic::AtomicUsize,
 };
 use libc::{
-    addrinfo, c_char, c_int, c_uint, c_long, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t, sigset_t, size_t,
-    sockaddr, socklen_t, timespec, EINVAL,
+    addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t,
+    sigset_t, size_t, sockaddr, socklen_t, timespec, EINVAL,
 };
 
 #[cfg(not(enable_vfs))]
@@ -205,7 +205,9 @@ mod net_syscalls {
     ) -> c_int {
         -libc::ENOTSUP
     }
-    pub fn freeaddrinfo(_res: *mut addrinfo) -> usize { 0 }
+    pub fn freeaddrinfo(_res: *mut addrinfo) -> usize {
+        0
+    }
 }
 
 #[repr(C)]
@@ -324,12 +326,13 @@ define_syscall_handler!(
 create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     let spawn_args = unsafe {&*spawn_args_ptr};
     let t = thread::Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
-        .set_stack(Stack::from_raw(
-            spawn_args.stack_start as *mut u8,
-            spawn_args.stack_size))
+        .set_stack(Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size))
         .build();
+    if let Some(cleanup) = spawn_args.cleanup {
+        t.lock().set_cleanup(Entry::Posix(cleanup, spawn_args.arg));
+    };
     let handle = Thread::id(&t);
-    if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args); }
+    if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args_ptr); }
     let ok = scheduler::queue_ready_thread(thread::CREATED, t);
     // We don't increment the rc of the created thread since it's also
     // referenced by the global queue. When this thread is retired,
@@ -422,31 +425,7 @@ define_syscall_handler!(
     }
 );
 
-async fn cleanup_for_exited_thread(exit_args: ExitArgs) {
-    let Some(ref hook) = exit_args.exit_hook else {
-        return;
-    };
-    hook(&exit_args);
-}
-
-define_syscall_handler!(exit_thread(exit_args: *const ExitArgs) -> c_long {
-    if exit_args.is_null() {
-        scheduler::retire_me();
-        return -1;
-    }
-    let t = scheduler::current_thread();
-    let id = Thread::id(&t);
-    let exit_args = unsafe{ &*exit_args };
-    // We can't assume there is no syscalls inside the exit hook, so that we
-    // can't run the exit hook in the cleanup stage which happens during context
-    // switch. We resort to asynk.
-    if let Some(ref hook) = exit_args.exit_hook {
-        let hook = move || {
-            let fut = cleanup_for_exited_thread(exit_args.clone());
-            asynk::spawn(fut);
-        };
-        t.lock().set_cleanup(Entry::Closure(Box::new(hook)));
-    }
+define_syscall_handler!(exit_thread() -> c_long {
     scheduler::retire_me();
     -1
 });
