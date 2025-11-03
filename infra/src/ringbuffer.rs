@@ -398,6 +398,8 @@ impl Writer<'_> {
 
         if start <= n {
             start = start + len * 2 - n;
+        } else {
+            start -= n;
         }
         self.0.start.store(self.0.wrap(start), Ordering::Release);
     }

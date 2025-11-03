@@ -97,7 +97,7 @@ impl Slab {
         // Since ptr was allocated by self, its alignment must be at least
         // the alignment of FreeBlock. Casting a less aligned pointer to
         // &mut FreeBlock would be undefined behavior.
-        #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+        #[cfg_attr(feature = "clippy", allow(clippy::cast_ptr_alignment))]
         let ptr = ptr.as_ptr() as *mut usize;
         #[cfg(debug_slab)]
         {

@@ -18,7 +18,6 @@ use crate::{
     scheduler::{self, ContextSwitchHookHolder},
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
-    types::IsNotNull,
 };
 use core::{
     arch::{asm, naked_asm},
@@ -31,7 +30,7 @@ macro_rules! exception_handler {
     ($name:ident, $cont:path) => {
         #[no_mangle]
         #[naked]
-        unsafe extern "C" fn $name() {
+        unsafe extern "C" fn $name() -> ! {
             naked_asm!(
                 concat!(
                     "
@@ -69,6 +68,24 @@ macro_rules! exception_handler {
                 x28 = const offset_of!(Context, x28),
                 spsr = const offset_of!(Context, spsr),
                 elr = const offset_of!(Context, elr),
+                v0 = const offset_of!(Context, v0),
+                v2 = const offset_of!(Context, v2),
+                v4 = const offset_of!(Context, v4),
+                v6 = const offset_of!(Context, v6),
+                v8 = const offset_of!(Context, v8),
+                v10 = const offset_of!(Context, v10),
+                v12 = const offset_of!(Context, v12),
+                v14 = const offset_of!(Context, v14),
+                v16 = const offset_of!(Context, v16),
+                v18 = const offset_of!(Context, v18),
+                v20 = const offset_of!(Context, v20),
+                v22 = const offset_of!(Context, v22),
+                v24 = const offset_of!(Context, v24),
+                v26 = const offset_of!(Context, v26),
+                v28 = const offset_of!(Context, v28),
+                v30 = const offset_of!(Context, v30),
+                fpcr = const offset_of!(Context, fpcr),
+                fpsr = const offset_of!(Context, fpsr),
                 cont = sym $cont,
             );
         }
@@ -98,19 +115,17 @@ unsupported_handler!(el0_not_supported, "el0 is not supported.");
 unsupported_handler!(lowerel_not_supported, "lowerel is not supported.");
 
 #[naked]
-unsafe extern "C" fn trap_sync(context: &mut Context) -> usize {
+unsafe extern "C" fn trap_sync() -> ! {
     naked_asm!(
-        concat!(
-            "
-            mov x19, lr
-            mov x20, x0
-            bl {handle_svc}
-            mov sp, x0
-            mov x1, x20
-            mov lr, x19
-            b {might_switch}
-            ",
-        ),
+        "
+        mov x19, lr
+        mov x20, x0
+        bl {handle_svc}
+        mov sp, x0
+        mov x1, x20
+        mov lr, x19
+        b {might_switch}
+        ",
         handle_svc = sym handle_svc,
         might_switch = sym might_switch,
     );
@@ -124,7 +139,7 @@ extern "C" fn might_switch(to: &Context, from: &Context) -> usize {
         return from_ptr as usize;
     }
     let saved_sp_ptr: *mut usize = unsafe { from.x0 as *mut usize };
-    if saved_sp_ptr.is_not_null() {
+    if !saved_sp_ptr.is_null() {
         unsafe {
             sideeffect();
             saved_sp_ptr.write_volatile(from_ptr as usize)
@@ -132,7 +147,7 @@ extern "C" fn might_switch(to: &Context, from: &Context) -> usize {
     }
     let hook: *mut ContextSwitchHookHolder =
         unsafe { from.x2 as *mut scheduler::ContextSwitchHookHolder<'_> };
-    if hook.is_not_null() {
+    if !hook.is_null() {
         sideeffect();
         unsafe {
             scheduler::save_context_finish_hook(Some(&mut *hook));

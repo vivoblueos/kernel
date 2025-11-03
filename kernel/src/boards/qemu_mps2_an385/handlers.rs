@@ -20,11 +20,28 @@ use crate::{
     time,
 };
 
+#[no_mangle]
+#[linkage = "weak"]
+pub unsafe extern "C" fn uart1rx_handler() {
+    unreachable!("Should not reach here");
+}
+
+#[no_mangle]
+#[linkage = "weak"]
+pub unsafe extern "C" fn uart1tx_handler() {
+    unreachable!("Should not reach here");
+}
+
 unsafe extern "C" fn do_nothing() {}
 
-#[allow(clippy::empty_loop)]
 unsafe extern "C" fn busy() {
-    loop {}
+    unreachable!("Should not be busy!");
+}
+
+#[no_mangle]
+#[linkage = "weak"]
+pub unsafe extern "C" fn bk_handle_hardfault() {
+    arch::arm::handle_hardfault()
 }
 
 #[used]
@@ -40,7 +57,7 @@ const fn build_exception_handlers() -> [Vector; 15] {
         handler: arch::arm::handle_hardfault,
     }; // NMI
     tbl[2] = Vector {
-        handler: arch::arm::handle_hardfault,
+        handler: bk_handle_hardfault,
     }; // HardFault
     tbl[3] = Vector {
         handler: arch::arm::handle_hardfault,
@@ -70,9 +87,6 @@ macro_rules! default_irq_handler {
         }
     };
 }
-
-default_irq_handler!(uart1rx_handler);
-default_irq_handler!(uart1tx_handler);
 default_irq_handler!(uart2rx_handler);
 default_irq_handler!(uart2tx_handler);
 default_irq_handler!(gpio0all_handler);
