@@ -23,7 +23,6 @@ use core::{
 };
 pub use trap::*;
 
-pub(crate) static READY_CORES: AtomicU8 = AtomicU8::new(0);
 pub(crate) const NR_SWITCH: usize = !0;
 
 // See https://five-embeddev.com/riscv-priv-isa-manual/Priv-v1.12/machine.html#machine-status-registers-mstatus-and-mstatush
@@ -480,7 +479,6 @@ pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     current.lock().reset_saved_sp();
     let sp = current.saved_sp();
     drop(current);
-    READY_CORES.fetch_add(1, Ordering::Relaxed);
     unsafe {
         core::arch::asm!(
             "li ra, 0",

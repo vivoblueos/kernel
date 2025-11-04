@@ -17,7 +17,7 @@ use super::{
     uart::{enable_uart, get_serial},
 };
 use crate::{
-    arch::{self, READY_CORES},
+    arch,
     devices::{console, tty::n_tty::Tty},
     error::Error,
     scheduler,
@@ -51,7 +51,7 @@ pub(crate) fn init() {
     });
     STAGING.run(7, true, || arch::secondary_cpu_setup(config::PSCI_BASE));
     if arch::current_cpu_id() != 0 {
-        wait_and_then_start_schedule();
+        scheduler::wait_and_then_start_schedule();
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
 
@@ -78,11 +78,4 @@ pub(crate) fn init() {
         // initialize virtio
         virtio::init_virtio(&fdt);
     }
-}
-
-fn wait_and_then_start_schedule() {
-    while READY_CORES.load(Ordering::Acquire) == 0 {
-        core::hint::spin_loop();
-    }
-    arch::start_schedule(scheduler::schedule);
 }

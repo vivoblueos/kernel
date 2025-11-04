@@ -29,8 +29,9 @@ use crate::{
 use alloc::boxed::Box;
 use blueos_kconfig::NUM_CORES;
 use core::{
+    intrinsics::unlikely,
     mem::MaybeUninit,
-    sync::atomic::{compiler_fence, AtomicBool, Ordering},
+    sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
 };
 
 #[cfg(scheduler = "fifo")]
@@ -46,6 +47,7 @@ pub use fifo::*;
 #[cfg(scheduler = "global")]
 pub use global_scheduler::*;
 pub(crate) use wait_queue::*;
+static READY_CORES: AtomicU8 = AtomicU8::new(0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -419,6 +421,9 @@ fn setup_timer(
 }
 
 pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
+    if unlikely(!is_schedule_ready()) {
+        return;
+    }
     let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
     let to_sp = next.saved_sp();
     let old = current_thread();
@@ -431,6 +436,9 @@ pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
 }
 
 pub fn suspend_me_for(ticks: usize) {
+    if unlikely(!is_schedule_ready()) {
+        return;
+    }
     debug_assert_ne!(ticks, 0);
     let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
     let to_sp = next.saved_sp();
@@ -451,6 +459,9 @@ pub fn suspend_me_with_timeout(
     insert_mode: InsertMode,
 ) -> bool {
     debug_assert_ne!(ticks, 0);
+    if unlikely(!is_schedule_ready()) {
+        return false;
+    }
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] is looking for the next thread",
@@ -499,7 +510,10 @@ pub fn suspend_me_with_timeout(
 // exiting of the inner most ISR. Or just do nothing if underling arch
 // doesn't have good support of this semantics. Cortex-m's pendsv is
 // perfectly meet this semantics.
-pub(crate) fn yield_me_now_or_later() {
+pub fn yield_me_now_or_later() {
+    if unlikely(!is_schedule_ready()) {
+        return;
+    }
     arch::pend_switch_context();
 }
 
@@ -514,11 +528,20 @@ pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
     woken
 }
 
-// Entry of system idle threads.
-pub(crate) extern "C" fn schedule() -> ! {
-    #[cfg(debugging_scheduler)]
-    crate::trace!("Start scheduling");
+pub fn is_schedule_ready() -> bool {
+    READY_CORES.load(Ordering::Acquire) != 0
+}
 
+pub fn wait_and_then_start_schedule() {
+    while READY_CORES.load(Ordering::Acquire) == 0 {
+        core::hint::spin_loop();
+    }
+    arch::start_schedule(schedule);
+}
+
+// Entry of system idle threads.
+pub extern "C" fn schedule() -> ! {
+    READY_CORES.fetch_add(1, Ordering::Relaxed);
     arch::enable_local_irq();
     assert!(arch::local_irq_enabled());
     loop {
