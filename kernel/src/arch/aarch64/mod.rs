@@ -34,8 +34,6 @@ use tock_registers::interfaces::Readable;
 
 pub(crate) const NR_SWITCH: usize = !0;
 
-pub(crate) static READY_CORES: AtomicU8 = AtomicU8::new(0);
-
 macro_rules! disable_interrupt {
     () => {
         "
@@ -463,7 +461,6 @@ pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     current.lock().reset_saved_sp();
     let sp = current.saved_sp();
     drop(current);
-    READY_CORES.fetch_add(1, Ordering::Relaxed);
     unsafe {
         core::arch::asm!(
             "mov lr, #0",
