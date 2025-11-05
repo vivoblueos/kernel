@@ -25,7 +25,6 @@ pub use blueos_infra::{
         TinyArcListIterator as ArcListIterator,
     },
     tinyrwlock::{IRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    IsNotNull,
 };
 use core::marker::PhantomData;
 
