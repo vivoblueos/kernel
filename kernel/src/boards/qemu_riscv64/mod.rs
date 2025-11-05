@@ -23,7 +23,7 @@ mod config;
 mod uart;
 use crate::{
     arch,
-    arch::riscv::{local_irq_enabled, trap_entry, Context, READY_CORES},
+    arch::riscv::{local_irq_enabled, trap_entry, Context},
     devices::{console, dumb, Device, DeviceManager},
     drivers::ic::plic::Plic,
     scheduler,
@@ -105,13 +105,6 @@ pub(crate) fn current_duration() -> core::time::Duration {
     ticks_to_duration(current_ticks())
 }
 
-fn wait_and_then_start_schedule() {
-    while READY_CORES.load(Ordering::Acquire) == 0 {
-        core::hint::spin_loop();
-    }
-    arch::start_schedule(scheduler::schedule);
-}
-
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
 pub(crate) fn init() {
@@ -125,7 +118,7 @@ pub(crate) fn init() {
     STAGING.run(4, false, time::reset_systick);
     // From now on, all work will be done by core 0.
     if arch::current_cpu_id() != 0 {
-        wait_and_then_start_schedule();
+        scheduler::wait_and_then_start_schedule();
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
     enumerate_devices();
