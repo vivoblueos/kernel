@@ -56,9 +56,10 @@ macro_rules! enable_interrupt {
 macro_rules! enter_el1 {
     () => {
         "
-        // Don't trap SIMD/FP instructions in both EL0 and EL1.
-        mov     x1, #0x00300000
-        msr     cpacr_el1, x1
+        mrs x0, cpacr_el1
+        orr x0, x0, #(0x3 << 20)
+        msr cpacr_el1, x0
+        isb
         // Enable CNTP to EL1 for systick.
         mrs     x0, cnthctl_el2
         orr     x0, x0, #3
@@ -138,6 +139,26 @@ macro_rules! aarch64_save_context {
         str x8, [sp, #{elr}]
         mrs x8, spsr_el1
         str x8, [sp, #{spsr}]
+        stp q0, q1, [sp, #{v0}]
+        stp q2, q3, [sp, #{v2}]
+        stp q4, q5, [sp, #{v4}]
+        stp q6, q7, [sp, #{v6}]
+        stp q8, q9, [sp, #{v8}]
+        stp q10, q11, [sp, #{v10}]
+        stp q12, q13, [sp, #{v12}]
+        stp q14, q15, [sp, #{v14}]
+        stp q16, q17, [sp, #{v16}]
+        stp q18, q19, [sp, #{v18}]
+        stp q20, q21, [sp, #{v20}]
+        stp q22, q23, [sp, #{v22}]
+        stp q24, q25, [sp, #{v24}]
+        stp q26, q27, [sp, #{v26}]
+        stp q28, q29, [sp, #{v28}]
+        stp q30, q31, [sp, #{v30}]
+        mrs x8, fpcr
+        str x8, [sp, #{fpcr}]
+        mrs x8, fpsr
+        str x8, [sp, #{fpsr}]   
         "
     };
 }
@@ -146,6 +167,26 @@ macro_rules! aarch64_save_context {
 macro_rules! aarch64_restore_context {
     () => {
         "
+        ldr x8, [sp, #{fpcr}]
+        msr fpcr, x8
+        ldr x8, [sp, #{fpsr}]
+        msr fpsr, x8
+        ldp q0, q1, [sp, #{v0}]
+        ldp q2, q3, [sp, #{v2}]
+        ldp q4, q5, [sp, #{v4}]
+        ldp q6, q7, [sp, #{v6}]
+        ldp q8, q9, [sp, #{v8}]
+        ldp q10, q11, [sp, #{v10}]
+        ldp q12, q13, [sp, #{v12}]
+        ldp q14, q15, [sp, #{v14}]
+        ldp q16, q17, [sp, #{v16}]
+        ldp q18, q19, [sp, #{v18}]
+        ldp q20, q21, [sp, #{v20}]
+        ldp q22, q23, [sp, #{v22}]
+        ldp q24, q25, [sp, #{v24}]
+        ldp q26, q27, [sp, #{v26}]
+        ldp q28, q29, [sp, #{v28}]
+        ldp q30, q31, [sp, #{v30}]
         ldr x8, [sp, #{spsr}]
         and x9, x8, #~(1 << 7)
         msr spsr_el1, x9
@@ -207,6 +248,40 @@ pub struct Context {
     pub elr: usize,
     pub spsr: usize,
     pub padding: usize,
+    pub v0: [u64; 2],
+    pub v1: [u64; 2],
+    pub v2: [u64; 2],
+    pub v3: [u64; 2],
+    pub v4: [u64; 2],
+    pub v5: [u64; 2],
+    pub v6: [u64; 2],
+    pub v7: [u64; 2],
+    pub v8: [u64; 2],
+    pub v9: [u64; 2],
+    pub v10: [u64; 2],
+    pub v11: [u64; 2],
+    pub v12: [u64; 2],
+    pub v13: [u64; 2],
+    pub v14: [u64; 2],
+    pub v15: [u64; 2],
+    pub v16: [u64; 2],
+    pub v17: [u64; 2],
+    pub v18: [u64; 2],
+    pub v19: [u64; 2],
+    pub v20: [u64; 2],
+    pub v21: [u64; 2],
+    pub v22: [u64; 2],
+    pub v23: [u64; 2],
+    pub v24: [u64; 2],
+    pub v25: [u64; 2],
+    pub v26: [u64; 2],
+    pub v27: [u64; 2],
+    pub v28: [u64; 2],
+    pub v29: [u64; 2],
+    pub v30: [u64; 2],
+    pub v31: [u64; 2],
+    pub fpcr: u64,
+    pub fpsr: u64,
 }
 
 impl Context {
@@ -282,6 +357,40 @@ impl fmt::Display for Context {
         write!(f, "lr: {:?}", self.lr)?;
         write!(f, "elr: {:?}", self.elr)?;
         write!(f, "spsr: {:?}", self.spsr)?;
+        write!(f, "v0: {:?}", self.v0)?;
+        write!(f, "v1: {:?}", self.v1)?;
+        write!(f, "v2: {:?}", self.v2)?;
+        write!(f, "v3: {:?}", self.v3)?;
+        write!(f, "v4: {:?}", self.v4)?;
+        write!(f, "v5: {:?}", self.v5)?;
+        write!(f, "v6: {:?}", self.v6)?;
+        write!(f, "v7: {:?}", self.v7)?;
+        write!(f, "v8: {:?}", self.v8)?;
+        write!(f, "v9: {:?}", self.v9)?;
+        write!(f, "v10: {:?}", self.v10)?;
+        write!(f, "v11: {:?}", self.v11)?;
+        write!(f, "v12: {:?}", self.v12)?;
+        write!(f, "v13: {:?}", self.v13)?;
+        write!(f, "v14: {:?}", self.v14)?;
+        write!(f, "v15: {:?}", self.v15)?;
+        write!(f, "v16: {:?}", self.v16)?;
+        write!(f, "v17: {:?}", self.v17)?;
+        write!(f, "v18: {:?}", self.v18)?;
+        write!(f, "v19: {:?}", self.v19)?;
+        write!(f, "v20: {:?}", self.v20)?;
+        write!(f, "v21: {:?}", self.v21)?;
+        write!(f, "v22: {:?}", self.v22)?;
+        write!(f, "v23: {:?}", self.v23)?;
+        write!(f, "v24: {:?}", self.v24)?;
+        write!(f, "v25: {:?}", self.v25)?;
+        write!(f, "v26: {:?}", self.v26)?;
+        write!(f, "v27: {:?}", self.v27)?;
+        write!(f, "v28: {:?}", self.v28)?;
+        write!(f, "v29: {:?}", self.v29)?;
+        write!(f, "v30: {:?}", self.v30)?;
+        write!(f, "v31: {:?}", self.v31)?;
+        write!(f, "fpcr: {:?}", self.fpcr)?;
+        write!(f, "fpsr: {:?}", self.fpsr)?;
         write!(f, "}}")
     }
 }
@@ -334,7 +443,7 @@ pub(crate) extern "C" fn switch_context_with_hook(
 }
 
 #[naked]
-pub(crate) extern "C" fn init(_: *mut u8, stack_end: *mut u8, cont: extern "C" fn()) {
+pub(crate) extern "C" fn init() -> ! {
     unsafe {
         core::arch::naked_asm!(
             "

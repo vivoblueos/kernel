@@ -213,7 +213,7 @@ impl fmt::Display for HardFaultRegs {
     }
 }
 
-pub(crate) extern "C" fn panic_on_hardfault(ctx: &IsrContext) {
+pub extern "C" fn panic_on_hardfault(ctx: &IsrContext) {
     super::disable_local_irq();
     let fault_regs: HardFaultRegs = HardFaultRegs::from_scb();
     let xpsr = xpsr::read();

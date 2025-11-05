@@ -61,7 +61,7 @@ impl fmt::Display for CpuStat {
         if self.cpu_id == NUM_CORES {
             write!(
                 f,
-                "cpu {} {} {} {} {} {} {} {} {} {}",
+                "cpu {} {} {} {} {} {} {} {} {} {}\r\n",
                 self.user,
                 self.nice,
                 self.system,
@@ -76,7 +76,7 @@ impl fmt::Display for CpuStat {
         } else {
             write!(
                 f,
-                "cpu{}  {} {} {} {} {} {} {} {} {} {}",
+                "cpu{}  {} {} {} {} {} {} {} {} {} {}\r\n",
                 self.cpu_id,
                 self.user,
                 self.nice,
@@ -109,7 +109,11 @@ fn format_cpu_time() -> String {
         let total_cycle: u64 = time::get_sys_cycles();
         for cpu_id in 0..NUM_CORES {
             let idle_thread = scheduler::get_idle_thread(cpu_id);
-            let idle_cycle = idle_thread.get_cycles();
+            let idle_cycle = if idle_thread.state() == thread::RUNNING {
+                idle_thread.get_cycles() + total_cycle - idle_thread.start_cycles()
+            } else {
+                idle_thread.get_cycles()
+            };
             let system_time = time::get_cycles_to_ms(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
             let idle_time = time::get_cycles_to_ms(idle_cycle) / 10;
             let irq_trace: &IrqTraceInfo = unsafe { &PER_CPU_TRACE_INFO[cpu_id] };
