@@ -887,13 +887,13 @@ mod tests {
     fn bench_insert_and_detach_1(b: &mut Bencher) {
         let n = 1 << 16;
         b.iter(|| {
-            type L = <ControlStatusList as GenericList>::Node;
-            let mut head = L::default();
+            let mut l = spin::Mutex::new(ControlStatusList::new());
+            l.lock().init();
             for i in 0..n {
-                ControlStatusList::insert_after(&mut head, TinyArc::new(Thread::new(i)));
+                l.lock().push_back(TinyArc::new(Thread::new(i)));
             }
-            for mut i in TinyArcListIterator::new(&head, None) {
-                ControlStatusList::detach(&mut i);
+            for i in 0..n {
+                l.lock().pop_front();
             }
         });
     }
@@ -903,18 +903,12 @@ mod tests {
         use alloc::{collections::linked_list::LinkedList, sync::Arc};
         let n = 1 << 16;
         b.iter(|| {
-            let mut mu = spin::Mutex::new(LinkedList::new());
+            let mut l = spin::Mutex::new(LinkedList::new());
             for i in 0..n {
-                let Some(mut guard) = mu.try_lock() else {
-                    continue;
-                };
-                guard.push_back(Arc::new(Thread::new(i)));
+                l.lock().push_back(Arc::new(Thread::new(i)));
             }
             for i in 0..n {
-                let Some(mut guard) = mu.try_lock() else {
-                    continue;
-                };
-                guard.pop_front();
+                l.lock().pop_front();
             }
         });
     }
@@ -922,22 +916,22 @@ mod tests {
     // When a Thread belongs to two lists.
     #[bench]
     fn bench_insert_and_detach_2(b: &mut Bencher) {
-        type Csl = <ControlStatusList as GenericList>::Node;
-        type Tl = <TimerList as GenericList>::Node;
         let n = 1 << 16;
         b.iter(|| {
-            let mut csl_head = Csl::default();
-            let mut tl_head = Tl::default();
+            let mut csl = spin::Mutex::new(ControlStatusList::new());
+            csl.lock().init();
+            let mut tl = spin::Mutex::new(TimerList::new());
+            tl.lock().init();
             for i in 0..n {
                 let t = TinyArc::new(Thread::new(i));
-                ControlStatusList::insert_after(&mut csl_head, t.clone());
-                TimerList::insert_after(&mut tl_head, t);
+                csl.lock().push_back(t.clone());
+                tl.lock().push_back(t);
             }
-            for mut i in TinyArcListIterator::new(&csl_head, None) {
-                ControlStatusList::detach(&mut i);
+            for i in 0..n {
+                csl.lock().pop_front();
             }
-            for mut i in TinyArcListIterator::new(&tl_head, None) {
-                TimerList::detach(&mut i);
+            for i in 0..n {
+                tl.lock().pop_front();
             }
         });
     }
@@ -952,27 +946,122 @@ mod tests {
             let mut l1 = spin::Mutex::new(LinkedList::new());
             for i in 0..n {
                 let t = Arc::new(Thread::new(i));
-                let Some(mut g0) = l0.try_lock() else {
-                    continue;
-                };
-                g0.push_back(t.clone());
-                let Some(mut g1) = l1.try_lock() else {
-                    continue;
-                };
-                g1.push_back(t);
+                l0.lock().push_back(t.clone());
+                l1.lock().push_back(t);
             }
             for i in 0..n {
-                let Some(mut g0) = l0.try_lock() else {
-                    continue;
-                };
-                g0.pop_front();
+                l0.lock().pop_front();
             }
             for i in 0..n {
-                let Some(mut g1) = l1.try_lock() else {
-                    continue;
-                };
-                g1.pop_front();
+                l1.lock().pop_front();
             }
+        });
+    }
+
+    #[bench]
+    fn bench_insert_and_detach_2t(b: &mut Bencher) {
+        let n = 1 << 16;
+        b.iter(|| {
+            let mut csl = TinyArc::new(spin::Mutex::new(ControlStatusList::new()));
+            csl.lock().init();
+            let mut tl = TinyArc::new(spin::Mutex::new(TimerList::new()));
+            tl.lock().init();
+            let t0;
+            let t1;
+            {
+                let csl = csl.clone();
+                let tl = tl.clone();
+                t0 = std::thread::spawn(move || {
+                    for i in 0..n {
+                        if i & 1 != 0 {
+                            continue;
+                        }
+                        let t = TinyArc::new(Thread::new(i));
+                        csl.lock().push_back(t.clone());
+                        tl.lock().push_back(t);
+                    }
+                    for i in 0..n {
+                        csl.lock().pop_front();
+                    }
+                    for i in 0..n {
+                        tl.lock().pop_front();
+                    }
+                });
+            }
+            {
+                t1 = std::thread::spawn(move || {
+                    for i in 0..n {
+                        if i & 1 != 1 {
+                            continue;
+                        }
+                        let t = TinyArc::new(Thread::new(i));
+                        csl.lock().push_back(t.clone());
+                        tl.lock().push_back(t);
+                    }
+                    for i in 0..n {
+                        csl.lock().pop_front();
+                    }
+                    for i in 0..n {
+                        tl.lock().pop_front();
+                    }
+                });
+            }
+            t0.join();
+            t1.join();
+        });
+    }
+
+    #[bench]
+    fn bench_insert_and_detach_2t_std(b: &mut Bencher) {
+        use alloc::{collections::linked_list::LinkedList, sync::Arc};
+        let n = 1 << 16;
+        b.iter(|| {
+            let mut l0 = Arc::new(spin::Mutex::new(LinkedList::new()));
+            let mut l1 = Arc::new(spin::Mutex::new(LinkedList::new()));
+            let t0;
+            let t1;
+            {
+                let l0 = l0.clone();
+                let l1 = l1.clone();
+                t0 = std::thread::spawn(move || {
+                    for i in 0..n {
+                        if i & 1 != 0 {
+                            continue;
+                        }
+                        let t = TinyArc::new(Thread::new(i));
+                        l0.lock().push_back(t.clone());
+                        l1.lock().push_back(t);
+                    }
+                    for i in 0..n {
+                        l0.lock().pop_front();
+                    }
+                    for i in 0..n {
+                        l1.lock().pop_front();
+                    }
+                });
+            }
+            {
+                let l0 = l0.clone();
+                let l1 = l1.clone();
+                t1 = std::thread::spawn(move || {
+                    for i in 0..n {
+                        if i & 1 != 1 {
+                            continue;
+                        }
+                        let t = TinyArc::new(Thread::new(i));
+                        l0.lock().push_back(t.clone());
+                        l1.lock().push_back(t);
+                    }
+                    for i in 0..n {
+                        l0.lock().pop_front();
+                    }
+                    for i in 0..n {
+                        l1.lock().pop_front();
+                    }
+                });
+            }
+            t0.join();
+            t1.join();
         });
     }
 
