@@ -303,6 +303,28 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct CleanupCounter {
+        counter: AtomicUsize,
+    }
+
+    impl CleanupCounter {
+        pub const fn new() -> Self {
+            Self {
+                counter: AtomicUsize::new(0),
+            }
+        }
+        pub fn spin_until_eq(&self, n: usize) {
+            while self.counter.load(Ordering::Relaxed) != n {
+                core::hint::spin_loop();
+            }
+        }
+        pub fn increment(&self) {
+            self.counter.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    static SEMA_CLEANUP_COUNTER: CleanupCounter = CleanupCounter::new();
     static mut SEMA_COUNTER: usize = 0usize;
     static SEMA: sync::semaphore::Semaphore = sync::semaphore::Semaphore::new();
 
@@ -310,10 +332,11 @@ mod tests {
         SEMA.acquire_notimeout::<scheduler::InsertToEnd>();
         let n = unsafe { SEMA_COUNTER };
         unsafe { SEMA_COUNTER += 1 };
+        SEMA.release();
     }
 
     extern "C" fn test_semaphore_cleanup() {
-        SEMA.release();
+        SEMA_CLEANUP_COUNTER.increment();
     }
 
     #[test]
@@ -331,16 +354,20 @@ mod tests {
             SEMA.release();
             scheduler::yield_me();
         }
+        SEMA_CLEANUP_COUNTER.spin_until_eq(l);
     }
 
+    static ATOMIC_WAIT_CLEANUP: CleanupCounter = CleanupCounter::new();
     static TEST_ATOMIC_WAIT: AtomicUsize = AtomicUsize::new(0);
 
     extern "C" fn test_atomic_wait_cleanup() {
+        ATOMIC_WAIT_CLEANUP.increment();
+    }
+
+    extern "C" fn test_atomic_wait() {
         TEST_ATOMIC_WAIT.fetch_add(1, Ordering::Release);
         sync::atomic_wait::atomic_wake(&TEST_ATOMIC_WAIT, 1);
     }
-
-    extern "C" fn test_atomic_wait() {}
 
     #[test]
     fn stress_atomic_wait() {
@@ -353,6 +380,7 @@ mod tests {
             }
             sync::atomic_wait::atomic_wait(&TEST_ATOMIC_WAIT, n, None);
         }
+        ATOMIC_WAIT_CLEANUP.spin_until_eq(l);
     }
 
     static MQUEUE: Lazy<Arc<sync::mqueue::MessageQueue>> =
