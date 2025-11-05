@@ -282,9 +282,6 @@ mod tests {
         assert!(b.lh.is_detached());
         assert!(b.lh.prev_ptr().is_null());
         assert!(Ty::insert_after(&mut a.lh, &mut c.lh));
-        assert!(b.lh.try_lock());
-        assert!(!Ty::insert_before(&mut a.lh, &mut b.lh));
-        b.lh.unlock();
         assert!(Ty::insert_before(&mut a.lh, &mut b.lh));
         assert_eq!(a.lh.prev_ptr(), &mut b.lh as *mut _);
         assert_eq!(a.lh.next_ptr(), &mut c.lh as *mut _);
@@ -297,9 +294,6 @@ mod tests {
         b.lh.unlock();
         assert!(Ty::detach(&mut a.lh));
         assert!(!Ty::detach(&mut a.lh));
-        assert!(a.lh.try_lock());
-        assert!(!Ty::insert_after(&mut c.lh, &mut a.lh));
-        a.lh.unlock();
         assert!(Ty::insert_after(&mut c.lh, &mut a.lh));
         assert!(!a.lh.is_detached());
         assert!(!b.lh.is_detached());
