@@ -60,57 +60,19 @@ pub mod time;
 pub mod tls;
 pub mod types;
 pub mod unistd;
-extern "C" fn start_blueos_posix_main(_arg: *mut core::ffi::c_void) -> *mut core::ffi::c_void {
-    // TODO: Pass argc, argv and envp?
-    // TODO: Before exit, we have to check owned threads' status and recycle them.
-    extern "C" {
-        fn main() -> i32;
-    }
-    unsafe {
-        main();
-    }
-    core::ptr::null_mut()
-}
-
-// TODO: Implement crt*.o.
-#[no_mangle]
-pub extern "C" fn start_blueos_posix() {
-    let mut init_thread: libc::pthread_t = 0;
-    let rc = crate::pthread::pthread_create(
-        &mut init_thread as *mut libc::pthread_t,
-        core::ptr::null(),
-        start_blueos_posix_main,
-        core::ptr::null_mut(),
-    );
-    assert_eq!(rc, 0);
-    // TODO: check rc to take failure action.
-    crate::pthread::pthread_join(init_thread, core::ptr::null_mut());
-}
-
-extern "C" fn start_posix_main(_arg: *mut core::ffi::c_void) -> *mut core::ffi::c_void {
-    // TODO: Pass argc, argv and envp?
-    // TODO: Before exit, we have to check owned threads' status and recycle them.
-    extern "C" {
-        fn main() -> i32;
-    }
-    unsafe {
-        main();
-    }
-    core::ptr::null_mut()
-}
 
 #[no_mangle]
 pub extern "C" fn __librs_start_main() {
+    crate::pthread::register_my_tcb();
     crate::stdio::init();
-    let mut init_thread: libc::pthread_t = 0;
-    let rc = crate::pthread::pthread_create(
-        &mut init_thread as *mut libc::pthread_t,
-        core::ptr::null(),
-        start_posix_main,
-        core::ptr::null_mut(),
-    );
-    assert_eq!(rc, 0);
-    crate::pthread::pthread_join(init_thread, core::ptr::null_mut());
+    // TODO: Pass argc, argv and envp?
+    // TODO: Before exit, we have to check owned threads' status and recycle them.
+    extern "C" {
+        fn main() -> i32;
+    }
+    unsafe {
+        main();
+    }
 }
 
 // FIXME: Remove this when we have a proper libc implementation.
@@ -157,25 +119,9 @@ pub fn librs_test_runner(tests: &[&dyn Fn()]) {
 }
 
 #[cfg(test)]
-extern "C" fn posix_main(_: *mut core::ffi::c_void) -> *mut core::ffi::c_void {
-    librs_test_main();
-    core::ptr::null_mut()
-}
-
-#[cfg(test)]
 #[no_mangle]
 extern "C" fn main() -> i32 {
-    use libc::pthread_t;
-    use pthread::{pthread_create, pthread_join};
-    // We must enter POSIX subsystem first to perform pthread testing.
-    let mut t: pthread_t = 0;
-    let rc = pthread_create(
-        &mut t as *mut pthread_t,
-        core::ptr::null(),
-        posix_main,
-        core::ptr::null_mut(),
-    );
-    assert_eq!(rc, 0);
-    pthread_join(t, core::ptr::null_mut());
+    pthread::register_my_tcb();
+    librs_test_main();
     0
 }

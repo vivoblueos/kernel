@@ -284,6 +284,13 @@ pub extern "C" fn pthread_detach(t: pthread_t) -> c_int {
     0
 }
 
+// This is used in thread not created by `pthread_create`. Usually at the entry
+// of POSIX subsystem.
+pub(crate) extern "C" fn register_my_tcb() {
+    let tid = pthread_self();
+    register_posix_tcb(tid as usize, core::ptr::null_mut());
+}
+
 extern "C" fn register_posix_tcb(tid: usize, _spawn_args_ptr: *const SpawnArgs) {
     let tid: pthread_t = unsafe { core::mem::transmute(tid) };
     {
