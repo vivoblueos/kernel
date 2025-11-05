@@ -18,15 +18,36 @@ use crate::{
     config::MAX_THREAD_PRIORITY,
     scheduler::RUNNING_THREADS,
     support,
-    thread::{self, Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode},
+    thread::{self, Entry, SystemThreadStorage, ThreadKind, ThreadNode},
 };
 use blueos_kconfig::NUM_CORES;
-use core::mem::MaybeUninit;
+use core::{
+    mem::MaybeUninit,
+    ptr,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+use spin::Once;
 
 static mut IDLE_THREAD_BLOCKS: [SystemThreadStorage; NUM_CORES] =
     [const { SystemThreadStorage::new(ThreadKind::Idle) }; NUM_CORES];
 static mut IDLE_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
     [const { MaybeUninit::zeroed() }; NUM_CORES];
+
+// Idle is per core, disable interrupt to set idle hook
+pub type IdleHook = extern "C" fn();
+static mut IDLE_HOOK: Option<IdleHook> = None;
+
+pub fn set_idle_hook(hook: IdleHook) {
+    unsafe { IDLE_HOOK = Some(hook) };
+}
+
+pub(crate) fn get_idle_hook() -> IdleHook {
+    if let Some(hook) = unsafe { IDLE_HOOK } {
+        hook
+    } else {
+        arch::idle
+    }
+}
 
 extern "C" fn fake_idle_thread_entry() {
     unreachable!("Should use real entry specified in start_schedule");
