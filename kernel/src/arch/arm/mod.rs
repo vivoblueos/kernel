@@ -13,17 +13,16 @@
 // limitations under the License.
 
 pub(crate) mod hardfault;
-pub(crate) mod irq;
+pub mod irq;
 pub(crate) mod xpsr;
-
-pub(crate) use hardfault::handle_hardfault;
-
 use crate::{
     scheduler,
     support::{sideeffect, Region, RegionalObjectBuilder},
     syscalls::{dispatch_syscall, Context as ScContext},
-    types::IsNotNull,
 };
+pub(crate) use hardfault::handle_hardfault;
+pub use hardfault::panic_on_hardfault;
+
 use core::{
     fmt,
     mem::offset_of,
@@ -54,15 +53,15 @@ macro_rules! arch_bootstrap {
     };
 }
 
-extern "C" fn prepare_schedule(cont: extern "C" fn() -> !) -> usize {
+extern "C" fn prepare_schedule() -> usize {
     let current = scheduler::current_thread();
     current.lock().reset_saved_sp();
     current.saved_sp()
 }
 
 extern "C" {
-    pub static __sys_stack_start: u8;
-    pub static __sys_stack_end: u8;
+    pub static mut __sys_stack_start: u8;
+    pub static mut __sys_stack_end: u8;
 }
 
 macro_rules! disable_interrupt {
@@ -81,32 +80,42 @@ macro_rules! enable_interrupt {
     };
 }
 
-#[naked]
-pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
+pub extern "C" fn reset_msp_and_start_schedule(msp: *mut u8, cont: extern "C" fn() -> !) {
+    let sp = prepare_schedule();
     unsafe {
-        core::arch::naked_asm!(
-            "mov r4, r0",
-            "bl {prepare}",
-            "msr psp, r0",
-            "mov r0, r4",
-            "ldr r12, ={stack_end}", // Reset MSP.
-            "msr msp, r12",
+        core::arch::asm!(
+            "
+            msr psp, {sp}
+            msr msp, {msp}
+            ",
             // Reset handler is special, see
             // https://stackoverflow.com/questions/59008284/if-the-main-function-is-called-inside-the-reset-handler-how-other-interrupts-ar
-            "ldr r12, ={thumb}",
-            "msr xpsr, r12",
-            "ldr r12, ={ctrl}",
-            "msr control, r12",
-            "ldr lr, =0",
-            "isb",
-            "cpsie i",
-            "bx r0",
+            "
+            ldr {tmp}, ={thumb}
+            msr xpsr, {tmp}
+            ldr {tmp}, ={ctrl}
+            msr control, {tmp}
+            ldr lr, =0
+            msr basepri, {basepri}
+            isb
+            cpsie i
+            bx {cont}
+            ",
+            options(nostack, noreturn),
             thumb = const THUMB_MODE,
             ctrl = const CONTROL,
-            prepare = sym prepare_schedule,
-            stack_end = sym __sys_stack_end,
+            msp = in(reg) msp,
+            sp = in(reg) sp,
+            tmp = in(reg) 0,
+            cont = in(reg) cont,
+            basepri = in(reg) DISABLE_LOCAL_IRQ_BASEPRI,
         )
     }
+}
+
+#[inline]
+pub extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
+    unsafe { reset_msp_and_start_schedule(&mut __sys_stack_end as *mut u8, cont) }
 }
 
 #[cfg(not(target_abi = "eabihf"))]
@@ -375,7 +384,7 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     assert_eq!(ctx.r7, NR_SWITCH);
     let sp = ctx as *const _ as usize;
     let saved_sp_ptr: *mut usize = unsafe { ctx.r0 as *mut usize };
-    if saved_sp_ptr.is_not_null() {
+    if !saved_sp_ptr.is_null() {
         // FIXME: rustc opt the write out if not setting it volatile.
         unsafe {
             sideeffect();
@@ -383,7 +392,7 @@ fn handle_svc_switch(ctx: &Context) -> usize {
         };
     }
     let hook: *mut ContextSwitchHookHolder = unsafe { ctx.r2 as *mut ContextSwitchHookHolder<'_> };
-    if hook.is_not_null() {
+    if !hook.is_null() {
         unsafe {
             sideeffect();
             scheduler::save_context_finish_hook(Some(&mut *hook));
@@ -451,6 +460,7 @@ pub unsafe extern "C" fn handle_pendsv() {
             "
             ldr r12, =0
             msr basepri, r12
+            isb
             bx lr
             "
         ),
@@ -582,20 +592,24 @@ pub extern "C" fn current_psp() -> usize {
     x
 }
 
-#[naked]
+#[inline(never)]
 pub(crate) extern "C" fn switch_context_with_hook(
     saved_sp_mut: *mut u8,
     to_sp: usize,
     hook: *mut ContextSwitchHookHolder,
 ) {
     unsafe {
-        core::arch::naked_asm!(
-            "movs r12, r7",
+        core::arch::asm!(
+            "movs {tmp}, r7",
             "ldr r7, ={nr}",
             "svc 0",
-            "mov r7, r12",
-            "bx lr",
+            "mov r7, {tmp}",
+            inlateout("r0") saved_sp_mut as usize => _,
+            inlateout("r1") to_sp => _,
+            in("r2") hook as usize,
+            tmp = out(reg) _,
             nr = const NR_SWITCH,
+            options(nostack),
         )
     }
 }
@@ -608,23 +622,6 @@ pub extern "C" fn pend_switch_context() {
 #[inline(always)]
 pub extern "C" fn switch_context(saved_sp_mut: *mut u8, to_sp: usize) {
     switch_context_with_hook(saved_sp_mut, to_sp, core::ptr::null_mut());
-}
-
-#[naked]
-pub extern "C" fn save_context_in_isr(sp: &mut usize) {
-    unsafe {
-        core::arch::naked_asm!(
-            concat!(
-                store_callee_saved_regs!(),
-                "
-                mrs r1, psp
-                str r1, [r0]
-                bx lr
-                ",
-            ),
-            options(),
-        )
-    }
 }
 
 #[inline(always)]
@@ -640,25 +637,6 @@ pub(crate) extern "C" fn restore_context_with_hook(
 ) -> ! {
     switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
     unreachable!("Should have switched to another thread");
-}
-
-#[naked]
-pub extern "C" fn restore_context_in_isr(to_sp: usize) {
-    unsafe {
-        core::arch::naked_asm!(
-            concat!(
-                "
-                mov r12, r0
-                ",
-                load_callee_saved_regs!(),
-                "
-                isb
-                bx lr
-                ",
-            ),
-            options(),
-        )
-    }
 }
 
 #[inline]

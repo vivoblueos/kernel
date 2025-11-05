@@ -117,6 +117,10 @@ impl ThreadStats {
         self.start = start;
     }
 
+    pub fn start_cycles(&self) -> u64 {
+        self.start
+    }
+
     pub fn get_cycles(&self) -> u64 {
         self.cycles
     }
@@ -592,6 +596,11 @@ impl Thread {
     #[inline]
     pub fn set_start_cycles(&mut self, cycles: u64) {
         self.stats.set_start_cycles(cycles);
+    }
+
+    #[inline]
+    pub fn start_cycles(&self) -> u64 {
+        self.stats.start_cycles()
     }
 
     #[inline]

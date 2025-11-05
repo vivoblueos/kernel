@@ -20,6 +20,19 @@ group("check_infra") {
   deps = [ ":run_infra_unittest" ]
 }
 
+group("check_infra_by_miri") {
+  testonly = true
+  deps = [ ":infra_miri_test" ]
+}
+
+group("check_infra_by_clippy") {
+  testonly = true
+  deps = [
+    ":blueos_infra_clippy",
+    ":infra_unittest_clippy",
+  ]
+}
+
 shared_deps = [
   "//external/cfg-if/v1.0.0:cfg_if",
   "//external/memchr/v2.7.4:memchr",
@@ -33,6 +46,21 @@ build_rust("blueos_infra") {
   deps = shared_deps
 }
 
+run_clippy("blueos_infra_clippy") {
+  deps = [ ":blueos_infra" ]
+}
+
+miri_test("infra_miri_test") {
+  crate = "src/lib.rs"
+
+  # test_name = "test_basic"   # optional
+  extra_miri_flags = [
+    # "-Zmiri-tree-borrows", # use tree borrow model
+    # "-Zmiri-preemption-rate=0.01", # controls how often Miri forces a thread context switch during scheduling.
+    # more miri flags...
+  ]
+}
+
 build_rust("infra_unittest") {
   testonly = true
   crate_name = "infra_unittest"
@@ -42,6 +70,11 @@ build_rust("infra_unittest") {
 
   deps = shared_deps
   rustflags = [ "--test" ]
+}
+
+run_clippy("infra_unittest_clippy") {
+  testonly = true
+  deps = [ ":infra_unittest" ]
 }
 
 run_host("run_infra_unittest") {

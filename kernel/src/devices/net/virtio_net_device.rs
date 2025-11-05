@@ -69,10 +69,7 @@ impl VirtIONetDevice {
     }
 }
 
-impl<'a> NetInterface<'_>
-where
-    'a: 'static,
-{
+impl NetInterface<'_> {
     pub fn create_virtio_device() -> Self {
         let mut inner: VirtIONetDevice = VirtIONetDevice::new(0);
         // Create Device

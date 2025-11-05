@@ -36,13 +36,13 @@ use flat_device_tree::Fdt;
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
 pub(crate) fn init() {
-    STAGING.run(0, true, || crate::boot::init_runtime());
-    STAGING.run(1, true, || crate::boot::init_heap());
-    STAGING.run(2, false, || arch::vector::init());
+    STAGING.run(0, true, crate::boot::init_runtime);
+    STAGING.run(1, true, crate::boot::init_heap);
+    STAGING.run(2, false, arch::vector::init);
     STAGING.run(3, true, || unsafe {
         arch::irq::init(config::GICD as u64, config::GICR as u64, NUM_CORES, false)
     });
-    STAGING.run(4, false, || arch::irq::cpu_init());
+    STAGING.run(4, false, arch::irq::cpu_init);
     STAGING.run(5, false, || {
         time::systick_init(0);
     });

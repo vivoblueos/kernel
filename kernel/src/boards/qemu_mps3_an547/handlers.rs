@@ -24,7 +24,7 @@ use crate::{
 unsafe extern "C" fn do_nothing() {}
 
 unsafe extern "C" fn busy() {
-    loop {}
+    unreachable!("Should not be busy!")
 }
 
 #[used]

@@ -21,7 +21,13 @@ pub const IRQ_PRIORITY_STEP: u8 = 0x20;
 #[cfg(irq_priority_bits_8)]
 pub const IRQ_PRIORITY_STEP: u8 = 0x10;
 
+#[cfg(irq_priority_bits_2)]
 pub const IRQ_PRIORITY_FOR_SCHEDULER: u8 = 0x80;
+#[cfg(irq_priority_bits_3)]
+pub const IRQ_PRIORITY_FOR_SCHEDULER: u8 = 0x40;
+#[cfg(irq_priority_bits_8)]
+pub const IRQ_PRIORITY_FOR_SCHEDULER: u8 = 0x20;
+
 pub const SVC_PRIORITY: u8 = IRQ_PRIORITY_FOR_SCHEDULER - IRQ_PRIORITY_STEP;
 
 #[derive(Debug, Copy, Clone)]
