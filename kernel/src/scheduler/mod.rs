@@ -522,7 +522,8 @@ pub(crate) extern "C" fn schedule() -> ! {
     arch::enable_local_irq();
     assert!(arch::local_irq_enabled());
     loop {
-        yield_me();
+        yield_unconditionally();
+        idle::get_idle_hook()();
     }
 }
 
