@@ -427,10 +427,11 @@ jobs:
                 console.error(`❌ ${profile} build failed:`, error.message);
                 process.exit(1);
             }
+
   notify:
     runs-on: ubuntu-latest
     needs: [setup, check_format, check_license, build_host, build_and_check_virtual_boards]
-    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
+    if: ${{ always() && github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     permissions:
       contents: read
       checks: write
