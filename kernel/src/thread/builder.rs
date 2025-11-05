@@ -122,8 +122,8 @@ impl Builder {
             .take()
             .map_or_else(|| Stack::create(DEFAULT_STACK_SIZE), |v| v);
         w.init(stack, self.entry);
-        w.set_priority(self.priority);
         w.set_origin_priority(self.priority);
+        w.set_priority(self.priority);
         drop(w);
         GlobalQueueVisitor::add(thread.clone());
 
@@ -189,6 +189,7 @@ pub(crate) fn build_static_thread(
         Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()),
         entry,
     );
+    w.set_origin_priority(p);
     w.set_priority(p);
     w.set_kind(kind);
     assert!((thread::CREATED..=thread::RETIRED).contains(&init_state));
