@@ -51,6 +51,13 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
     }
 
     #[inline]
+    fn lock(&self) {
+        while !self.try_lock() {
+            core::hint::spin_loop();
+        }
+    }
+
+    #[inline]
     fn unlock(&self) {
         self.prev.fetch_and(!1, Ordering::Release);
     }
@@ -105,10 +112,7 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
     // For our use scenarios, we only have to lock `me`. The whole list is
     // expected to be protected by a spin lock.
     pub fn insert_after(head: &mut Self, me: &mut Self) -> bool {
-        let locked = me.try_lock();
-        if !locked {
-            return false;
-        }
+        me.lock();
         if !me.is_detached() {
             me.unlock();
             return false;
@@ -129,10 +133,7 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
     }
 
     pub fn insert_before(tail: &mut Self, me: &mut Self) -> bool {
-        let locked = me.try_lock();
-        if !locked {
-            return false;
-        }
+        me.lock();
         if !me.is_detached() {
             me.unlock();
             return false;
@@ -152,10 +153,7 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
 
     // When we are detaching the node, we must know clearly which list the node belongs to.
     pub fn detach(me: &mut Self) -> bool {
-        let locked = me.try_lock();
-        if !locked {
-            return false;
-        }
+        me.lock();
         if me.is_detached() {
             me.unlock();
             return false;
@@ -284,9 +282,6 @@ mod tests {
         assert!(b.lh.is_detached());
         assert!(b.lh.prev_ptr().is_null());
         assert!(Ty::insert_after(&mut a.lh, &mut c.lh));
-        assert!(b.lh.try_lock());
-        assert!(!Ty::insert_before(&mut a.lh, &mut b.lh));
-        b.lh.unlock();
         assert!(Ty::insert_before(&mut a.lh, &mut b.lh));
         assert_eq!(a.lh.prev_ptr(), &mut b.lh as *mut _);
         assert_eq!(a.lh.next_ptr(), &mut c.lh as *mut _);
@@ -299,9 +294,6 @@ mod tests {
         b.lh.unlock();
         assert!(Ty::detach(&mut a.lh));
         assert!(!Ty::detach(&mut a.lh));
-        assert!(a.lh.try_lock());
-        assert!(!Ty::insert_after(&mut c.lh, &mut a.lh));
-        a.lh.unlock();
         assert!(Ty::insert_after(&mut c.lh, &mut a.lh));
         assert!(!a.lh.is_detached());
         assert!(!b.lh.is_detached());
