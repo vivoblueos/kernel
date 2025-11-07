@@ -19,6 +19,7 @@ use crate::{
     thread::{Thread, ThreadNode},
     types::{ArcList, ThreadPriority, Uint},
 };
+
 use core::mem::MaybeUninit;
 
 static mut READY_TABLE: MaybeUninit<SpinLock<ReadyTable>> = MaybeUninit::zeroed();
@@ -153,4 +154,21 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
     debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     queue_ready_thread_inner(&mut tbl, t)
+}
+
+pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    let priority = t.priority();
+    assert!(priority <= MAX_THREAD_PRIORITY);
+    debug_assert_eq!(t.state(), thread::READY);
+    let q = &mut tbl.tables[priority as usize];
+    // Conservatively search the whole queue.
+    let removed = q.remove_if(|e| ThreadNode::is(e, t));
+    let Some(removed) = removed else {
+        return false;
+    };
+    if q.is_empty() {
+        tbl.clear_active_queue(priority as u32);
+    }
+    true
 }
