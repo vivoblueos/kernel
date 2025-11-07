@@ -130,7 +130,4 @@ if ("$board" == "qemu_riscv64") {
   ]
 }
 
-blueos_default_cfgs = [
-  "target_board=\"$board\"",
-  "scheduler=\"global\"",
-]
+blueos_default_cfgs = [ "scheduler=\"global\"" ]

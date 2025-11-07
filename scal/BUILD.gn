@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import("//build/templates/rust.gni")
-import("//kernel/common_crate_rustflags.gni")
+import("//kernel/features.gni")
 
 build_rust("blueos_scal") {
   crate_name = "blueos_scal"
@@ -21,7 +21,7 @@ build_rust("blueos_scal") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   deps = [ "//kernel/header:blueos_header" ]
-  rustflags = common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
   if (direct_syscall_handler) {
     cfgs = [ "direct_syscall_handler" ]
     deps += [ "//kernel/kernel:blueos" ]
@@ -34,5 +34,5 @@ build_rust("blueos_scal_swi") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   deps = [ "//kernel/header:blueos_header" ]
-  rustflags = common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }

@@ -14,7 +14,6 @@
 
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 adapter_deps = [
   "cmsis_header:cmsis_os",
@@ -49,9 +48,11 @@ build_rust("cmsis_adapter_unittest") {
     ":cmsis_adapter",
     "//external/semihosting/v0.1.20:semihosting",
   ]
-  configs += [ "//kernel/kconfig:kconfigs" ]
-  rustflags = common_crate_rustflags
-  rustflags += test_image_rustflags
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
+  ]
+  rustflags = [ "--test" ]
 }
 
 run_clippy("cmsis_adapter_unittest_clippy") {
