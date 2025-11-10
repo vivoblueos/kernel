@@ -16,5 +16,6 @@ pub mod delay;
 pub mod event_flags;
 pub mod kernel;
 pub mod semaphore;
+pub mod thread;
 pub mod tick;
 pub mod timer;

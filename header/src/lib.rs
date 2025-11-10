@@ -97,7 +97,7 @@ pub mod thread {
 
     #[repr(C)]
     pub struct SpawnArgs {
-        pub spawn_hook: Option<extern "C" fn(tid: usize, spawn_args: *const SpawnArgs)>,
+        pub spawn_hook: Option<extern "C" fn(tid: usize, spawn_args: *mut SpawnArgs)>,
         pub stack_start: *mut u8,
         pub stack_size: usize,
         pub entry: extern "C" fn(*mut core::ffi::c_void),

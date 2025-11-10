@@ -18,23 +18,26 @@ use crate::sync::event_flags::EventFlagsMode;
 use crate::{
     arch,
     arch::Context,
-    config, debug, scheduler,
+    config,
+    config::DEFAULT_STACK_SIZE,
+    debug, scheduler,
     support::{Region, RegionalObjectBuilder, Storage},
     sync::{
         mutex::{MutexList, MutexListIterator},
-        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
+        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard,
     },
     thread::builder::GlobalQueue,
     time::timer::Timer,
     types::{
-        impl_simple_intrusive_adapter, Arc, ArcCas, AtomicUint, IlistHead, ThreadPriority, Uint,
-        UniqueListHead,
+        impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, AtomicUint, IlistHead, ThreadPriority,
+        Uint, UniqueListHead,
     },
 };
 use alloc::boxed::Box;
 use core::{
     alloc::Layout,
-    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
+    ptr::NonNull,
+    sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
 };
 
 mod builder;
@@ -59,7 +62,7 @@ impl core::fmt::Debug for Entry {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ThreadKind {
     AsyncPoller,
     Idle,
@@ -143,7 +146,6 @@ impl core::fmt::Debug for SignalContext {
         Ok(())
     }
 }
-
 #[derive(Debug)]
 pub struct Thread {
     global: GlobalQueueListHead,
@@ -152,6 +154,7 @@ pub struct Thread {
     // Cleanup function will be invoked when retiring.
     cleanup: Option<Entry>,
     kind: ThreadKind,
+    // Thread owns Stack::Alloc. It calls dealloc when dropping its self.
     stack: Stack,
     saved_sp: usize,
     // This value may change at runtime.
@@ -173,6 +176,10 @@ pub struct Thread {
     event_flags_mode: EventFlagsMode,
     #[cfg(event_flags)]
     event_flags_mask: u32,
+    // An opaque pointer used by C extensions. Must be noted, these C extensions
+    // are aware of kernel's APIs, while POSIX are not. So librs' POSIX
+    // implementation should not rely on this field.
+    alien_ptr: Option<NonNull<core::ffi::c_void>>,
     // The mutex this thread is acquiring.
     pending_on_mutex: ArcCas<Mutex>,
     // Mutexes this thread has acquired.  It's protected by its own spinlock to
@@ -202,6 +209,8 @@ extern "C" fn run_posix(f: extern "C" fn(*mut core::ffi::c_void), arg: *mut core
 
 // FIXME: If the closure doesn't get run, memory leaks.
 extern "C" fn run_closure(raw: *mut Box<dyn FnOnce()>) {
+    // FIXME: If `retire_me` is called in the closure, we are unable to recycle
+    // the Box and memory leaks.
     unsafe { Box::from_raw(raw)() };
     scheduler::retire_me();
 }
@@ -216,6 +225,11 @@ impl Thread {
     #[inline]
     pub fn lock(&self) -> SpinLockGuard<'_, Self> {
         self.lock.irqsave_lock()
+    }
+
+    #[inline]
+    pub fn lock_for_read(&self) -> SpinLockReadGuard<'_, Self> {
+        self.lock.irqsave_read()
     }
 
     #[inline(always)]
@@ -390,6 +404,7 @@ impl Thread {
             event_flags_mode: EventFlagsMode::empty(),
             #[cfg(event_flags)]
             event_flags_mask: 0,
+            alien_ptr: None,
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
             signal_context: None,
@@ -517,20 +532,18 @@ impl Thread {
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
         self.stack = stack;
         // TODO: Stack sanity check.
-        self.saved_sp = self.stack.top() as usize - core::mem::size_of::<arch::Context>();
+        let maybe_sp = self.stack.top() as usize
+            - (core::mem::size_of::<arch::Context>() + core::mem::align_of::<arch::Context>());
         self.acquired_mutexes.irqsave_write().init();
 
         let region = Region {
-            base: self.saved_sp,
-            size: core::mem::size_of::<arch::Context>(),
+            base: maybe_sp,
+            size: core::mem::size_of::<arch::Context>() + core::mem::align_of::<arch::Context>(),
         };
         let mut builder = RegionalObjectBuilder::new(region);
-        let ctx = unsafe {
-            builder
-                .zeroed_after_start::<arch::Context>()
-                .unwrap_unchecked()
-        };
-        assert_eq!(ctx as *const _ as usize, self.saved_sp);
+        let ctx = unsafe { builder.zeroed_after_start::<arch::Context>().unwrap() };
+        self.saved_sp = ctx as *const _ as usize;
+
         ctx.init();
         // TODO: We should provide the thread a more rusty environment
         // to run the function safely.
@@ -545,7 +558,7 @@ impl Thread {
                 // platform, aka, it's a fat pointer.
                 let raw = Box::into_raw(Box::new(boxed));
                 ctx.set_return_address(run_closure as usize)
-                    .set_arg(0, raw as *mut u8 as usize)
+                    .set_arg(0, raw as *mut Box<dyn FnOnce()> as usize)
             }
             Entry::Posix(f, arg) => ctx
                 .set_return_address(run_posix as usize)
@@ -630,6 +643,22 @@ impl Thread {
     #[inline]
     pub fn set_event_flags_mask(&mut self, mask: u32) {
         self.event_flags_mask = mask;
+    }
+
+    #[inline]
+    pub fn set_alien_ptr(&mut self, ptr: NonNull<core::ffi::c_void>) {
+        self.alien_ptr = Some(ptr);
+    }
+
+    #[inline]
+    pub fn reset_alien_ptr(&mut self) -> &mut Self {
+        self.alien_ptr = None;
+        self
+    }
+
+    #[inline]
+    pub fn get_alien_ptr(&self) -> Option<NonNull<core::ffi::c_void>> {
+        self.alien_ptr
     }
 
     #[inline]

@@ -323,16 +323,16 @@ get_tid() -> c_long {
 });
 
 define_syscall_handler!(
-create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
+create_thread(spawn_args_ptr: *mut SpawnArgs) -> c_long {
     let spawn_args = unsafe {&*spawn_args_ptr};
-    let t = thread::Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
-        .set_stack(Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size))
-        .build();
+    let t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
+                .set_stack(Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size))
+                .build();
     if let Some(cleanup) = spawn_args.cleanup {
         t.lock().set_cleanup(Entry::Posix(cleanup, spawn_args.arg));
     };
     let handle = Thread::id(&t);
-    if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args_ptr); }
+    if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args_ptr as *mut _); }
     let ok = scheduler::queue_ready_thread(thread::CREATED, t);
     // We don't increment the rc of the created thread since it's also
     // referenced by the global queue. When this thread is retired,
