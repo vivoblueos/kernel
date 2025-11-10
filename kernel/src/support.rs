@@ -46,7 +46,7 @@ impl Drop for DisableInterruptGuard {
     }
 }
 
-pub(crate) struct PlainDisableInterruptGuard;
+pub struct PlainDisableInterruptGuard;
 
 impl PlainDisableInterruptGuard {
     #[inline]
@@ -404,6 +404,10 @@ macro_rules! static_assert {
         // [removed]: https://github.com/rust-lang/rust/commit/c2dad1c6b9f9636198d7c561b47a2974f5103f6d
         const _: () = [()][!($condition) as usize];
     };
+}
+
+pub(crate) fn show_current_heap_usage() {
+    log::info!("Current heap: {:?}", crate::allocator::memory_info());
 }
 
 #[derive(Debug)]

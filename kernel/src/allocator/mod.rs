@@ -189,4 +189,3 @@ pub const fn align_offset(addr: usize, align: usize) -> usize {
 pub const fn is_aligned(addr: usize, align: usize) -> bool {
     align_offset(addr, align) == 0
 }
-

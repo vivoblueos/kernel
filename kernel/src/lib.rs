@@ -55,7 +55,7 @@ pub mod asynk;
 pub(crate) mod boards;
 #[cfg(use_kernel_boot)]
 pub(crate) mod boot;
-pub(crate) mod config;
+pub mod config;
 pub(crate) mod console;
 #[cfg(coverage)]
 pub mod coverage;
@@ -68,7 +68,6 @@ pub mod logger;
 #[cfg(enable_net)]
 pub mod net;
 pub mod scheduler;
-pub(crate) mod signal;
 pub mod support;
 pub mod sync;
 pub mod syscall_handlers;
@@ -79,6 +78,7 @@ pub mod types;
 pub mod vfs;
 
 pub use syscall_handlers as syscalls;
+pub(crate) mod signal;
 
 #[macro_export]
 macro_rules! debug {
