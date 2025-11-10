@@ -31,8 +31,8 @@ pub unsafe extern "C" fn getaddrinfo(
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/freeaddrinfo.html>
 #[no_mangle]
-pub unsafe extern "C" fn freeaddrinfo(res: *mut libc::addrinfo) -> usize {
-    bk_syscall!(FreeAddrinfo, res)
+pub unsafe extern "C" fn freeaddrinfo(res: *mut libc::addrinfo) {
+    bk_syscall!(FreeAddrinfo, res);
 }
 
 /// # Reference

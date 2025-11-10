@@ -176,14 +176,14 @@ pub extern "C" fn pthread_getschedparam(
     policy: *mut c_int,
     _param: *mut sched_param,
 ) -> c_int {
-    // TODO: Currently kernel only supports SCHED_RR.
+    // TODO: Currently BlueKernel only supports SCHED_RR.
     unsafe {
         *policy = SCHED_RR;
     }
     0
 }
 
-// Only support SCHED_RR, it's the only policy kernel supports.
+// Only support SCHED_RR, it's the only policy BlueKernel supports.
 // this function is a no-op in fact.
 #[linkage = "weak"]
 #[no_mangle]
@@ -198,21 +198,21 @@ pub unsafe extern "C" fn pthread_setschedparam(
 #[linkage = "weak"]
 #[no_mangle]
 pub extern "C" fn pthread_setconcurrency(_concurrency: c_int) -> c_int {
-    // kernel supports only 1:1 thread model, so this function is a no-op.
+    // BlueKernel supports only 1:1 thread model, so this function is a no-op.
     0
 }
 
 #[linkage = "weak"]
 #[no_mangle]
 pub extern "C" fn pthread_setschedprio(_thread: pthread_t, _prio: c_int) -> c_int {
-    // kernel currently doesn't support setting thread priority.
+    // BlueKernel currently doesn't support setting thread priority.
     0
 }
 
 #[linkage = "weak"]
 #[no_mangle]
 pub unsafe extern "C" fn pthread_cancel(thread: pthread_t) -> c_int {
-    // now kernel doesn't support full posix cancelation
+    // now BlueKernel doesn't support full posix cancelation
     // just set cancel_enabled to false, so pthread_testcancel will exit this thread.
     let Some(tcb) = get_tcb(thread) else {
         panic!("{:x}: target tcb is gone!", thread)
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn pthread_cancel(thread: pthread_t) -> c_int {
 #[linkage = "weak"]
 #[no_mangle]
 pub unsafe extern "C" fn pthread_setcancelstate(state: c_int, oldstate: *mut c_int) -> c_int {
-    // kernel currently hasn't signal support, no cancel point is implemented.
+    // BlueKernel currently hasn't signal support, no cancel point is implemented.
     // just exit when pthread_testcancel is called.
     let tid = pthread_self();
     let Some(tcb) = get_tcb(tid) else {
@@ -248,7 +248,7 @@ pub unsafe extern "C" fn pthread_setcancelstate(state: c_int, oldstate: *mut c_i
 #[linkage = "weak"]
 #[no_mangle]
 pub extern "C" fn pthread_setcanceltype(_ty: c_int, _oldty: *mut c_int) -> c_int {
-    // kernel currently hasn't signal support, no cancel point is implemented.
+    // BlueKernel currently hasn't signal support, no cancel point is implemented.
     // just exit when pthread_testcancel is called.
     PTHREAD_CANCEL_DEFERRED
 }
@@ -291,7 +291,7 @@ pub(crate) extern "C" fn register_my_tcb() {
     register_posix_tcb(tid as usize, core::ptr::null_mut());
 }
 
-extern "C" fn register_posix_tcb(tid: usize, _spawn_args_ptr: *const SpawnArgs) {
+extern "C" fn register_posix_tcb(tid: usize, _spawn_args_ptr: *mut SpawnArgs) {
     let tid: pthread_t = unsafe { core::mem::transmute(tid) };
     {
         let tcb = Arc::new(PthreadTcb {

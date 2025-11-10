@@ -32,8 +32,10 @@
 
 #[macro_use]
 extern crate alloc;
+
 #[cfg(test)]
 extern crate rsrt;
+
 // We don't expose any interfaces or types externally, rust-lang/libc is doing that.
 pub mod c_str;
 pub mod ctype;
@@ -63,8 +65,8 @@ pub mod unistd;
 
 #[no_mangle]
 pub extern "C" fn __librs_start_main() {
-    crate::pthread::register_my_tcb();
     crate::stdio::init();
+    crate::pthread::register_my_tcb();
     // TODO: Pass argc, argv and envp?
     // TODO: Before exit, we have to check owned threads' status and recycle them.
     extern "C" {
