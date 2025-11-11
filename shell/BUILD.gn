@@ -24,10 +24,20 @@ executable("shell") {
   deps = [
     "//external/phf/v0.12.1/:phf",
     "//kernel/rsrt:rsrt_std",
-    "//librs:librs",
+    "//librs",
   ]
   inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
   rustflags = []
   rustflags += common_image_rustflags
   rustflags += common_crate_rustflags
+}
+
+gen_qemu_runner("shell_runner") {
+  img = ":shell"
+  qemu = "$qemu_exe"
+  machine = "$machine"
+  qemu_args = qemu_extra_args
+  net_args = qemu_net_args
+  block_img = "shell_block.img"
+  block_args = qemu_block_args
 }
