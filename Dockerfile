@@ -18,7 +18,7 @@ RUN apt-get update \
         libglib2.0-dev \
         build-essential \
         pkg-config \
-        clang-format yapf3 \
+        clang-format yapf3 npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Arm GNU toolchain (ARM Cortex-M)
