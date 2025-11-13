@@ -71,7 +71,7 @@ jobs:
         run: |
           repo init --depth=1 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
           repo sync -j$(nproc)
-      - name: Apply patches
+      - name: Patch manifests repo
         run: |
           set -e
           set -x
@@ -79,7 +79,29 @@ jobs:
             patch_abspath=$(realpath ${patch})
             repo=$(basename ${patch} ".diff")
             if [ "${repo}" != "manifests" ]; then
-              cd ${repo}
+              continue
+            fi
+            cd .repo/${repo}
+            git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
+            if [ $? != 0 ]; then
+              exit 1
+            fi
+            cd - > /dev/null
+            break
+          done
+      - name: Re-sync repos
+        # In case manifests repo is changed.
+        run: |
+          repo sync -j$(nproc)
+      - name: Apply patches
+        run: |
+          set -e
+          set -x
+          for patch in patches/*.diff; do
+            patch_abspath=$(realpath ${patch})
+            repo=$(basename ${patch} ".diff")
+            if [ "${repo}" == "manifests" ]; then
+              continue
             else
               cd .repo/${repo}
             fi
@@ -89,10 +111,6 @@ jobs:
             fi
             cd - > /dev/null
           done
-      - name: Re-sync repos
-        # In case manifests repo is changed.
-        run: |
-          repo sync -j$(nproc)
       - name: Upload workspace
         uses: actions/upload-artifact@v4
         with:
