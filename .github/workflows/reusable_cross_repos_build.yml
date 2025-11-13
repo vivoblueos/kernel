@@ -93,24 +93,44 @@ jobs:
         # In case manifests repo is changed.
         run: |
           repo sync -j$(nproc)
+      - name: Install XML parsing dependencies
+        run: npm install xml2js
       - name: Apply patches
-        run: |
-          set -e
-          set -x
-          for patch in patches/*.diff; do
-            patch_abspath=$(realpath ${patch})
-            repo=$(basename ${patch} ".diff")
-            if [ "${repo}" == "manifests" ]; then
-              continue
-            else
-              cd ${repo}
-            fi
-            git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
-            if [ $? != 0 ]; then
-              exit 1
-            fi
-            cd - > /dev/null
-          done
+        uses: actions/github-script@v8
+        with:
+          script: |
+            // Read manifests.xml for the exact path of every cloned repo.
+            const fs = require('fs');
+            const path = require('path');
+            const { parseString } = require('xml2js');
+
+            const patchesDir = 'patches';
+            const allFiles = fs.readdirSync(patchesDir);
+            const diffFiles = allFiles.filter(file =>
+              file.endsWith('.diff') || file.endsWith('.patch')
+            );
+            const repos = diffFiles.map(file =>
+              path.basename(file, path.extname(file))
+            );
+            const xmlContent = fs.readFileSync('.repo/manifests/manifest.xml', 'utf-8');
+            parseString(xmlContent, async(err, result) => {
+              if (err) {
+                throw new Error(`Failed parsing XML: ${err}`);
+              }
+              for (const repo of repos) {
+                const project = result.manifest.project.find(
+                  p => p.$.name === repo);
+                if (!project) {
+                  throw new Error(`Failed to find project: ${repo}`);
+                }
+                const repoPath = project.$.path;
+                const diffPath = path.resolve(`${patchesDir}/${repo}.diff`);
+                await exec.exec('git', ['apply', '--verbose', '-3', '--check', diffPath],
+                  { cwd: repoPath });
+                await exec.exec('git', ['apply', '--verbose', '-3', diffPath],
+                  { cwd: repoPath });
+              }
+            });
       - name: Upload workspace
         uses: actions/upload-artifact@v4
         with:
