@@ -18,7 +18,7 @@ import("//build/toolchain/blueos.gni")
 adapter_deps = [
   "cmsis_header:cmsis_os",
   "cmsis_header:cmsis_os2",
-  "//external/log/v0.4.22:log",
+  "//external/vendor/log-0.4.28:log",
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kernel:blueos",
@@ -28,7 +28,7 @@ adapter_deps = [
 build_rust("cmsis_adapter") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  proc_macro_deps = [ "//external/rust-delegate/v0.13.3:delegate" ]
+  proc_macro_deps = [ "//external/vendor/delegate-0.13.4:delegate" ]
   deps = adapter_deps
   configs += [ "//kernel/kconfig:kconfigs" ]
 }
@@ -40,13 +40,13 @@ build_rust("cmsis_adapter_unittest") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/rust-delegate/v0.13.3:delegate",
+    "//external/vendor/delegate-0.13.4:delegate",
     "//kernel/test_harness:blueos_test_macro",
   ]
   deps = adapter_deps
   deps += [
     ":cmsis_adapter",
-    "//external/semihosting/v0.1.20:semihosting",
+    "//external/vendor/semihosting-0.1.20:semihosting",
   ]
   configs += [
     "//kernel/kconfig:kconfigs",

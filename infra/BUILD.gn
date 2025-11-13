@@ -34,9 +34,9 @@ group("check_infra_by_clippy") {
 }
 
 shared_deps = [
-  "//external/cfg-if/v1.0.0:cfg_if",
-  "//external/memchr/v2.7.4:memchr",
-  "//external/spin/v0.9.8:spin",
+  "//external/vendor/cfg-if-1.0.4:cfg_if",
+  "//external/vendor/memchr-2.7.6:memchr",
+  "//external/vendor/spin-0.9.8:spin",
 ]
 
 build_rust("blueos_infra") {
