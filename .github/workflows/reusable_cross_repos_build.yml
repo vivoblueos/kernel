@@ -103,7 +103,7 @@ jobs:
             if [ "${repo}" == "manifests" ]; then
               continue
             else
-              cd .repo/${repo}
+              cd ${repo}
             fi
             git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
             if [ $? != 0 ]; then
