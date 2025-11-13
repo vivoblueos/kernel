@@ -103,7 +103,6 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const { parseString } = require('xml2js');
-            const { exec } = require('@actions/exec');
 
             const patchesDir = 'patches';
             const allFiles = fs.readdirSync(patchesDir);
@@ -114,11 +113,11 @@ jobs:
               path.basename(file, path.extname(file))
             );
             const xmlContent = fs.readFileSync('.repo/manifests/manifest.xml', 'utf-8');
-            parseString(xmlContent, (err, result) => {
+            parseString(xmlContent, async(err, result) => {
               if (err) {
                 throw new Error(`Failed parsing XML: ${err}`);
               }
-              for repo in repos {
+              for (const repo of repos) {
                 const project = result.manifest.project.find(
                   p => p.$.name === repo);
                 if (!project) {
@@ -126,8 +125,10 @@ jobs:
                 }
                 const repoPath = project.$.path;
                 const diffPath = path.resolve(`${patchesDir}/${repo}.diff`);
-                await exec('git', ['apply', '--verbose', '-3', '--check', diffPath], { cwd: repoPath });
-                await exec('git', ['apply', '--verbose', '-3', diffPath], { cwd: repoPath });
+                await exec.exec('git', ['apply', '--verbose', '-3', '--check', diffPath],
+                  { cwd: repoPath });
+                await exec.exec('git', ['apply', '--verbose', '-3', diffPath],
+                  { cwd: repoPath });
               }
             });
       - name: Upload workspace
