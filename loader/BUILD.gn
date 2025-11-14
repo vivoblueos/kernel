@@ -14,15 +14,10 @@
 
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 group("check_loader") {
   testonly = true
-
-  # FIXME: It fails on riscv32, TBI.
-  if ("$board" != "qemu_riscv32") {
-    deps = [ "tests:run_loader_integration_test" ]
-  }
+  deps = [ "tests:run_loader_integration_test" ]
 }
 
 group("inputs") {
@@ -56,12 +51,10 @@ run_clippy("blueos_loader_clippy") {
 
 group("check_loader_by_clippy") {
   testonly = true
-  deps = [ ":blueos_loader_clippy" ]
-
-  if ("$board" != "qemu_riscv32") {
-    deps += [ "tests/integration_test:loader_integration_test_clippy" ]
-  }
-
+  deps = [
+    ":blueos_loader_clippy",
+    "tests/integration_test:loader_integration_test_clippy",
+  ]
   if (coverage || profile) {
     deps += [ ":common_cov" ]
   }
