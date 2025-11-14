@@ -63,48 +63,14 @@ _shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//libc",
 ]
-
-if (use_net) {
-  shared_deps += [ "//external/vendor/smoltcp-0.12.0:smoltcp" ]
-}
-
-if (board == "raspberry_pico2_cortexm") {
-  shared_deps += [ "//external/vendor/embedded-hal-1.0.0:embedded_hal" ]
-}
-
-shared_deps += [ "//external/vendor/semihosting-0.1.20:semihosting" ]
+_shared_deps += board_deps
 
 if (coverage || profile) {
-  shared_deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
-}
-
-shared_rust_build_flags = []
-if (direct_syscall_handler) {
-  shared_rust_build_flags += [
-    "--cfg",
-    "direct_syscall_handler",
+  _shared_deps += [
+    "//external/vendor/minicov-0.3.7:minicov",
+    "//external/vendor/semihosting-0.1.20:semihosting",
   ]
 }
-
-if (board == "qemu_mps2_an385" || board == "qemu_mps3_an547" ||
-    board == "raspberry_pico2_cortexm") {
-  shared_rust_build_flags += [
-    "--cfg",
-    "hardware_schedule",
-  ]
-  shared_deps += [ "//external/vendor/cortex-m-0.7.7:cortex_m" ]
-} else if (board == "qemu_virt64_aarch64") {
-  shared_deps += [
-    "//external/vendor/arm-gic-0.4.0:arm_gic",
-    "//external/vendor/flat_device_tree-3.1.1:flat_device_tree",
-    "//external/vendor/virtio-drivers-0.11.0:virtio_drivers",
-  ]
-}
-
-shared_rust_build_flags += [
-  "--cfg",
-  "target_board=\"$board\"",
-]
 
 build_rust("kernel_unittest") {
   testonly = true
@@ -117,12 +83,17 @@ build_rust("kernel_unittest") {
     "//external/vendor/paste-1.0.15:paste",
     "//kernel/test_harness:blueos_test_macro",
   ]
-  cfgs = blueos_default_cfgs
-  deps = shared_deps
-  configs += [ "//kernel/kconfig:kconfigs" ]
-  inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
-  rustflags = shared_rust_build_flags
-  rustflags += test_image_rustflags
+  cfgs = _kernel_default_cfgs
+  deps = _shared_deps
+  deps += [ "//external/vendor/semihosting-0.1.20:semihosting" ]
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
+  ]
+  rustflags = [
+    "--test",
+    "-Zpanic-abort-tests",
+  ]
 }
 
 run_clippy("kernel_unittest_clippy") {
@@ -137,16 +108,13 @@ build_rust("kernel_integration_test") {
   edition = "2021"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [
-    ":blueos",
-    "//external/vendor/byteorder-1.5.0:byteorder",
-    "//external/vendor/semihosting-0.1.20:semihosting",
-    "//kernel/rsrt",
-    "//kernel/scal:blueos_scal",
-    "//libc",
-  ]
-  if (use_net) {
-    deps += [ "//external/vendor/smoltcp-0.12.0:smoltcp" ]
-  }
+           ":blueos",
+           "//external/vendor/byteorder-1.5.0:byteorder",
+           "//external/vendor/semihosting-0.1.20:semihosting",
+           "//kernel/rsrt",
+           "//kernel/scal:blueos_scal",
+           "//libc",
+         ] + board_deps
   if (coverage || profile) {
     deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
   }
@@ -173,6 +141,12 @@ build_rust("blueos") {
   proc_macro_deps = [
     "//external/vendor/delegate-0.13.4:delegate",
     "//external/vendor/paste-1.0.15:paste",
+  ]
+  cfgs = _kernel_default_cfgs
+  deps = _shared_deps
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
   ]
 }
 
