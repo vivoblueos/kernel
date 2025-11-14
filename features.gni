@@ -12,15 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/templates/build_template.gni")
-import("//build/toolchain/blueos.gni")
-
-group("check_adapter") {
-  testonly = true
-  deps = [ "cmsis:run_cmsis_unittest" ]
-}
-
-group("check_adapter_by_clippy") {
-  testonly = true
-  deps = [ "cmsis:cmsis_adapter_unittest_clippy" ]
+declare_args() {
+  direct_syscall_handler = true
 }

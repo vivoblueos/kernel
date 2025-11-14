@@ -13,18 +13,14 @@
 # limitations under the License.
 
 import("//build/templates/build_template.gni")
+
 build_rust("blueos_test_macro") {
   testonly = true
   crate_type = "proc-macro"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  if (defined(use_defmt) && use_defmt) {
-    public_deps = [ "//external/defmt/v1.0.1:defmt($kernel_toolchain)" ]
-  } else {
-    public_deps =
-        [ "//external/semihosting/v0.1.20:semihosting($kernel_toolchain)" ]
-  }
-
+  public_deps =
+      [ "//external/semihosting/v0.1.20:semihosting(${default_toolchain})" ]
   deps = [
     "//external/proc-macro2/v1.0.89:proc_macro2",
     "//external/quote/v1.0.37:quote",

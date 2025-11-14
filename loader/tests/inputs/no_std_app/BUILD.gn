@@ -24,15 +24,16 @@ build_rust("everyting") {
     "//librs:librs_swi",
   ]
 
+  configs += [ "//build/boards/${board}:app_config" ]
+
   rustflags = [
     "-Cpanic=abort",
-    "-Crelocation-model=pie",
+    "-Crelocation-model=pic",
     "-Clink-arg=-Wl,-static",
     "-Clink-arg=-Wl,-pie",
     "-Clink-arg=-Wl,-no-dynamic-linker",
+    "-Clink-arg=-nostartfiles",
   ]
-
-  rustflags += [ "-Clink-arg=-nostartfiles" ]
 
   if (coverage) {
     deps += [ "//kernel/loader:common_cov" ]

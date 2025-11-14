@@ -25,14 +25,7 @@ bindgen("cmsis_os2_header") {
     "RTOS2/cmsis_os2.h",
     "RTOS2/os_tick.h",
   ]
-  cflags = [
-    "--target=$llvm_target",
-    "-fshort-enums",
-    "-fsigned-char",
-    "-nostdlib",
-    "-isystem",
-    "$sysroot_path/include",
-  ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }
 
 bindgen("cmsis_os_header") {
@@ -42,13 +35,7 @@ bindgen("cmsis_os_header") {
     "core::ffi",
   ]
   sources = [ "RTOS1/cmsis_os.h" ]
-  cflags = [
-    "--target=$llvm_target",
-    "-fshort-enums",
-    "-fsigned-char",
-    "-isystem",
-    "$sysroot_path/include",
-  ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }
 
 build_rust("cmsis_os") {

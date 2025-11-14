@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import("//build/templates/rust.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 build_rust("blueos_header") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  rustflags = common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  cfgs = [ "${build_type}" ]
 }

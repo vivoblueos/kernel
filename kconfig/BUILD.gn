@@ -13,24 +13,25 @@
 # limitations under the License.
 
 import("//build/templates/build_template.gni")
+import("//kernel/features.gni")
 
 action("kconfig_const") {
   script = "//kernel/kconfig/src/parse_const.py"
   inputs = [
     "config/Kconfig",
-    "config/$board/$build_type/defconfig",
+    "config/${board}/${build_type}/defconfig",
   ]
-  output = rebase_path("$target_gen_dir/kconfig.rs")
-  outputs = [ "$target_gen_dir/kconfig.rs" ]
+  output = rebase_path("${target_gen_dir}/kconfig.rs")
+  outputs = [ "${target_gen_dir}/kconfig.rs" ]
   args = [
     "--kconfig",
     rebase_path("config/Kconfig"),
     "--board",
-    "$board",
+    "${board}",
     "--build_type",
-    "$build_type",
+    "${build_type}",
     "--output",
-    "$output",
+    "${output}",
   ]
 }
 
@@ -41,12 +42,23 @@ build_rust("blueos_kconfig") {
   deps = [ ":kconfig_const" ]
 }
 
+_kernel_configs = exec_script("//kernel/kconfig/src/parse_rustflags.py",
+                              [
+                                "--kconfig",
+                                rebase_path("//kernel/kconfig/config/Kconfig"),
+                                "--board",
+                                "${board}",
+                                "--build_type",
+                                "${build_type}",
+                              ],
+                              "list lines")
+
 config("kconfigs") {
   rustflags = []
-  foreach(_config, kernel_configs) {
+  foreach(cfg, _kernel_configs) {
     rustflags += [
       "--cfg",
-      _config,
+      cfg,
     ]
   }
 }
