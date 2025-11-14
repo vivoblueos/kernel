@@ -100,12 +100,11 @@ jobs:
           for patch in patches/*.patch; do
             patch_abspath=$(realpath ${patch})
             repo=$(basename ${patch} ".patch")
-            if [ "${repo}" == "manifests" ]; then
+            if [ "${repo}" = "manifests" ]; then
               continue
-            else
-              repo_path=$(repo list ${repo} | cut -d ':' -f 1)
-              cd ${repo_path}
             fi
+            repo_path=$(repo list ${repo} | cut -d ':' -f 1)
+            cd ${repo_path}
             git apply -3 --check --verbose ${patch_abspath} && git apply -3 --verbose ${patch_abspath}
             if [ $? != 0 ]; then
               exit 1
