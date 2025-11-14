@@ -158,7 +158,8 @@ jobs:
               if (repo === 'manifests') {
                 continue;
               }
-              let repoPath = repo;
+              const out = execSync(`repo list ${repo}`).toString();
+              let repoPath = out.split(':')[0].trim();
               console.log(`\nChecking format in repo: (${repoPath})`);
               // Check if repo directory exists
               if (!fs.existsSync(repoPath)) {
@@ -293,7 +294,8 @@ jobs:
 
             for (const patchFile of patchFiles) {
               const repo = patchFile.replace(/\.diff$/, '');
-              let repoPath = repo;
+              const out = execSync(`repo list ${repo}`).toString();
+              let repoPath = out.split(':')[0].trim();
               // Skip invalid repos for license check
               if (repo.includes('manifests') || repo.includes('libc') || repo.includes('book') || repo.includes('external')) {
                 console.log(`Skipping ${repo} for license check.`);
