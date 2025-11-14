@@ -77,7 +77,7 @@ jobs:
           set -x
           for patch in patches/*.patch; do
             patch_abspath=$(realpath ${patch})
-            repo=$(basename ${patch} ".patch)
+            repo=$(basename ${patch} ".patch")
             if [ "${repo}" != "manifests" ]; then
               continue
             fi
@@ -99,7 +99,7 @@ jobs:
           set -x
           for patch in patches/*.patch; do
             patch_abspath=$(realpath ${patch})
-            repo=$(basename ${patch} ".patch)
+            repo=$(basename ${patch} ".patch")
             if [ "${repo}" == "manifests" ]; then
               continue
             else
@@ -145,7 +145,7 @@ jobs:
             const path = require('path');
             // Get list of patch files
             const patchesDir = 'patches';
-            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.patch));
+            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.patch'));
             if (patchFiles.length === 0) {
               console.log('No patch files found for format check');
               return;
