@@ -46,7 +46,7 @@ jobs:
               let repo = match[2];
               let prNum = match[3];
               prs.push({owner: owner, repo: repo, pr_num: prNum});
-              patchUrls.push({repo: repo, url: match[0] + ".diff"});
+              patchUrls.push({repo: repo, url: match[0] + ".patch"});
             }
             // Get metadata of the PR.
             await Promise.all(prs.map(async({ owner, repo, pr_num }) => {
@@ -60,7 +60,7 @@ jobs:
             // Download diffs.
             await Promise.all(patchUrls.map(async ({ repo, url }) => {
               console.log(`Downloading ${url}`);
-              const patchFilename = `patches/${repo}.diff`;
+              const patchFilename = `patches/${repo}.patch`;
               const response = await github.request({
                 url: url,
               });
@@ -75,9 +75,9 @@ jobs:
         run: |
           set -e
           set -x
-          for patch in patches/*.diff; do
+          for patch in patches/*.patch; do
             patch_abspath=$(realpath ${patch})
-            repo=$(basename ${patch} ".diff")
+            repo=$(basename ${patch} ".patch)
             if [ "${repo}" != "manifests" ]; then
               continue
             fi
@@ -97,9 +97,9 @@ jobs:
         run: |
           set -e
           set -x
-          for patch in patches/*.diff; do
+          for patch in patches/*.patch; do
             patch_abspath=$(realpath ${patch})
-            repo=$(basename ${patch} ".diff")
+            repo=$(basename ${patch} ".patch)
             if [ "${repo}" == "manifests" ]; then
               continue
             else
@@ -145,7 +145,7 @@ jobs:
             const path = require('path');
             // Get list of patch files
             const patchesDir = 'patches';
-            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.diff'));
+            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.patch));
             if (patchFiles.length === 0) {
               console.log('No patch files found for format check');
               return;
@@ -153,7 +153,7 @@ jobs:
             let formatErrors = [];
             let totalCheckedFiles = 0;
             for (const patchFile of patchFiles) {
-              const repo = patchFile.replace(/\.diff$/, '');
+              const repo = patchFile.replace(/\.patch$/, '');
               // Handle manifests repo special case
               if (repo === 'manifests') {
                 continue;
@@ -289,11 +289,11 @@ jobs:
             let failedRepos = [];
             let checkedRepos = [];
 
-            // Find all .diff files in patches/
-            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.diff'));
+            // Find all .patch files in patches/
+            const patchFiles = fs.readdirSync(patchesDir).filter(f => f.endsWith('.patch'));
 
             for (const patchFile of patchFiles) {
-              const repo = patchFile.replace(/\.diff$/, '');
+              const repo = patchFile.replace(/\.patch$/, '');
               const out = execSync(`repo list ${repo}`).toString();
               let repoPath = out.split(':')[0].trim();
               // Skip invalid repos for license check
