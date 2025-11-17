@@ -1,6 +1,6 @@
 import("//build/templates/rust.gni")
-import("//kernel/common_crate_rustflags.gni")
 import("//librs/tests/linux_emulation_test/testcase.gni")
+
 group("run_librs_linux_emulation") {
   testonly = true
   deps = [
@@ -25,7 +25,7 @@ build_rust("librs_linux_emulation") {
     "//libc:libc",
   ]
   features = [ "linux_emulation" ]
-  rustflags = common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }
 
 build_rust("librs_linux_emulation_shell_example") {
@@ -34,22 +34,7 @@ build_rust("librs_linux_emulation_shell_example") {
   crate_name = "librs_linux_emulation_shell_example"
   sources = [ "//librs/tests/linux_emulation_test/shell_example.rs" ]
   deps = [ "//librs/tests/linux_emulation_test:librs_linux_emulation" ]
-  common_crate_rustflags += [
-    "-C",
-    "panic=abort",
-    "-C",
-    "link-arg=--enable-non-contiguous-regions",
-
-    # Enable link-time-optimization
-    "-C",
-    "lto",
-
-    # Have rustc generate stack sizes for analyzing the size of stack frames.
-    "-Z",
-    "emit-stack-sizes",
-  ]
-
-  rustflags = common_crate_rustflags + common_gcc_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }
 
 librs_linux_emulation_case("clock") {

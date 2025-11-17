@@ -1,6 +1,20 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 build_rust("librs") {
   crate_type = "rlib"
@@ -13,7 +27,7 @@ build_rust("librs") {
     "//kernel/scal:blueos_scal",
     "//libc:libc",
   ]
-  rustflags = common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }
 
 run_clippy("librs_clippy") {
@@ -30,7 +44,9 @@ build_rust("librs_swi") {
     "//kernel/scal:blueos_scal_swi",
     "//libc:libc",
   ]
-  rustflags = common_crate_rustflags
+
+  # librs_swi will be used in apps dynamically loaded.
+  configs += [ "//build/boards/${board}:app_config" ]
 }
 
 run_clippy("librs_swi_clippy") {
@@ -42,7 +58,6 @@ build_rust("librs_unittest_image") {
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-
   deps = [
     "//external/semihosting/v0.1.20:semihosting",
     "//external/spin/v0.9.8:spin",
@@ -53,9 +68,8 @@ build_rust("librs_unittest_image") {
     "//libc:libc",
   ]
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
-  inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
-  rustflags = test_image_rustflags
-  rustflags += common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  rustflags = [ "--test" ]
 }
 
 run_clippy("librs_unittest_image_clippy") {
