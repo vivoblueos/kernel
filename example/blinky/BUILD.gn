@@ -14,7 +14,6 @@
 
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 executable("blinky_example") {
   crate_name = "blinky_example"
@@ -25,8 +24,5 @@ executable("blinky_example") {
     "//kernel/rsrt:rsrt_std",
     "//librs:librs",
   ]
-  inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
-  rustflags = []
-  rustflags += common_image_rustflags
-  rustflags += common_crate_rustflags
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }

@@ -14,16 +14,12 @@
 
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 group("check_apps") {
-  deps = []
-
-  if (board == "raspberry_pico2_cortexm") {
-    deps += [ "//apps/example/blinky:blinky_example($libc_toolchain)" ]
-  } else {
-    deps = [ "//apps/example/fs:fs_example($libc_toolchain)" ]
-    deps += [ "//apps/example/net:net_example($libc_toolchain)" ]
-    deps += [ "//apps/example/ftp_client:ftp_client_example_test_runner($libc_toolchain)" ]
-  }
+  deps = [
+    "//apps/example/blinky:blinky_example",
+    "//apps/example/fs:fs_example",
+    "//apps/example/ftp_client:ftp_client_example_test_runner",
+    "//apps/example/net:net_example",
+  ]
 }

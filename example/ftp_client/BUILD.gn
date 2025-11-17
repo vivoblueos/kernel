@@ -15,7 +15,6 @@
 import("//build/templates/build_template.gni")
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
-import("//kernel/common_crate_rustflags.gni")
 
 executable("ftp_client_example") {
   crate_name = "ftp_client_example"
@@ -28,23 +27,20 @@ executable("ftp_client_example") {
     "//kernel/rsrt:rsrt_std",
     "//librs:librs",
   ]
-
-  inputs = [ "//kernel/kernel/src/boards/$board/link.x" ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
   rustflags = [
     "--cfg",
     "feature=\"debug_print\"",
     "--cfg",
     "feature=\"log\"",
   ]
-  rustflags += common_image_rustflags
-  rustflags += common_crate_rustflags
 }
 
 gen_qemu_runner("ftp_client_example_test_runner") {
   semihosting = true
   img = ":ftp_client_example"
-  qemu = "$qemu_exe"
-  machine = "$machine"
+  qemu = qemu_exe
+  machine = machine
   qemu_args = qemu_extra_args
   net_args = qemu_net_args
   block_img = "ftp_client_example.img"
