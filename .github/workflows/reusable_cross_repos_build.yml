@@ -157,6 +157,11 @@ jobs:
               if (repo === 'manifests') {
                 continue;
               }
+              // Skip external repos for format check
+              if (repo.includes('external')) {
+                console.log(`Skipping ${repo} for format check.`);
+                continue;
+              }
               const out = execSync(`repo list ${repo}`).toString();
               let repoPath = out.split(':')[0].trim();
               console.log(`\nChecking format in repo: (${repoPath})`);
