@@ -1,0 +1,38 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+build_rust("blueos_driver") {
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//external/bitflags/v2.9.0:bitflags",
+    "//external/cfg-if/v1.0.0:cfg_if",
+    "//external/safe-mmio/v0.2.5:safe_mmio",
+    "//external/tock-registers/v0.9.0:tock_registers",
+    "//external/zerocopy/v0.8.25:zerocopy",
+    "//kernel/hal:blueos_hal",
+  ]
+  if (board == "gd32vw553") {
+    deps += [ "//external/nuclei-sdk" ]
+  } else if (board == "gd32e507") {
+    deps += [ "//external/gd32e5/v0.9.1:gd32e5" ]
+  }
+  features = []
+  rustflags = [
+    "--cfg",
+    "target_board=\"$board\"",
+  ]
+}
