@@ -21,9 +21,15 @@ use crate::vfs;
 use crate::{allocator, arch, boards, logger, scheduler, thread, time};
 use core::ptr::{addr_of, addr_of_mut};
 
+// We have to put these globals in the .data section. If not specified explicitly,
+// they might be put in the .bss section and might be used before they are initialized.
+#[link_section = ".data"]
 pub(crate) static mut INIT_BSS_DONE: bool = false;
+#[link_section = ".data"]
 pub(crate) static mut INIT_ARRAY_DONE: bool = false;
+#[link_section = ".data"]
 pub(crate) static mut INIT_HEAP_DONE: bool = false;
+#[link_section = ".data"]
 pub(crate) static mut INIT_VFS_DONE: bool = false;
 
 // See https://github.com/rust-lang/rust/pull/134213 for more details about naked function.
