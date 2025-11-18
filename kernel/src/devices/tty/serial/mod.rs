@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod uart;
 use crate::{
     devices::{tty::termios::Termios, Device, DeviceBase, DeviceClass, DeviceId, DeviceRequest},
     irq,
