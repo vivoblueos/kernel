@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{disable_local_irq, enable_local_irq, Context, IsrContext, NR_SWITCH};
+use super::{
+    claim_switch_context, disable_local_irq, enable_local_irq, Context, IsrContext, NR_SWITCH,
+};
 use crate::{
-    boards::{handle_plic_irq, set_timeout_after},
+    boards::handle_plic_irq,
     debug,
     irq::{enter_irq, leave_irq},
     rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
@@ -34,6 +36,19 @@ pub(crate) const TIMER_INT: usize = INTERRUPT_MASK | 0x7;
 pub(crate) const ECALL: usize = 0xB;
 pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
 
+type ContextSwitcher =
+    extern "C" fn(to_sp: usize, hook: Option<&mut ContextSwitchHookHolder>) -> usize;
+
+#[naked]
+extern "C" fn switch_stack_with_hook(
+    to_sp: usize,
+    hook: Option<&mut ContextSwitchHookHolder>,
+    ra: usize,
+    switcher: ContextSwitcher,
+) -> ! {
+    unsafe { core::arch::naked_asm!("mv sp, a0", "mv ra, a2", "jalr x0, a3, 0") }
+}
+
 // trap_handler decides whether nested interrupt is allowed.
 #[repr(align(4))]
 #[naked]
@@ -50,19 +65,15 @@ pub(crate) unsafe extern "C" fn trap_entry() {
             mv a0, s1
             mv a1, s2
             mv a2, s3
+            auipc a3, 0
+            addi a3, a3, 14 // Get the address of instruction which is after calling handle_trap.
             call {handle_trap}
             mv sp, a0
             call {leave_irq}
-            mv a0, s1
-            mv a1, sp
-            mv a2, s2
-            call {might_switch}
-            mv sp, a0
             ",
             rv_restore_context!(),
             rv_restore_context_epilogue!(),
             "
-            fence rw, rw
             mret
             "
         ),
@@ -71,7 +82,6 @@ pub(crate) unsafe extern "C" fn trap_entry() {
         handle_trap = sym handle_trap,
         ra = const offset_of!(Context, ra),
         stack_size = const core::mem::size_of::<Context>(),
-        might_switch = sym might_switch,
         gp = const offset_of!(Context, gp),
         tp = const offset_of!(Context, tp),
         t0 = const offset_of!(Context, t0),
@@ -144,7 +154,6 @@ impl Drop for SyscallGuard {
                 "csrw mcause, {mcause}",
                 "csrw mtval, {mtval}",
                 "csrw mepc, {mepc}",
-                "fence rw, rw",
                 mstatus = in(reg) self.isr_ctx.mstatus,
                 mcause = in(reg) self.isr_ctx.mcause,
                 mtval = in(reg) self.isr_ctx.mtval,
@@ -154,12 +163,44 @@ impl Drop for SyscallGuard {
     }
 }
 
+extern "C" fn handle_switch(to_sp: usize, hook: Option<&mut ContextSwitchHookHolder>) -> usize {
+    scheduler::save_context_finish_hook(hook);
+    // Clear MPIE, since we assumes every thread should be resumed
+    // with local irq enabled.
+    unsafe {
+        core::arch::asm!(
+            "csrs mstatus, {val}",
+            val = in(reg) super::MSTATUS_MPIE,
+            options(nostack),
+        )
+    }
+    to_sp
+}
+
+fn handle_ecall_switch(from: &Context, ra: usize) -> usize {
+    let saved_sp_ptr: *mut usize = unsafe { from.a0 as *mut usize };
+    if !saved_sp_ptr.is_null() {
+        sideeffect();
+        unsafe { saved_sp_ptr.write_volatile(from as *const _ as usize) };
+    }
+    let to_sp = from.a1;
+    let hook_ptr = from.a2 as *mut ContextSwitchHookHolder;
+    let hook = if hook_ptr.is_null() {
+        sideeffect();
+        None
+    } else {
+        sideeffect();
+        Some(unsafe { &mut *hook_ptr })
+    };
+    switch_stack_with_hook(to_sp, hook, ra, handle_switch)
+}
+
 #[inline(never)]
-extern "C" fn handle_ecall(ctx: &mut Context) -> usize {
+extern "C" fn handle_ecall(ctx: &mut Context, cont: usize) -> usize {
     let sp = ctx as *const _ as usize;
     ctx.mepc += 4;
     if ctx.a7 == NR_SWITCH {
-        return ctx.a1;
+        return handle_ecall_switch(ctx, cont);
     }
     {
         compiler_fence(Ordering::SeqCst);
@@ -174,41 +215,26 @@ extern "C" fn handle_ecall(ctx: &mut Context) -> usize {
     sp
 }
 
-extern "C" fn might_switch(from: &Context, to: &Context, mcause: usize) -> usize {
-    let from_ptr = from as *const _;
-    let to_ptr = to as *const _;
-    if from_ptr == to_ptr {
-        return from_ptr as usize;
+#[inline(never)]
+fn might_switch_context(from: &Context, ra: usize) -> usize {
+    let old_sp = from as *const _ as usize;
+    if !claim_switch_context() {
+        return old_sp;
     }
-    // Currently we only handle this case.
-    assert!(mcause == ECALL && from.a7 == NR_SWITCH);
-    assert_eq!(to_ptr as usize, from.a1);
-    let sp = from_ptr as usize;
-    let saved_sp_ptr: *mut usize = unsafe { from.a0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
-        sideeffect();
-        // FIXME: rustc opt the write out if not setting it volatile.
-        unsafe { saved_sp_ptr.write_volatile(sp) };
-    }
-    let hook: *mut ContextSwitchHookHolder = unsafe { from.a2 as *mut ContextSwitchHookHolder };
-    if !hook.is_null() {
-        sideeffect();
-        unsafe {
-            scheduler::save_context_finish_hook(Some(&mut *hook));
-        }
-    }
-    // Clear MPIE, since we assumes every thread should be resumed
-    // with local irq enabled.
-    unsafe {
-        core::arch::asm!(
-            "csrs mstatus, {val}",
-            val = in(reg) super::MSTATUS_MPIE,
-        )
-    }
-    from.a1
+
+    let this_thread = scheduler::current_thread();
+
+    let Some(next) = scheduler::next_preferred_thread(this_thread.priority()) else {
+        return old_sp;
+    };
+    this_thread.lock().set_saved_sp(old_sp);
+    let to_sp = next.saved_sp();
+    let mut hooks = ContextSwitchHookHolder::new(next);
+    hooks.set_ready_thread(this_thread);
+    switch_stack_with_hook(to_sp, Some(&mut hooks), ra, handle_switch)
 }
 
-extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize) -> usize {
+extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     let sp = ctx as *const _ as usize;
     match mcause {
         EXTERN_INT => {
@@ -217,9 +243,9 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize) -> usi
         }
         TIMER_INT => {
             crate::time::handle_tick_increment();
-            sp
+            might_switch_context(ctx, cont)
         }
-        ECALL => handle_ecall(ctx),
+        ECALL => handle_ecall(ctx, cont),
         _ => {
             let t = scheduler::current_thread();
             panic!(

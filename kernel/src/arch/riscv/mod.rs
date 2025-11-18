@@ -19,7 +19,7 @@ use crate::{irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
 use blueos_kconfig::NUM_CORES;
 use core::{
     mem::offset_of,
-    sync::atomic::{compiler_fence, AtomicU8, Ordering},
+    sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
 };
 pub use trap::*;
 
@@ -40,8 +40,28 @@ pub(crate) const MIE_SEIE: usize = 1 << 9;
 pub(crate) const MIE_MEIE: usize = 1 << 11;
 // We haven't supported supervisor mode and user mode yet.
 
+// FIXME: We don't need atomic here.
+static PENDING_SWITCH_CONTEXT: [AtomicBool; NUM_CORES] =
+    [const { AtomicBool::new(false) }; NUM_CORES];
+
 #[inline]
-pub(crate) extern "C" fn pend_switch_context() {}
+pub(crate) extern "C" fn pend_switch_context() {
+    let level = disable_local_irq_save();
+    let id = current_cpu_id();
+    PENDING_SWITCH_CONTEXT[id].store(true, Ordering::Release);
+    enable_local_irq_restore(level);
+}
+
+#[inline]
+pub(crate) extern "C" fn claim_switch_context() -> bool {
+    let level = disable_local_irq_save();
+    let id = current_cpu_id();
+    let ok = PENDING_SWITCH_CONTEXT[id]
+        .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok();
+    enable_local_irq_restore(level);
+    ok
+}
 
 #[inline]
 pub(crate) extern "C" fn local_irq_enabled() -> bool {
@@ -381,7 +401,7 @@ pub(crate) extern "C" fn restore_context_with_hook(
     hook: *mut ContextSwitchHookHolder,
 ) -> ! {
     switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
-    loop {}
+    unreachable!("Should have switched to another thread");
 }
 
 // This context is used when we are performing context switching in
