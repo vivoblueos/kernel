@@ -22,4 +22,3 @@ pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
 pub const PSCI_BASE: u32 = 0x84000000;
 pub const GICD: usize = 0x8000000;
 pub const GICR: usize = 0x80a0000;
-pub const DRAM_BASE: u64 = 0x4000_0000;

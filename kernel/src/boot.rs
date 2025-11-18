@@ -116,6 +116,18 @@ extern "C" fn init() {
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
 
+    #[cfg(virtio)]
+    {
+        use crate::devices::virtio;
+        use flat_device_tree::Fdt;
+        // initialize fdt
+        // SAFETY: We trust that the FDT pointer we were given is valid, and this is the only time we
+        // use it.
+        let fdt = unsafe { Fdt::from_ptr(crate::boards::DRAM_BASE as *const u8).unwrap() };
+        // initialize virtio
+        virtio::init_virtio(&fdt);
+    }
+
     scheduler::init();
     // FIXME: remove this after riscv64 is supported
     #[cfg(not(target_arch = "riscv64"))]
