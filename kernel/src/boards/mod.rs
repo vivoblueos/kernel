@@ -12,42 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_board = "qemu_mps2_an385")]
-mod qemu_mps2_an385;
-#[cfg(target_board = "qemu_mps2_an385")]
-pub(crate) use qemu_mps2_an385::{get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init};
+use blueos_macro::current_board_mod;
 
-#[cfg(target_board = "qemu_riscv64")]
-mod qemu_riscv64;
-#[cfg(target_board = "qemu_riscv64")]
-pub(crate) use qemu_riscv64::{
-    current_cycles, current_ticks, get_cycles_to_duration, get_cycles_to_ms, get_early_uart,
-    handle_plic_irq, init, set_timeout_after,
-};
+current_board_mod!();
 
-#[cfg(target_board = "qemu_riscv32")]
-mod qemu_riscv32;
-#[cfg(target_board = "qemu_riscv32")]
-pub(crate) use qemu_riscv32::{
-    current_cycles, current_ticks, get_cycles_to_duration, get_cycles_to_ms, get_early_uart,
-    handle_plic_irq, init, set_timeout_after,
-};
+#[macro_export]
+macro_rules! define_peripheral {
+    ($( ($field_name:ident, $device_ty:ty, $v:expr) ),* $(,)?) => {
+        paste::paste! {
+            $(
+                pub static [<$field_name:upper>]: $device_ty = $v;
+            )*
+        }
 
-#[cfg(target_board = "qemu_mps3_an547")]
-mod qemu_mps3_an547;
-#[cfg(target_board = "qemu_mps3_an547")]
-pub(crate) use qemu_mps3_an547::{get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init};
+        #[macro_export]
+        macro_rules! get_device {
+            $(
+                ($field_name) => {
+                    paste::paste! { &crate::boards::[<$field_name:upper>] }
+                };
+            )*
+        }
 
-#[cfg(target_board = "qemu_virt64_aarch64")]
-mod qemu_virt64_aarch64;
-#[cfg(target_board = "qemu_virt64_aarch64")]
-pub(crate) use qemu_virt64_aarch64::{
-    get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init,
-};
+        #[allow(unused_imports)]
+        pub use get_device;
+    };
+}
 
-#[cfg(target_board = "raspberry_pico2_cortexm")]
-mod raspberry_pico2_cortexm;
-#[cfg(target_board = "raspberry_pico2_cortexm")]
-pub(crate) use raspberry_pico2_cortexm::{
-    get_cycles_to_duration, get_cycles_to_ms, get_early_uart, init,
-};
+#[macro_export]
+macro_rules! define_pin_states {
+    ($class_name:ty, $( ( $($v:expr),* $(,)? ) ),* $(,)?) => {
+        pub(crate) const PIN_STATES: &[&$class_name] = &[
+            $( &<$class_name>::new( $($v),* ), )*
+        ];
+    };
+    (None) => {
+        pub(crate) const PIN_STATES: &[&()] = &[];
+    }
+}
