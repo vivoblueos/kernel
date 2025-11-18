@@ -214,8 +214,13 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     }
     compiler_fence(Ordering::SeqCst);
     if let Some(t) = ready_thread {
-        let ok = crate::scheduler::queue_ready_thread(thread::RUNNING, t);
-        assert!(ok);
+        let ok = if Thread::id(&t) == Thread::id(idle::current_idle_thread()) {
+            // We don't put idle threads into ready queues.
+            t.transfer_state(thread::RUNNING, thread::READY)
+        } else {
+            crate::scheduler::queue_ready_thread(thread::RUNNING, t)
+        };
+        debug_assert!(ok);
     }
     compiler_fence(Ordering::SeqCst);
     if let Some(t) = pending_thread {
@@ -357,17 +362,9 @@ fn yield_unconditionally() {
     let old = current_thread();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
-    if Thread::id(&old) == Thread::id(idle::current_idle_thread()) {
-        let ok = old.transfer_state(thread::RUNNING, thread::READY);
-        assert!(ok);
-        drop(old);
-        // We should never put idle thread to ready queue.
-        arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
-    } else {
-        hook_holder.set_ready_thread(old);
-        arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
-    }
-    assert!(arch::local_irq_enabled());
+    hook_holder.set_ready_thread(old);
+    arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
+    debug_assert!(arch::local_irq_enabled());
 }
 
 pub(crate) fn relinquish_me() {
