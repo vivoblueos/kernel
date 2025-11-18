@@ -58,13 +58,16 @@ macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
             "csrci mstatus, 0x8",
-            "csrr t0, mhartid",
+            "la gp, __global_pointer$",
             "la sp, {stack_end}",
-            "slli t0, t0, 14",
+            "csrr t0, mhartid",
+            "li t1, {stack_size}",
+            "mul t0, t0, t1",
             "sub sp, sp, t0",
             "call {bootstrap}",
             "la t0, {cont}",
             "jalr x0, t0, 0",
+            stack_size = const 0x1000,
             stack_end = sym $stack_end,
             bootstrap = sym $crate::arch::riscv::bootstrap,
             cont = sym $cont,
