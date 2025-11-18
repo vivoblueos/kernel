@@ -20,11 +20,9 @@
 // SPDX-License-Identifier: MIT
 
 mod config;
-mod uart;
 use crate::{
     arch,
     arch::riscv::{local_irq_enabled, trap_entry, Context},
-    devices::{console, dumb, Device, DeviceManager},
     drivers::ic::plic::Plic,
     scheduler,
     support::SmpStagedInit,
@@ -32,7 +30,6 @@ use crate::{
 };
 use alloc::string::String;
 use core::sync::atomic::Ordering;
-pub(crate) use uart::get_early_uart; // re-export
 pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 
 const CLOCK_ADDR: usize = 0x0200_0000;
@@ -121,17 +118,23 @@ pub(crate) fn init() {
         scheduler::wait_and_then_start_schedule();
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
-    enumerate_devices();
-    // FIXME: It's weird we use VFS before it's initialized.
-    register_devices_in_vfs();
-    crate::boot::init_vfs();
+    // Enable UART0 in PLIC.
+    PLIC.enable(
+        arch::current_cpu_id(),
+        u32::try_from(usize::from(config::UART0_IRQ))
+            .expect("usize(64 bits) converts to u32 failed"),
+    );
+    // Set UART0 priority in PLIC.
+    PLIC.set_priority(
+        u32::try_from(usize::from(config::UART0_IRQ))
+            .expect("usize(64 bits) converts to u32 failed"),
+        1,
+    );
 }
 
-fn enumerate_devices() {
-    uart::uart_init(0);
+crate::define_peripheral! {
+    (console_uart, blueos_driver::uart::dumb::DumbUart,
+     blueos_driver::uart::dumb::DumbUart),
 }
 
-fn register_devices_in_vfs() {
-    console::init_console(dumb::get_serial0().clone());
-    DeviceManager::get().register_device(String::from("ttyS0"), dumb::get_serial0().clone());
-}
+crate::define_pin_states!(None);

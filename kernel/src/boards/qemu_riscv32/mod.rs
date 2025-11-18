@@ -117,6 +117,18 @@ pub(crate) fn init() {
         scheduler::wait_and_then_start_schedule();
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
+    // Enable UART0 in PLIC.
+    PLIC.enable(
+        arch::current_cpu_id(),
+        u32::try_from(usize::from(config::UART0_IRQ))
+            .expect("usize(64 bits) converts to u32 failed"),
+    );
+    // Set UART0 priority in PLIC.
+    PLIC.set_priority(
+        u32::try_from(usize::from(config::UART0_IRQ))
+            .expect("usize(64 bits) converts to u32 failed"),
+        1,
+    );
 }
 
 crate::define_peripheral! {
