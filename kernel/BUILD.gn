@@ -81,6 +81,7 @@ build_rust("kernel_unittest") {
     "//external/paste/v1.0.15:paste",
     "//external/rust-delegate/v0.13.3:delegate",
     "//kernel/test_harness:blueos_test_macro",
+    "//kernel/macro:blueos_macro",
   ]
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
@@ -140,6 +141,7 @@ build_rust("blueos") {
   proc_macro_deps = [
     "//external/paste/v1.0.15:paste",
     "//external/rust-delegate/v0.13.3:delegate",
+    "//kernel/macro:blueos_macro",
   ]
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
