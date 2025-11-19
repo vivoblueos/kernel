@@ -46,7 +46,7 @@ impl<T, From: const Adapter<T>, To: const Adapter<T>, S> const Adapter<S>
     for Relative<T, From, To, S>
 {
     fn offset() -> usize {
-        To::offset().wrapping_sub(From::offset())
+        From::offset().wrapping_sub(To::offset())
     }
 }
 
@@ -64,5 +64,27 @@ pub struct Nested<P, S: Adapter<P>, N, T: Adapter<N>>(
 impl<P, S: const Adapter<P>, N, T: const Adapter<N>> const Adapter<P> for Nested<P, S, N, T> {
     fn offset() -> usize {
         S::offset() + T::offset()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[repr(C)]
+    struct Foo {
+        a: u32,
+        b: u32,
+    }
+
+    impl_simple_intrusive_adapter!(A, Foo, a);
+    impl_simple_intrusive_adapter!(B, Foo, b);
+
+    #[test]
+    fn test_relative_adapter() {
+        assert_eq!(
+            Relative::<Foo, B, A, u32>::offset(),
+            core::mem::size_of::<u32>()
+        );
     }
 }
