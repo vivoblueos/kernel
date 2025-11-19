@@ -46,3 +46,17 @@ impl<S, T, From: const Adapter<S>, To: const Adapter<S>> const Adapter<T>
         To::offset() - From::offset()
     }
 }
+
+#[derive(Default, Debug)]
+pub struct Nested<P, S: Adapter<P>, N, T: Adapter<N>>(
+    PhantomData<P>,
+    PhantomData<S>,
+    PhantomData<N>,
+    PhantomData<T>,
+);
+
+impl<P, S: const Adapter<P>, N, T: const Adapter<N>> const Adapter<P> for Nested<P, S, N, T> {
+    fn offset() -> usize {
+        S::offset() + T::offset()
+    }
+}
