@@ -14,9 +14,10 @@
 
 use crate::{
     support::DisableInterruptGuard,
-    types::{IRwLock, IntrusiveAdapter, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    types::{IRwLock, IntrusiveAdapter, NestedAdapter, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use core::{
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::atomic::{compiler_fence, Ordering},
 };
@@ -209,11 +210,23 @@ unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
 unsafe impl<T: ?Sized + Sync> Sync for SpinLock<T> {}
 
 #[derive(Default, Debug)]
-pub struct ISpinLock<T: Sized, A: IntrusiveAdapter<T>> {
-    lock: IRwLock<T, A>,
+struct ISpinLockOffset<T: Sized, A: const IntrusiveAdapter<T>>(PhantomData<T>, PhantomData<A>);
+
+impl<T: Sized, A: const IntrusiveAdapter<T>> const IntrusiveAdapter<ISpinLock<T, A>>
+    for ISpinLockOffset<T, A>
+{
+    fn offset() -> usize {
+        core::mem::offset_of!(ISpinLock<T, A>, lock)
+    }
 }
 
-impl<T: Sized, A: IntrusiveAdapter<T>> ISpinLock<T, A> {
+#[allow(clippy::type_complexity)]
+#[derive(Default, Debug)]
+pub struct ISpinLock<T: Sized, A: const IntrusiveAdapter<T>> {
+    lock: IRwLock<T, NestedAdapter<T, A, ISpinLock<T, A>, ISpinLockOffset<T, A>>>,
+}
+
+impl<T: Sized, A: const IntrusiveAdapter<T>> ISpinLock<T, A> {
     pub const fn new() -> Self {
         Self {
             lock: IRwLock::new(),
@@ -257,5 +270,5 @@ impl<T: Sized, A: IntrusiveAdapter<T>> ISpinLock<T, A> {
     }
 }
 
-unsafe impl<T: Sized + Send, A: IntrusiveAdapter<T>> Send for ISpinLock<T, A> {}
-unsafe impl<T: Sized + Sync, A: IntrusiveAdapter<T>> Sync for ISpinLock<T, A> {}
+unsafe impl<T: Sized + Send, A: const IntrusiveAdapter<T>> Send for ISpinLock<T, A> {}
+unsafe impl<T: Sized + Sync, A: const IntrusiveAdapter<T>> Sync for ISpinLock<T, A> {}
