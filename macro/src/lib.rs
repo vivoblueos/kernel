@@ -18,7 +18,7 @@ use syn::{Data, Field, Fields};
 
 #[proc_macro]
 pub fn current_board_mod(_item: TokenStream) -> TokenStream {
-    let Some(board_name) = std::env::var("TARGET_BOARD") else {
+    let Ok(board_name) = std::env::var("TARGET_BOARD") else {
         panic!("TARGET_BOARD is not set");
     };
 
