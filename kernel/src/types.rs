@@ -15,7 +15,9 @@
 use crate::sync::{ISpinLock, SpinLock, SpinLockGuard};
 pub use blueos_infra::{
     impl_simple_intrusive_adapter,
-    intrusive::{Adapter as IntrusiveAdapter, Relative as RelativeAdapter},
+    intrusive::{
+        Adapter as IntrusiveAdapter, Nested as NestedAdapter, Relative as RelativeAdapter,
+    },
     list::{
         typed_atomic_ilist::AtomicListHead as AtomicIlistHead, typed_ilist::ListHead as IlistHead,
         GenericList,
