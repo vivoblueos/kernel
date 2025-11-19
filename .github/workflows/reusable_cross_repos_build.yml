@@ -293,13 +293,13 @@ jobs:
 
             for (const patchFile of patchFiles) {
               const repo = patchFile.replace(/\.patch$/, '');
-              const out = execSync(`repo list ${repo}`).toString();
-              let repoPath = out.split(':')[0].trim();
               // Skip invalid repos for license check
               if (repo.includes('manifests') || repo.includes('libc') || repo.includes('book') || repo.includes('external')) {
                 console.log(`Skipping ${repo} for license check.`);
                 continue;
               }
+              const out = execSync(`repo list ${repo}`).toString();
+              let repoPath = out.split(':')[0].trim();
 
               try {
                 // Run license-eye header check in each repo directory
