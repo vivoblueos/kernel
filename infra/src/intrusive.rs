@@ -46,6 +46,6 @@ impl<T, From: const Adapter<T>, To: const Adapter<T>, S> const Adapter<S>
     for Relative<T, From, To, S>
 {
     fn offset() -> usize {
-        To::offset() - From::offset()
+        To::offset().wrapping_sub(From::offset())
     }
 }
