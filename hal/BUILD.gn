@@ -19,7 +19,7 @@ build_rust("blueos_hal") {
   sources = [ "src/lib.rs" ]
   features = []
   if (defined(thiserror)) {
-    deps += [ "//external/thiserror/v2.0.9:thiserror" ]
+    deps += [ "//external/vendor/thiserror-2.0.17:thiserror" ]
     features += [ "thiserror" ]
   }
 }
