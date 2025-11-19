@@ -88,7 +88,7 @@ jobs:
           fetchedPrs='${{ steps.fetch_prs.outputs.fetched_prs }}'
           echo "" > changed_files.txt
 
-          for pr in $fetchedPrs; then
+          for pr in $fetchedPrs; do
             repo=$(echo $pr | cut -d '|' -f 1)
             head_sha=$(echo $pr | cut -d '|' -f 2)
             base_sha=$(echo $pr | cut -d '|' -f 3)
