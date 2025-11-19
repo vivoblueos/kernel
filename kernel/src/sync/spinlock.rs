@@ -220,6 +220,7 @@ impl<T: Sized, A: const IntrusiveAdapter<T>> const IntrusiveAdapter<ISpinLock<T,
     }
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(Default, Debug)]
 pub struct ISpinLock<T: Sized, A: const IntrusiveAdapter<T>> {
     lock: IRwLock<T, NestedAdapter<T, A, ISpinLock<T, A>, ISpinLockOffset<T, A>>>,
