@@ -69,7 +69,7 @@ jobs:
             core.setOutput('fetched_prs', JSON.stringify(fetchedPrs));
       - name: Init repo and sync
         run: |
-          repo init --depth=1 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
+          repo init --depth=10 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
           repo sync -j$(nproc)
       - name: Patch manifests repo
         run: |
