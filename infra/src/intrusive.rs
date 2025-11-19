@@ -32,15 +32,18 @@ macro_rules! impl_simple_intrusive_adapter {
     }
 }
 
-pub struct Relative<S, T, From: const Adapter<S>, To: const Adapter<S>>(
-    PhantomData<S>,
+// This adapter is used when T has a field which has `From` adapter, the other
+// field which has `To` adapter. Now we have a reference to the field owns the `From` adapter,
+// we use this adapter to access the field owns the `To` adapter.
+pub struct Relative<T, From: const Adapter<T>, To: const Adapter<T>, S>(
     PhantomData<T>,
     PhantomData<From>,
     PhantomData<To>,
+    PhantomData<S>,
 );
 
-impl<S, T, From: const Adapter<S>, To: const Adapter<S>> const Adapter<T>
-    for Relative<S, T, From, To>
+impl<T, From: const Adapter<T>, To: const Adapter<T>, S> const Adapter<S>
+    for Relative<T, From, To, S>
 {
     fn offset() -> usize {
         To::offset() - From::offset()
