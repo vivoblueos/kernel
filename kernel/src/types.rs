@@ -153,7 +153,7 @@ mod tests {
         node: AtomicIlistHead<Foobar, Node>,
         node_lock: ISpinLock<
             AtomicIlistHead<Foobar, Node>,
-            RelativeAdapter<Foobar, AtomicIlistHead<Foobar, Node>, Node, Lock>,
+            RelativeAdapter<Foobar, Lock, Node, AtomicIlistHead<Foobar, Node>>,
         >,
     }
 
