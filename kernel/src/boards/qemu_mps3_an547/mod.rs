@@ -14,17 +14,17 @@
 
 pub mod config;
 mod handlers;
-pub mod uart;
-pub(crate) use uart::get_early_uart; // re-export
-use uart::{get_serial, uart_init};
 
 use crate::{
-    arch, boot,
-    devices::{console, tty::n_tty::Tty},
+    arch,
+    boards::config::{
+        memory_map, UART0RX_IRQn, UART0TX_IRQn, SYSTEM_CORE_CLOCK, UART0RX_IRQ_N, UART0TX_IRQ_N,
+    },
+    boot,
     error::Error,
     time,
 };
-use alloc::{string::String, sync::Arc};
+use blueos_hal::HasInterruptReg;
 use boot::INIT_BSS_DONE;
 use core::ptr::addr_of;
 
@@ -91,21 +91,8 @@ pub(crate) fn init() {
     unsafe { boot::init_heap() };
     arch::irq::init();
     time::systick_init(config::SYSTEM_CORE_CLOCK);
-    match uart_init(
-        0,
-        config::memory_map::UART0_BASE_S,
-        config::SYSTEM_CORE_CLOCK,
-        config::UART0RX_IRQn,
-        config::UART0TX_IRQn,
-        String::from("ttyS0"),
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Failed to init uart: {}", Error::from(e)),
-    }
-    match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
-        Ok(_) => (),
-        Err(e) => panic!("Failed to init console: {}", Error::from(e)),
-    }
+    arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::Normal);
+    arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
 }
 
 // FIXME: support float
@@ -117,4 +104,41 @@ pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
 
 pub fn get_cycles_to_ms(cycles: u64) -> u64 {
     (cycles as u128 * 1_000 as u128 / config::SYSTEM_CORE_CLOCK as u128) as u64
+}
+
+crate::define_peripheral! {
+    (console_uart, blueos_driver::uart::cmsdk::Cmsdk,
+     unsafe {blueos_driver::uart::cmsdk::Cmsdk::new(
+         memory_map::UART0_BASE_S as _,
+         SYSTEM_CORE_CLOCK,
+            UART0TX_IRQ_N,
+            UART0RX_IRQ_N
+     )}),
+}
+
+crate::define_pin_states!(None);
+
+#[no_mangle]
+pub unsafe extern "C" fn uart0rx_handler() {
+    let uart = get_device!(console_uart);
+    if let Some(handler) = unsafe {
+        let intr_handler_cell = &*uart.intr_handler.get();
+
+        intr_handler_cell.as_ref()
+    } {
+        handler();
+    }
+    uart.clear_interrupt(blueos_driver::uart::InterruptType::Rx);
+}
+#[no_mangle]
+pub unsafe extern "C" fn uart0tx_handler() {
+    let uart = get_device!(console_uart);
+    if let Some(handler) = unsafe {
+        let intr_handler_cell = &*uart.intr_handler.get();
+
+        intr_handler_cell.as_ref()
+    } {
+        handler();
+    }
+    uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
 }

@@ -1,0 +1,34 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+build_rust("blueos_macro") {
+  crate_type = "proc-macro"
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  deps = []
+  proc_macro_deps = [
+    "//external/proc-macro2/v1.0.89:proc_macro2",
+    "//external/quote/v1.0.37:quote",
+    "//external/syn/v2.0.87:syn",
+  ]
+  features = []
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+    "--extern",
+    "proc_macro",
+  ]
+}

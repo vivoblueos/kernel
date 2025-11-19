@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set_default_toolchain("//build/toolchain:blueos_thumbv8m")
-llvm_target = "thumbv8m.main-none-eabihf"
-qemu_exe = "qemu-system-arm"
-machine = "mps3-an547"
-libc_toolchain = "//build/toolchain:blueos_thumbv8m"
-librs_linux_emulation_toolchain =
-    "//build/toolchain:librs_linux_emulation_thumbv8m"
-kernel_toolchain = "//build/toolchain:blueos_thumbv8m"
-use_defmt = true
-chip = "RP235x"
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+build_rust("blueos_hal") {
+  sources = [ "src/lib.rs" ]
+  features = []
+  if (defined(thiserror)) {
+    deps += [ "//external/thiserror/v2.0.9:thiserror" ]
+    features += [ "thiserror" ]
+  }
+}

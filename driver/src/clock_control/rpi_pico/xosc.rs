@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use super::static_ref::StaticRef;
+use crate::static_ref::StaticRef;
 use tock_registers::{
     interfaces::{ReadWriteable, Readable},
     register_bitfields, register_structs,
@@ -123,6 +123,7 @@ pub enum XoscError {
     InvaldFrequency,
 }
 
+#[allow(clippy::match_overlapping_arm)]
 pub fn start_xosc(crystal_freq: usize) -> Result<(), XoscError> {
     let freq_range = match crystal_freq {
         1_000_000..=15_000_000 => CTRL::FREQ_RANGE::_1_15MHZ,

@@ -18,8 +18,26 @@ use crate::asynk;
 use crate::net;
 #[cfg(enable_vfs)]
 use crate::vfs;
-use crate::{allocator, arch, boards, logger, scheduler, thread, time};
+use crate::{
+    allocator, arch, boards,
+    devices::{
+        console,
+        tty::{
+            n_tty::Tty,
+            serial::{uart::UartDevice, Serial},
+            termios::Termios,
+        },
+        DeviceManager,
+    },
+    logger, scheduler,
+    sync::SpinLock,
+    thread, time,
+};
+use alloc::{string::String, sync::Arc};
+use blueos_driver::uart::UartConfig;
+use blueos_hal::{Configuration, PlatPeri};
 use core::ptr::{addr_of, addr_of_mut};
+use spin::Once;
 
 // We have to put these globals in the .data section. If not specified explicitly,
 // they might be put in the .bss section and might be used before they are initialized.
@@ -56,10 +74,60 @@ extern "C" {
     pub static mut _end: u8;
 }
 
+static SERIAL0: Once<Arc<Serial>> = Once::new();
+
+pub fn get_serial(index: u32) -> &'static Arc<Serial> {
+    match index {
+        0 => SERIAL0
+            .get()
+            .expect("uart_init must be called before get_serial"),
+        _ => panic!("unsupported SERIAL number"),
+    }
+}
+
+fn init_pin_states<P: blueos_hal::pinctrl::AlterFuncPin>(pin_states: &[&P]) {
+    for pin_state in pin_states {
+        pin_state.init();
+    }
+}
+
 extern "C" fn init() {
     boards::init();
     init_runtime();
     init_heap();
+    init_pin_states(crate::boards::PIN_STATES);
+
+    let uart = crate::boards::get_device!(console_uart);
+    uart.configure(&UartConfig::default()).unwrap();
+    uart.enable();
+
+    SERIAL0.call_once(|| {
+        Arc::new(Serial::new(
+            0,
+            Termios::default(),
+            Arc::new(SpinLock::new(UartDevice::new(crate::boards::get_device!(
+                console_uart
+            )))),
+        ))
+    });
+    DeviceManager::get().register_device(String::from("ttyS0"), get_serial(0).clone());
+    match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
+        Ok(_) => {}
+        Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
+    }
+
+    #[cfg(virtio)]
+    {
+        use crate::devices::virtio;
+        use flat_device_tree::Fdt;
+        // initialize fdt
+        // SAFETY: We trust that the FDT pointer we were given is valid, and this is the only time we
+        // use it.
+        let fdt = unsafe { Fdt::from_ptr(crate::boards::DRAM_BASE as *const u8).unwrap() };
+        // initialize virtio
+        virtio::init_virtio(&fdt);
+    }
+
     scheduler::init();
     // FIXME: remove this after riscv64 is supported
     #[cfg(not(target_arch = "riscv64"))]

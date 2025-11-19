@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use crate::boards::raspberry_pico2_cortexm::rp235x::static_ref::StaticRef;
+use crate::static_ref::StaticRef;
 use tock_registers::{
     fields::FieldValue,
     interfaces::{ReadWriteable, Readable, Writeable},
@@ -220,6 +220,7 @@ register_bitfields![u32,
 const RESETS_BASE: StaticRef<ResetsRegisters> =
     unsafe { StaticRef::new(0x40020000 as *const ResetsRegisters) };
 
+#[allow(clippy::upper_case_acronyms)]
 pub enum Peripheral {
     Adc,
     BusController,
@@ -368,7 +369,7 @@ impl Resets {
     }
 
     pub fn reset(&self, peripherals: &'static [Peripheral]) {
-        if peripherals.len() > 0 {
+        if !peripherals.is_empty() {
             let mut value: FieldValue<u32, RESET::Register> = peripherals[0].get_reset_field_set();
             for peripheral in peripherals {
                 value += peripheral.get_reset_field_set();
@@ -378,7 +379,7 @@ impl Resets {
     }
 
     pub fn unreset(&self, peripherals: &'static [Peripheral], wait_for: bool) {
-        if peripherals.len() > 0 {
+        if !peripherals.is_empty() {
             let mut value: FieldValue<u32, RESET::Register> =
                 peripherals[0].get_reset_field_clear();
             for peripheral in peripherals {

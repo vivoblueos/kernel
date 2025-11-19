@@ -74,7 +74,10 @@ macro_rules! default_irq_handler {
     };
 }
 
-use super::uart::{uart0rx_handler, uart0tx_handler};
+extern "C" {
+    fn uart0rx_handler();
+    fn uart0tx_handler();
+}
 default_irq_handler!(nonsec_watchdog_reset_req_handler);
 default_irq_handler!(nonsec_watchdog_handler);
 default_irq_handler!(slowclk_timer_handler);

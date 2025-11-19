@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use crate::boards::raspberry_pico2_cortexm::rp235x::static_ref::StaticRef;
+use crate::static_ref::StaticRef;
 use tock_registers::{
     interfaces::{ReadWriteable, Readable},
     register_bitfields, register_structs,
@@ -91,6 +91,7 @@ const PLL_SYS_BASE: StaticRef<PllRegisters> =
 const PLL_USB_BASE: StaticRef<PllRegisters> =
     unsafe { StaticRef::new(0x4005_8000 as *const PllRegisters) };
 
+#[allow(clippy::upper_case_acronyms)]
 pub enum PLL {
     Sys,
     Usb,
@@ -119,7 +120,11 @@ pub fn configure_pll(clock: PLL, xosc_freq: u32, config: &PLLConfig) -> u32 {
         .modify(PWR::PD::SET + PWR::DSMPD::SET + PWR::POSTDIVPD::SET + PWR::VCOPD::SET);
     pll_base.fbdiv_int.modify(FBDIV_INT::FBDIV_INT.val(0));
 
-    cortex_m::asm::delay(10);
+    for i in 0..=1000 {
+        unsafe {
+            core::arch::asm!("nop", options(nomem, nostack, preserves_flags));
+        }
+    }
 
     pll_base.cs.modify(CS::REFDIV.val(config.refdiv));
 
@@ -137,7 +142,11 @@ pub fn configure_pll(clock: PLL, xosc_freq: u32, config: &PLLConfig) -> u32 {
 
     pll_base.pwr.modify(PWR::POSTDIVPD::CLEAR);
 
-    cortex_m::asm::delay(100);
+    for i in 0..=1000 {
+        unsafe {
+            core::arch::asm!("nop", options(nomem, nostack, preserves_flags));
+        }
+    }
 
     vco_freq / (config.postdiv1 * config.postdiv2)
 }

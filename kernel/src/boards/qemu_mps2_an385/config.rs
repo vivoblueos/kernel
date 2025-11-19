@@ -17,7 +17,9 @@ use crate::arch::irq::IrqNumber;
 use core::ffi::CStr;
 
 pub const UART0RX_IRQn: IrqNumber = IrqNumber::new(0);
+pub const UART0RX_IRQ_N: u32 = 0;
 pub const UART0TX_IRQn: IrqNumber = IrqNumber::new(1);
+pub const UART0TX_IRQ_N: u32 = 1;
 pub const UART1RX_IRQn: IrqNumber = IrqNumber::new(2);
 pub const UART1TX_IRQn: IrqNumber = IrqNumber::new(3);
 pub const UART2RX_IRQn: IrqNumber = IrqNumber::new(4);

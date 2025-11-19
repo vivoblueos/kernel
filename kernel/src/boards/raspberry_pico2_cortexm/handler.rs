@@ -57,7 +57,9 @@ const fn build_exception_handlers() -> [Vector; 15] {
     tbl
 }
 
-use super::rp235x::uart::uart0_handler;
+unsafe extern "C" {
+    fn uart0_handler();
+}
 
 #[doc(hidden)]
 #[link_section = ".interrupt.handlers"]
