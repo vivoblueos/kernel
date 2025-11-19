@@ -71,6 +71,10 @@ jobs:
         run: |
           repo init --depth=10 -u https://github.com/vivoblueos/manifests.git -b main -m manifest.xml
           repo sync -j$(nproc)
+      - name: Configure git
+        run: |
+          git config --global user.email "blueos@vivo.com"
+          git config --global user.name "blueos-ci"
       - name: Patch manifests repo
         run: |
           set -e
