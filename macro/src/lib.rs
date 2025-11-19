@@ -19,11 +19,9 @@ use syn::{Data, Field, Fields};
 #[proc_macro]
 pub fn current_board_mod(_item: TokenStream) -> TokenStream {
     let Some(board_name) = std::env::var("TARGET_BOARD") else {
-        panic!("...");
-    }；
-    if board_name == "unknown" {
         panic!("TARGET_BOARD is not set");
-    }
+    };
+
     let mod_ident = syn::Ident::new(&board_name, proc_macro2::Span::call_site());
 
     quote::quote! {
