@@ -12,50 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod config;
+mod block;
 mod handler;
-mod led;
-mod rp235x;
 
 use crate::{
     arch::{self, irq::IrqNumber},
-    boards::raspberry_pico2_cortexm::{
-        config::{PLL_SYS_150MHZ, PLL_USB_48MHZ},
-        led::Led,
-        rp235x::{
-            block,
-            clocks::{
-                PeripheralAuxiliaryClockSource, ReferenceAuxiliaryClockSource,
-                ReferenceClockSource, SystemAuxiliaryClockSource, SystemClockSource,
-            },
-            gpio::{GpioFunction, GpioPin},
-            pll,
-            reset::{Peripheral, Resets},
-            uart::Uart,
-            xosc,
-        },
-    },
     boot,
     boot::INIT_BSS_DONE,
-    devices::{
-        console,
-        tty::{
-            n_tty::Tty,
-            serial::{Serial, UartOps},
-            termios::Termios,
-        },
-    },
-    kprintln,
-    sync::SpinLock,
     time,
 };
-use alloc::sync::Arc;
+use blueos_hal::clock_control::ClockControl;
 use core::ptr::addr_of;
 use spin::Once;
 
 #[link_section = ".start_block"]
 #[used]
-pub static IMAGE_DEF: rp235x::block::ImageDef = rp235x::block::ImageDef::secure_exe();
+pub static IMAGE_DEF: block::ImageDef = block::ImageDef::secure_exe();
 
 #[repr(C)]
 struct CopyTable {
@@ -105,125 +77,64 @@ unsafe fn copy_data() {
 
 pub(crate) fn init() {
     unsafe {
+        const SCB_CPACR_PTR: *mut u32 = 0xE000_ED88 as *mut u32;
+        const SCB_CPACR_FULL_ACCESS: u32 = 0b11;
+        let mut temp = SCB_CPACR_PTR.read_volatile();
+        temp |= SCB_CPACR_FULL_ACCESS << (4 * 2);
+        temp |= 0x00F00000;
+        SCB_CPACR_PTR.write_volatile(temp);
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
         copy_data();
     }
     boot::init_runtime();
+    blueos_driver::clock_control::rpi_pico::RpiPicoClockControl::init();
+
     unsafe { boot::init_heap() };
     arch::irq::init();
 
-    let _ = rp235x::xosc::start_xosc(config::XOSC_FREQ);
-
-    rp235x::clocks::disable_clk_sys_resus();
-    rp235x::clocks::disable_sys_aux();
-    rp235x::clocks::disable_ref_aux();
-
-    let reset = Resets::new();
-
-    reset.reset_all_except(&[
-        Peripheral::IOQSpi,
-        Peripheral::PadsBank0,
-        Peripheral::PllUsb,
-        Peripheral::PllUsb,
-    ]);
-
-    reset.unreset_all_except(
-        &[
-            Peripheral::Adc,
-            Peripheral::Sha256,
-            Peripheral::HSTX,
-            Peripheral::Spi0,
-            Peripheral::Spi1,
-            Peripheral::Uart0,
-            Peripheral::Uart1,
-            Peripheral::UsbCtrl,
-        ],
-        true,
-    );
-
-    reset.reset(&[Peripheral::PllSys, Peripheral::PllUsb]);
-    reset.unreset(&[Peripheral::PllSys, Peripheral::PllUsb], true);
-
-    let pll_sys_freq = rp235x::pll::configure_pll(
-        rp235x::pll::PLL::Sys,
-        config::XOSC_FREQ as u32,
-        &PLL_SYS_150MHZ,
-    );
-    let pll_usb_freq = rp235x::pll::configure_pll(
-        rp235x::pll::PLL::Usb,
-        config::XOSC_FREQ as u32,
-        &PLL_USB_48MHZ,
-    );
-
-    rp235x::clocks::configure_reference_clock(
-        ReferenceClockSource::Xosc,
-        ReferenceAuxiliaryClockSource::PllUsb,
-        1,
-    );
-
-    rp235x::clocks::configure_system_clock(
-        SystemClockSource::Auxiliary,
-        SystemAuxiliaryClockSource::PllSys,
-        1,
-        0,
-    );
-
-    rp235x::clocks::configure_peripheral_clock(PeripheralAuxiliaryClockSource::PllSys);
-
-    time::systick_init(pll_sys_freq);
-
-    let pin25 = GpioPin::<25>::new();
-    pin25.set_function(GpioFunction::SIO);
-    pin25.activate_pads();
-
-    rp235x::sio::set_sio_oe_set(25);
-    rp235x::sio::enable_sio_gpio_out(25);
-
-    let pin2 = GpioPin::<2>::new();
-    pin2.set_function(GpioFunction::UART0_TX);
-    let pin3 = GpioPin::<3>::new();
-    pin3.set_function(GpioFunction::UART0_RX);
-
-    reset.reset(&[Peripheral::Uart0]);
-    reset.unreset(&[Peripheral::Uart0], true);
-
-    let mut u = Uart::new();
-    u.enable(115200);
-
-    match console::init_console(Tty::init(get_serial0(u).clone()).clone()) {
-        Ok(_) => (),
-        Err(e) => panic!("Failed to init console"),
-    }
-
-    let led0 = Led::new(0, pin25);
-    let led0 = Arc::new(led0);
-    match led::led_init(led0) {
-        Ok(_) => kprintln!("LED initialized successfully"),
-        Err(e) => panic!("Failed to initialize LED: {:?}", e),
-    }
+    time::systick_init(150_000_000);
 }
+
+crate::define_peripheral! {
+    (console_uart, blueos_driver::uart::arm_pl011::ArmPl011<'static>,
+     blueos_driver::uart::arm_pl011::ArmPl011::<'static>::new(
+        0x40070000 as _,
+        150_000_000,
+        Some((get_device!(subsys_reset), 26)),
+     )),
+    (subsys_reset, blueos_driver::reset::rpi_pico_reset::RpiPicoReset,
+    blueos_driver::reset::rpi_pico_reset::RpiPicoReset::new(
+        0x40020000
+    )),
+}
+
+crate::define_pin_states!(
+    blueos_driver::pinctrl::rpi_pico::RpiPicoPinctrl,
+    (2, 11), // GPIO2 as UART0_TX
+    (3, 11), // GPIO3 as UART0_RX
+);
 
 // FIXME: support float
 pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
     return core::time::Duration::from_nanos(
-        (cycles as u128 * 1_000_000_000 as u128 / config::PLL_SYS_FREQ as u128) as u64,
+        (cycles as u128 * 1_000_000_000 as u128 / 150_000_000) as u64,
     );
 }
 
 pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    return (cycles as u128 * 1_000 as u128 / config::PLL_SYS_FREQ as u128) as u64;
+    return (cycles as u128 * 1_000 as u128 / 150_000_000) as u64;
 }
 
-pub fn get_early_uart() -> &'static SpinLock<dyn UartOps> {
-    todo!()
-}
+#[no_mangle]
+pub unsafe extern "C" fn uart0_handler() {
+    use blueos_hal::HasInterruptReg;
+    let uart = get_device!(console_uart);
+    if let Some(handler) = unsafe {
+        let intr_handler_cell = &*uart.intr_handler.get();
 
-pub(crate) static SERIAL0: Once<Arc<Serial>> = Once::new();
-pub fn get_serial0(u: Uart) -> &'static Arc<Serial> {
-    SERIAL0.call_once(|| {
-        Arc::new(Serial::new(
-            0,
-            Termios::default(),
-            Arc::new(SpinLock::new(u)),
-        ))
-    })
+        intr_handler_cell.as_ref()
+    } {
+        handler();
+    }
+    uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
 }

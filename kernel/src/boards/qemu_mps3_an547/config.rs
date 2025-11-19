@@ -40,7 +40,9 @@ pub const System_Timestamp_Counter_IRQn: IrqNumber = IrqNumber::new(32); // Syst
 // For details, see `fix RX/TX interrupts order <https://github.com/qemu/qemu/commit/5a558be93ad628e5bed6e0ee062870f49251725c>`_
 // default set as new version of QEMU
 pub const UART0RX_IRQn: IrqNumber = IrqNumber::new(33); // UART 0 TX Interrupt
+pub const UART0RX_IRQ_N: u32 = 33;
 pub const UART0TX_IRQn: IrqNumber = IrqNumber::new(34); // UART 0 RX Interrupt
+pub const UART0TX_IRQ_N: u32 = 34;
 pub const UART1RX_IRQn: IrqNumber = IrqNumber::new(35); // UART 1 RX Interrupt
 pub const UART1TX_IRQn: IrqNumber = IrqNumber::new(36); // UART 1 TX Interrupt
 pub const UART2RX_IRQn: IrqNumber = IrqNumber::new(37); // UART 2 RX Interrupt

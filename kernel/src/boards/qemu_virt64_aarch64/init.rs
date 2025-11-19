@@ -12,26 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    config,
-    uart::{enable_uart, get_serial},
-};
+use super::config;
 use crate::{
     arch,
-    devices::{console, tty::n_tty::Tty},
+    arch::{
+        irq,
+        irq::{IrqHandler, IrqTrigger, Priority},
+    },
     error::Error,
     scheduler,
     support::SmpStagedInit,
     time,
 };
-use alloc::{string::String, sync::Arc};
+use alloc::boxed::Box;
+use blueos_hal::HasInterruptReg;
 use blueos_kconfig::NUM_CORES;
 use core::sync::atomic::Ordering;
-
-#[cfg(virtio)]
-use crate::devices::virtio;
-#[cfg(virtio)]
-use flat_device_tree::Fdt;
 
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
@@ -47,7 +43,11 @@ pub(crate) fn init() {
         time::systick_init(0);
     });
     STAGING.run(6, false, || {
-        enable_uart(arch::current_cpu_id(), config::PL011_UART0_IRQNUM);
+        irq::enable_irq_with_priority(
+            config::PL011_UART0_IRQNUM,
+            arch::current_cpu_id(),
+            irq::Priority::Normal,
+        );
     });
     STAGING.run(7, true, || arch::secondary_cpu_setup(config::PSCI_BASE));
     if arch::current_cpu_id() != 0 {
@@ -55,27 +55,37 @@ pub(crate) fn init() {
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
 
-    match super::uart::uart_init(
-        0,
-        config::PL011_UART0_BASE,
-        config::APBP_CLOCK,
+    irq::set_trigger(
         config::PL011_UART0_IRQNUM,
-        String::from("ttyS0"),
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Failed to init uart: {}", Error::from(e)),
-    }
-    match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
-        Ok(_) => (),
-        Err(e) => panic!("Failed to init console: {}", Error::from(e)),
-    }
-    #[cfg(virtio)]
-    {
-        // initialize fdt
-        // SAFETY: We trust that the FDT pointer we were given is valid, and this is the only time we
-        // use it.
-        let fdt = unsafe { Fdt::from_ptr(config::DRAM_BASE as *const u8).unwrap() };
-        // initialize virtio
-        virtio::init_virtio(&fdt);
+        arch::current_cpu_id(),
+        irq::IrqTrigger::Level,
+    );
+    let _ = irq::register_handler(config::PL011_UART0_IRQNUM, Box::new(Serial0Irq {}));
+}
+
+crate::define_peripheral! {
+    (console_uart, blueos_driver::uart::arm_pl011::ArmPl011<'static>,
+     blueos_driver::uart::arm_pl011::ArmPl011::<'static>::new(
+        config::PL011_UART0_BASE as _,
+        config::APBP_CLOCK,
+        None,
+     )),
+}
+
+pub const DRAM_BASE: u64 = 0x4000_0000;
+
+crate::define_pin_states!(None);
+
+pub struct Serial0Irq {}
+impl IrqHandler for Serial0Irq {
+    fn handle(&mut self) {
+        let uart = get_device!(console_uart);
+        if let Some(handler) = unsafe {
+            let intr_handler_cell = &*uart.intr_handler.get();
+            intr_handler_cell.as_ref()
+        } {
+            handler();
+        }
+        uart.clear_interrupt(blueos_driver::uart::InterruptType::All);
     }
 }

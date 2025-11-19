@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use super::static_ref::StaticRef;
+use crate::static_ref::StaticRef;
 use tock_registers::{
     interfaces::{ReadWriteable, Readable},
     register_bitfields, register_structs,
@@ -328,7 +328,11 @@ pub fn configure_peripheral_clock(aux_clk: PeripheralAuxiliaryClockSource) {
     let clk_peri = &CLOCKS_BASE.clk_peri_ctrl;
 
     clk_peri.modify(CLK_PERI_CTRL::ENABLE::CLEAR);
-    cortex_m::asm::delay(3);
+    for i in 0..=1000 {
+        unsafe {
+            core::arch::asm!("nop", options(nomem, nostack, preserves_flags));
+        }
+    }
 
     clk_peri.modify(CLK_PERI_CTRL::AUXSRC.val(aux_clk as u32));
 

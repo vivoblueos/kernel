@@ -15,6 +15,7 @@
 #![no_std]
 #![allow(internal_features)]
 #![allow(incomplete_features)]
+#![allow(clippy::crate_in_macro_def)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]

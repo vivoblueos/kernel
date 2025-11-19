@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::uart::{uart0rx_handler, uart0tx_handler};
 use crate::{
     arch,
     arch::irq::{InterruptTable, Vector, INTERRUPT_TABLE_LEN},
     boot::_start,
     time,
 };
+
+extern "C" {
+    pub fn uart0rx_handler();
+    pub fn uart0tx_handler();
+}
 
 #[no_mangle]
 #[linkage = "weak"]

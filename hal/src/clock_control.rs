@@ -12,16 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod block;
-pub mod clocks;
-pub mod gpio;
-pub mod pll;
-pub mod reset;
-pub mod sio;
-pub mod static_ref;
-pub mod uart;
-pub mod xosc;
-
-pub enum Error {
-    InvaldFrequency,
+pub trait ClockControl {
+    fn init();
 }
