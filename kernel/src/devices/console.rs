@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{dumb, tty::serial::UartOps, Device, DeviceManager};
+use super::{tty::serial::UartOps, Device, DeviceManager};
 use crate::sync::SpinLock;
 use alloc::{string::String, sync::Arc};
 use embedded_io::ErrorKind;
