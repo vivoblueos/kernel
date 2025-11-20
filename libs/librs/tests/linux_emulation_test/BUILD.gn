@@ -19,7 +19,7 @@ build_rust("librs_linux_emulation") {
   crate_name = "librs"
   sources = [ "//librs/src/lib.rs" ]
   deps = [
-    "//external/spin/v0.9.8:spin",
+    "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal",
     "//libc:libc",

@@ -23,8 +23,8 @@ build_rust("librs_integration_test_image") {
   edition = "2021"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [
-    "//external/semihosting/v0.1.20:semihosting",
-    "//external/spin/v0.9.8:spin",
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/kernel:blueos",
     "//kernel/rsrt:rsrt",
@@ -34,8 +34,8 @@ build_rust("librs_integration_test_image") {
   ]
   if (coverage || profile) {
     deps += [
-      "//external/minicov/v0.3.7:minicov",
-      "//external/semihosting/v0.1.20:semihosting",
+      "//external/vendor/minicov-0.3.7:minicov",
+      "//external/vendor/semihosting-0.1.20:semihosting",
     ]
   }
   configs += [ "//build/boards/${board}:kernel_config" ]

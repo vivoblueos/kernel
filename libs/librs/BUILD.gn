@@ -21,8 +21,8 @@ build_rust("librs") {
   crate_name = "librs"
   sources = [ "src/lib.rs" ]
   deps = [
-    "//external/semihosting/v0.1.20:semihosting",
-    "//external/spin/v0.9.8:spin",
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal",
     "//libc:libc",
@@ -39,7 +39,7 @@ build_rust("librs_swi") {
   crate_name = "librs"
   sources = [ "src/lib.rs" ]
   deps = [
-    "//external/spin/v0.9.8:spin",
+    "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal_swi",
     "//libc:libc",
@@ -59,8 +59,8 @@ build_rust("librs_unittest_image") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   deps = [
-    "//external/semihosting/v0.1.20:semihosting",
-    "//external/spin/v0.9.8:spin",
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/kernel:blueos",
     "//kernel/rsrt:rsrt",
