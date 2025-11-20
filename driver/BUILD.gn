@@ -33,6 +33,8 @@ build_rust("blueos_driver") {
   features = []
   rustflags = [
     "--cfg",
-    "target_board=\"$board\"",
+    "target_board=\"${board}\"",
+    "--cfg",
+    "target_chip=\"${chip}\""
   ]
 }
