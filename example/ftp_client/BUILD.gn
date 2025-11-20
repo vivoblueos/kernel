@@ -22,8 +22,8 @@ executable("ftp_client_example") {
 
   sources = [ "src/main.rs" ]
   deps = [
-    "//external/log/v0.4.22:log",
     "//external/rust-ftp/master:ftp",
+    "//external/vendor/log-0.4.28:log",
     "//kernel/rsrt:rsrt_std",
     "//librs:librs",
   ]
