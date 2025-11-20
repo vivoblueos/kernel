@@ -17,5 +17,5 @@ import("//build/toolchain/blueos.gni")
 
 build_rust("emballoc") {
   sources = [ "src/lib.rs" ]
-  deps = [ "//external/spin/v0.9.8:spin" ]
+  deps = [ "//external/vendor/spin-0.9.8:spin" ]
 }

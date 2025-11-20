@@ -35,6 +35,7 @@ group("check_kernel_by_clippy") {
     ":blueos_clippy",
     ":kernel_integration_test_clippy",
     ":kernel_unittest_clippy",
+    "//external/vendor/semihosting-0.1.20:semihosting",
   ]
 }
 
@@ -45,18 +46,18 @@ group("check_kernel_probe") {
 
 _shared_deps = [
   ":atomic",
-  "//external/bitflags/v2.9.0:bitflags",
-  "//external/cfg-if/v1.0.0:cfg_if",
-  "//external/const-default/v1.0.0:const_default",
-  "//external/embedded-io/v0.6.1:embedded_io",
-  "//external/heapless/v0.8.0:heapless",
-  "//external/log/v0.4.22:log",
+  "//external/vendor/bitflags-2.10.0:bitflags",
+  "//external/vendor/cfg-if-1.0.4:cfg_if",
+  "//external/vendor/const-default-1.0.0:const_default",
+  "//external/vendor/embedded-io-0.6.1:embedded_io",
+  "//external/vendor/heapless-0.8.0:heapless",
+  "//external/vendor/log-0.4.28:log",
   "//external/rust-fatfs/v0.4:fatfs",
-  "//external/safe-mmio/v0.2.5:safe_mmio",
-  "//external/spin/v0.9.8:spin",
-  "//external/thiserror/v2.0.9:thiserror",
-  "//external/tock-registers/v0.9.0:tock_registers",
-  "//external/zerocopy/v0.8.25:zerocopy",
+  "//external/vendor/safe-mmio-0.2.5:safe_mmio",
+  "//external/vendor/spin-0.9.8:spin",
+  "//external/vendor/thiserror-2.0.17:thiserror",
+  "//external/vendor/tock-registers-0.9.0:tock_registers",
+  "//external/vendor/zerocopy-0.8.27:zerocopy",
   "//kernel/driver:blueos_driver",
   "//kernel/hal:blueos_hal",
   "//kernel/header:blueos_header",
@@ -68,8 +69,8 @@ _shared_deps += board_deps
 
 if (coverage || profile) {
   _shared_deps += [
-    "//external/minicov/v0.3.7:minicov",
-    "//external/semihosting/v0.1.20:semihosting",
+    "//external/vendor/minicov-0.3.7:minicov",
+    "//external/vendor/semihosting-0.1.20:semihosting",
   ]
 }
 
@@ -80,15 +81,15 @@ build_rust("kernel_unittest") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
+    "//external/vendor/paste-1.0.15:paste",
+    "//external/vendor/delegate-0.13.4:delegate",
     "//kernel/macro:blueos_macro",
     "//kernel/test_harness:blueos_test_macro",
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
-  deps += [ "//external/semihosting/v0.1.20:semihosting" ]
+  deps += [ "//external/vendor/semihosting-0.1.20:semihosting" ]
   configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
@@ -112,14 +113,14 @@ build_rust("kernel_integration_test") {
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [
            ":blueos",
-           "//external/byteorder/v1.5.0:byteorder",
-           "//external/semihosting/v0.1.20:semihosting",
+           "//external/vendor/byteorder-1.5.0:byteorder",
+           "//external/vendor/semihosting-0.1.20:semihosting",
            "//kernel/rsrt",
            "//kernel/scal:blueos_scal",
            "//libc",
          ] + board_deps
   if (coverage || profile) {
-    deps += [ "//external/minicov/v0.3.7:minicov" ]
+    deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
   }
   cfgs = _kernel_default_cfgs
   configs += [
@@ -142,8 +143,8 @@ build_rust("blueos") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/paste/v1.0.15:paste",
-    "//external/rust-delegate/v0.13.3:delegate",
+    "//external/vendor/paste-1.0.15:paste",
+    "//external/vendor/delegate-0.13.4:delegate",
     "//kernel/macro:blueos_macro",
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
