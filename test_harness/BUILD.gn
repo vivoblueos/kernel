@@ -20,10 +20,10 @@ build_rust("blueos_test_macro") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   public_deps =
-      [ "//external/semihosting/v0.1.20:semihosting(${default_toolchain})" ]
+      [ "//external/vendor/semihosting-0.1.20:semihosting(${default_toolchain})" ]
   deps = [
-    "//external/proc-macro2/v1.0.89:proc_macro2",
-    "//external/quote/v1.0.37:quote",
-    "//external/syn/v2.0.87:syn",
+    "//external/vendor/proc-macro2-1.0.103:proc_macro2",
+    "//external/vendor/quote-1.0.41:quote",
+    "//external/vendor/syn-2.0.108:syn",
   ]
 }
