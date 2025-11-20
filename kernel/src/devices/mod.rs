@@ -24,7 +24,6 @@ use spin::{Once, RwLock as SpinRwLock};
 #[cfg(virtio)]
 pub mod block;
 pub mod console;
-pub(crate) mod dumb;
 mod error;
 #[cfg(enable_net)]
 pub(crate) mod net;
