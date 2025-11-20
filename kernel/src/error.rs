@@ -47,6 +47,7 @@ pub mod code {
     pub const EXDEV: super::Error = super::Error(-libc::EXDEV);
     pub const EILSEQ: super::Error = super::Error(-libc::EILSEQ);
     pub const ENOTSUP: super::Error = super::Error(-libc::ENOTSUP);
+    pub const ENOTTY: super::Error = super::Error(-libc::ENOTTY);
 }
 
 const UNKNOW_STR: &CStr = c"EUNKNOW ";
@@ -77,6 +78,7 @@ const ELOOP_STR: &CStr = c"Too many symbolic links encountered";
 const EXDEV_STR: &CStr = c"Cross-device link";
 const EILSEQ_STR: &CStr = c"Invalid data";
 const ENOTSUP_STR: &CStr = c"Not supported";
+const ENOTTY_STR: &CStr = c"Inappropriate ioctl for device";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -121,6 +123,7 @@ impl Error {
             code::EXDEV => EXDEV_STR,
             code::EILSEQ => EILSEQ_STR,
             code::ENOTSUP => ENOTSUP_STR,
+            code::ENOTTY => ENOTTY_STR,
             _ => UNKNOW_STR,
         }
     }

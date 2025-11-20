@@ -14,12 +14,17 @@
 
 pub mod uart;
 use crate::{
-    devices::{tty::termios::Termios, Device, DeviceBase, DeviceClass, DeviceId, DeviceRequest},
-    irq,
+    devices::{
+        tty::termios::{CcIndex, Cflags, Iflags, Lflags, Oflags, Termios},
+        Device, DeviceBase, DeviceClass, DeviceId, DeviceRequest,
+    },
+    irq, scheduler,
     sync::{
         atomic_wait::{atomic_wait, atomic_wake},
         spinlock::SpinLock,
     },
+    time,
+    types::RwLock,
 };
 use alloc::{format, string::String, sync::Arc};
 use blueos_infra::ringbuffer::BoxedRingBuffer;
@@ -30,9 +35,15 @@ use blueos_kconfig::{
 use core::sync::atomic::AtomicUsize;
 use delegate::delegate;
 use embedded_io::{ErrorKind, ErrorType, Read, ReadReady, Write, WriteReady};
+use libc::{
+    c_int, TCFLSH, TCGETS, TCIFLUSH, TCIOFF, TCIOFLUSH, TCION, TCOFLUSH, TCOOFF, TCOON, TCSBRK,
+    TCSETS, TCSETSF, TCSETSW, TCXONC,
+};
 
 const SERIAL_RX_FIFO_MIN_SIZE: u32 = 256;
 const SERIAL_TX_FIFO_MIN_SIZE: u32 = 256;
+const DEFAULT_BREAK_DURATION_MS: usize = 250;
+const BREAK_UNIT_IN_MS: usize = 100;
 
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum SerialError {
@@ -98,6 +109,7 @@ pub trait UartOps:
     fn set_tx_interrupt(&mut self, enable: bool);
     fn clear_rx_interrupt(&mut self);
     fn clear_tx_interrupt(&mut self);
+    fn set_break(&mut self, enable: bool) -> Result<(), SerialError>;
 }
 
 #[derive(Debug)]
@@ -133,7 +145,7 @@ impl SerialTxFifo {
 pub struct Serial {
     base: DeviceBase,
     index: u32,
-    pub termios: Termios,
+    termios: RwLock<Termios>,
     rx_fifo: SerialRxFifo,
     tx_fifo: SerialTxFifo,
     pub uart_ops: Arc<SpinLock<dyn UartOps>>,
@@ -144,11 +156,173 @@ impl Serial {
         Self {
             base: DeviceBase::new(),
             index,
-            termios,
+            termios: RwLock::new(termios),
             rx_fifo: SerialRxFifo::new(SERIAL_RX_FIFO_SIZE.max(SERIAL_RX_FIFO_MIN_SIZE) as usize),
             tx_fifo: SerialTxFifo::new(SERIAL_TX_FIFO_SIZE.max(SERIAL_TX_FIFO_MIN_SIZE) as usize),
             uart_ops,
         }
+    }
+
+    pub fn termios_snapshot(&self) -> Termios {
+        *self.termios.read()
+    }
+
+    pub(crate) fn apply_termios(&self, new_termios: Termios) -> Result<(), ErrorKind> {
+        {
+            let mut guard = self.termios.write();
+            *guard = new_termios;
+        }
+
+        let snapshot = self.termios_snapshot();
+        let mut uart_ops = self.uart_ops.irqsave_lock();
+        uart_ops.setup(&snapshot).map_err(ErrorKind::from)?;
+        uart_ops.set_rx_interrupt(true);
+        Ok(())
+    }
+
+    pub(crate) fn wait_for_tx_empty(&self) -> Result<(), ErrorKind> {
+        loop {
+            self.xmitchars().map_err(ErrorKind::from)?;
+            if self.tx_fifo.rb.is_empty() {
+                break;
+            }
+        }
+        let mut uart_ops = self.uart_ops.irqsave_lock();
+        uart_ops.flush().map_err(ErrorKind::from)
+    }
+
+    fn flush_rx_fifo(&self) {
+        let _guard = self.uart_ops.irqsave_lock();
+        unsafe {
+            let mut reader = self.rx_fifo.rb.reader();
+            while !reader.is_empty() {
+                let slices = reader.pop_slices();
+                let len = slices[0].len() + slices[1].len();
+                if len == 0 {
+                    break;
+                }
+                reader.pop_done(len);
+            }
+        }
+        let _ = atomic_wake(&self.rx_fifo.futex, usize::MAX);
+    }
+
+    fn flush_tx_fifo(&self) {
+        let _guard = self.uart_ops.irqsave_lock();
+        unsafe {
+            let mut reader = self.tx_fifo.rb.reader();
+            while !reader.is_empty() {
+                let slices = reader.pop_slices();
+                let len = slices[0].len() + slices[1].len();
+                if len == 0 {
+                    break;
+                }
+                reader.pop_done(len);
+            }
+        }
+        let _ = atomic_wake(&self.tx_fifo.futex, usize::MAX);
+    }
+
+    fn send_control_char(&self, ch: u8) -> Result<(), ErrorKind> {
+        let mut uart_ops = self.uart_ops.irqsave_lock();
+        uart_ops.write_byte(ch).map_err(ErrorKind::from)
+    }
+
+    fn send_break_signal(&self, duration: c_int) -> Result<(), ErrorKind> {
+        if duration < 0 {
+            return Err(ErrorKind::InvalidInput);
+        }
+        let interval_ms = if duration == 0 {
+            DEFAULT_BREAK_DURATION_MS
+        } else {
+            (duration as usize).saturating_mul(BREAK_UNIT_IN_MS)
+        };
+
+        self.wait_for_tx_empty()?;
+
+        {
+            let mut uart_ops = self.uart_ops.irqsave_lock();
+            uart_ops.set_break(true).map_err(ErrorKind::from)?;
+        }
+
+        scheduler::suspend_me_for(time::tick_from_millisecond(interval_ms));
+
+        let mut uart_ops = self.uart_ops.irqsave_lock();
+        uart_ops.set_break(false).map_err(ErrorKind::from)
+    }
+
+    pub(crate) fn handle_tcflsh(&self, action: c_int) -> Result<(), ErrorKind> {
+        match action {
+            TCIFLUSH => {
+                self.flush_rx_fifo();
+                Ok(())
+            }
+            TCOFLUSH => {
+                self.flush_tx_fifo();
+                Ok(())
+            }
+            TCIOFLUSH => {
+                self.flush_rx_fifo();
+                self.flush_tx_fifo();
+                Ok(())
+            }
+            _ => Err(ErrorKind::InvalidInput),
+        }
+    }
+
+    pub(crate) fn handle_tcxonc(&self, action: c_int) -> Result<(), ErrorKind> {
+        match action {
+            TCOOFF => {
+                let mut uart_ops = self.uart_ops.irqsave_lock();
+                uart_ops.set_tx_interrupt(false);
+                Ok(())
+            }
+            TCOON => {
+                let mut uart_ops = self.uart_ops.irqsave_lock();
+                uart_ops.set_tx_interrupt(true);
+                drop(uart_ops);
+                self.xmitchars().map_err(ErrorKind::from)?;
+                Ok(())
+            }
+            TCIOFF => {
+                let cc = self.termios.read().cc;
+                self.send_control_char(cc[CcIndex::Vstop as usize])
+            }
+            TCION => {
+                let cc = self.termios.read().cc;
+                self.send_control_char(cc[CcIndex::Vstart as usize])
+            }
+            _ => Err(ErrorKind::InvalidInput),
+        }
+    }
+
+    pub(crate) fn handle_tcsbrk(&self, duration: c_int) -> Result<(), ErrorKind> {
+        if duration < 0 {
+            return Err(ErrorKind::InvalidInput);
+        }
+        if duration == 0 {
+            self.send_break_signal(duration)
+        } else {
+            self.wait_for_tx_empty()
+        }
+    }
+
+    pub(crate) unsafe fn load_user_termios(ptr: *const Termios) -> Result<Termios, ErrorKind> {
+        if ptr.is_null() {
+            return Err(ErrorKind::InvalidInput);
+        }
+        Ok(*ptr)
+    }
+
+    pub(crate) unsafe fn store_user_termios(
+        ptr: *mut Termios,
+        termios: &Termios,
+    ) -> Result<(), ErrorKind> {
+        if ptr.is_null() {
+            return Err(ErrorKind::InvalidInput);
+        }
+        *ptr = *termios;
+        Ok(())
     }
 
     delegate! {
@@ -325,8 +499,9 @@ impl Device for Serial {
 
     fn open(&self) -> Result<(), ErrorKind> {
         if !self.is_opened() {
+            let termios = self.termios_snapshot();
             let mut uart_ops = self.uart_ops.irqsave_lock();
-            uart_ops.setup(&self.termios)?;
+            uart_ops.setup(&termios)?;
             uart_ops.set_rx_interrupt(true);
         }
 
@@ -352,15 +527,15 @@ impl Device for Serial {
     }
 
     fn read(&self, _pos: u64, buf: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
-        self.fifo_rx(buf, is_nonblocking).map_err(|e| e.into())
+        self.fifo_rx(buf, is_nonblocking).map_err(ErrorKind::from)
     }
 
     fn write(&self, _pos: u64, buf: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
-        self.fifo_tx(buf, is_nonblocking).map_err(|e| e.into())
+        self.fifo_tx(buf, is_nonblocking).map_err(ErrorKind::from)
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
         let mut uart_ops = self.uart_ops.irqsave_lock();
-        uart_ops.ioctl(request, arg).map_err(|e| e.into())
+        uart_ops.ioctl(request, arg).map_err(ErrorKind::from)
     }
 }

@@ -296,6 +296,11 @@ where
         }
         Ok(())
     }
+
+    fn set_break(&mut self, enable: bool) -> Result<(), super::SerialError> {
+        self.uart.set_break_signal(enable)?;
+        Ok(())
+    }
 }
 
 pub fn uart_handler() {
