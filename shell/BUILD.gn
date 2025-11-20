@@ -20,7 +20,7 @@ executable("shell") {
   crate_type = "bin"
   sources = [ "src/main.rs" ]
   deps = [
-    "//external/phf/v0.12.1/:phf",
+    "//external/vendor/phf-0.12.1:phf",
     "//kernel/rsrt:rsrt_std",
     "//librs",
   ]
