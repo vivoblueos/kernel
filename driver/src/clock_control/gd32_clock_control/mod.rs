@@ -16,6 +16,7 @@
 mod rcu;
 
 use blueos_hal::clock_control::ClockControl;
+#[cfg(target_chip = "gd32e5x")]
 use gd32e5::gd32e507;
 
 pub struct Gd32ClockControl;
