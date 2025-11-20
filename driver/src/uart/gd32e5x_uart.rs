@@ -16,7 +16,7 @@ use blueos_hal::{
     reset::ResetCtrl, uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg,
     HasLineStatusReg, PlatPeri,
 };
-use gd32e5::gd32e507::{adc0::stat, usart0};
+use gd32e5::gd32e507::usart0;
 
 use crate::uart::{DataBits, Parity, StopBits};
 
