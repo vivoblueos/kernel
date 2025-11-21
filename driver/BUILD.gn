@@ -24,7 +24,7 @@ build_rust("blueos_driver") {
     "//external/vendor/tock-registers-0.9.0:tock_registers",
     "//external/vendor/zerocopy-0.8.27:zerocopy",
     "//kernel/hal:blueos_hal",
-  ]
+  ] + board_deps
 
   features = []
   rustflags = [
@@ -35,7 +35,7 @@ build_rust("blueos_driver") {
   if (defined(chip)) {
     rustflags += [
       "--cfg",
-      "chip=\"${chip}\"",
+      "target_chip=\"${chip}\"",
     ]
   }
 }
