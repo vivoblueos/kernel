@@ -25,14 +25,17 @@ build_rust("blueos_driver") {
     "//external/vendor/zerocopy-0.8.27:zerocopy",
     "//kernel/hal:blueos_hal",
   ]
-  if (board == "gd32vw553") {
-    deps += [ "//external/nuclei-sdk" ]
-  } else if (board == "gd32e507") {
-    deps += [ "//external/vendor/gd32e5-0.9.1:gd32e5" ]
-  }
+
   features = []
   rustflags = [
     "--cfg",
-    "target_board=\"$board\"",
+    "target_board=\"${board}\"",
   ]
+
+  if (defined(chip)) {
+    rustflags += [
+      "--cfg",
+      "target_chip=\"${chip}\"",
+    ]
+  }
 }
