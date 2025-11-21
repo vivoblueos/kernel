@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//       http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,7 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(any(target_chip = "gd32e5x", target_chip = "gd32vw55x"))]
-pub mod gd32_clock_control;
-#[cfg(target_board = "raspberry_pico2_cortexm")]
-pub mod rpi_pico;
+pub const PLL_SYS_FREQ: usize = 180_000_000; // 180 MHz
