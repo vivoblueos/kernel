@@ -34,7 +34,7 @@ pub fn get_sys_cycles() -> u64 {
     SYSTICK.get_cycles()
 }
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
+pub fn cycles_to_millis(cycles: u64) -> u64 {
     (cycles as f32 * 1_000_000f32 / ((SYSTICK.get_step() * TICKS_PER_SECOND) as f32)) as u64
 }
 

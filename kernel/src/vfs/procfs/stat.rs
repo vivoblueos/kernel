@@ -114,10 +114,10 @@ fn format_cpu_time() -> String {
             } else {
                 idle_thread.get_cycles()
             };
-            let system_time = time::get_cycles_to_ms(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
-            let idle_time = time::get_cycles_to_ms(idle_cycle) / 10;
+            let system_time = time::cycles_to_millis(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
+            let idle_time = time::cycles_to_millis(idle_cycle) / 10;
             let irq_trace: &IrqTraceInfo = unsafe { &PER_CPU_TRACE_INFO[cpu_id] };
-            let irq_time = time::get_cycles_to_ms(irq_trace.total_irq_process_cycles) / 10;
+            let irq_time = time::cycles_to_millis(irq_trace.total_irq_process_cycles) / 10;
             total_system_time += system_time;
             total_idle_time += idle_time;
             total_irq_time += irq_time;
