@@ -85,14 +85,6 @@ pub(crate) fn set_timeout_after(ns: usize) {
     set_timecmp(current_ticks() + ns / NS_PER_TICK);
 }
 
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    core::time::Duration::from_nanos(cycles)
-}
-
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    cycles / 1_000
-}
-
 pub(crate) fn ticks_to_duration(ticks: usize) -> core::time::Duration {
     core::time::Duration::from_nanos((ticks * NS_PER_TICK) as u64)
 }
@@ -109,7 +101,7 @@ pub(crate) fn init() {
     STAGING.run(1, true, crate::boot::init_heap);
     STAGING.run(2, false, init_vector_table);
     STAGING.run(3, true, || {
-        time::systick_init(0);
+        time::systick_init(1_000_000_000);
     });
     STAGING.run(4, false, time::reset_systick);
     // From now on, all work will be done by core 0.
