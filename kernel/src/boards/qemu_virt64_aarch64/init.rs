@@ -18,6 +18,7 @@ use crate::{
     arch::{
         irq,
         irq::{IrqHandler, IrqTrigger, Priority},
+        registers::cntfrq_el0::CNTFRQ_EL0,
     },
     error::Error,
     scheduler,
@@ -28,7 +29,7 @@ use alloc::boxed::Box;
 use blueos_hal::HasInterruptReg;
 use blueos_kconfig::NUM_CORES;
 use core::sync::atomic::Ordering;
-
+use tock_registers::interfaces::Readable;
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
 pub(crate) fn init() {
@@ -40,7 +41,8 @@ pub(crate) fn init() {
     });
     STAGING.run(4, false, arch::irq::cpu_init);
     STAGING.run(5, false, || {
-        time::systick_init(0);
+        let sys_clk = (CNTFRQ_EL0.get() * 1000) as u32;
+        time::systick_init(sys_clk);
     });
     STAGING.run(6, false, || {
         irq::enable_irq_with_priority(

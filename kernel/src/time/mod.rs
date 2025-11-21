@@ -23,6 +23,7 @@ pub const NO_WAITING: usize = 0;
 pub const WAITING_FOREVER: usize = usize::MAX;
 
 pub fn systick_init(sys_clock: u32) -> bool {
+    assert!(sys_clock > 0);
     SYSTICK.init(sys_clock, TICKS_PER_SECOND as u32)
 }
 
@@ -34,8 +35,8 @@ pub fn get_sys_cycles() -> u64 {
     SYSTICK.get_cycles()
 }
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    boards::get_cycles_to_ms(cycles)
+pub fn cycles_to_millis(cycles: u64) -> u64 {
+    (cycles as f32 * 1_000_000f32 / ((SYSTICK.get_step() * TICKS_PER_SECOND) as f32)) as u64
 }
 
 pub fn reset_systick() {
