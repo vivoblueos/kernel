@@ -101,7 +101,7 @@ pub(crate) fn init() {
     STAGING.run(1, true, crate::boot::init_heap);
     STAGING.run(2, false, init_vector_table);
     STAGING.run(3, true, || {
-        time::systick_init(1000_000_000);
+        time::systick_init(1_000_000_000);
     });
     STAGING.run(4, false, time::reset_systick);
     // From now on, all work will be done by core 0.
