@@ -14,7 +14,6 @@
 
 use crate::intrusive::Adapter;
 use core::{
-    marker::PhantomData,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
@@ -29,8 +28,6 @@ use core::{
 pub struct AtomicListHead<T: Sized, A: Adapter<T>> {
     prev: AtomicPtr<AtomicListHead<T, A>>,
     next: Option<NonNull<AtomicListHead<T, A>>>,
-    _t: PhantomData<T>,
-    _a: PhantomData<A>,
 }
 
 impl<T, A: Adapter<T>> AtomicListHead<T, A> {
@@ -39,8 +36,6 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
         Self {
             prev: AtomicPtr::new(core::ptr::null_mut()),
             next: None,
-            _t: PhantomData,
-            _a: PhantomData,
         }
     }
 
