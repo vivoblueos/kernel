@@ -143,9 +143,18 @@ where
         }
 
         let mut count = 0;
+
         while count < buf.len() {
-            buf[count] = self.read_byte()?;
-            count += 1;
+            match self.read_byte() {
+                Ok(byte) => {
+                    buf[count] = byte;
+                    count += 1;
+                }
+                Err(super::SerialError::BufferEmpty) => break,
+                Err(e) => return Err(e),
+            }
+            // buf[count] = self.read_byte()?;
+            // count += 1;
         }
 
         Ok(count)
@@ -293,7 +302,9 @@ pub fn uart_handler() {
     match intr {
         blueos_driver::uart::InterruptType::Rx => {
             let uart = crate::boot::get_serial(0);
-            let _ = uart.recvchars();
+            if let Err(e) = uart.recvchars() {
+                crate::kprintln!("uart recvchars error: {:?}", e);
+            }
         }
         blueos_driver::uart::InterruptType::Tx => {
             let uart = crate::boot::get_serial(0);
