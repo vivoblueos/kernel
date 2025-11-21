@@ -300,9 +300,7 @@ pub fn uart_handler() {
     match intr {
         blueos_driver::uart::InterruptType::Rx => {
             let uart = crate::boot::get_serial(0);
-            if let Err(e) = uart.recvchars() {
-                crate::kprintln!("uart recvchars error: {:?}", e);
-            }
+            let _ = uart.recvchars();
         }
         blueos_driver::uart::InterruptType::Tx => {
             let uart = crate::boot::get_serial(0);
