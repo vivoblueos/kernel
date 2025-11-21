@@ -18,7 +18,3 @@ mod config;
 
 use crate::arch::registers::cntfrq_el0::CNTFRQ_EL0;
 use tock_registers::interfaces::Readable;
-
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    (cycles as f64 * (1_000f64 / CNTFRQ_EL0.get() as f64)) as u64
-}

@@ -114,10 +114,6 @@ crate::define_pin_states!(
     (3, 11), // GPIO3 as UART0_RX
 );
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    return (cycles as u128 * 1_000 as u128 / 150_000_000) as u64;
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;

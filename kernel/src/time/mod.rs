@@ -35,7 +35,7 @@ pub fn get_sys_cycles() -> u64 {
 }
 
 pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    boards::get_cycles_to_ms(cycles)
+    (cycles as f32 * 1_000_000f32 / ((SYSTICK.get_step() * TICKS_PER_SECOND) as f32)) as u64
 }
 
 pub fn reset_systick() {
