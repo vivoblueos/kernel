@@ -15,6 +15,3 @@
 pub mod init;
 pub use init::*;
 mod config;
-
-use crate::arch::registers::cntfrq_el0::CNTFRQ_EL0;
-use tock_registers::interfaces::Readable;
