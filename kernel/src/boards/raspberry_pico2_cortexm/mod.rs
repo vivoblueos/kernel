@@ -114,13 +114,6 @@ crate::define_pin_states!(
     (3, 11), // GPIO3 as UART0_RX
 );
 
-// FIXME: support float
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    return core::time::Duration::from_nanos(
-        (cycles as u128 * 1_000_000_000 as u128 / 150_000_000) as u64,
-    );
-}
-
 pub fn get_cycles_to_ms(cycles: u64) -> u64 {
     return (cycles as u128 * 1_000 as u128 / 150_000_000) as u64;
 }

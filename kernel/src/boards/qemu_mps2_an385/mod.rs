@@ -83,13 +83,6 @@ pub(crate) fn init() {
     arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
 }
 
-// can SYSTEM_CORE_CLOCK bigger than 1GHz ？
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    core::time::Duration::from_nanos(
-        (cycles as f32 * (1_000_000_000f32 / config::SYSTEM_CORE_CLOCK as f32)) as u64,
-    )
-}
-
 pub fn get_cycles_to_ms(cycles: u64) -> u64 {
     (cycles as f32 * (1_000_000f32 / config::SYSTEM_CORE_CLOCK as f32)) as u64
 }
