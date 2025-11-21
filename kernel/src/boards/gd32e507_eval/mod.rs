@@ -125,6 +125,10 @@ pub(crate) fn clock_cycles_to_millis(cycles: u64) -> u64 {
     (cycles as u128 * 1_000 as u128 / config::PLL_SYS_FREQ as u128) as u64
 }
 
+pub fn get_cycles_to_ms(cycles: u64) -> u64 {
+    cycles / 1_000
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;
