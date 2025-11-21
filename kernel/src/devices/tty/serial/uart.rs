@@ -143,9 +143,16 @@ where
         }
 
         let mut count = 0;
+
         while count < buf.len() {
-            buf[count] = self.read_byte()?;
-            count += 1;
+            match self.read_byte() {
+                Ok(byte) => {
+                    buf[count] = byte;
+                    count += 1;
+                }
+                Err(super::SerialError::BufferEmpty) => break,
+                Err(e) => return Err(e),
+            }
         }
 
         Ok(count)
