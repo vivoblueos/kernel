@@ -443,6 +443,56 @@ jobs:
                 console.error(`❌ ${profile} build failed:`, error.message);
                 process.exit(1);
             }
+  build_real_boards:
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      checks: write
+      packages: read
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/kernel:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      matrix:
+        board: [qemu_mps2_an385, qemu_mps3_an547, qemu_riscv64, qemu_virt64_aarch64, qemu_riscv32]
+        build_type: [release, debug]
+    steps:
+      - name: Download workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace
+          path: .
+      - name: Build kernel for ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
+        uses: actions/github-script@v8
+        env:
+          BOARD: '${{ matrix.board }}'
+          BUILD_TYPE: '${{ matrix.build_type }}'   
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const board = process.env.BOARD;
+            const buildType = process.env.BUILD_TYPE;
+            const syscallMode = process.env.SYSCALL_MODE;
+            const profile = `${board}.${buildType}.${syscallMode}`;
+            const outDir = `out/${profile}`;
+            const args = `board="${board}" build_type="${buildType}"`;
+            try {
+                // Generate build files.
+                console.log(`Running: gn gen ${outDir} --args='${args}'`);
+                execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
+
+                // Build.
+                console.log(`Running: ninja -C ${outDir} default`);
+                execSync(`ninja -C ${outDir} default`, { stdio: 'inherit' });
+
+                console.log(`✅ ${profile} build completed successfully`);
+            } catch (error) {
+                console.error(`❌ ${profile} build failed:`, error.message);
+                process.exit(1);
+            }
   notify:
     runs-on: ubuntu-latest
     needs: [setup, check_format, check_license, build_host, build_and_check_virtual_boards]
