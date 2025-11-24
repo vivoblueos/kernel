@@ -465,7 +465,7 @@ jobs:
         with:
           name: workspace
           path: .
-      - name: Build kernel for ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
+      - name: Build kernel for ${{ matrix.board }}.${{ matrix.build_type }}
         uses: actions/github-script@v8
         env:
           BOARD: '${{ matrix.board }}'
@@ -495,7 +495,7 @@ jobs:
             }
   notify:
     runs-on: ubuntu-latest
-    needs: [setup, check_format, check_license, build_host, build_and_check_virtual_boards]
+    needs: [setup, check_format, check_license, build_host, build_and_check_virtual_boards, build_real_boards]
     if: ${{ always() && github.event.issue.pull_request && contains(github.event.comment.body, 'build_prs') }}
     permissions:
       contents: read
@@ -513,6 +513,7 @@ jobs:
               check_license: "${{ needs.check_license.result }}",
               build_host: "${{ needs.build_host.result }}",
               build_and_check_virtual_boards: "${{ needs.build_and_check_virtual_boards.result }}",
+              build_real_boards: "${{ needs.build_real_boards.result }}",
             };
             // Debug: Log all job statuses
             console.log('Job statuses:', JSON.stringify(jobStatuses, null, 2));
