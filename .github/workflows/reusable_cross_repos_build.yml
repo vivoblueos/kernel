@@ -404,6 +404,7 @@ jobs:
               }
             }
   build_and_check_boards:
+  build_and_check_boards:
     runs-on: ubuntu-latest
     needs: setup
     permissions:
@@ -417,7 +418,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
-        board: [qemu_mps2_an385, qemu_mps3_an547, qemu_riscv64, qemu_virt64_aarch64, qemu_riscv32, gd32e507_eval, rk3568, gd32vw553_eval]
+        board: [qemu_mps2_an385, qemu_mps3_an547, qemu_riscv64, qemu_virt64_aarch64, qemu_riscv32, gd32e507_eval, rk3568, gd32vw553_eval, gd32e507_eval]
         build_type: [release, debug]
         syscall_mode: [swi, dsc]
     steps:
