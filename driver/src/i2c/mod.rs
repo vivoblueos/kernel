@@ -13,3 +13,7 @@
 // limitations under the License.
 
 pub mod i2c_dw;
+
+pub struct I2cConfig {
+    pub baudrate: u32,
+}

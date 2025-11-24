@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use blueos_hal::PlatPeri;
+use blueos_hal::{Configuration, PlatPeri};
 use tock_registers::{
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite},
@@ -224,16 +224,10 @@ register_bitfields! [u32,
     ],
 ];
 
-const INSTANCES: [StaticRef<I2cRegisters>; 2] = unsafe {
-    [
-        StaticRef::new(0x40090000 as *const I2cRegisters),
-        StaticRef::new(0x40098000 as *const I2cRegisters),
-    ]
-};
-
 pub struct I2c {
     registers: StaticRef<I2cRegisters>,
     clk: u32,
+    pub reset_ctrl: Option<(&'static dyn blueos_hal::reset::ResetCtrlWithDone, u32)>,
 }
 
 impl I2c {
@@ -285,5 +279,38 @@ impl PlatPeri for I2c {
 
     fn disable(&self) {
         self.registers.ic_enable.set(0);
+    }
+}
+
+impl Configuration<super::I2cConfig> for I2c {
+    type Target = ();
+    fn configure(&self, param: &super::I2cConfig) -> blueos_hal::err::Result<Self::Target> {
+        if let Some(ref reset_ctrl) = self.reset_ctrl {
+            let (reset_ctrl, reset_id) = reset_ctrl;
+            reset_ctrl.set_reset(*reset_id);
+            reset_ctrl.clear_reset(*reset_id);
+            reset_ctrl.wait_done(*reset_id);
+        }
+
+        self.disable();
+
+        // Configure as a fast-mode master with RepStart support, 7-bit addresses
+        self.registers.ic_con.write(
+            IC_CON::SPEED::FAST
+                + IC_CON::MASTER_MODE::SET
+                + IC_CON::IC_SLAVE_DISABLE::SET
+                + IC_CON::IC_RESTART_EN::SET
+                + IC_CON::TX_EMPTY_CTRL::SET,
+        );
+
+        // Set the TX and RX thresholds to 1 (encoded by the value 0) so that we
+        // get an interrupt whenever a byte is available to be read or written.
+        //
+        // TODO: this is obviously not optimal for efficiency
+        self.registers.ic_tx_tl.set(0);
+        self.registers.ic_rx_tl.set(0);
+
+        self.set_baudrate(param.baudrate);
+        self.enable();
     }
 }
