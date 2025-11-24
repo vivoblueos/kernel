@@ -434,6 +434,10 @@ jobs:
                 console.log(`Running: gn gen ${outDir} --args='${args}'`);
                 execSync(`gn gen ${outDir} --args='${args}'`, { stdio: 'inherit' });
 
+                // Build default targets.
+                console.log(`Running: ninja -C ${outDir} default`);
+                execSync(`ninja -C ${outDir} default`, { stdio: 'inherit' });
+
                 // Build and test.
                 console.log(`Running: ninja -C ${outDir} check_all`);
                 execSync(`ninja -C ${outDir} check_all`, { stdio: 'inherit' });
