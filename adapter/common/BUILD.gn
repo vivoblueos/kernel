@@ -15,72 +15,57 @@
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 
-adapter_deps = [
-  "cmsis_header:cmsis_os",
-  "cmsis_header:cmsis_os2",
-  "//external/vendor/log-0.4.28:log",
-  "//kernel/adapter/common:blueos_adapter",
+shared_deps = [
   "//kernel/infra:blueos_infra",
-  "//kernel/kconfig:blueos_kconfig",
   "//kernel/kernel:blueos",
-  "//libc",
 ]
 
-build_rust("cmsis_adapter") {
+build_rust("blueos_adapter") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  proc_macro_deps = [ "//external/vendor/delegate-0.13.4:delegate" ]
-  deps = adapter_deps
-  configs += [ "//kernel/kconfig:kconfigs" ]
+  deps = shared_deps
 }
 
-run_clippy("cmsis_adapter_clippy") {
-  deps = [ ":cmsis_adapter" ]
+run_clippy("blueos_adapter_clippy") {
+  deps = [ ":blueos_adapter" ]
 }
 
-build_rust("cmsis_adapter_unittest") {
+build_rust("blueos_adapter_unittest") {
   testonly = true
-  crate_name = "cmsis_adapter_unittest"
+  crate_name = "blueos_adapter_unittest"
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  proc_macro_deps = [
-    "//external/vendor/delegate-0.13.4:delegate",
-    "//kernel/test_harness:blueos_test_macro",
-  ]
-  deps = adapter_deps
-  deps += [
-    ":cmsis_adapter",
-    "//external/vendor/semihosting-0.1.20:semihosting",
-  ]
-  configs += [
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+  deps = [ "//external/vendor/semihosting-0.1.20:semihosting" ] + shared_deps
+    configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
   ]
   rustflags = [ "--test" ]
 }
 
-run_clippy("cmsis_adapter_unittest_clippy") {
+run_clippy("blueos_adapter_unittest_clippy") {
   testonly = true
-  deps = [ ":cmsis_adapter_unittest" ]
+  deps = [ ":blueos_adapter_unittest" ]
 }
 
-gen_qemu_runner("cmsis_unittest_runner") {
+gen_qemu_runner("blueos_adapter_unittest_runner") {
   testonly = true
-  img = ":cmsis_adapter_unittest"
+  img = ":blueos_adapter_unittest"
   qemu = "$qemu_exe"
   machine = "$machine"
   qemu_args = qemu_extra_args
-  block_img = "cmsis_unittest_block.img"
+  block_img = "adapter_unittest_block.img"
   block_args = qemu_block_args
   semihosting = true
 }
 
-run_qemu_check("run_cmsis_unittest") {
+run_qemu_check("run_unittest") {
   testonly = true
-  runner = ":cmsis_unittest_runner"
+  runner = ":blueos_adapter_unittest_runner"
   if (coverage) {
-    img = ":cmsis_adapter_unittest"
+    img = ":blueos_adapter_unittest"
     checker = "//kernel/adapter/coverage.checker"
   } else {
     checker = "//kernel/adapter/unittests.checker"
