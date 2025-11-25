@@ -53,7 +53,7 @@ pub mod allocator;
 pub mod arch;
 #[cfg(kernel_async)]
 pub mod asynk;
-pub(crate) mod boards;
+pub mod boards;
 #[cfg(use_kernel_boot)]
 pub(crate) mod boot;
 pub mod config;
