@@ -18,14 +18,18 @@ import("//build/toolchain/blueos.gni")
 build_rust("blueos_driver") {
   sources = [ "src/lib.rs" ]
   deps = [
-           "//external/vendor/bitflags-2.10.0:bitflags",
-           "//external/vendor/cfg-if-1.0.4:cfg_if",
-           "//external/vendor/safe-mmio-0.2.5:safe_mmio",
-           "//external/vendor/tock-registers-0.9.0:tock_registers",
-           "//external/vendor/zerocopy-0.8.27:zerocopy",
-           "//kernel/hal:blueos_hal",
-         ] + board_deps
-
+    "//external/vendor/bitflags-2.10.0:bitflags",
+    "//external/vendor/cfg-if-1.0.4:cfg_if",
+    "//external/vendor/safe-mmio-0.2.5:safe_mmio",
+    "//external/vendor/tock-registers-0.9.0:tock_registers",
+    "//external/vendor/zerocopy-0.8.27:zerocopy",
+    "//kernel/hal:blueos_hal",
+  ]
+  if (board == "gd32vw553") {
+    deps += [ "//external/nuclei-sdk" ]
+  } else if (board == "gd32e507") {
+    deps += [ "//external/vendor/gd32e5-0.9.1:gd32e5" ]
+  }
   features = []
   rustflags = [
     "--cfg",
