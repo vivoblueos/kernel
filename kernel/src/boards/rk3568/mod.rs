@@ -12,7 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(any(target_chip = "gd32e5x", target_chip = "gd32vw55x"))]
-pub mod gd32_clock_control;
-#[cfg(target_board = "raspberry_pico2_cortexm")]
-pub mod rpi_pico;
+mod config;
+
+use crate::{arch, error::Error, sync::SpinLock, time};
+use blueos_kconfig::NUM_CORES;
+use core::sync::atomic::Ordering;
+
+pub(crate) fn init() {
+    crate::boot::init_runtime();
+    crate::boot::init_heap();
+    arch::vector::init();
+    unsafe { arch::irq::init(config::GICD as u64, config::GICR as u64, NUM_CORES, false) };
+    arch::irq::cpu_init();
+    time::systick_init(24000000);
+}
+
+crate::define_peripheral! {
+    (console_uart, blueos_driver::uart::ns16650::Ns16650,
+     blueos_driver::uart::ns16650::Ns16650::new(
+        0xFE660000,
+     )),
+}
+
+crate::define_pin_states!(None);

@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(any(target_chip = "gd32e5x", target_chip = "gd32vw55x"))]
-pub mod gd32_clock_control;
-#[cfg(target_board = "raspberry_pico2_cortexm")]
-pub mod rpi_pico;
+use crate::arch::irq::IrqNumber;
+
+pub const APBP_CLOCK: u32 = 0x16e3600;
+pub const PL011_UART0_BASE: u64 = 0xFDD50000;
+pub const PL011_UART0_IRQNUM: IrqNumber = IrqNumber::new(33);
+pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
+pub const PSCI_BASE: u32 = 0x84000000;
+pub const GICD: usize = 0xfd400000;
+pub const GICR: usize = 0xfd460000;

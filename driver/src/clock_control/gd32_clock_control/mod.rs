@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_board = "gd32e507")]
+#[cfg(target_chip = "gd32e5x")]
 mod rcu;
 
 use blueos_hal::clock_control::ClockControl;
@@ -21,9 +21,9 @@ use gd32e5::gd32e507;
 pub struct Gd32ClockControl;
 
 cfg_if::cfg_if! {
-    if #[cfg(target_board = "gd32e507")] {
+    if #[cfg(target_chip = "gd32e5x")] {
         use rcu::init_soc;
-    } else if #[cfg(target_board = "gd32vw553")] {
+    } else if #[cfg(target_chip = "gd32vw55x")] {
         unsafe extern "C" {
             fn init_soc();
         }

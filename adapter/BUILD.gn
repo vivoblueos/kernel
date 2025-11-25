@@ -18,9 +18,14 @@ import("//build/toolchain/blueos.gni")
 group("check_adapter") {
   testonly = true
   deps = [ "cmsis:run_cmsis_unittest" ]
+  deps += [ "common:run_unittest" ]
 }
 
 group("check_adapter_by_clippy") {
   testonly = true
   deps = [ "cmsis:cmsis_adapter_unittest_clippy" ]
+  deps += [
+    "common:blueos_adapter_clippy",
+    "common:blueos_adapter_unittest_clippy",
+  ]
 }

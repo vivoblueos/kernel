@@ -15,6 +15,7 @@
 pub mod delay;
 pub mod event_flags;
 pub mod kernel;
+pub mod mempool;
 pub mod mutex;
 pub mod semaphore;
 pub mod thread;
