@@ -164,7 +164,6 @@ jobs:
                 console.log(`Skipping ${repo} for format check`);
                 continue;
               }
-              console.log(`\nProcessing: repo=${repo}, file=${file}`);
               const repoPath = execSync(`repo list -p ${repo}`, {
                 encoding: "utf8",
                 stdio: "pipe",
@@ -172,60 +171,74 @@ jobs:
               const filePath = path.join(repoPath, file);
               const ext = path.extname(filePath).toLowerCase();
               try {
-                if (ext === ".gn" || ext === ".gni") {
+                if (ext === '.gn' || ext === '.gni') {
                   console.log(`Checking GN format for: ${filePath}, ext: ${ext}`);
-                  const out = execSync(`gn format --dry-run \"${filePath}\"`, {
-                    encoding: "utf-8",
-                    stdio: "pipe",
-                  });
-                  if (out.trim()) {
-                    formatErrors.push(`GN formatting issue in ${filePath}:\n${out}`);
-                  }
-                } else if (ext === ".py") {
-                  console.log(`Checking Python format for: ${filePath}`);
-                  const out = execSync(`yapf3 -d \"${filePath}\"`, {
-                    encoding: "utf-8",
-                    stdio: "pipe",
-                  });
-                  if (out.trim()) {
-                    formatErrors.push(`Python formatting issue in ${filePath}:\n${out}`);
-                  }
-                } else if (ext === ".rs") {
-                  console.log(`Checking Rust format for: ${filePath}`);
-                  const out = execSync(
-                    `rustfmt --edition=2021 --check --unstable-features --skip-children \"${filePath}\"`,
-                    {
-                      encoding: "utf-8",
-                      stdio: "pipe",
+                  try {
+                    execSync(`gn format --dry-run "${filePath}"`, {
+                      encoding: 'utf-8',
+                      stdio: 'pipe',
+                    });
+                  } catch (error) {
+                    if (error.status === 2) {
+                      formatErrors.push(`GN formatting issue in ${filePath}:\n${error.stdout}`);
+                    } else {
+                      throw error;
                     }
-                  );
-                  if (out.trim()) {
-                    formatErrors.push(`Rust formatting issue in ${filePath}:\n${out}`);
                   }
-                } else if (ext === ".yml" || ext === ".yaml") {
+                } else if (ext === '.py') {
+                  console.log(`Checking Python format for: ${filePath}`);
+                  try {
+                    execSync(`yapf3 -d "${filePath}"`, {
+                      encoding: 'utf-8',
+                      stdio: 'pipe',
+                    });
+                  } catch (error) {
+                    const stdout = error.stdout ? error.stdout.trim() : '';
+                    if (stdout) {
+                      formatErrors.push(`Python formatting issue in ${filePath}:\n${stdout}`);
+                    } else {
+                      throw error;
+                    }
+                  }
+                } else if (ext === '.rs') {
+                  console.log(`Checking Rust format for: ${filePath}`);
+                  try {
+                    execSync(
+                      `rustfmt --edition=2021 --check --unstable-features --skip-children \"${filePath}\"`,
+                      {
+                        encoding: 'utf-8',
+                        stdio: 'pipe',
+                      }
+                    );
+                  } catch (error) {
+                    const stdout = error.stdout ? error.stdout.trim() : '';
+                    if (stdout) {
+                      formatErrors.push(`Rust formatting issue in ${filePath}:\n${stdout}`);
+                    } else {
+                      throw error;
+                    }
+                  }
+                } else if (ext === '.yml' || ext === '.yaml') {
                   console.log(`Checking YAML format for: ${filePath}`);
-                  const out = execSync(`yamlfmt -lint \"${filePath}\"`, {
-                    encoding: "utf-8",
-                    stdio: "pipe",
-                  });
-                  if (out.trim()) {
-                    formatErrors.push(`YAML formatting issue in ${filePath}:\n${out}`);
+                  try {
+                    execSync(`yamlfmt -lint \"${filePath}\"`, {
+                      encoding: 'utf-8',
+                      stdio: 'pipe',
+                    });
+                  } catch (error) {
+                    const stderr = error.stderr ? error.stderr.trim() : '';
+                    if (stderr.includes('The following formatting differences were found')) {
+                      formatErrors.push(`YAML formatting issue in ${filePath}:\n${stderr}`);
+                    } else {
+                      throw error;
+                    }
                   }
                 }
-                totalCheckedFiles++;
               } catch (error) {
-                // Check if it's a formatting error or other error
-                const output = (error.stdout || "") + (error.stderr || "");
-                if (output.includes("format") || output.includes("Format")) {
-                  formatErrors.push(`Formatting issue in ${repo}/${file}:\n${output}`);
-                } else {
-                  console.log(
-                    `Skipping format check for ${repo}/${file}: ${error.message}`
-                  );
-                }
+                console.log(`Skipping format check for ${repo}/${file}: ${error.message}`);
               }
+              totalCheckedFiles++;
             }
-
             console.log(`\nTotal files checked: ${totalCheckedFiles}`);
             if (formatErrors.length > 0) {
               console.log("❌ Format check failed:");
