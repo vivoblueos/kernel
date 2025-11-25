@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{uart, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, HasRestReg};
-
-pub trait Uart<P, T, I, S>:
-    super::PlatPeri
-    + super::Configuration<P, Target = T>
-    + HasInterruptReg<InterruptType = I>
-    + HasFifo
-    + Has8bitDataReg
-    + HasLineStatusReg
-{
+pub trait I2c<P, T>: super::PlatPeri + super::Configuration<P, Target = T> {
+    fn start_writing(&self, addr: u16) -> super::err::Result<()>;
+    fn start_reading(&self, addr: u16) -> super::err::Result
+    fn send_byte_with_stop(&self, byte: u8) -> super::err::Result<()>;
+    fn read_byte_with_stop(&self) -> super::err::Result<u8>;
 }

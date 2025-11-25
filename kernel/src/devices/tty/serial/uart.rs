@@ -20,10 +20,7 @@ use crate::devices::{
     DeviceRequest,
 };
 use blueos_driver::uart::{InterruptType, UartCtrlStatus};
-use blueos_hal::{
-    uart::{Uart, UartWithReset},
-    HasInterruptReg, PlatPeri,
-};
+use blueos_hal::{uart::Uart, HasInterruptReg, PlatPeri};
 use embedded_io::{ErrorType, Read, ReadReady, Write, WriteReady};
 
 pub struct UartDevice<T: PlatPeri> {

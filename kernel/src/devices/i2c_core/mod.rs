@@ -12,14 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{uart, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, HasRestReg};
-
-pub trait Uart<P, T, I, S>:
-    super::PlatPeri
-    + super::Configuration<P, Target = T>
-    + HasInterruptReg<InterruptType = I>
-    + HasFifo
-    + Has8bitDataReg
-    + HasLineStatusReg
-{
-}
+pub mod i2c_raw;

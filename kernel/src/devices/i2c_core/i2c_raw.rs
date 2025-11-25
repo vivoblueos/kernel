@@ -12,14 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{uart, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, HasRestReg};
+use blueos_driver::i2c::I2cConfig;
+use blueos_hal::PlatPeri;
 
-pub trait Uart<P, T, I, S>:
-    super::PlatPeri
-    + super::Configuration<P, Target = T>
-    + HasInterruptReg<InterruptType = I>
-    + HasFifo
-    + Has8bitDataReg
-    + HasLineStatusReg
-{
+pub struct BlockI2c<T: PlatPeri> {
+    inner: &'static T,
+}
+
+impl<T: blueos_hal::i2c::I2c<I2cConfig, ()> BlockI2c<T> {
+    pub fn write_then_read(
+        &mut self,
+        addr: u16,
+        write_buf: &[u8],
+        read_buf: &mut [u8],
+    ) -> blueos_hal::err::Result<()> {
+        todo!()
+    }
 }

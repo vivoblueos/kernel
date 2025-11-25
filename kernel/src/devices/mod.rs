@@ -25,6 +25,7 @@ use spin::{Once, RwLock as SpinRwLock};
 pub mod block;
 pub mod console;
 mod error;
+pub mod i2c_core;
 #[cfg(enable_net)]
 pub(crate) mod net;
 mod null;
@@ -32,7 +33,6 @@ pub mod tty;
 #[cfg(virtio)]
 pub mod virtio;
 mod zero;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DeviceClass {
