@@ -18,8 +18,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use blueos_hal::{Configuration, PlatPeri};
+use blueos_hal::{Configuration, HasFifo, PlatPeri};
 use tock_registers::{
+    interfaces::{Readable, Writeable},
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite},
 };
@@ -50,7 +51,7 @@ register_structs! {
         (0x60 => ic_clr_stop_det: ReadOnly<u32, IC_CLR_STOP_DET::Register>),
         (0x64 => _reserved4), // TODO: there are still some registers to list in this gap
         (0x6c => ic_enable: ReadWrite<u32, IC_ENABLE::Register>),
-        (0x70 => _reserved5), // TODO: there are still some registers to list in this gap
+        (0x70 => ic_status: ReadOnly<u32, IC_STATUS::Register>),
         (0x7c => ic_sda_hold: ReadWrite<u32, IC_SDA_HOLD::Register>),
         (0x80 => ic_tx_abrt_source: ReadOnly<u32, IC_TX_ABRT_SOURCE::Register>),
         (0x84 => _reserved6), // TODO: there are still some registers to list in this gap
@@ -187,6 +188,16 @@ register_bitfields! [u32,
         ABORT OFFSET(1) NUMBITS(1) [],
         TX_CMD_BLOCK OFFSET(2) NUMBITS(1) [],
     ],
+    /// I2C Status Register
+    IC_STATUS [
+        SLV_ACTIVITY OFFSET(6) NUMBITS(1) [],
+        MST_ACTIVITY OFFSET(5) NUMBITS(1) [],
+        RFF OFFSET(4) NUMBITS(1) [],
+        RFNE OFFSET(3) NUMBITS(1) [],
+        TFE OFFSET(2) NUMBITS(1) [],
+        TFNF OFFSET(1) NUMBITS(1) [],
+        ACTIVITY OFFSET(0) NUMBITS(1) [],
+    ],
     /// I2C SDA Hold Time Length Register
     IC_SDA_HOLD [
         IC_SDA_TX_HOLD OFFSET(0) NUMBITS(16) [],
@@ -267,6 +278,30 @@ impl I2c {
 
         freq_in / period
     }
+
+    fn set_address(&self, address: u16) {
+        self.registers.ic_enable.set(0);
+        self.registers
+            .ic_tar
+            .modify(IC_TAR::IC_TAR.val(address as u32));
+        self.registers.ic_enable.set(1);
+    }
+
+    fn read(&self, address: u16, buf: &mut [u8]) -> u8 {
+        self.set_address(address);
+        self.registers.ic_data_cmd.set(IC_DATA_CMD::CMD::SET);
+
+        if buf.len() == 1 {
+            self.registers.ic_data_cmd.set(IC_DATA_CMD::STOP::SET);
+        }
+
+        for i in 0..buf.len() {
+            buf[i] = self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT);
+            if i == buf.len() - 1 {
+                self.registers.ic_data_cmd.set(IC_DATA_CMD::STOP::SET);
+            }
+        }
+    }
 }
 
 unsafe impl Send for I2c {}
@@ -307,10 +342,31 @@ impl Configuration<super::I2cConfig> for I2c {
         // get an interrupt whenever a byte is available to be read or written.
         //
         // TODO: this is obviously not optimal for efficiency
-        self.registers.ic_tx_tl.set(0);
-        self.registers.ic_rx_tl.set(0);
+        self.enable_fifo(1)?;
 
         self.set_baudrate(param.baudrate);
         self.enable();
     }
+}
+
+impl HasFifo for I2c {
+    fn enable_fifo(&self, num: u8) -> blueos_hal::err::Result<()> {
+        self.registers.ic_tx_tl.set(num);
+        self.registers.ic_rx_tl.set(num);
+        Ok(())
+    }
+
+    fn is_tx_fifo_full(&self) -> bool {
+        self.registers.ic_status.is_set(IC_STATUS::TFNF) == false
+    }
+
+    fn is_rx_fifo_empty(&self) -> bool {
+        self.registers.ic_status.is_set(IC_STATUS::RFNE) == false
+    }
+}
+
+impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2c {
+    fn read_byte_with_stop(&self) -> blueos_hal::err::Result<u8> {}
+
+    fn send_byte_with_stop(&self, byte: u8) -> blueos_hal::err::Result<()> {}
 }
