@@ -15,9 +15,9 @@
 pub mod arm_pl011;
 pub mod cmsdk;
 pub mod dumb;
-#[cfg(target_board = "gd32e507")]
+#[cfg(target_chip = "gd32e5x")]
 pub mod gd32e5x_uart;
-#[cfg(target_board = "gd32vw553")]
+#[cfg(target_chip = "gd32vw55x")]
 pub mod gd32vw55x;
 pub mod ns16650;
 
