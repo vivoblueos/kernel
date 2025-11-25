@@ -19,8 +19,7 @@ use bitflags::bitflags;
 use blueos_hal::{
     err::{HalError, Result},
     uart::Uart,
-    Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, HasStatusReg,
-    PlatPeri,
+    Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
 };
 use core::{cell::UnsafeCell, fmt, ptr::NonNull};
 use safe_mmio::{

@@ -21,6 +21,7 @@ use core::num::NonZeroUsize;
 
 use err::Result;
 pub mod clock_control;
+pub mod i2c;
 pub mod pinctrl;
 pub mod reset;
 pub mod uart;
@@ -151,9 +152,9 @@ pub trait HasFifo {
 /// * `StatusType` - The status type, typically a struct or enum that contains
 ///                  the peripheral's status information
 ///
-pub trait HasStatusReg {
-    type StatusType;
-    fn get_status(&self) -> Self::StatusType;
+pub trait HasErrorStatusReg {
+    type ErrorStatusType;
+    fn get_error_status(&self) -> Self::ErrorStatusType;
 }
 
 /// Reset register operations trait
