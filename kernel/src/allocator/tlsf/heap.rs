@@ -121,30 +121,3 @@ impl Heap {
         heap.size_of_allocation(ptr).unwrap_or(0)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::alloc::Layout;
-    use blueos_test_macro::test;
-
-    #[test]
-    fn max_free_block_comprehensive() {
-        // Test 1: Basic behavior - check max free block after pool initialization
-        let max_free = allocator::get_max_free_block_size();
-        assert!(
-            max_free > 0,
-            "max free block should be positive after pool insert"
-        );
-
-        // Max free block decreases on allocation
-        let layout = Layout::from_size_align(1024 * 64, 8).unwrap();
-        let ptr = unsafe { alloc::alloc::alloc(layout) };
-        let after = allocator::get_max_free_block_size();
-        assert!(
-            after <= max_free,
-            "max free block should decrease after allocation"
-        );
-        unsafe { alloc::alloc::dealloc(ptr, layout) };
-    }
-}

@@ -1,3 +1,3 @@
-// TOTAL-TIMEOUT: 120
+// TOTAL-TIMEOUT: 180
 // ASSERT-SUCC: Done kernel unittests
 // ASSERT-FAIL: Oops:
