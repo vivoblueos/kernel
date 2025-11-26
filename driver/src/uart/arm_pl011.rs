@@ -334,16 +334,6 @@ impl Configuration<super::UartConfig> for ArmPl011<'static> {
             LineControlRegister::WLEN_6BITS
         } else {
             LineControlRegister::WLEN_5BITS
-        } | if param.parity != Parity::None {
-            LineControlRegister::empty()
-        } else if param.parity == Parity::Odd {
-            LineControlRegister::PEN
-        } else {
-            LineControlRegister::PEN | LineControlRegister::EPS
-        } | if param.stop_bits == StopBits::DataBits2 {
-            LineControlRegister::STP2
-        } else {
-            LineControlRegister::empty()
         };
 
         let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
@@ -373,13 +363,14 @@ impl Has8bitDataReg for ArmPl011<'static> {
 
         let flags = DataRegister::from_bits_truncate(data_reg);
 
-        if flags.contains(DataRegister::OE)
-            || flags.contains(DataRegister::BE)
-            || flags.contains(DataRegister::PE)
-            || flags.contains(DataRegister::FE)
-        {
-            return Err(HalError::Fail);
+        if flags.contains(DataRegister::BE) {
+            return Err(HalError::Other("Break Error"));
+        } else if flags.contains(DataRegister::PE) {
+            return Err(HalError::Other("Parity Error"));
+        } else if flags.contains(DataRegister::FE) {
+            return Err(HalError::Other("Framing Error"));
         }
+
         Ok((data_reg & 0xFF) as u8)
     }
 
@@ -446,21 +437,45 @@ impl HasInterruptReg for ArmPl011<'static> {
     fn enable_interrupt(&self, intr: Self::InterruptType) {
         let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
         let mut imsc = field_used_by_inner!(unsafe_mut_ref, uartimsc).read();
-        imsc |= Interrupts::from_bits_truncate(intr as u32);
+        match intr {
+            super::InterruptType::Tx => {
+                imsc |= Interrupts::TXI;
+            }
+            super::InterruptType::Rx => {
+                imsc |= Interrupts::RXI;
+            }
+            _ => {}
+        }
         field_used_by_inner!(unsafe_mut_ref, uartimsc).write(imsc);
     }
 
     fn disable_interrupt(&self, intr: Self::InterruptType) {
         let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
         let mut imsc = field_used_by_inner!(unsafe_mut_ref, uartimsc).read();
+        match intr {
+            super::InterruptType::Tx => {
+                imsc &= !Interrupts::TXI;
+            }
+            super::InterruptType::Rx => {
+                imsc &= !Interrupts::RXI;
+            }
+            _ => {}
+        }
         imsc &= !Interrupts::from_bits_truncate(intr as u32);
         field_used_by_inner!(unsafe_mut_ref, uartimsc).write(imsc);
     }
 
     fn clear_interrupt(&self, intr: Self::InterruptType) {
         let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
-        field_used_by_inner!(unsafe_mut_ref, uarticr)
-            .write(Interrupts::from_bits_truncate(intr as u32));
+        match intr {
+            super::InterruptType::Tx => {
+                field_used_by_inner!(unsafe_mut_ref, uarticr).write(Interrupts::TXI);
+            }
+            super::InterruptType::Rx => {
+                field_used_by_inner!(unsafe_mut_ref, uarticr).write(Interrupts::RXI);
+            }
+            _ => {}
+        }
     }
 
     fn get_interrupt(&self) -> Self::InterruptType {
