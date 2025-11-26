@@ -16,7 +16,7 @@ use super::SlabHeap as Slab;
 use crate::{allocator::MemoryInfo, sync::spinlock::SpinLock};
 use core::{alloc::Layout, ptr::NonNull};
 
-type SlabHeap = Slab<4, 2, 1, 1, 1, 1, 1>;
+type SlabHeap = Slab<2, 4, 2, 1, 1, 1, 1, 1>;
 pub struct Heap {
     heap: SpinLock<SlabHeap>,
 }
