@@ -121,7 +121,8 @@ impl Slab {
 
 #[derive(Copy, Clone)]
 pub enum HeapAllocator {
-    Slab16Bytes = 0,
+    Slab8Bytes = 0,
+    Slab16Bytes,
     Slab32Bytes,
     Slab64Bytes,
     Slab128Bytes,
@@ -147,6 +148,7 @@ impl HeapAllocator {
 }
 
 pub struct SlabHeap<
+    const SLAB_8: usize,
     const SLAB_16: usize,
     const SLAB_32: usize,
     const SLAB_64: usize,
@@ -155,6 +157,7 @@ pub struct SlabHeap<
     const SLAB_512: usize,
     const SLAB_1024: usize,
 > {
+    slab_8_bytes: Slab,
     slab_16_bytes: Slab,
     slab_32_bytes: Slab,
     slab_64_bytes: Slab,
@@ -172,6 +175,7 @@ pub struct SlabHeap<
 }
 
 impl<
+        const SLAB_8: usize,
         const SLAB_16: usize,
         const SLAB_32: usize,
         const SLAB_64: usize,
@@ -179,10 +183,11 @@ impl<
         const SLAB_256: usize,
         const SLAB_512: usize,
         const SLAB_1024: usize,
-    > SlabHeap<SLAB_16, SLAB_32, SLAB_64, SLAB_128, SLAB_256, SLAB_512, SLAB_1024>
+    > SlabHeap<SLAB_8, SLAB_16, SLAB_32, SLAB_64, SLAB_128, SLAB_256, SLAB_512, SLAB_1024>
 {
     // Constants for slab boundaries
-    const SLAB_32_END: usize = SLAB_16 + SLAB_32;
+    const SLAB_16_END: usize = SLAB_8 + SLAB_16;
+    const SLAB_32_END: usize = Self::SLAB_16_END + SLAB_32;
     const SLAB_64_END: usize = Self::SLAB_32_END + SLAB_64;
     const SLAB_128_END: usize = Self::SLAB_64_END + SLAB_128;
     const SLAB_256_END: usize = Self::SLAB_128_END + SLAB_256;
@@ -192,6 +197,7 @@ impl<
     /// Create an empty heap
     pub const fn new() -> Self {
         Self {
+            slab_8_bytes: Slab::new(),
             slab_16_bytes: Slab::new(),
             slab_32_bytes: Slab::new(),
             slab_64_bytes: Slab::new(),
@@ -215,8 +221,7 @@ impl<
         self.total = size;
 
         // allocate slabs
-        self.slab_total_size =
-            (SLAB_16 + SLAB_32 + SLAB_64 + SLAB_128 + SLAB_256 + SLAB_512 + SLAB_1024) * PAGE_SIZE;
+        self.slab_total_size = (SLAB_8 + SLAB_16 + SLAB_32 + SLAB_64 + SLAB_128 + SLAB_256 + SLAB_512 + SLAB_1024) * 4096;
         debug_assert!(self.slab_total_size < size);
         let slab_layout = Layout::from_size_align(self.slab_total_size, PAGE_SIZE).unwrap();
         let slab_ptr = self.system_allocator.allocate(&slab_layout).unwrap();
@@ -224,6 +229,8 @@ impl<
         // init slabs
         let mut start_addr = slab_ptr.as_ptr() as usize;
         self.slab_begin_addr = start_addr;
+        self.slab_8_bytes.init(start_addr, SLAB_8 << (12 - 3), 8);
+        start_addr += SLAB_8 * 4096;
         self.slab_16_bytes.init(start_addr, SLAB_16 << (12 - 4), 16);
         start_addr += SLAB_16 * PAGE_SIZE;
         self.slab_32_bytes.init(start_addr, SLAB_32 << (12 - 5), 32);
@@ -235,12 +242,13 @@ impl<
         start_addr += SLAB_128 * PAGE_SIZE;
         self.slab_256_bytes
             .init(start_addr, SLAB_256 << (12 - 8), 256);
-        start_addr += SLAB_256 * PAGE_SIZE;
+        start_addr += SLAB_256 * 4096;
         self.slab_512_bytes
             .init(start_addr, SLAB_512 << (12 - 9), 512);
-        start_addr += SLAB_512 * PAGE_SIZE;
+        start_addr += SLAB_512 * 4096;
         self.slab_1024_bytes
             .init(start_addr, SLAB_1024 << (12 - 10), 1024);
+        start_addr += SLAB_1024 * 4096;
     }
 
     pub fn allocate(&mut self, layout: &Layout) -> Option<NonNull<u8>> {
@@ -248,6 +256,14 @@ impl<
         let mut current_allocator = Self::layout_to_allocator(layout.size(), layout.align());
         while ptr.is_none() {
             match current_allocator {
+                HeapAllocator::Slab8Bytes => {
+                    if self.slab_8_bytes.len > 0 {
+                        ptr = self.slab_8_bytes.allocate(layout);
+                        self.allocated += 8;
+                    } else {
+                        current_allocator = HeapAllocator::Slab16Bytes;
+                    }
+                }
                 HeapAllocator::Slab16Bytes => {
                     if self.slab_16_bytes.len > 0 {
                         ptr = self.slab_16_bytes.allocate(layout);
@@ -347,6 +363,11 @@ impl<
                 self.allocated -= size;
                 size
             }
+            HeapAllocator::Slab8Bytes => {
+                self.slab_8_bytes.deallocate(ptr);
+                self.allocated -= 8;
+                8
+            }
             HeapAllocator::Slab16Bytes => {
                 self.slab_16_bytes.deallocate(ptr);
                 self.allocated -= 16;
@@ -392,6 +413,11 @@ impl<
                 let size = self.system_allocator.deallocate_unknown_align(ptr);
                 self.allocated -= size;
                 size
+            }
+            HeapAllocator::Slab8Bytes => {
+                self.slab_8_bytes.deallocate(ptr);
+                self.allocated -= 8;
+                8
             }
             HeapAllocator::Slab16Bytes => {
                 self.slab_16_bytes.deallocate(ptr);
@@ -482,11 +508,13 @@ impl<
     // Finds the appropriate allocator based on layout size and alignment
     //
     // This function implements a best-fit strategy for slab allocation:
-    // - For sizes > 256 bytes, use the system allocator
+    // - For sizes > 1024 bytes, use the system allocator
     // - For smaller sizes, use the smallest slab that can accommodate both size and alignment
     fn layout_to_allocator(size: usize, align: usize) -> HeapAllocator {
         if size > 1024 {
             HeapAllocator::SystemAllocator
+        } else if size <= 8 && align <= 8 {
+            HeapAllocator::Slab8Bytes
         } else if size <= 16 && align <= 16 {
             HeapAllocator::Slab16Bytes
         } else if size <= 32 && align <= 32 {
@@ -511,7 +539,9 @@ impl<
         let offset = ptr - self.slab_begin_addr;
         let slab_index = offset >> PAGE_SHIFT;
 
-        if slab_index < SLAB_16 {
+        if slab_index < SLAB_8 {
+            HeapAllocator::Slab8Bytes
+        } else if slab_index < Self::SLAB_16_END {
             HeapAllocator::Slab16Bytes
         } else if slab_index < Self::SLAB_32_END {
             HeapAllocator::Slab32Bytes
@@ -553,7 +583,9 @@ impl<
         let offset = raw_ptr - self.slab_begin_addr;
         let slab_index = offset >> 12;
 
-        if slab_index < SLAB_16 {
+        if slab_index < SLAB_8 {
+            Some(8)
+        } else if slab_index < Self::SLAB_16_END {
             Some(16)
         } else if slab_index < Self::SLAB_32_END {
             Some(32)
