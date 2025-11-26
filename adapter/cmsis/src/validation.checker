@@ -1,0 +1,3 @@
+// TOTAL-TIMEOUT: 25
+// ASSERT-SUCC: cmsis_rv2 unittest finished
+// ASSERT-FAIL: Oops:

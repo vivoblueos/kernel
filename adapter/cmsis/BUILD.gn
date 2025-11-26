@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 
@@ -85,4 +86,116 @@ run_qemu_check("run_cmsis_unittest") {
   } else {
     checker = "//kernel/adapter/unittests.checker"
   }
+}
+
+validation_deps = adapter_deps
+
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "arm-none-eabi-gcc" ],
+                       "string")
+
+build_rust("adapter_validation") {
+  testonly = true
+  crate_name = "adapter_validation"
+  crate_type = "bin"
+  sources = [ "src/validation.rs" ]
+  edition = "2021"
+  proc_macro_deps = [
+    "//external/vendor/delegate-0.13.4:delegate",
+    "//kernel/test_harness:blueos_test_macro",
+  ]
+  deps = validation_deps
+  deps += [
+    ":cmsis_adapter",
+    ":validation_cases",
+    "//external/vendor/semihosting-0.1.20:semihosting",
+
+    # in fact, validation_cases need an c library
+    # "//librs:librs",
+  ]
+  deps += board_deps
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
+  ]
+  rustflags = [ "--test" ]
+}
+
+run_clippy("adapter_validation_clippy") {
+  testonly = true
+  deps = [ ":adapter_validation" ]
+}
+
+static_library("validation_cases") {
+  testonly = true
+  sources = [
+    "//external/CMSIS-RTOS2_Validation/Source/Config/RV2_Config.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_Common.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_EventFlags.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_GenWait.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_Kernel.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_MemoryPool.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_MessageQueue.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_Mutex.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_Semaphore.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_Thread.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_ThreadFlags.c",
+    "//external/CMSIS-RTOS2_Validation/Source/RV2_Timer.c",
+    "//external/CMSIS-RTOS2_Validation/Source/cmsis_rv2.c",
+    "//external/CMSIS-RTOS2_Validation/Source/tf_main.c",
+    "//external/CMSIS-RTOS2_Validation/Source/tf_report.c",
+  ]
+
+  # all flags same as cbuild/cmake generated compiler flags
+  cflags = [
+    "-DPRINT_XML_REPORT=0",
+
+    # custom output method
+    "-DTF_OUTPUT=1",
+    "-DTST_IRQ_HANDLER_A=Interrupt2_Handler",
+    "-DTST_IRQ_HANDLER_B=Interrupt3_Handler",
+    "-DTST_IRQ_NUM_A=2",
+    "-DTST_IRQ_NUM_B=3",
+
+    # "-D_RTE_",
+    "-std=gnu11",
+    "-fshort-enums",
+
+    # "-fomit-frame-pointer",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-isystem",
+    "${_sysroot}/include",
+  ]
+
+  # arch specific flags
+  cflags += [
+    "-DARMCM33",
+    "-D__CORTEX_M",
+  ]
+
+  include_dirs = [
+    "//external/CMSIS-RTOS2_Validation/Include",
+    "//external/CMSIS-RTOS2_Validation/Source/Config",
+    "//external/CMSIS_6/CMSIS/Core/Include",
+
+    "//kernel/adapter/cmsis/cmsis_header/RTOS2",
+  ]
+}
+
+gen_qemu_runner("adapter_validation_runner") {
+  testonly = true
+  img = ":adapter_validation"
+  qemu = "$qemu_exe"
+  machine = "$machine"
+  qemu_args = qemu_extra_args
+  block_img = "validation_block.img"
+  block_args = qemu_block_args
+  semihosting = true
+}
+
+run_qemu_check("run_adapter_validation") {
+  testonly = true
+  runner = ":adapter_validation_runner"
+  checker = "src/validation.checker"
 }
