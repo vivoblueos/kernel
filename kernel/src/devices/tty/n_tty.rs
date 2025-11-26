@@ -208,11 +208,11 @@ impl Device for Tty {
 
             for &byte in buf {
                 if byte == b'\n' && self.serial.termios.oflag.contains(Oflags::ONLCR) {
-                    // 将 LF 转换为 CRLF
+                    // Convert LF to CRLF
                     processed_buf.push(b'\r');
                     processed_buf.push(b'\n');
                 } else if byte == b'\r' && self.serial.termios.oflag.contains(Oflags::OCRNL) {
-                    // 将 CR 转换为 LF
+                    // Convert CR to LF
                     processed_buf.push(b'\n');
                 } else {
                     processed_buf.push(byte);

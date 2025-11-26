@@ -326,14 +326,14 @@ impl Configuration<super::UartConfig> for ArmPl011<'static> {
         // Baud rate
         let (uartibrd, uartfbrd) = calculate_baud_rate_divisor(param.baudrate, self.sysclk)?;
 
-        let line_control = if param.data_bits == DataBits::DataBits8 {
-            LineControlRegister::WLEN_8BITS
-        } else if param.data_bits == DataBits::DataBits7 {
-            LineControlRegister::WLEN_7BITS
-        } else if param.data_bits == DataBits::DataBits6 {
-            LineControlRegister::WLEN_6BITS
-        } else {
-            LineControlRegister::WLEN_5BITS
+        let line_control = match param.data_bits {
+            DataBits::DataBits8 => LineControlRegister::WLEN_8BITS,
+            DataBits::DataBits7 => LineControlRegister::WLEN_7BITS,
+            DataBits::DataBits6 => LineControlRegister::WLEN_6BITS,
+            DataBits::DataBits5 => LineControlRegister::WLEN_5BITS,
+            DataBits::DataBits9 => {
+                return Err(HalError::InvalidParam);
+            }
         };
 
         let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
