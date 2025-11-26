@@ -367,7 +367,7 @@ fn yield_unconditionally() {
     debug_assert!(arch::local_irq_enabled());
 }
 
-pub(crate) fn relinquish_me() {
+pub fn relinquish_me() {
     debug_assert!(arch::local_irq_enabled());
     let old = current_thread();
     let Some(next) = next_preferred_thread(old.priority()) else {

@@ -16,7 +16,8 @@
 
 use blueos::{
     scheduler, thread,
-    thread::{READY, SUSPENDED},
+    thread::{Entry, ThreadNode, READY, SUSPENDED},
+    types::{Arc, ThreadPriority},
 };
 use blueos_kconfig::TICKS_PER_SECOND;
 use core::mem::MaybeUninit;
@@ -34,7 +35,7 @@ const TM_ERROR: c_int = 1;
 
 const MAX_THREADS: usize = 16;
 static mut TM_THREADS: [MaybeUninit<ThreadNode>; MAX_THREADS] =
-    [MaybeUninit::zeroed(); MAX_THREADS];
+    [const { MaybeUninit::zeroed() }; MAX_THREADS];
 
 #[no_mangle]
 pub extern "C" fn tm_initialize(test_initialization_function: extern "C" fn()) {
@@ -48,7 +49,7 @@ pub extern "C" fn tm_thread_create(
     entry: extern "C" fn(),
 ) -> c_int {
     let builder = thread::Builder::new(Entry::C(entry));
-    let t = builder.set_priority(priority).build();
+    let t = builder.set_priority(priority as ThreadPriority).build();
     unsafe {
         TM_THREADS[thread_id as usize].write(t);
     }
@@ -57,7 +58,7 @@ pub extern "C" fn tm_thread_create(
 
 #[no_mangle]
 pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
-    let t = unsafe { TM_THREADS[thread_id as usize].asseum_init_ref().clone() };
+    let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref().clone() };
     if scheduler::queue_ready_thread(t.state(), t) {
         return TM_SUCCESS;
     }
@@ -66,7 +67,7 @@ pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn tm_thread_suspend(thread_id: c_int) -> c_int {
-    let t = unsafe { TM_THREADS[thread_id as usize].asseum_init_ref() };
+    let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref() };
     if scheduler::remove_from_ready_queue(t) {
         t.transfer_state(READY, SUSPENDED);
         return TM_SUCCESS;
