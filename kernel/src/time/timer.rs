@@ -1004,8 +1004,8 @@ mod tests {
         let callback1 = create_test_callback(counter1.clone());
         let callback2 = create_test_callback(counter2.clone());
 
-        let soft_timer = Timer::new_soft_oneshot(10, callback1);
-        let hard_timer = Timer::new_hard_oneshot(10, callback2);
+        let hard_timer = Timer::new_hard_oneshot(10, callback1);
+        let soft_timer = Timer::new_soft_oneshot(10, callback2);
 
         // Both should behave similarly for basic operations
         soft_timer.start();

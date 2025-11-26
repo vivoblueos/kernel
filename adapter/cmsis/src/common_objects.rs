@@ -64,6 +64,23 @@ impl OsEventFlags {
 }
 
 os_adapter! {
+    "mqueue" => OsMessageQueue: blueos::sync::mqueue::MessageQueue,
+}
+
+impl OsMessageQueue {
+    delegate! {
+        to self.inner() {
+            pub fn node_info(&self) -> (usize, u32);
+            pub fn sendable_count(&self) -> u32;
+            pub fn recvable_count(&self) ->u32;
+            pub fn send(&self, buffer: &[u8], size: usize, timeout: usize, urgent: SendMode) -> Result<(), Error>;
+            pub fn recv(&self, buffer: &mut [u8], size: usize, timeout: usize) -> Result<(), Error>;
+            pub fn reset(&self);
+        }
+    }
+}
+
+os_adapter! {
     "mutex" => OsMutex: blueos::sync::mutex::Mutex,
 }
 
@@ -76,6 +93,7 @@ impl OsMutex {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
