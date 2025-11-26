@@ -79,6 +79,21 @@ impl OsMessageQueue {
         }
     }
 }
+
+os_adapter! {
+    "mutex" => OsMutex: blueos::sync::mutex::Mutex,
+}
+
+impl OsMutex {
+    delegate! {
+        to self.inner() {
+            pub fn pend_for(&self, timeout: usize) -> bool;
+            pub fn post(&self);
+            pub fn owner(&self) -> Option<thread::ThreadNode>;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
