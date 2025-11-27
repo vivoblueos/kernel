@@ -38,6 +38,13 @@ tm_case("tm_preemptive_scheduling_test") {
       [ "//external/thread_metric/v6.4.2/src/tm_preemptive_scheduling_test.c" ]
 }
 
+# FIXME: We are not enabling this one since RR-scheduler has large impact
+# on the correctness this case requires.
+tm_case("tm_cooperative_scheduling_test") {
+  sources =
+      [ "//external/thread_metric/v6.4.2/src/tm_cooperative_scheduling_test.c" ]
+}
+
 group("run_tests") {
   testonly = true
   deps = [
