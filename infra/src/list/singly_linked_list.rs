@@ -211,7 +211,7 @@ impl<T> List<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        assert_eq!(self.head.is_none(), self.size == 0);
+        debug_assert_eq!(self.head.is_none(), self.size == 0);
         self.size == 0
     }
 
@@ -228,7 +228,7 @@ impl<T> List<T> {
         match self.head.take() {
             None => None,
             Some(mut old_head) => {
-                assert!(self.size > 0);
+                debug_assert!(self.size > 0);
                 mem::swap(&mut self.head, &mut old_head.next);
                 self.size -= 1;
                 Some(old_head.take())
@@ -263,7 +263,7 @@ impl<T> Node<T> {
         mem::swap(&mut new_node.val, &mut self.val);
         mem::swap(&mut new_node.next, &mut self.next);
         let old_next = mem::replace(&mut self.next, Some(new_node));
-        assert!(old_next.is_none());
+        debug_assert!(old_next.is_none());
         self
     }
 
@@ -273,7 +273,7 @@ impl<T> Node<T> {
             None => None,
             Some(mut old_next) => {
                 mem::swap(&mut old_next.next, &mut self.next);
-                assert!(old_next.next.is_none());
+                debug_assert!(old_next.next.is_none());
                 mem::swap(&mut old_next.val, &mut self.val);
                 Some(*old_next)
             }

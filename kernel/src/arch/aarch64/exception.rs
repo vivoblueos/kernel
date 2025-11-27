@@ -134,7 +134,7 @@ unsafe extern "C" fn trap_sync() -> ! {
 extern "C" fn might_switch(to: &Context, from: &Context) -> usize {
     let to_ptr = to as *const _;
     let from_ptr = from as *const _;
-    assert_eq!(to_ptr != from_ptr, from.x8 == NR_SWITCH);
+    debug_assert_eq!(to_ptr != from_ptr, from.x8 == NR_SWITCH);
     if to_ptr == from_ptr {
         return from_ptr as usize;
     }

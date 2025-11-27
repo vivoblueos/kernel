@@ -54,7 +54,7 @@ pub struct MessageQueue {
 
 impl MessageQueue {
     pub fn new(node_size: usize, node_count: u32, buf: *mut u8) -> Self {
-        assert!(node_size > 0 && node_count > 0);
+        debug_assert!(node_size > 0 && node_count > 0);
 
         let node_align_size = align_up_size(node_size, core::mem::size_of::<usize>());
         let total_size = (node_align_size + core::mem::size_of::<usize>()) * node_count as usize;
@@ -126,7 +126,7 @@ impl MessageQueue {
                 timer.stop();
             }
             let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t.clone());
-            assert!(ok);
+            debug_assert!(ok);
             return true;
         }
         false
@@ -186,12 +186,12 @@ impl MessageQueue {
         } else {
             let [(end, len0), (start, len1)] = sender.push_bufs();
             if len1 != 0 {
-                assert!(len1 >= queue.node_size);
+                debug_assert!(len1 >= queue.node_size);
                 dst = unsafe {
                     slice::from_raw_parts_mut(start.add(len1 - queue.node_size), queue.node_size)
                 };
             } else {
-                assert!(len0 >= queue.node_size);
+                debug_assert!(len0 >= queue.node_size);
                 dst = unsafe {
                     slice::from_raw_parts_mut(end.add(len0 - queue.node_size), queue.node_size)
                 };

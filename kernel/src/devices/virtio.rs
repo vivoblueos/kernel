@@ -101,7 +101,7 @@ pub struct VirtioHal;
 // SAFETY: VirtIO MMIO devices are mapped.
 unsafe impl Hal for VirtioHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (PhysAddr, NonNull<u8>) {
-        assert!(pages > 0);
+        debug_assert!(pages > 0);
         let layout = Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE).unwrap();
         let vaddr = unsafe { alloc_zeroed(layout) };
         if vaddr.is_null() {

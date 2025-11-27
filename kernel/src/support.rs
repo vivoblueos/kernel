@@ -97,7 +97,7 @@ impl RegionalObjectBuilder {
             return None;
         }
         let ptr = start as *mut T;
-        assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
+        debug_assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
         unsafe { ptr.write(val) };
         self.unfilled_region.size = start - self.unfilled_region.base;
         Some(unsafe { &mut *ptr })
@@ -116,7 +116,7 @@ impl RegionalObjectBuilder {
             return None;
         }
         let ptr = start as *mut T;
-        assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
+        debug_assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
         unsafe { ptr.write(val) };
         self.unfilled_region.base = start + sz;
         self.unfilled_region.size = end - self.unfilled_region.base;
@@ -137,7 +137,7 @@ impl RegionalObjectBuilder {
             return None;
         }
         let ptr = start as *mut u8;
-        assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
+        debug_assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
         let slice = unsafe { core::slice::from_raw_parts_mut(ptr, sz) };
         slice.fill(0u8);
         self.unfilled_region.base = start + sz;
@@ -165,7 +165,7 @@ impl MemoryPartitioner {
     #[inline]
     pub fn new(start: usize, end: usize, n: usize) -> Self {
         let size = end - start;
-        assert!(size % n == 0, "Unable to divide the region evenly");
+        debug_assert!(size % n == 0, "Unable to divide the region evenly");
         Self {
             base: start,
             size,
