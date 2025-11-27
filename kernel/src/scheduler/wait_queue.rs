@@ -85,7 +85,7 @@ impl<'a, const N: usize> WaitQueueGuardDropper<'a, N> {
         if self.num_active_guards == N {
             return false;
         }
-        assert!(self.guards[self.num_active_guards].is_none());
+        debug_assert!(self.guards[self.num_active_guards].is_none());
         self.guards[self.num_active_guards] = Some(w);
         self.num_active_guards += 1;
         true

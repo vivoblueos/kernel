@@ -720,7 +720,7 @@ impl Thread {
 
 impl Drop for Thread {
     fn drop(&mut self) {
-        assert!(self.sched_node.is_detached());
+        debug_assert!(self.sched_node.is_detached());
     }
 }
 

@@ -337,7 +337,7 @@ create_thread(spawn_args_ptr: *mut SpawnArgs) -> c_long {
     // We don't increment the rc of the created thread since it's also
     // referenced by the global queue. When this thread is retired,
     // it's removed from the global queue.
-    assert!(ok);
+    debug_assert!(ok);
     unsafe {core::mem::transmute(handle)}
 });
 

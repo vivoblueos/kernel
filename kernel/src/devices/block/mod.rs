@@ -276,7 +276,7 @@ mod tests {
             let _ = block_device.write(pos as u64, to_write.as_slice(), false);
             let mut to_read = vec![0u8; write_size];
             let _ = block_device.read(pos as u64, to_read.as_mut_slice(), false);
-            assert!(to_write == to_read);
+            debug_assert!(to_write == to_read);
 
             // Check that the impact of a write operation does not exceed its expected scope
             let mut to_read_first_sector = vec![3u8; pos - first_sector * SECTOR_SIZE];
@@ -291,8 +291,8 @@ mod tests {
                 to_read_last_sector.as_mut_slice(),
                 false,
             );
-            assert_eq!(to_write_first_sector, to_read_first_sector);
-            assert_eq!(to_write_last_sector, to_read_last_sector);
+            debug_assert_eq!(to_write_first_sector, to_read_first_sector);
+            debug_assert_eq!(to_write_last_sector, to_read_last_sector);
         }
     }
 

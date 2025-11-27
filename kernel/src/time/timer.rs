@@ -239,7 +239,7 @@ impl Timer {
 
     #[cfg(soft_timer)]
     pub fn new_soft_periodic(interval: usize, callback: TimerEntry) -> Arc<Self> {
-        assert!(!matches!(callback, TimerEntry::Once(_)));
+        debug_assert!(!matches!(callback, TimerEntry::Once(_)));
         Self::new(
             interval,
             TimerFlags::SOFT_TIMER | TimerFlags::PERIODIC,
@@ -252,7 +252,7 @@ impl Timer {
     }
 
     pub fn new_hard_periodic(interval: usize, callback: TimerEntry) -> Arc<Self> {
-        assert!(!matches!(callback, TimerEntry::Once(_)));
+        debug_assert!(!matches!(callback, TimerEntry::Once(_)));
         Self::new(interval, TimerFlags::PERIODIC, callback)
     }
 

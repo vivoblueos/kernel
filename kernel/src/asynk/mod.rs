@@ -90,7 +90,7 @@ pub fn block_on(future: impl Future<Output = ()> + Send + 'static) {
     task.lock().blocked = Some(t.clone());
     scheduler::suspend_me_with_hook(move || {
         let ok = t.transfer_state(thread::RUNNING, thread::SUSPENDED);
-        assert!(ok);
+        debug_assert!(ok);
         enqueue_active_tasklet(task);
         #[cfg(debugging_scheduler)]
         crate::trace!(

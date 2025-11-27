@@ -28,7 +28,7 @@ type ReadyTableBitFields = u32;
 
 #[allow(clippy::assertions_on_constants)]
 pub(super) fn init() {
-    assert!(ReadyTableBitFields::BITS >= ThreadPriority::BITS);
+    debug_assert!(ReadyTableBitFields::BITS >= ThreadPriority::BITS);
     unsafe { READY_TABLE.write(SpinLock::new(ReadyTable::new())) };
     let mut w = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     for i in 0..(MAX_THREAD_PRIORITY + 1) as usize {
@@ -72,11 +72,11 @@ impl ReadyTable {
 fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Option<ThreadNode> {
     let q = &mut tbl.tables[index];
     let next = q.pop_front();
-    assert!(next.is_some());
+    debug_assert!(next.is_some());
     if q.is_empty() {
         tbl.clear_active_queue(index as u32);
     }
-    assert!(next.as_ref().unwrap().validate_saved_sp());
+    debug_assert!(next.as_ref().unwrap().validate_saved_sp());
     next
 }
 
@@ -112,11 +112,11 @@ pub fn queue_ready_thread_with_post_action<R, F>(
 where
     F: Fn() -> R,
 {
-    assert_ne!(old_state, thread::READY);
+    debug_assert_ne!(old_state, thread::READY);
     if !t.transfer_state(old_state, thread::READY) {
         return None;
     }
-    assert!(t.validate_saved_sp());
+    debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     if !queue_ready_thread_inner(&mut tbl, t) {
         return None;
@@ -127,7 +127,7 @@ where
 #[inline]
 fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNode) -> bool {
     let priority = t.priority();
-    assert!(priority <= MAX_THREAD_PRIORITY);
+    debug_assert!(priority <= MAX_THREAD_PRIORITY);
     let q = &mut tbl.tables[priority as usize];
     if !q.push_back(t.clone()) {
         return false;
@@ -147,7 +147,7 @@ fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNo
 
 // We only queue the thread if old_state equals thread's current state.
 pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
-    assert_ne!(old_state, thread::READY);
+    debug_assert_ne!(old_state, thread::READY);
     if !t.transfer_state(old_state, thread::READY) {
         return false;
     }
@@ -159,7 +159,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
 pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     let priority = t.priority();
-    assert!(priority <= MAX_THREAD_PRIORITY);
+    debug_assert!(priority <= MAX_THREAD_PRIORITY);
     debug_assert_eq!(t.state(), thread::READY);
     let q = &mut tbl.tables[priority as usize];
     // Conservatively search the whole queue.

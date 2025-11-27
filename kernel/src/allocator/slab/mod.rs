@@ -217,7 +217,7 @@ impl<
         // allocate slabs
         self.slab_total_size =
             (SLAB_16 + SLAB_32 + SLAB_64 + SLAB_128 + SLAB_256 + SLAB_512 + SLAB_1024) * PAGE_SIZE;
-        assert!(self.slab_total_size < size);
+        debug_assert!(self.slab_total_size < size);
         let slab_layout = Layout::from_size_align(self.slab_total_size, PAGE_SIZE).unwrap();
         let slab_ptr = self.system_allocator.allocate(&slab_layout).unwrap();
 

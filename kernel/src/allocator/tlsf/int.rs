@@ -95,12 +95,12 @@ macro_rules! impl_binary_integer {
 
             #[inline]
             fn ones(range: ops::Range<u32>) -> Self {
-                assert!(range.end <= Self::BITS);
+                debug_assert!(range.end <= Self::BITS);
                 Self::ones_truncated(range)
             }
             #[inline]
             fn ones_truncated(range: ops::Range<u32>) -> Self {
-                assert!(range.start <= range.end);
+                debug_assert!(range.start <= range.end);
                 if range.end >= Self::BITS {
                     (0 as Self).wrapping_sub(1 << range.start)
                 } else {
