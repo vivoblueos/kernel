@@ -78,8 +78,17 @@ impl Semaphore {
     where
         M: InsertModeTrait,
     {
+<<<<<<< HEAD
+        debug_assert!(!irq::is_in_irq());
+=======
+<<<<<<< HEAD
+        assert!(!irq::is_in_irq());
+>>>>>>> 1d4c732 (replace all assert under kernel with debug_assert)
+        let this_thread = scheduler::current_thread();
+=======
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
+>>>>>>> 919b619 (replace all assert under kernel with debug_assert)
         let mut w = self.pending.irqsave_lock();
         loop {
             let old = self.counter.get();
@@ -110,8 +119,17 @@ impl Semaphore {
     where
         M: InsertModeTrait,
     {
+<<<<<<< HEAD
+        debug_assert!(!irq::is_in_irq());
+=======
+<<<<<<< HEAD
+        assert!(!irq::is_in_irq());
+>>>>>>> 1d4c732 (replace all assert under kernel with debug_assert)
+        let this_thread = scheduler::current_thread();
+=======
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
+>>>>>>> 919b619 (replace all assert under kernel with debug_assert)
         let mut w = self.pending.irqsave_lock();
         let mut last_sys_ticks = crate::time::get_sys_ticks();
         loop {

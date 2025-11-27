@@ -329,7 +329,7 @@ impl HoleList {
         let requested_hole_size =
             hole_size.saturating_sub(aligned_hole_addr.wrapping_sub(hole_addr as usize) as usize);
         let aligned_hole_size = align_down_size(requested_hole_size, GRANULARITY);
-        assert!(aligned_hole_size >= GRANULARITY);
+        debug_assert!(aligned_hole_size >= GRANULARITY);
 
         let ptr = aligned_hole_addr as *mut Hole;
         ptr.write(Hole {
