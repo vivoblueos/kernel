@@ -16,7 +16,7 @@
 
 use blueos::{
     scheduler, thread,
-    thread::{Entry, Thread, ThreadNode, CREATED, READY, SUSPENDED},
+    thread::{Entry, Thread, ThreadNode, CREATED, READY, RUNNING, SUSPENDED},
     types::{Arc, ThreadPriority},
 };
 use blueos_kconfig::TICKS_PER_SECOND;
@@ -74,10 +74,10 @@ pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     if Thread::id(&this_thread) == Thread::id(&t) {
         return TM_SUCCESS;
     }
-    if scheduler::queue_ready_thread(CREATED, t.clone())
-        || scheduler::queue_ready_thread(SUSPENDED, t)
+    if scheduler::queue_ready_thread(SUSPENDED, t.clone())
+        || scheduler::queue_ready_thread(CREATED, t)
     {
-        scheduler::yield_me();
+        scheduler::relinquish_me();
         return TM_SUCCESS;
     }
     TM_ERROR
@@ -89,7 +89,7 @@ pub extern "C" fn tm_thread_suspend(thread_id: c_int) -> c_int {
     let this_thread = scheduler::current_thread();
     // I'm suspending myself.
     if Thread::id(&this_thread) == Thread::id(&t) {
-        scheduler::yield_me();
+        scheduler::suspend_me();
         return TM_SUCCESS;
     }
     if scheduler::remove_from_ready_queue(t) {
