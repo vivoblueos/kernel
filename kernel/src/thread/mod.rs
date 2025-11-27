@@ -590,8 +590,8 @@ impl Thread {
 
     #[cfg(robin_scheduler)]
     #[inline]
-    pub fn round_robin(&self, tick: usize) -> i32 {
-        self.robin_count.fetch_sub(tick as i32, Ordering::Relaxed)
+    pub fn round_robin(&self, ticks: usize) -> i32 {
+        self.robin_count.fetch_sub(ticks as i32, Ordering::Relaxed)
     }
 
     #[cfg(robin_scheduler)]

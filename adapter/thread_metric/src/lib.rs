@@ -16,20 +16,13 @@
 
 use blueos::{
     scheduler, thread,
-    thread::{Entry, ThreadNode, READY, SUSPENDED},
+    thread::{Entry, Thread, ThreadNode, CREATED, READY, SUSPENDED},
     types::{Arc, ThreadPriority},
 };
 use blueos_kconfig::TICKS_PER_SECOND;
 use core::mem::MaybeUninit;
 use libc::c_int;
 
-extern "C" {
-    fn tm_main();
-}
-
-#[used]
-#[link_section = ".bk_app_array"]
-static TM_MAIN: unsafe extern "C" fn() = tm_main;
 const TM_SUCCESS: c_int = 0;
 const TM_ERROR: c_int = 1;
 
@@ -39,7 +32,21 @@ static mut TM_THREADS: [MaybeUninit<ThreadNode>; MAX_THREADS] =
 
 #[no_mangle]
 pub extern "C" fn tm_initialize(test_initialization_function: extern "C" fn()) {
+    // This thread is responsible to start worker threads. Make it the highest priority
+    // so that all worker threads are created before running.
+    {
+        let this_thread = blueos::scheduler::current_thread();
+        let mut w = this_thread.lock();
+        w.set_origin_priority(0);
+        w.set_priority(0);
+    }
     test_initialization_function()
+}
+
+extern "C" fn tm_thread_start(arg: *mut core::ffi::c_void) {
+    librs::pthread::register_my_tcb();
+    let entry: extern "C" fn() = unsafe { core::mem::transmute(arg) };
+    entry();
 }
 
 #[no_mangle]
@@ -48,7 +55,10 @@ pub extern "C" fn tm_thread_create(
     priority: c_int,
     entry: extern "C" fn(),
 ) -> c_int {
-    let builder = thread::Builder::new(Entry::C(entry));
+    let builder = thread::Builder::new(Entry::Posix(
+        tm_thread_start,
+        entry as *mut core::ffi::c_void,
+    ));
     let t = builder.set_priority(priority as ThreadPriority).build();
     unsafe {
         TM_THREADS[thread_id as usize].write(t);
@@ -59,7 +69,15 @@ pub extern "C" fn tm_thread_create(
 #[no_mangle]
 pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref().clone() };
-    if scheduler::queue_ready_thread(t.state(), t) {
+    let this_thread = scheduler::current_thread();
+    // Resuming myself always succeeds.
+    if Thread::id(&this_thread) == Thread::id(&t) {
+        return TM_SUCCESS;
+    }
+    if scheduler::queue_ready_thread(CREATED, t.clone())
+        || scheduler::queue_ready_thread(SUSPENDED, t)
+    {
+        scheduler::yield_me();
         return TM_SUCCESS;
     }
     TM_ERROR
@@ -68,6 +86,12 @@ pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
 #[no_mangle]
 pub extern "C" fn tm_thread_suspend(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref() };
+    let this_thread = scheduler::current_thread();
+    // I'm suspending myself.
+    if Thread::id(&this_thread) == Thread::id(&t) {
+        scheduler::yield_me();
+        return TM_SUCCESS;
+    }
     if scheduler::remove_from_ready_queue(t) {
         t.transfer_state(READY, SUSPENDED);
         return TM_SUCCESS;

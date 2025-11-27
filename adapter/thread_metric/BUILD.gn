@@ -15,6 +15,7 @@
 import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
+import("tm_case.gni")
 
 build_rust("thread_metric") {
   sources = [ "src/lib.rs" ]
@@ -24,5 +25,10 @@ build_rust("thread_metric") {
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/kernel:blueos",
     "//libc",
+    "//librs",
   ]
+}
+
+tm_case("tm_basic_process_test") {
+  sources = [ "//external/thread_metric/v6.4.2/src/tm_basic_processing_test.c" ]
 }

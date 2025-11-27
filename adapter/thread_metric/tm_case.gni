@@ -1,0 +1,63 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+
+template("tm_case") {
+  assert(defined(invoker.sources))
+  _sources = invoker.sources
+
+  static_library("${target_name}_c") {
+    sources = _sources
+
+    # Default is 30 in source code, too long for inpsecting immediate result.
+    cflags = [ "-DTM_TEST_DURATION=2" ]
+    configs += [ "//build/boards/${board}:kernel_config" ]
+  }
+
+  build_rust(target_name) {
+    crate_type = "bin"
+    sources = [ "src/main.rs" ]
+    configs += [ "//build/boards/${board}:kernel_config" ]
+    deps = [ ":${target_name}_c" ]
+    deps += [
+      "//kernel/adapter/thread_metric",
+      "//kernel/rsrt",
+      "//librs",
+    ]
+  }
+
+  # Since we're calling another template `gen_qemu_runner`, it's essential to
+  # set a temp variable to avoid GN shadowing target_name in `gen_qemu_runner`.
+  _target_name = target_name
+
+  gen_qemu_runner("${_target_name}_runner") {
+    testonly = true
+    semihosting = true
+    img = ":${_target_name}"
+    qemu = qemu_exe
+    machine = machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_img = "${target_name}_block.img"
+    block_args = qemu_block_args
+  }
+
+  run_qemu_check("run_${_target_name}") {
+    testonly = true
+    runner = ":${_target_name}_runner"
+    checker = "tests/${_target_name}.checker"
+  }
+}
