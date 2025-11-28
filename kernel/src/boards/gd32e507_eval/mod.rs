@@ -115,7 +115,7 @@ crate::define_pin_states! {
     )
 }
 
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
+pub(crate) fn cycles_to_duration(cycles: u64) -> core::time::Duration {
     core::time::Duration::from_nanos(
         (cycles as u128 * 1_000_000_000 as u128 / config::PLL_SYS_FREQ as u128) as u64,
     )
@@ -125,7 +125,7 @@ pub(crate) fn clock_cycles_to_millis(cycles: u64) -> u64 {
     (cycles as u128 * 1_000 as u128 / config::PLL_SYS_FREQ as u128) as u64
 }
 
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
+pub fn cycles_to_ms(cycles: u64) -> u64 {
     cycles / 1_000
 }
 
