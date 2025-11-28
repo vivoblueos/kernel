@@ -1004,6 +1004,7 @@ mod tests {
         let callback1 = create_test_callback(counter1.clone());
         let callback2 = create_test_callback(counter2.clone());
 
+        let ticks = crate::time::get_sys_ticks();
         let hard_timer = Timer::new_hard_oneshot(10, callback1);
         let soft_timer = Timer::new_soft_oneshot(10, callback2);
 
@@ -1016,6 +1017,7 @@ mod tests {
 
         scheduler::suspend_me_for(11);
 
+        println!("run ticks: {}", crate::time::get_sys_ticks() - ticks);
         assert_eq!(counter1.load(Ordering::Relaxed), 1);
         assert_eq!(counter2.load(Ordering::Relaxed), 1);
         assert_eq!(SOFT_TIMER_WHEEL.next_timeout(), usize::MAX);

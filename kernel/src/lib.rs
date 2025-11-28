@@ -115,6 +115,7 @@ mod tests {
         allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
         sync::ConstBarrier, time::WAITING_FOREVER, types::Arc,
     };
+    use alloc::vec::Vec;
     use blueos_header::syscalls::NR::Nop;
     use blueos_kconfig::NUM_CORES;
     use blueos_test_macro::test;
@@ -580,7 +581,7 @@ mod tests {
             "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t),
-            defmt::Debug2Format(&ALLOCATOR.memory_info()),
+            defmt::Debug2Format(&allocator::memory_info()),
             arch::current_sp(),
         );
         #[cfg(not(use_defmt))]
@@ -588,7 +589,7 @@ mod tests {
             "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t),
-            ALLOCATOR.memory_info(),
+            allocator::memory_info(),
             arch::current_sp(),
         );
         for test in tests {
@@ -598,14 +599,14 @@ mod tests {
         println!(
             "After test, thread 0x{:x}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
-            defmt::Debug2Format(&ALLOCATOR.memory_info()),
+            defmt::Debug2Format(&allocator::memory_info()),
             arch::current_sp()
         );
         #[cfg(not(use_defmt))]
         println!(
             "After test, thread 0x{:x}, heap status: {:?}, sp:  0x{:x}",
             Thread::id(&t),
-            ALLOCATOR.memory_info(),
+            allocator::memory_info(),
             arch::current_sp()
         );
         println!("---- Done kernel unittests.");
@@ -641,5 +642,102 @@ mod tests {
             }
             scheduler::yield_me();
         }
+    }
+
+    static ALLOCATOR_STRESS_THREAD1_DONE: AtomicUsize = AtomicUsize::new(0);
+    static ALLOCATOR_STRESS_THREAD2_DONE: AtomicUsize = AtomicUsize::new(0);
+    const MAX_TEST_HEAP_SIZE: usize = 8 * 1024 * 1024;
+    fn alloc_test() {
+        // Get memory info and calculate test size
+        let mem_info = allocator::memory_info();
+        let available = mem_info.total.saturating_sub(mem_info.used);
+        let test_size = core::cmp::min(available * 3 / 4, MAX_TEST_HEAP_SIZE);
+
+        // Test with different allocation sizes
+        let sizes = [32, 64, 128, 256, 512, 1024, 2048, 4096];
+        let mut allocations: Vec<Vec<u8>> = Vec::new();
+        let mut current_used = 0;
+
+        // Allocate memory in chunks
+        for _ in 0..1000 {
+            for &size in &sizes {
+                // Check if we're using too much memory
+                if current_used > test_size / 2 {
+                    // Release some allocations to make room
+                    while !allocations.is_empty() && current_used > test_size / 4 {
+                        allocations.pop();
+                        scheduler::yield_me();
+                    }
+                }
+
+                // Allocate memory using Vec
+                let vec = alloc::vec::Vec::<u8>::with_capacity(size);
+                allocations.push(vec);
+                current_used += size;
+
+                // Yield to allow other thread to run
+                scheduler::yield_me();
+            }
+        }
+
+        // Clean up remaining allocations
+        drop(allocations);
+    }
+
+    extern "C" fn allocator_stress_thread1() {
+        alloc_test();
+        ALLOCATOR_STRESS_THREAD1_DONE.store(1, Ordering::Release);
+    }
+
+    extern "C" fn allocator_stress_thread2() {
+        alloc_test();
+        ALLOCATOR_STRESS_THREAD2_DONE.store(1, Ordering::Release);
+    }
+
+    #[test]
+    fn stress_allocator() {
+        // Get initial memory info
+        let initial_info = allocator::memory_info();
+        let available = initial_info.total.saturating_sub(initial_info.used);
+        let test_size = (available * 3) / 4;
+        assert!(test_size > 0, "Not enough available memory for stress test");
+
+        // Reset completion flags
+        ALLOCATOR_STRESS_THREAD1_DONE.store(0, Ordering::Release);
+        ALLOCATOR_STRESS_THREAD2_DONE.store(0, Ordering::Release);
+
+        // Start two threads for concurrent allocation/deallocation
+        let t1 = thread::Builder::new(thread::Entry::C(allocator_stress_thread1))
+            .set_priority(config::MAX_THREAD_PRIORITY / 2)
+            .build();
+        let ok1 = scheduler::queue_ready_thread(t1.state(), t1);
+        assert!(ok1);
+
+        let t2 = thread::Builder::new(thread::Entry::C(allocator_stress_thread2))
+            .set_priority(config::MAX_THREAD_PRIORITY / 2)
+            .build();
+        let ok2 = scheduler::queue_ready_thread(t2.state(), t2);
+        assert!(ok2);
+
+        // Wait for both threads to complete
+        loop {
+            let done1 = ALLOCATOR_STRESS_THREAD1_DONE.load(Ordering::Acquire);
+            let done2 = ALLOCATOR_STRESS_THREAD2_DONE.load(Ordering::Acquire);
+            if done1 == 1 && done2 == 1 {
+                break;
+            }
+            scheduler::yield_me();
+        }
+
+        // Verify memory state after stress test
+        let final_info = allocator::memory_info();
+        // Memory should be back to a reasonable state (allowing for some fragmentation)
+        assert!(
+            final_info.used <= initial_info.used + test_size / 10,
+            "Memory usage after stress test is too high: initial_used={}, final_used={}, test_size={}",
+            initial_info.used,
+            final_info.used,
+            test_size
+        );
     }
 }

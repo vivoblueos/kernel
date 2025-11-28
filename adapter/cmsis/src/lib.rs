@@ -34,7 +34,7 @@ pub const MAX_NAME_LEN: usize = 8;
 mod tests {
     use super::*;
     use blueos::{
-        allocator::KernelAllocator,
+        allocator::{memory_info, KernelAllocator},
         arch, scheduler,
         thread::{Builder, Entry, Thread, ThreadNode},
     };
@@ -55,7 +55,7 @@ mod tests {
             "Before test, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t),
-            ALLOCATOR.memory_info(),
+            memory_info(),
             arch::current_sp(),
         );
         for test in tests {
@@ -64,7 +64,7 @@ mod tests {
         semihosting::println!(
             "After test, thread 0x{:x}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
-            ALLOCATOR.memory_info(),
+            memory_info(),
             arch::current_sp(),
         );
         semihosting::println!("CMSIS adapter unittest ended");

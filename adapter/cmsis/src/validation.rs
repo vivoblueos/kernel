@@ -40,7 +40,7 @@ pub mod uart;
 mod tests {
     use super::*;
     use blueos::{
-        allocator::KernelAllocator,
+        allocator::{memory_info, KernelAllocator},
         arch, scheduler,
         thread::{Builder, Entry, Thread, ThreadNode},
     };
@@ -68,7 +68,7 @@ mod tests {
             "Before cmsis_rv2, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t) - 1,
-            ALLOCATOR.memory_info(),
+            memory_info(),
             arch::current_sp()
         );
     }
@@ -80,7 +80,7 @@ mod tests {
             "After cmsis_rv2, thread 0x{:x}, rc: {}, heap status: {:?}, sp: 0x{:x}",
             Thread::id(&t),
             ThreadNode::strong_count(&t) - 1,
-            ALLOCATOR.memory_info(),
+            memory_info(),
             arch::current_sp()
         );
     }

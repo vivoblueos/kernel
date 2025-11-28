@@ -34,6 +34,13 @@ mod slab;
 #[cfg(allocator = "slab")]
 pub use slab::heap::Heap;
 
+#[derive(Default, Debug)]
+pub struct MemoryInfo {
+    pub total: usize,
+    pub used: usize,
+    pub max_used: usize,
+}
+
 pub struct KernelAllocator;
 static_arc! {
    HEAP(Heap, Heap::new()),
@@ -51,7 +58,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
 }
 
 impl KernelAllocator {
-    pub fn memory_info(&self) -> MemoryInfo {
+    pub fn memory_info() -> MemoryInfo {
         HEAP.memory_info()
     }
 }
@@ -64,15 +71,8 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct MemoryInfo {
-    pub total: usize,
-    pub used: usize,
-    pub max_used: usize,
-}
-
 pub fn memory_info() -> MemoryInfo {
-    HEAP.memory_info()
+    KernelAllocator::memory_info()
 }
 
 /// Allocate memory on heap and returns a pointer to it.
@@ -188,4 +188,194 @@ pub const fn align_offset(addr: usize, align: usize) -> usize {
 #[inline]
 pub const fn is_aligned(addr: usize, align: usize) -> bool {
     align_offset(addr, align) == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::{alloc::Layout, boxed::Box, vec, vec::Vec};
+    use blueos_test_macro::test;
+
+    #[test]
+    fn max_free_block_comprehensive() {
+        // Test 1: Basic behavior - check max free block after pool initialization
+        let max_free = get_max_free_block_size();
+        assert!(
+            max_free > 0,
+            "max free block should be positive after pool insert"
+        );
+
+        // Max free block decreases on allocation
+        let _boxed = Box::new([0u8; 1024 * 64]);
+        let after = get_max_free_block_size();
+        assert!(
+            after <= max_free,
+            "max free block should decrease after allocation"
+        );
+    }
+
+    #[test]
+    fn basic_allocation_and_deallocation() {
+        // Test basic allocation and deallocation
+        let mut boxed = Box::new([0u8; 1024]);
+
+        // Write some data to verify the memory is usable
+        boxed[0] = 0xAA;
+        // Verify first byte is written correctly
+        assert_eq!(boxed[0], 0xAAu8);
+    }
+
+    #[test]
+    fn multiple_allocations() {
+        // Test multiple allocations of different sizes
+        let sizes = [64, 128, 256, 512];
+
+        let mut boxes = Vec::new();
+        for size in &sizes {
+            let boxed = Box::new(vec![0u8; *size]);
+            boxes.push(boxed);
+        }
+
+        // Boxes are automatically deallocated when they go out of scope
+    }
+
+    #[test]
+    fn alignment_test() {
+        // Test allocations with different alignment requirements
+        // Box automatically handles alignment, but we can verify it works
+        let alignments = [4, 8, 16, 32, 64, 128];
+
+        for align in alignments {
+            // Use alloc::alloc::alloc to test alignment
+            let layout = Layout::from_size_align(256, align).unwrap();
+            let ptr = unsafe { alloc::alloc::alloc(layout) };
+            assert!(
+                !ptr.is_null(),
+                "allocation with align {} should succeed",
+                align
+            );
+
+            // Verify alignment
+            assert_eq!(
+                ptr as usize % align,
+                0,
+                "pointer should be aligned to {} bytes",
+                align
+            );
+
+            // Free the memory
+            unsafe { alloc::alloc::dealloc(ptr, layout) };
+        }
+    }
+
+    #[test]
+    fn coalescing_test() {
+        // Test that adjacent blocks can be coalesced
+        // Allocate two blocks
+        let boxed1 = Box::new([0u8; 1024]);
+        let boxed2 = Box::new([0u8; 1024]);
+
+        // Free both blocks (by dropping them)
+        drop(boxed1);
+        drop(boxed2);
+
+        // Try to allocate a larger block that should fit after coalescing
+        let _large_boxed = Box::new([0u8; 2048]);
+    }
+
+    #[test]
+    fn realloc_test() {
+        // Test reallocation functionality using allocator::realloc
+        let initial_size = 512;
+        let mut boxed = Box::new(vec![0x42u8; initial_size]);
+
+        // Reallocate to larger size
+        let new_size = 1024;
+        boxed.resize(new_size, 0);
+
+        // Verify data is preserved (at least the original part)
+        assert_eq!(boxed[0], 0x42u8);
+
+        // Reallocate to smaller size
+        let smaller_size = 256;
+        boxed.resize(smaller_size, 0);
+    }
+
+    #[test]
+    fn memory_info_test() {
+        // Test memory statistics
+        let initial_info = memory_info();
+        assert!(initial_info.total > 0, "total memory should be positive");
+
+        // Allocate some memory, use black_box to avoid compiler optimization
+        let mut boxed = core::hint::black_box(Box::new([0u8; 2048]));
+
+        let after_alloc_info = memory_info();
+        assert!(
+            after_alloc_info.used > initial_info.used,
+            "used memory should increase after allocation: initial_used={}, after_alloc_used={}, total={}, max_used={}",
+            initial_info.used,
+            after_alloc_info.used,
+            after_alloc_info.total,
+            after_alloc_info.max_used
+        );
+
+        // Free memory (by dropping the box)
+        drop(boxed);
+
+        let after_free_info = memory_info();
+        assert!(
+            after_free_info.used < after_alloc_info.used,
+            "used memory should decrease after deallocation: after_alloc_used={}, after_free_used={}, total={}, max_used={}",
+            after_alloc_info.used,
+            after_free_info.used,
+            after_free_info.total,
+            after_free_info.max_used
+        );
+    }
+
+    #[test]
+    fn fragmentation_test() {
+        // Test memory fragmentation handling
+        let mut boxes = Vec::new();
+
+        // Allocate many small blocks
+        for _ in 0..50 {
+            let boxed = Box::new([0u8; 64]);
+            boxes.push(Some(boxed));
+        }
+
+        // Free every other block to create fragmentation
+        for i in (0..boxes.len()).step_by(2) {
+            boxes[i] = None;
+        }
+
+        // Try to allocate a larger block
+        let _large_boxed = Box::new([0u8; 512]);
+
+        // Clean up remaining blocks
+        for i in (1..boxes.len()).step_by(2) {
+            boxes[i] = None;
+        }
+    }
+
+    #[test]
+    fn zero_sized_allocation() {
+        // Test zero-sized allocation
+        // Box doesn't support zero-sized arrays, so we use a unit type
+        let _boxed: Box<()> = Box::new(());
+        // Zero-sized allocations are handled automatically
+    }
+
+    #[test]
+    fn size_of_allocation_test() {
+        // Test getting the size of an allocation
+        const REQUESTED_SIZE: usize = 1024;
+        let boxed = Box::new([0u8; REQUESTED_SIZE]);
+
+        // Get actual allocation size (may be larger due to alignment and overhead)
+        // Note: size_of_allocation is a method on Heap, not a module function
+        // We can verify the allocation worked by checking the pointer is valid
+        assert_eq!(boxed.len(), REQUESTED_SIZE, "allocation should succeed");
+    }
 }
