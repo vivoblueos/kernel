@@ -105,12 +105,12 @@ pub(crate) fn init() {
 
 pub(crate) struct ContextSwitchHookHolder<'a> {
     // Next thread is a must.
-    pub next_thread: Option<ThreadNode>,
-    pub ready_thread: Option<ThreadNode>,
-    pub retiring_thread: Option<ThreadNode>,
-    pub pending_thread: Option<ThreadNode>,
-    pub closure: Option<Box<dyn FnOnce()>>,
-    pub dropper: Option<DefaultWaitQueueGuardDropper<'a>>,
+    next_thread: Option<ThreadNode>,
+    ready_thread: Option<ThreadNode>,
+    retiring_thread: Option<ThreadNode>,
+    pending_thread: Option<ThreadNode>,
+    closure: Option<Box<dyn FnOnce()>>,
+    dropper: Option<DefaultWaitQueueGuardDropper<'a>>,
 }
 
 impl<'a> ContextSwitchHookHolder<'a> {
