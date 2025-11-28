@@ -26,9 +26,7 @@ build_rust("rsrt") {
   crate_type = "rlib"
   crate_name = "rsrt"
   sources = [ "src/lib.rs" ]
-  deps = [
-    "//kernel/kernel:blueos",
-  ]
+  deps = [ "//kernel/kernel:blueos" ]
 }
 
 run_clippy("rsrt_clippy") {

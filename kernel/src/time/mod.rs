@@ -51,7 +51,7 @@ pub extern "C" fn handle_tick_increment() {
         let ticks = SYSTICK.increment_ticks();
         need_schedule = timer::check_hard_timer(ticks);
     }
-    need_schedule = scheduler::handle_tick_increment(1) || need_schedule;
+    need_schedule = need_schedule || scheduler::handle_tick_increment(1);
     SYSTICK.reset_counter();
     if need_schedule {
         scheduler::yield_me_now_or_later();
