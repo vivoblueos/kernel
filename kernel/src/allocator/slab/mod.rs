@@ -20,6 +20,7 @@ use crate::allocator::{
     block::{used_block_hdr_for_allocation_unknown_align, BlockHdr, SIZE_USED},
     tlsf,
 };
+use crate::kprintln;
 use blueos_infra::list::singly_linked_list::SinglyLinkedList;
 use core::{alloc::Layout, mem, ptr, ptr::NonNull};
 use log::{debug, warn};
@@ -32,6 +33,7 @@ const PAGE_SHIFT: usize = 12;
 pub struct Slab {
     block_size: usize,
     len: usize,
+    min_len: usize,
     free_block_list: SinglyLinkedList,
     #[cfg(debug_slab)]
     start_addr: usize,
@@ -45,6 +47,7 @@ impl Slab {
         Slab {
             block_size: 0,
             len: 0,
+            min_len: 0,
             free_block_list: SinglyLinkedList::new(),
             #[cfg(debug_slab)]
             start_addr: 0,
@@ -66,12 +69,14 @@ impl Slab {
         }
 
         self.len = count;
+        self.min_len = count;
     }
 
     pub fn allocate(&mut self, _layout: &Layout) -> Option<NonNull<u8>> {
         match self.free_block_list.pop() {
             Some(block) => {
                 self.len -= 1;
+                self.min_len = core::cmp::min(self.min_len, self.len);
                 #[cfg(debug_slab)]
                 {
                     if (block as usize) < self.start_addr || (block as usize) >= self.end_addr {
@@ -135,6 +140,7 @@ pub enum HeapAllocator {
 impl HeapAllocator {
     pub fn block_size(&self) -> usize {
         match self {
+            HeapAllocator::Slab8Bytes => 8,
             HeapAllocator::Slab16Bytes => 16,
             HeapAllocator::Slab32Bytes => 32,
             HeapAllocator::Slab64Bytes => 64,
@@ -573,6 +579,11 @@ impl<
     // Return the total number of bytes in the heap
     pub fn total(&self) -> usize {
         self.total
+    }
+
+    pub fn print_slab_stat(&self) {
+        kprintln!("size   total  free   max    alloc ");
+        kprintln!("------ ------ ------ ------ ------");
     }
 
     pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
