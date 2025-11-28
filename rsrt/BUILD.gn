@@ -26,10 +26,7 @@ build_rust("rsrt") {
   crate_type = "rlib"
   crate_name = "rsrt"
   sources = [ "src/lib.rs" ]
-  deps = [
-    "//external/vendor/semihosting-0.1.20:semihosting",
-    "//kernel/kernel:blueos",
-  ]
+  deps = [ "//kernel/kernel:blueos" ]
 }
 
 run_clippy("rsrt_clippy") {

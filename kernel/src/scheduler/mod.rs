@@ -432,20 +432,6 @@ pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
     debug_assert!(arch::local_irq_enabled());
 }
 
-pub fn suspend_me() {
-    if unlikely(!is_schedule_ready()) {
-        return;
-    }
-    let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
-    let to_sp = next.saved_sp();
-    let old = current_thread();
-    let from_sp_ptr = old.saved_sp_ptr();
-    let mut hook_holder = ContextSwitchHookHolder::new(next);
-    hook_holder.set_pending_thread(old);
-    arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
-    debug_assert!(arch::local_irq_enabled());
-}
-
 pub fn suspend_me_for(ticks: usize) {
     if unlikely(!is_schedule_ready()) {
         return;
