@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![no_std]
-#![feature(const_nonnull_new)]
+pub mod i2c_dw;
 
-pub mod clock_control;
-pub mod i2c;
-pub mod pinctrl;
-pub mod reset;
-pub mod static_ref;
-pub mod uart;
+pub struct I2cConfig {
+    pub baudrate: u32,
+}

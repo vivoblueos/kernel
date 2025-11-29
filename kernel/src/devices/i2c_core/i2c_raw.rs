@@ -12,12 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![no_std]
-#![feature(const_nonnull_new)]
+use blueos_driver::i2c::I2cConfig;
+use blueos_hal::PlatPeri;
 
-pub mod clock_control;
-pub mod i2c;
-pub mod pinctrl;
-pub mod reset;
-pub mod static_ref;
-pub mod uart;
+pub struct BlockI2c<T: PlatPeri> {
+    inner: &'static T,
+}
+
+impl<T: blueos_hal::i2c::I2c<I2cConfig, ()> BlockI2c<T> {
+    pub fn write_then_read(
+        &mut self,
+        addr: u16,
+        write_buf: &[u8],
+        read_buf: &mut [u8],
+    ) -> blueos_hal::err::Result<()> {
+        todo!()
+    }
+}
