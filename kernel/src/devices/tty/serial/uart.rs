@@ -81,6 +81,13 @@ impl From<blueos_hal::err::HalError> for super::SerialError {
         match value {
             blueos_hal::err::HalError::InvalidParam => super::SerialError::InvalidParameter,
             blueos_hal::err::HalError::Timeout => super::SerialError::TimedOut,
+            blueos_hal::err::HalError::Other(s) => match s {
+                "Overrun Error" => super::SerialError::Overrun,
+                "Break Error" => super::SerialError::Break,
+                "Parity Error" => super::SerialError::Parity,
+                "Framing Error" => super::SerialError::Framing,
+                _ => super::SerialError::DeviceError,
+            },
             _ => super::SerialError::DeviceError,
         }
     }
@@ -299,13 +306,18 @@ pub fn uart_handler() {
     let intr = uart.get_interrupt();
     match intr {
         blueos_driver::uart::InterruptType::Rx => {
-            let uart = crate::boot::get_serial(0);
-            let _ = uart.recvchars();
+            let t_uart = crate::boot::get_serial(0);
+            if let Err(e) = t_uart.recvchars() {
+                log::warn!("uart recvchars error: {:?}", e);
+            }
         }
         blueos_driver::uart::InterruptType::Tx => {
-            let uart = crate::boot::get_serial(0);
-            let _ = uart.xmitchars();
+            let t_uart = crate::boot::get_serial(0);
+            if let Err(e) = t_uart.xmitchars() {
+                log::warn!("uart xmitchars error: {:?}", e);
+            }
         }
         _ => {}
     }
+    uart.clear_interrupt(intr);
 }

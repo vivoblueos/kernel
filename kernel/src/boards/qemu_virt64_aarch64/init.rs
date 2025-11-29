@@ -88,6 +88,5 @@ impl IrqHandler for Serial0Irq {
         } {
             handler();
         }
-        uart.clear_interrupt(blueos_driver::uart::InterruptType::All);
     }
 }

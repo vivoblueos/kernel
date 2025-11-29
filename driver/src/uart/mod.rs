@@ -84,6 +84,7 @@ impl Default for UartConfig {
 }
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub enum InterruptType {
     All,
     Rx,

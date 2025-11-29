@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::uart::{DataBits, Parity, StopBits};
 use blueos_hal::{
     reset::ResetCtrl, uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg,
     HasLineStatusReg, PlatPeri,
 };
+use core::cell::UnsafeCell;
 use gd32e5::gd32e507::usart0;
-
-use crate::uart::{DataBits, Parity, StopBits};
 
 pub struct Gd32e5xUart {
     // Note: Uart0~2 use the same register layout
     // but the situation may be different for other UART peripherals
     inner: u32,
     clk: u32,
+    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
     reset_id: u32,
     reset: &'static dyn ResetCtrl,
 }
@@ -110,6 +111,7 @@ impl Gd32e5xUart {
         Gd32e5xUart {
             inner: uart,
             clk,
+            intr_handler: UnsafeCell::new(None),
             reset_id,
             reset,
         }
@@ -168,17 +170,62 @@ impl HasFifo for Gd32e5xUart {
 impl HasInterruptReg for Gd32e5xUart {
     type InterruptType = super::InterruptType;
 
-    fn enable_interrupt(&self, intr: Self::InterruptType) {}
-
-    fn disable_interrupt(&self, intr: Self::InterruptType) {}
-
-    fn clear_interrupt(&self, intr: Self::InterruptType) {}
-
-    fn get_interrupt(&self) -> Self::InterruptType {
-        super::InterruptType::Unknown
+    fn enable_interrupt(&self, intr: Self::InterruptType) {
+        match intr {
+            super::InterruptType::Rx => {
+                self.regs().ctl0().modify(|_, w| w.rbneie().set_bit());
+            }
+            super::InterruptType::Tx => {
+                self.regs().ctl0().modify(|_, w| w.tcie().set_bit());
+                self.regs().ctl0().modify(|_, w| w.tbeie().set_bit());
+            }
+            _ => {}
+        }
     }
 
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {}
+    fn disable_interrupt(&self, intr: Self::InterruptType) {
+        match intr {
+            super::InterruptType::Rx => {
+                self.regs().ctl0().modify(|_, w| w.rbneie().clear_bit());
+            }
+            super::InterruptType::Tx => {
+                self.regs().ctl0().modify(|_, w| w.tcie().clear_bit());
+                self.regs().ctl0().modify(|_, w| w.tbeie().clear_bit());
+            }
+            _ => {}
+        }
+    }
+
+    fn clear_interrupt(&self, intr: Self::InterruptType) {
+        // Note: GD32E5x UART interrupt flags are cleared automatically
+        match intr {
+            super::InterruptType::Rx => {}
+            super::InterruptType::Tx => {}
+            _ => {}
+        }
+    }
+
+    fn get_interrupt(&self) -> Self::InterruptType {
+        if self.regs().ctl0().read().rbneie().bit_is_set()
+            && self.regs().stat0().read().rbne().bit_is_set()
+        {
+            super::InterruptType::Rx
+        } else if (self.regs().ctl0().read().tcie().bit_is_set()
+            && self.regs().stat0().read().tc().bit_is_set())
+            || (self.regs().ctl0().read().tbeie().bit_is_set()
+                && self.regs().stat0().read().tbe().bit_is_set())
+        {
+            super::InterruptType::Tx
+        } else {
+            super::InterruptType::Unknown
+        }
+    }
+
+    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
+        unsafe {
+            *self.intr_handler.get() = Some(handler);
+        }
+    }
 
     fn get_irq_nums(&self) -> &[u32] {
         &[]

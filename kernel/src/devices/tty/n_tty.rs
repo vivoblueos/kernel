@@ -15,11 +15,11 @@
 use crate::devices::{
     tty::{
         serial,
-        termios::{CcIndex, Iflags},
+        termios::{CcIndex, Iflags, Oflags},
     },
     Device, DeviceClass, DeviceId,
 };
-use alloc::{collections::VecDeque, string::String, sync::Arc};
+use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use embedded_io::ErrorKind;
 use serial::Serial;
@@ -142,7 +142,7 @@ impl Device for Tty {
                 let ch = temp_buf[i];
                 let cursor = self.cursor.load(Ordering::Relaxed);
                 if self.serial.termios.iflag.contains(Iflags::ICRNL) && ch == b'\r' {
-                    let _ = self.serial.write(_pos, b"\n", false);
+                    let _ = self.serial.write(_pos, b"\r\n", false);
                     line_buf[cursor] = b'\n';
                     buf[..cursor + 1].copy_from_slice(&line_buf[..cursor + 1]);
                     let command = String::from_utf8_lossy(&line_buf[..cursor]).into_owned();
@@ -203,7 +203,27 @@ impl Device for Tty {
     }
 
     fn write(&self, _pos: u64, buf: &[u8], is_blocking: bool) -> Result<usize, ErrorKind> {
-        self.serial.write(_pos, buf, is_blocking)
+        if self.serial.termios.oflag.contains(Oflags::OPOST) {
+            let mut processed_buf = Vec::new();
+
+            for &byte in buf {
+                if byte == b'\n' && self.serial.termios.oflag.contains(Oflags::ONLCR) {
+                    // Convert LF to CRLF
+                    processed_buf.push(b'\r');
+                    processed_buf.push(b'\n');
+                } else if byte == b'\r' && self.serial.termios.oflag.contains(Oflags::OCRNL) {
+                    // Convert CR to LF
+                    processed_buf.push(b'\n');
+                } else {
+                    processed_buf.push(byte);
+                }
+            }
+
+            self.serial.write(_pos, &processed_buf, is_blocking)?;
+            Ok(buf.len())
+        } else {
+            self.serial.write(_pos, buf, is_blocking)
+        }
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {

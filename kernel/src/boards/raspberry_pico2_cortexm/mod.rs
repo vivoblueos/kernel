@@ -91,7 +91,7 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
-
+    arch::irq::enable_irq_with_priority(IrqNumber::new(33), arch::irq::Priority::Normal);
     time::systick_init(150_000_000);
 }
 
@@ -118,6 +118,7 @@ crate::define_pin_states!(
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;
     let uart = get_device!(console_uart);
+    let intr = uart.get_interrupt();
     if let Some(handler) = unsafe {
         let intr_handler_cell = &*uart.intr_handler.get();
 
@@ -125,5 +126,5 @@ pub unsafe extern "C" fn uart0_handler() {
     } {
         handler();
     }
-    uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
+    uart.clear_interrupt(intr);
 }
