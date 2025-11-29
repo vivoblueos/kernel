@@ -312,7 +312,7 @@ impl InodeOps for TmpInode {
         type_: InodeFileType,
         mode: InodeMode,
     ) -> Result<Arc<dyn InodeOps>, Error> {
-        assert!(self.type_() == InodeFileType::Directory);
+        debug_assert!(self.type_() == InodeFileType::Directory);
         if name.len() > NAME_MAX {
             return Err(code::ENAMETOOLONG);
         }
@@ -350,7 +350,7 @@ impl InodeOps for TmpInode {
         mode: InodeMode,
         device: Arc<dyn Device>,
     ) -> Result<Arc<dyn InodeOps>, Error> {
-        assert!(self.type_() == InodeFileType::Directory);
+        debug_assert!(self.type_() == InodeFileType::Directory);
         if name.len() > NAME_MAX {
             return Err(code::ENAMETOOLONG);
         }
@@ -376,7 +376,7 @@ impl InodeOps for TmpInode {
     }
 
     fn create_socket(&self, mode: InodeMode) -> Result<Arc<dyn InodeOps>, Error> {
-        assert!(self.type_() == InodeFileType::Directory);
+        debug_assert!(self.type_() == InodeFileType::Directory);
         let mut inner = self.inner.write();
         let ino = self.fs.upgrade().unwrap().alloc_inode_no();
         let inode = TmpInode::new_socket(&self.fs, ino, mode, 0, 0);

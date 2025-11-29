@@ -98,7 +98,7 @@ impl<T: ?Sized> SpinLock<T> {
         let irq_guard = DisableInterruptGuard::new();
         compiler_fence(Ordering::SeqCst);
         let mut guard = self.try_lock()?;
-        assert!(guard.irq_guard.is_none());
+        debug_assert!(guard.irq_guard.is_none());
         guard.irq_guard = Some(irq_guard);
         Some(guard)
     }
@@ -173,7 +173,7 @@ impl<T: ?Sized> SpinLock<T> {
         let irq_guard = DisableInterruptGuard::new();
         compiler_fence(Ordering::SeqCst);
         let mut guard = self.try_read()?;
-        assert!(guard.irq_guard.is_none());
+        debug_assert!(guard.irq_guard.is_none());
         guard.irq_guard = Some(irq_guard);
         Some(guard)
     }

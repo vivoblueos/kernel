@@ -23,7 +23,7 @@ pub const NO_WAITING: usize = 0;
 pub const WAITING_FOREVER: usize = usize::MAX;
 
 pub fn systick_init(sys_clock: u32) -> bool {
-    assert!(sys_clock > 0);
+    debug_assert!(sys_clock > 0);
     SYSTICK.init(sys_clock, TICKS_PER_SECOND as u32)
 }
 

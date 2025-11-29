@@ -118,7 +118,7 @@ impl Mutex {
     }
 
     pub fn pend_for(&self, mut ticks: usize) -> bool {
-        assert!(!irq::is_in_irq());
+        debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let this_mutex = unsafe { MutexList::make_arc_from(&self.mutex_node) };
         #[cfg(debugging_scheduler)]
@@ -316,7 +316,7 @@ impl Mutex {
     }
 
     pub fn post(&self) {
-        assert!(!irq::is_in_irq());
+        debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         {
             #[cfg(debugging_scheduler)]
@@ -333,11 +333,11 @@ impl Mutex {
                 self as *const _
             );
             let Some(owner) = self.owner() else {
-                assert_eq!(self.nesting_count(), 0);
+                debug_assert_eq!(self.nesting_count(), 0);
                 log::warn!("The mutex is free, should not be released");
                 return;
             };
-            assert_eq!(Thread::id(&owner), Thread::id(&this_thread));
+            debug_assert_eq!(Thread::id(&owner), Thread::id(&this_thread));
             if self.decrement_nesting_count() > 1 {
                 return;
             }
@@ -393,7 +393,7 @@ impl Mutex {
             if limit >= CHAIN_LENGTH_LIMIT {
                 break;
             }
-            assert!(!Arc::is(&mutex, this_mutex));
+            debug_assert!(!Arc::is(&mutex, this_mutex));
             #[cfg(debugging_scheduler)]
             crate::trace!(
                 "Trying to get read lock of mutex {:?}, estimated R {}, W {}",
