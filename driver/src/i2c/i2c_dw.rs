@@ -20,7 +20,7 @@
 
 use blueos_hal::{Configuration, HasFifo, PlatPeri};
 use tock_registers::{
-    interfaces::{Readable, Writeable},
+    interfaces::{ReadWriteable, Readable, Writeable},
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite},
 };
@@ -52,6 +52,7 @@ register_structs! {
         (0x64 => _reserved4), // TODO: there are still some registers to list in this gap
         (0x6c => ic_enable: ReadWrite<u32, IC_ENABLE::Register>),
         (0x70 => ic_status: ReadOnly<u32, IC_STATUS::Register>),
+        (0x74 => _reserved5),
         (0x7c => ic_sda_hold: ReadWrite<u32, IC_SDA_HOLD::Register>),
         (0x80 => ic_tx_abrt_source: ReadOnly<u32, IC_TX_ABRT_SOURCE::Register>),
         (0x84 => _reserved6), // TODO: there are still some registers to list in this gap
@@ -286,22 +287,6 @@ impl I2c {
             .modify(IC_TAR::IC_TAR.val(address as u32));
         self.registers.ic_enable.set(1);
     }
-
-    fn read(&self, address: u16, buf: &mut [u8]) -> u8 {
-        self.set_address(address);
-        self.registers.ic_data_cmd.set(IC_DATA_CMD::CMD::SET);
-
-        if buf.len() == 1 {
-            self.registers.ic_data_cmd.set(IC_DATA_CMD::STOP::SET);
-        }
-
-        for i in 0..buf.len() {
-            buf[i] = self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT);
-            if i == buf.len() - 1 {
-                self.registers.ic_data_cmd.set(IC_DATA_CMD::STOP::SET);
-            }
-        }
-    }
 }
 
 unsafe impl Send for I2c {}
@@ -309,7 +294,7 @@ unsafe impl Sync for I2c {}
 
 impl PlatPeri for I2c {
     fn enable(&self) {
-        self.registers.ic_enable.modify(IC_ENABLE::ENABLE::SET);
+        self.registers.ic_enable.set(1);
     }
 
     fn disable(&self) {
@@ -346,11 +331,14 @@ impl Configuration<super::I2cConfig> for I2c {
 
         self.set_baudrate(param.baudrate);
         self.enable();
+
+        Ok(())
     }
 }
 
 impl HasFifo for I2c {
     fn enable_fifo(&self, num: u8) -> blueos_hal::err::Result<()> {
+        let num = num as u32;
         self.registers.ic_tx_tl.set(num);
         self.registers.ic_rx_tl.set(num);
         Ok(())
@@ -366,7 +354,32 @@ impl HasFifo for I2c {
 }
 
 impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2c {
-    fn read_byte_with_stop(&self) -> blueos_hal::err::Result<u8> {}
+    fn start_reading(&self, addr: u16) -> blueos_hal::err::Result<()> {
+        self.set_address(addr);
+        self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::SET);
+        Ok(())
+    }
 
-    fn send_byte_with_stop(&self, byte: u8) -> blueos_hal::err::Result<()> {}
+    fn start_writing(&self, addr: u16) -> blueos_hal::err::Result<()> {
+        self.set_address(addr);
+        self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::CLEAR);
+        Ok(())
+    }
+
+    fn read_byte_with_stop(&self) -> blueos_hal::err::Result<u8> {
+        self.registers
+            .ic_data_cmd
+            .write(IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::SET);
+        Ok(self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT) as u8)
+    }
+
+    fn send_byte_with_stop(&self, byte: u8) -> blueos_hal::err::Result<()> {
+        self.registers
+            .ic_data_cmd
+            .write(IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::CLEAR);
+        self.registers
+            .ic_data_cmd
+            .write(IC_DATA_CMD::DAT.val(byte as u32));
+        Ok(())
+    }
 }
