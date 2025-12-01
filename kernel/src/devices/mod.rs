@@ -14,7 +14,10 @@
 
 use crate::error::Error;
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
-use blueos_infra::{impl_simple_intrusive_adapter, list::typed_ilist::ListHead};
+use blueos_infra::{
+    impl_simple_intrusive_adapter,
+    list::typed_ilist::{ListHead, ListIterator},
+};
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -309,6 +312,8 @@ pub enum DeviceData {
 }
 
 type DeviceList = ListHead<DeviceDataNode, Node>;
+type DeviceListIterator = ListIterator<DeviceDataNode, Node>;
+
 impl_simple_intrusive_adapter!(Node, DeviceDataNode, node);
 
 #[repr(C)]
@@ -366,6 +371,7 @@ mod tests {
     static DUMMY_CONFIG: DummyConfig = DummyConfig { base_addr: 0x1000 };
     static DUMMY_DEVICE_DATA: DeviceData = DeviceData::Native(NativeDevice::new(&DUMMY_CONFIG));
 
+    #[derive(Default)]
     struct DummyDriver {
         base_addr: usize,
     }
@@ -402,7 +408,7 @@ mod tests {
         I2C_BUS
             .register_device(&DUMMY_DEVICE_DATA)
             .expect("Failed to register device");
-        let driver = DummyDriverModule::probe(&DUMMY_DEVICE_DATA);
+        let driver = I2C_BUS.probe_driver(&DummyDriverModule);
         assert!(driver.is_ok());
         let driver = driver.unwrap().init();
         assert!(driver.is_ok());

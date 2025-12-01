@@ -36,6 +36,28 @@ impl Bus {
         super::DeviceList::insert_after(&mut devices, &mut device_node.node);
         Ok(())
     }
+
+    pub fn probe_driver<T: crate::drivers::Driver, M: crate::drivers::DriverModule<Data = T>>(
+        &self,
+        dev: &M,
+    ) -> crate::drivers::Result<T> {
+        let mut driver = Default::default();
+        let devices = self.devices.read();
+        let it = super::DeviceListIterator::new(&devices, None);
+        let mut matched = false;
+        for node in it {
+            if let Ok(driv) = M::probe(unsafe { node.as_ref() }.owner().data) {
+                driver = driv;
+                matched = true;
+                break;
+            }
+        }
+
+        if !matched {
+            return Err(crate::error::code::ENODEV);
+        }
+        Ok(driver)
+    }
 }
 
 unsafe impl Send for Bus {}
