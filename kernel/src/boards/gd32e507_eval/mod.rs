@@ -15,7 +15,7 @@
 mod config;
 mod handler;
 
-use crate::{arch, boot, boot::INIT_BSS_DONE, sync::SpinLock, time};
+use crate::{arch, arch::irq::IrqNumber, boot, boot::INIT_BSS_DONE, sync::SpinLock, time};
 use alloc::sync::Arc;
 use blueos_driver::pinctrl::gd32_afio::*;
 use blueos_infra::tinyarc::TinyArc;
@@ -76,7 +76,7 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
-
+    arch::irq::enable_irq_with_priority(IrqNumber::new(37), arch::irq::Priority::Normal);
     time::systick_init(config::PLL_SYS_FREQ as u32);
 }
 
@@ -115,25 +115,15 @@ crate::define_pin_states! {
     )
 }
 
-pub(crate) fn get_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    core::time::Duration::from_nanos(
-        (cycles as u128 * 1_000_000_000 as u128 / config::PLL_SYS_FREQ as u128) as u64,
-    )
-}
-
-pub(crate) fn clock_cycles_to_millis(cycles: u64) -> u64 {
-    (cycles as u128 * 1_000 as u128 / config::PLL_SYS_FREQ as u128) as u64
-}
-
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    cycles / 1_000
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;
     let uart = get_device!(console_uart);
-    uart.clear_interrupt(blueos_driver::uart::InterruptType::All);
-}
+    if let Some(handler) = unsafe {
+        let intr_handler_cell = &*uart.intr_handler.get();
 
-const CLOCK_PERIOD_NANOS: u64 = 1_000_000 / config::PLL_SYS_FREQ as u64;
+        intr_handler_cell.as_ref()
+    } {
+        handler();
+    }
+}
