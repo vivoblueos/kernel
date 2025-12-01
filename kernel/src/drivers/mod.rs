@@ -20,11 +20,11 @@ mod sensor;
 /// use c-compatible error type
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
 
-pub trait Driver {
-    fn init(self) -> Self;
+pub trait Driver: Sized {
+    fn init(self) -> Result<Self>;
 }
 
 pub trait DriverModule {
     type Data: Driver;
-    fn probe(dev: &mut super::devices::DeviceData) -> Result<Self::Data>;
+    fn probe(dev: &super::devices::DeviceData) -> Result<Self::Data>;
 }

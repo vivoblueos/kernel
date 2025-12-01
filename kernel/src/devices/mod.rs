@@ -14,9 +14,10 @@
 
 use crate::error::Error;
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use blueos_infra::{impl_simple_intrusive_adapter, list::typed_ilist::ListHead};
 use core::{
     fmt::Debug,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use embedded_io::ErrorKind;
 use libc::*;
@@ -301,12 +302,41 @@ impl DeviceManager {
 
 #[non_exhaustive]
 pub enum DeviceData {
-    Native,
+    Native(NativeDevice),
     Zephyr,
+}
+
+type DeviceList = ListHead<Block, Node>;
+impl_simple_intrusive_adapter!(Node, Block, node);
+
+// static DEVICE_LISTS: crate::sync::SpinLock<DeviceList> =
+// crate::sync::SpinLock::const_new(DeviceList::new());
+
+#[repr(C)]
+struct Block {
+    pub node: DeviceList,
+    pub data: &'static DeviceData,
 }
 
 pub struct NativeDevice {
     config: &'static dyn core::any::Any,
+    is_attached: AtomicBool,
+}
+
+unsafe impl Send for NativeDevice {}
+unsafe impl Sync for NativeDevice {}
+
+impl NativeDevice {
+    pub const fn new(config: &'static dyn core::any::Any) -> Self {
+        Self {
+            config,
+            is_attached: AtomicBool::new(false),
+        }
+    }
+
+    pub fn config<T: 'static>(&self) -> Option<&'static T> {
+        self.config.downcast_ref::<T>()
+    }
 }
 
 pub fn init() -> Result<(), Error> {
@@ -321,23 +351,50 @@ mod tests {
     use crate::drivers::*;
     use blueos_test_macro::test;
 
-    struct DummyDriver;
+    struct DummyConfig {
+        pub base_addr: usize,
+    }
+
+    static DUMMY_CONFIG: DummyConfig = DummyConfig { base_addr: 0x1000 };
+    static DUMMY_DEVICE_DATA: DeviceData = DeviceData::Native(NativeDevice::new(&DUMMY_CONFIG));
+
+    struct DummyDriver {
+        base_addr: usize,
+    }
+
     impl Driver for DummyDriver {
-        fn init(self) -> Self {
-            self
+        fn init(self) -> Result<Self> {
+            Ok(self)
         }
     }
 
     struct DummyDriverModule;
-    impl DummyDriverModule {
+    impl DriverModule for DummyDriverModule {
         type Data = DummyDriver;
-        fn probe(_dev: &mut DeviceData) -> Result<Self::Data> {
-            Ok(DummyDriver)
+        fn probe(dev: &DeviceData) -> Result<Self::Data> {
+            match dev {
+                DeviceData::Native(native_dev) => {
+                    if let Some(config) = native_dev.config::<DummyConfig>() {
+                        Ok(DummyDriver {
+                            base_addr: config.base_addr,
+                        })
+                    } else {
+                        Err(crate::error::code::ENOTSUP)
+                    }
+                }
+                _ => Err(crate::error::code::ENOTSUP),
+            }
         }
     }
 
     #[test]
-    fn test_device_match() {}
+    fn test_device_match() {
+        let driver = DummyDriverModule::probe(&DUMMY_DEVICE_DATA);
+        assert!(driver.is_ok());
+        let driver = driver.unwrap().init();
+        assert!(driver.is_ok());
+        assert_eq!(driver.unwrap().base_addr, 0x1000);
+    }
 
     #[test]
     fn test_device_id_creation() {
