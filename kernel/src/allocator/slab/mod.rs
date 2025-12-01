@@ -27,8 +27,6 @@ use blueos_infra::list::singly_linked_list::SinglyLinkedList;
 use core::{alloc::Layout, mem, ptr, ptr::NonNull};
 use log::{debug, warn};
 
-use super::tlsf::int::BinInteger;
-
 pub mod heap;
 
 const MIN_SLAB_SHIFT: usize = 3;
@@ -223,11 +221,7 @@ impl<
         let mut start_addr = slab_ptr.as_ptr() as usize;
         self.slab_begin_addr = start_addr;
         for i in 0..SLAB_ALLOCATOR_COUNT {
-            self.slab_allocator[i].init(
-                start_addr,
-                Self::SLAB_COUNT[i],
-                1 << (i + MIN_SLAB_SHIFT),
-            );
+            self.slab_allocator[i].init(start_addr, Self::SLAB_COUNT[i], 1 << (i + MIN_SLAB_SHIFT));
             start_addr += Self::SLAB_PAGE_COUNT[i] * PAGE_SIZE;
         }
     }
@@ -437,7 +431,7 @@ impl<
         if max_free > (1 << MAX_SLAB_SHIFT) {
             return max_free;
         }
-        for i in MAX_SLAB_SHIFT..=MIN_SLAB_SHIFT {
+        for i in (MIN_SLAB_SHIFT..=MAX_SLAB_SHIFT).rev() {
             if self.slab_allocator[i - MIN_SLAB_SHIFT].len > 0 {
                 return core::cmp::max(max_free, 1 << i);
             }
