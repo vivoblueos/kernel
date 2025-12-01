@@ -108,7 +108,6 @@ fn init_vector_table() {
     unsafe {
         core::arch::asm!(
             "la {x}, {trap_entry}",
-            // "ori {x}, {x}, 0x3",
             "csrw mtvec, {x}",
             "la {x}, {vector}",
             // Inline assembler is unable to encode mtvt, use the numeric value of mtvt here.
