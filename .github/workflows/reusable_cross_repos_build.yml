@@ -417,11 +417,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
-<<<<<<< HEAD
         board: [qemu_mps2_an385, qemu_mps3_an547, qemu_riscv64, qemu_virt64_aarch64, qemu_riscv32, gd32e507_eval, rk3568, gd32vw553_eval]
-=======
-        board: [qemu_mps2_an385, qemu_mps3_an547, qemu_riscv64, qemu_virt64_aarch64, qemu_riscv32, gd32e507_eval]
->>>>>>> e63b1ba (Add gd32e507 eval ci (#170))
         build_type: [release, debug]
         syscall_mode: [swi, dsc]
     steps:
