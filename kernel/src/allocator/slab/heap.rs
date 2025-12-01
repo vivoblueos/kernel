@@ -118,6 +118,16 @@ impl<
         }
     }
 
+    pub fn slab_memory_info(&self) -> MemoryInfo {
+        let heap = self.heap.irqsave_lock();
+        MemoryInfo {
+            total: heap.slab_total_size,
+            used: heap.allocated() + heap.slab_total_size - heap.system_allocator.allocated(),
+            max_used: heap.maximum() + heap.slab_total_size - heap.system_allocator.maximum(),
+        }
+    }
+
+
     pub fn print_slab_stat(&self) {
         let heap = self.heap.irqsave_lock();
         heap.print_slab_stat();
