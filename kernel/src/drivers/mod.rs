@@ -20,7 +20,7 @@ mod sensor;
 /// use c-compatible error type
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
 
-pub trait Driver: Sized {
+pub trait Driver: Sized + Default {
     fn init(self) -> Result<Self>;
 }
 
