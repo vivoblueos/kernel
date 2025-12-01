@@ -299,6 +299,16 @@ impl DeviceManager {
     }
 }
 
+#[non_exhaustive]
+pub enum DeviceData {
+    Native,
+    Zephyr,
+}
+
+pub struct NativeDevice {
+    config: &'static dyn core::any::Any,
+}
+
 pub fn init() -> Result<(), Error> {
     null::Null::register().map_err(Error::from)?;
     zero::Zero::register().map_err(Error::from)?;
@@ -308,7 +318,26 @@ pub fn init() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drivers::*;
     use blueos_test_macro::test;
+
+    struct DummyDriver;
+    impl Driver for DummyDriver {
+        fn init(self) -> Self {
+            self
+        }
+    }
+
+    struct DummyDriverModule;
+    impl DummyDriverModule {
+        type Data = DummyDriver;
+        fn probe(_dev: &mut DeviceData) -> Result<Self::Data> {
+            Ok(DummyDriver)
+        }
+    }
+
+    #[test]
+    fn test_device_match() {}
 
     #[test]
     fn test_device_id_creation() {
