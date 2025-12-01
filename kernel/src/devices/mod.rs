@@ -24,6 +24,7 @@ use libc::*;
 use spin::{Once, RwLock as SpinRwLock};
 #[cfg(virtio)]
 pub mod block;
+mod bus;
 pub mod console;
 mod error;
 pub mod i2c_core;
@@ -34,6 +35,7 @@ pub mod tty;
 #[cfg(virtio)]
 pub mod virtio;
 mod zero;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DeviceClass {
@@ -306,16 +308,22 @@ pub enum DeviceData {
     Zephyr,
 }
 
-type DeviceList = ListHead<Block, Node>;
-impl_simple_intrusive_adapter!(Node, Block, node);
-
-// static DEVICE_LISTS: crate::sync::SpinLock<DeviceList> =
-// crate::sync::SpinLock::const_new(DeviceList::new());
+type DeviceList = ListHead<DeviceDataNode, Node>;
+impl_simple_intrusive_adapter!(Node, DeviceDataNode, node);
 
 #[repr(C)]
-struct Block {
+struct DeviceDataNode {
     pub node: DeviceList,
     pub data: &'static DeviceData,
+}
+
+impl DeviceDataNode {
+    pub const fn new(data: &'static DeviceData) -> Self {
+        Self {
+            node: DeviceList::new(),
+            data,
+        }
+    }
 }
 
 pub struct NativeDevice {
@@ -387,8 +395,13 @@ mod tests {
         }
     }
 
+    static I2C_BUS: super::bus::Bus = super::bus::Bus::new();
+
     #[test]
     fn test_device_match() {
+        I2C_BUS
+            .register_device(&DUMMY_DEVICE_DATA)
+            .expect("Failed to register device");
         let driver = DummyDriverModule::probe(&DUMMY_DEVICE_DATA);
         assert!(driver.is_ok());
         let driver = driver.unwrap().init();

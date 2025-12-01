@@ -1,0 +1,42 @@
+// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//       http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use alloc::boxed::Box;
+
+pub struct Bus {
+    devices: super::SpinRwLock<super::DeviceList>,
+}
+
+impl Bus {
+    pub const fn new() -> Self {
+        Self {
+            devices: super::SpinRwLock::new(super::DeviceList::new()),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure limited number of devices are registered to the bus,
+    /// and the devices won't be unregistered.
+    pub fn register_device(&self, dev: &'static super::DeviceData) -> crate::drivers::Result<()> {
+        let mut devices = self.devices.write();
+
+        let device_node = Box::leak(Box::new(super::DeviceDataNode::new(dev)));
+        super::DeviceList::insert_after(&mut devices, &mut device_node.node);
+        Ok(())
+    }
+}
+
+unsafe impl Send for Bus {}
+unsafe impl Sync for Bus {}
