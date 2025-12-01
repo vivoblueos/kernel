@@ -15,3 +15,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 pub(crate) mod ic;
+
+/// use c-compatible error type
+pub type Result<T> = core::result::Result<T, crate::error::Error>;
+
+pub trait Driver {
+    fn init(self) -> Self;
+}
+
+pub trait DriverModule {
+    type Data: Driver;
+    fn probe(dev: &mut super::devices::DeviceData) -> Result<Self::Data>;
+}
