@@ -19,7 +19,7 @@ pub struct BlockI2c<T: PlatPeri> {
     inner: &'static T,
 }
 
-impl<T: blueos_hal::i2c::I2c<I2cConfig, ()> BlockI2c<T> {
+impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
     pub fn write_then_read(
         &mut self,
         addr: u16,

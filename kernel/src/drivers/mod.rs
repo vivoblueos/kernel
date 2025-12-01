@@ -15,6 +15,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 pub(crate) mod ic;
+mod sensor;
 
 /// use c-compatible error type
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
