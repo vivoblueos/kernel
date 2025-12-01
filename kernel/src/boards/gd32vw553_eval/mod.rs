@@ -152,7 +152,6 @@ pub(crate) fn set_timeout_after(ns: usize) {
 }
 
 pub(crate) fn set_timeout_after_nanos(_nanos: u64) {
-    // set_timecmp(nanos / NANOS_PER_CLOCK_CYCLE);
 }
 
 pub(crate) fn set_timeout_after_clock_cycles(cycles: u64) {
