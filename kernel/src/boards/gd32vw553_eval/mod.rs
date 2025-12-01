@@ -139,7 +139,7 @@ pub(crate) fn handle_irq(_ctx: &Context, _mcause: usize, _mtval: usize) {
     let irq_number: usize;
     unsafe {
         core::arch::asm!(
-            // // Inline assembler is unable to encode mnxti, use the numeric value of mtvt here.
+            // // Inline assembler is unable to encode mnxti, use the numeric value of mnxti here.
             "csrr {}, 0x345",
             out(reg) irq_number,
             options(nostack),
