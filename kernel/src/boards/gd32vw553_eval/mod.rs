@@ -117,10 +117,6 @@ fn init_vector_table() {
             vector = sym VECTOR,
             options(nostack),
         );
-        // Software interrupt.
-        // VECTOR.set(3, trap_entry);
-        // Timer interrupt.
-        // VECTOR.set(7, trap_entry);
     }
 }
 
@@ -151,8 +147,7 @@ pub(crate) fn set_timeout_after(ns: usize) {
     set_timecmp((current_ticks() + ns / NS_PER_TICK) as u64);
 }
 
-pub(crate) fn set_timeout_after_nanos(_nanos: u64) {
-}
+pub(crate) fn set_timeout_after_nanos(_nanos: u64) {}
 
 pub(crate) fn set_timeout_after_clock_cycles(cycles: u64) {
     set_timecmp(cycles);
