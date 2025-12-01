@@ -1,0 +1,2560 @@
+commit 766c82da6d2020a077a2298c96d5e62754722545
+Author: jianghan6 <jianghan@vivo.com>
+Date:   Tue Dec 2 07:33:45 2025 +0800
+
+    Support Run rtt thread-metric
+
+diff --git a/Kconfig.utestcases b/Kconfig.utestcases
+index 69a8a438..077ad885 100644
+--- a/Kconfig.utestcases
++++ b/Kconfig.utestcases
+@@ -29,6 +29,7 @@ menu "RT-Thread Utestcases"
+ 
+         rsource "examples/utest/testcases/mm/Kconfig"
+         rsource "examples/utest/testcases/tmpfs/Kconfig"
++        rsource "examples/utest/testcases/thread_metric/Kconfig"
+ 
+ endif
+ 
+diff --git a/bsp/qemu-vexpress-a9/.config b/bsp/qemu-vexpress-a9/.config
+index 67eb2636..6802aeab 100644
+--- a/bsp/qemu-vexpress-a9/.config
++++ b/bsp/qemu-vexpress-a9/.config
+@@ -431,7 +431,11 @@ CONFIG_RT_USING_POSIX_MESSAGE_SEMAPHORE=y
+ #
+ # CONFIG_RT_USING_RYM is not set
+ # CONFIG_RT_USING_ULOG is not set
+-# CONFIG_RT_USING_UTEST is not set
++CONFIG_RT_USING_UTEST=y
++CONFIG_UTEST_THR_STACK_SIZE=4096
++CONFIG_UTEST_THR_PRIORITY=20
++CONFIG_RT_UTEST_USING_AUTO_RUN=y
++CONFIG_RT_UTEST_MAX_OPTIONS=64
+ # CONFIG_RT_USING_VAR_EXPORT is not set
+ CONFIG_RT_USING_RESOURCE_ID=y
+ CONFIG_RT_USING_ADT=y
+@@ -473,7 +477,112 @@ CONFIG_RT_PAGE_MAX_ORDER=11
+ #
+ # RT-Thread Utestcases
+ #
+-# CONFIG_RT_USING_UTESTCASES is not set
++CONFIG_RT_USING_UTESTCASES=y
++
++#
++# Kernel Core
++#
++# CONFIG_RT_UTEST_MEMHEAP is not set
++# CONFIG_RT_UTEST_SMALL_MEM is not set
++# CONFIG_RT_UTEST_OBJECT is not set
++# CONFIG_RT_UTEST_IRQ is not set
++# CONFIG_RT_UTEST_SEMAPHORE is not set
++# CONFIG_RT_UTEST_EVENT is not set
++# CONFIG_RT_UTEST_TIMER is not set
++# CONFIG_RT_UTEST_MESSAGEQUEUE is not set
++# CONFIG_RT_UTEST_SIGNAL is not set
++# CONFIG_RT_UTEST_MUTEX is not set
++# CONFIG_RT_UTEST_MAILBOX is not set
++# CONFIG_RT_UTEST_THREAD is not set
++# CONFIG_RT_UTEST_ATOMIC is not set
++# CONFIG_RT_UTEST_HOOKLIST is not set
++# CONFIG_RT_UTEST_MTSAFE_KPRINT is not set
++# CONFIG_RT_UTEST_SCHEDULER is not set
++# CONFIG_RT_UTEST_MEMPOOL is not set
++# CONFIG_RT_UTEST_SYS_PERF is not set
++# CONFIG_RT_UTEST_TC_USING_KLIBC is not set
++# end of Kernel Core
++
++#
++# Kernel Components
++#
++
++#
++# Drivers
++#
++# CONFIG_RT_UTEST_DRIVERS_CORE is not set
++
++#
++# IPC Test
++#
++# CONFIG_RT_UTEST_COMPLETION is not set
++# CONFIG_RT_UTEST_WORKQUEUE is not set
++# end of IPC Test
++
++#
++# Serial Test
++#
++# end of Serial Test
++
++#
++# SMP-Call Test
++#
++# end of SMP-Call Test
++# end of Drivers
++
++#
++# File System
++#
++# CONFIG_RT_UTEST_TC_USING_DFS_API is not set
++# end of File System
++
++#
++# CPP11
++#
++# CONFIG_RT_UTEST_CPP11_THREAD is not set
++# end of CPP11
++
++#
++# Network
++#
++# CONFIG_RT_UTEST_TC_USING_SAL is not set
++# CONFIG_RT_UTEST_TC_USING_NETDEV is not set
++# CONFIG_RT_UTEST_TC_USING_LWIP is not set
++# end of Network
++
++#
++# Utest Framework
++#
++# CONFIG_RT_UTEST_SELF_PASS is not set
++# end of Utest Framework
++# end of Kernel Components
++
++#
++# Memory Management Subsytem Testcase
++#
++# CONFIG_RT_UTEST_MM_API is not set
++# CONFIG_RT_UTEST_MM_LWP is not set
++# end of Memory Management Subsytem Testcase
++
++#
++# Tmpfs Testcase
++#
++CONFIG_RT_UTEST_TMPFS_CP=y
++# end of Tmpfs Testcase
++
++#
++# Eclipse ThreadX Thread-Metric RTOS Test Suite
++#
++CONFIG_RT_USING_THREAD_METRIC=y
++# CONFIG_TM_BASIC is not set
++# CONFIG_TM_COOPERATIVE is not set
++# CONFIG_TM_INTERRUPT is not set
++# CONFIG_TM_INTERRUPT_PREEMPTION is not set
++# CONFIG_TM_MEMORY_ALLOCATION is not set
++# CONFIG_TM_MESSAGE is not set
++CONFIG_TM_PREEMPTIVE=y
++# CONFIG_TM_SYNCHRONIZATION is not set
++# end of Eclipse ThreadX Thread-Metric RTOS Test Suite
+ # end of RT-Thread Utestcases
+ 
+ #
+diff --git a/bsp/qemu-vexpress-a9/rtconfig.h b/bsp/qemu-vexpress-a9/rtconfig.h
+index 8125bceb..cd30953f 100644
+--- a/bsp/qemu-vexpress-a9/rtconfig.h
++++ b/bsp/qemu-vexpress-a9/rtconfig.h
+@@ -269,7 +269,11 @@
+ /* end of Memory protection */
+ 
+ /* Utilities */
+-
++#define RT_USING_UTEST
++#define UTEST_THR_STACK_SIZE 4096
++#define UTEST_THR_PRIORITY 20
++#define RT_UTEST_USING_AUTO_RUN
++#define RT_UTEST_MAX_OPTIONS 64
+ #define RT_USING_RESOURCE_ID
+ #define RT_USING_ADT
+ #define RT_USING_ADT_AVL
+@@ -294,6 +298,9 @@
+ /* end of RT-Thread Components */
+ 
+ /* RT-Thread Utestcases */
++#define RT_USING_UTESTCASES
++#define RT_USING_THREAD_METRIC
++#define TM_PREEMPTIVE
+ 
+ /* end of RT-Thread Utestcases */
+ 
+diff --git a/examples/utest/testcases/thread_metric/Kconfig b/examples/utest/testcases/thread_metric/Kconfig
+new file mode 100644
+index 00000000..43bbd738
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/Kconfig
+@@ -0,0 +1,97 @@
++# Copyright (c) 2024 Intel Corporation
++# SPDX-License-Identifier: Apache-2.0
++
++menu "Eclipse ThreadX Thread-Metric RTOS Test Suite"
++
++  config RT_USING_THREAD_METRIC
++    bool
++    default y
++    select RT_USING_UTEST
++    help
++      This option is automatically enabled when any Thread-Metric test is selected.
++
++  choice TM_TEST
++    prompt "Select a Thread-Metric test to execute"
++    default TM_BASIC
++    help
++      The Thread-Metric benchmark suite consists of eight RTOS tests.
++      These tests measure the total number of RTOS events that can be
++      processed during a 30 second time interval.
++
++  config TM_BASIC
++    bool "Baseline basic benchmark"
++    select RT_USING_THREAD_METRIC
++    help
++      The baseline basic benchmark consists of a single thread that counts
++      the number of times it performs a set of calculations. This number
++      is reported every 30 seconds.
++
++  config TM_COOPERATIVE
++    bool "Cooperative context switching"
++    select RT_USING_THREAD_METRIC
++    help
++      The cooperative context switching benchmark spawns five (5) threads
++      of equal priority that yield to each other and increment counters
++      on each context switch. The sum total of the counters is reported
++      every 30 seconds.
++
++  config TM_INTERRUPT
++    bool "Interrupt processing"
++    select RT_USING_THREAD_METRIC
++    select TEST
++    select IRQ_OFFLOAD
++    select IRQ_OFFLOAD_NESTED
++    help
++      The interrupt processing benchmark has a single thread that causes
++      an interrupt which results in its ISR incrementing a counter and then
++      posting a semaphore. The thread then increments its own counter and
++      takes that semaphore. The sum total of the counters is reported
++      every 30 seconds.
++
++  config TM_INTERRUPT_PREEMPTION
++    bool "Interrupt processing preemption"
++    select RT_USING_THREAD_METRIC
++    select TEST
++    select IRQ_OFFLOAD
++    select IRQ_OFFLOAD_NESTED
++    help
++      The interrupt preemption benchmark counts the number of times that
++      an ISR from a software generated interrupt results in the preemption
++      of a thread. The total number of context switches is reported every
++      30 seconds.
++
++  config TM_MEMORY_ALLOCATION
++    bool "Memory allocation"
++    select RT_USING_THREAD_METRIC
++    help
++      The memory allocation benchmark counts the number of times a thread
++      is able to allocate and then release a 128-byte block. This number
++      is reported every 30 seconds.
++
++  config TM_MESSAGE
++    bool "Message processing"
++    select RT_USING_THREAD_METRIC
++    help
++      The message processing benchmark counts the number of times that a
++      thread can send and receive a 16-byte message from a message queue.
++      This number is reported every 30 seconds.
++
++  config TM_PREEMPTIVE
++    bool "Preemptive context switching"
++    select RT_USING_THREAD_METRIC
++    help
++      The preemptive context switching benchmark creates five (5) threads
++      of different priorities that suspend and resume each other in a
++      cyclical pattern. The total number of context switches is reported
++      every 30 seconds.
++
++  config TM_SYNCHRONIZATION
++    bool "Synchronization"
++    select RT_USING_THREAD_METRIC
++    help
++      The synchronization benchmark counts the number of times that a
++      thread can give and take a semaphore without blocking. This number
++      is reported every 30 seconds.
++
++  endchoice
++endmenu
+\ No newline at end of file
+diff --git a/examples/utest/testcases/thread_metric/SConscript b/examples/utest/testcases/thread_metric/SConscript
+new file mode 100644
+index 00000000..7b04733e
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/SConscript
+@@ -0,0 +1,37 @@
++Import('rtconfig')
++from building import *
++
++cwd     = GetCurrentDir()
++src     = []
++CPPPATH = [cwd]
++
++if GetDepend(['RT_USING_THREAD_METRIC']):
++    src += ['tm_porting_layer_rtt.c']
++
++if GetDepend(['TM_BASIC']):
++    src += ['tm_basic_processing_test.c']
++
++if GetDepend(['TM_COOPERATIVE']):
++    src += ['tm_cooperative_scheduling_test.c']
++
++if GetDepend(['TM_INTERRUPT']):
++    src += ['tm_interrupt_processing_test.c']
++
++if GetDepend(['TM_INTERRUPT_PREEMPTION']):
++    src += ['tm_interrupt_preemption_processing_test.c']
++
++if GetDepend(['TM_MEMORY_ALLOCATION']):
++    src += ['tm_memory_allocation_test.c']
++
++if GetDepend(['TM_MESSAGE']):
++    src += ['tm_message_processing_test.c']
++
++if GetDepend(['TM_PREEMPTIVE']):
++    src += ['tm_preemptive_scheduling_test.c']
++
++if GetDepend(['TM_SYNCHRONIZATION']):
++    src += ['tm_synchronization_processing_test.c']
++
++group = DefineGroup('utestcases', src, depend = ['RT_USING_THREAD_METRIC'], CPPPATH = CPPPATH)
++
++Return('group')
+diff --git a/examples/utest/testcases/thread_metric/tm_api.h b/examples/utest/testcases/thread_metric/tm_api.h
+new file mode 100644
+index 00000000..b11a182b
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_api.h
+@@ -0,0 +1,103 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/** Application Interface (API)                                           */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  APPLICATION INTERFACE DEFINITION                       RELEASE        */
++/*                                                                        */
++/*    tm_api.h                                            PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the basic Application Interface (API)             */
++/*    implementation source code for the Thread-Metrics performance       */
++/*    test suite. All service prototypes and data structure definitions   */
++/*    are defined in this file.                                           */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++
++#ifndef TM_API_H
++#define TM_API_H
++
++#include "tm_porting_layer.h"
++
++/*
++ * Determine if a C++ compiler is being used.  If so, ensure that standard
++ * C is used to process the API information.
++ */
++
++#ifdef __cplusplus
++
++/* Yes, C++ compiler is present.  Use standard C.  */
++extern "C" {
++
++#endif
++
++/* Define API constants.  */
++
++#define TM_SUCCESS 0
++#define TM_ERROR   1
++
++/* Define the time interval in seconds. This can be changed with a -D compiler option.  */
++
++#ifndef TM_TEST_DURATION
++#define TM_TEST_DURATION 30
++#endif
++
++/*
++ * Define RTOS Neutral APIs. RTOS vendors should fill in the guts of the following
++ * API. Once this is done the Thread-Metric tests can be successfully run.
++ */
++
++void tm_initialize(void (*test_initialization_function)(void));
++int tm_thread_create(int thread_id, int priority, void (*entry_function)(void *, void *, void *));
++int tm_thread_resume(int thread_id);
++int tm_thread_suspend(int thread_id);
++void tm_thread_relinquish(void);
++void tm_thread_sleep(int seconds);
++int tm_queue_create(int queue_id);
++int tm_queue_send(int queue_id, unsigned long *message_ptr);
++int tm_queue_receive(int queue_id, unsigned long *message_ptr);
++int tm_semaphore_create(int semaphore_id);
++int tm_semaphore_get(int semaphore_id);
++int tm_semaphore_put(int semaphore_id);
++int tm_memory_pool_create(int pool_id);
++int tm_memory_pool_allocate(int pool_id, unsigned char **memory_ptr);
++int tm_memory_pool_deallocate(int pool_id, unsigned char *memory_ptr);
++
++/*
++ * Determine if a C++ compiler is being used.  If so, complete the standard
++ * C conditional started above.
++ */
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/examples/utest/testcases/thread_metric/tm_basic_processing_test.c b/examples/utest/testcases/thread_metric/tm_basic_processing_test.c
+new file mode 100644
+index 00000000..2def0036
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_basic_processing_test.c
+@@ -0,0 +1,188 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Basic Processing Test                                               */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_basic_processing_test                            PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the basic test for determining board processing   */
++/*    capabilities                                                        */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++volatile unsigned long tm_basic_processing_counter;
++
++/*
++ * Test array.  We will just do a series of calculations on the
++ * test array to eat up processing bandwidth. The idea is that
++ * all RTOSes should produce the same metric here if everything
++ * else is equal, e.g. processor speed, memory speed, etc.
++ */
++
++volatile unsigned long tm_basic_processing_array[1024];
++
++/* Define the test thread prototypes.  */
++
++void tm_basic_processing_thread_0_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_basic_processing_thread_report(void);
++
++/* Define the initialization prototype.  */
++
++void tm_basic_processing_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_basic_processing_test_main(void)
++{
++	/* Initialize the test.  */
++	tm_initialize(tm_basic_processing_initialize);
++
++	return 0;
++}
++
++/* Define the basic processing test initialization.  */
++
++void tm_basic_processing_initialize(void)
++{
++	int prio = CONFIG_MAIN_THREAD_PRIORITY + 1;
++	/* Create thread 0 at priority 10.  */
++	tm_thread_create(0, prio, tm_basic_processing_thread_0_entry);
++
++	/* Resume thread 0.  */
++	tm_thread_resume(0);
++
++	tm_basic_processing_thread_report();
++}
++
++/* Define the basic processing thread.  */
++void tm_basic_processing_thread_0_entry(void *p1, void *p2, void *p3)
++{
++	int i;
++
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	/* Initialize the test array.   */
++	for (i = 0; i < 1024; i++) {
++
++		/* Clear the basic processing array.  */
++		tm_basic_processing_array[i] = 0;
++	}
++
++	while (1) {
++
++		/*
++		 * Loop through the basic processing array, add the previous
++		 * contents with the contents of the tm_basic_processing_counter
++		 * and xor the result with the previous value...   just to eat
++		 * up some time.
++		 */
++
++		for (i = 0; i < 1024; i++) {
++
++			/* Update each array entry.  */
++			tm_basic_processing_array[i] =
++				(tm_basic_processing_array[i] + tm_basic_processing_counter) ^
++				tm_basic_processing_array[i];
++		}
++
++		/* Increment the basic processing counter.  */
++		tm_basic_processing_counter++;
++	}
++}
++
++/* Define the basic processing reporting function.  */
++void tm_basic_processing_thread_report(void)
++{
++
++	unsigned long last_counter;
++	unsigned long relative_time;
++
++	/* Initialize the last counter.  */
++	last_counter = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Basic Single Thread Processing Test **** Relative Time: "
++		       "%lu\n",
++		       relative_time);
++
++		/* See if there are any errors.  */
++		if (tm_basic_processing_counter == last_counter) {
++
++			printf("ERROR: Invalid counter value(s). Basic processing thread died!\n");
++		}
++
++		/* Show the time period total.  */
++		printf("Time Period Total:  %lu\n\n", tm_basic_processing_counter - last_counter);
++
++		/* Save the last counter.  */
++		last_counter = tm_basic_processing_counter;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_basic_processing_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_basic_processing", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_cooperative_scheduling_test.c b/examples/utest/testcases/thread_metric/tm_cooperative_scheduling_test.c
+new file mode 100644
+index 00000000..606754c7
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_cooperative_scheduling_test.c
+@@ -0,0 +1,269 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Cooperative Scheduling Test                                         */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_cooperative_scheduling_test                      PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the cooperative scheduling test.                  */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_cooperative_thread_0_counter;
++unsigned long tm_cooperative_thread_1_counter;
++unsigned long tm_cooperative_thread_2_counter;
++unsigned long tm_cooperative_thread_3_counter;
++unsigned long tm_cooperative_thread_4_counter;
++
++/* Define the test thread prototypes.  */
++
++void tm_cooperative_thread_0_entry(void *p1, void *p2, void *p3);
++void tm_cooperative_thread_1_entry(void *p1, void *p2, void *p3);
++void tm_cooperative_thread_2_entry(void *p1, void *p2, void *p3);
++void tm_cooperative_thread_3_entry(void *p1, void *p2, void *p3);
++void tm_cooperative_thread_4_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_cooperative_thread_report(void);
++
++/* Define the initialization prototype.  */
++
++void tm_cooperative_scheduling_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_cooperative_scheduling_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_cooperative_scheduling_initialize);
++
++	return 0;
++}
++
++/* Define the cooperative scheduling test initialization.  */
++
++void tm_cooperative_scheduling_initialize(void)
++{
++	int prio = CONFIG_MAIN_THREAD_PRIORITY;
++
++	/* Create all 5 threads at the same priority as the main thread.  */
++	tm_thread_create(0, prio, tm_cooperative_thread_0_entry);
++	tm_thread_create(1, prio, tm_cooperative_thread_1_entry);
++	tm_thread_create(2, prio, tm_cooperative_thread_2_entry);
++	tm_thread_create(3, prio, tm_cooperative_thread_3_entry);
++	tm_thread_create(4, prio, tm_cooperative_thread_4_entry);
++
++	/* Resume all 5 threads.  */
++	tm_thread_resume(0);
++	tm_thread_resume(1);
++	tm_thread_resume(2);
++	tm_thread_resume(3);
++	tm_thread_resume(4);
++
++	tm_cooperative_thread_report();
++}
++
++/* Define the first cooperative thread.  */
++void tm_cooperative_thread_0_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Relinquish to all other threads at same priority.  */
++		tm_thread_relinquish();
++
++		/* Increment this thread's counter.  */
++		tm_cooperative_thread_0_counter++;
++	}
++}
++
++/* Define the second cooperative thread.  */
++void tm_cooperative_thread_1_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Relinquish to all other threads at same priority.  */
++		tm_thread_relinquish();
++
++		/* Increment this thread's counter.  */
++		tm_cooperative_thread_1_counter++;
++	}
++}
++
++/* Define the third cooperative thread.  */
++void tm_cooperative_thread_2_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Relinquish to all other threads at same priority.  */
++		tm_thread_relinquish();
++
++		/* Increment this thread's counter.  */
++		tm_cooperative_thread_2_counter++;
++	}
++}
++
++/* Define the fourth cooperative thread.  */
++void tm_cooperative_thread_3_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Relinquish to all other threads at same priority.  */
++		tm_thread_relinquish();
++
++		/* Increment this thread's counter.  */
++		tm_cooperative_thread_3_counter++;
++	}
++}
++
++/* Define the fifth cooperative thread.  */
++void tm_cooperative_thread_4_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Relinquish to all other threads at same priority.  */
++		tm_thread_relinquish();
++
++		/* Increment this thread's counter.  */
++		tm_cooperative_thread_4_counter++;
++	}
++}
++
++/* Define the cooperative test reporting function.  */
++void tm_cooperative_thread_report(void)
++{
++
++	unsigned long total;
++	unsigned long relative_time;
++	unsigned long last_total;
++	unsigned long average;
++
++	/* Initialize the last total.  */
++	last_total = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Cooperative Scheduling Test **** Relative Time: %lu\n",
++		       relative_time);
++
++		/* Calculate the total of all the counters.  */
++		total = tm_cooperative_thread_0_counter + tm_cooperative_thread_1_counter +
++			tm_cooperative_thread_2_counter + tm_cooperative_thread_3_counter +
++			tm_cooperative_thread_4_counter;
++
++		/* Calculate the average of all the counters.  */
++		average = total / 5;
++
++		/* WCC - integrity check */
++		printf("tm_cooperative_thread_0_counter: %lu\n", tm_cooperative_thread_0_counter);
++		printf("tm_cooperative_thread_1_counter: %lu\n", tm_cooperative_thread_1_counter);
++		printf("tm_cooperative_thread_2_counter: %lu\n", tm_cooperative_thread_2_counter);
++		printf("tm_cooperative_thread_3_counter: %lu\n", tm_cooperative_thread_3_counter);
++		printf("tm_cooperative_thread_4_counter: %lu\n", tm_cooperative_thread_4_counter);
++
++		/* See if there are any errors.  */
++		if ((tm_cooperative_thread_0_counter < (average - 1)) ||
++		    (tm_cooperative_thread_0_counter > (average + 1)) ||
++		    (tm_cooperative_thread_1_counter < (average - 1)) ||
++		    (tm_cooperative_thread_1_counter > (average + 1)) ||
++		    (tm_cooperative_thread_2_counter < (average - 1)) ||
++		    (tm_cooperative_thread_2_counter > (average + 1)) ||
++		    (tm_cooperative_thread_3_counter < (average - 1)) ||
++		    (tm_cooperative_thread_3_counter > (average + 1)) ||
++		    (tm_cooperative_thread_4_counter < (average - 1)) ||
++		    (tm_cooperative_thread_4_counter > (average + 1))) {
++
++			printf("ERROR: Invalid counter value(s). Cooperative counters should not "
++			       "be more that 1 different than the average!\n");
++		}
++
++		/* Show the time period total.  */
++		printf("Time Period Total:  %lu\n\n", total - last_total);
++
++		/* Save the last total.  */
++		last_total = total;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_cooperative_scheduling_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_cooperative_scheduling", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_interrupt_preemption_processing_test.c b/examples/utest/testcases/thread_metric/tm_interrupt_preemption_processing_test.c
+new file mode 100644
+index 00000000..b69f1fbc
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_interrupt_preemption_processing_test.c
+@@ -0,0 +1,236 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Interrupt Preemption Processing Test                                */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_interrupt_preemption_processing_test             PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the preemptive scheduling test.                   */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_interrupt_preemption_thread_0_counter;
++unsigned long tm_interrupt_preemption_thread_1_counter;
++unsigned long tm_interrupt_preemption_handler_counter;
++
++/* Define the test thread prototypes.  */
++
++void tm_interrupt_preemption_thread_0_entry(void *p1, void *p2, void *p3);
++void tm_interrupt_preemption_thread_1_entry(void *p1, void *p2, void *p3);
++
++/* Define the interrupt handler.  This must be called from the RTOS.  */
++
++void tm_interrupt_handler(void);
++
++/* Define the initialization prototype.  */
++
++void tm_interrupt_preemption_processing_initialize(void);
++
++/* Define the reporting function */
++
++void tm_interrupt_preemption_thread_report(void);
++
++/* Define main entry point.  */
++
++static int tm_interrupt_preemption_processing_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_interrupt_preemption_processing_initialize);
++
++	return 0;
++}
++
++/* Define the interrupt processing test initialization.  */
++
++void tm_interrupt_preemption_processing_initialize(void)
++{
++
++	/* Create interrupt thread at priority 3.  */
++	tm_thread_create(0, 3, tm_interrupt_preemption_thread_0_entry);
++
++	/* Create thread that generates the interrupt at priority 10.  */
++	tm_thread_create(1, 10, tm_interrupt_preemption_thread_1_entry);
++
++	/* Resume just thread 1.  */
++	tm_thread_resume(1);
++
++	tm_interrupt_preemption_thread_report();
++}
++
++/*
++ * Define the interrupt thread.  This thread is resumed from the
++ * interrupt handler.  It runs and suspends.
++ */
++void tm_interrupt_preemption_thread_0_entry(void *p1, void *p2, void *p3)
++{
++
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Increment this thread's counter.  */
++		tm_interrupt_preemption_thread_0_counter++;
++
++		/*
++		 * Suspend. This will allow the thread generating the
++		 * interrupt to run again.
++		 */
++		tm_thread_suspend(0);
++	}
++}
++
++/* Define the thread that generates the interrupt.  */
++void tm_interrupt_preemption_thread_1_entry(void *p1, void *p2, void *p3)
++{
++
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/*
++		 * Force an interrupt. The underlying RTOS must see that the
++		 * the interrupt handler is called from the appropriate software
++		 * interrupt or trap.
++		 */
++		TM_CAUSE_INTERRUPT;
++
++		/*
++		 * We won't get back here until the interrupt processing is complete,
++		 * including the execution of the higher priority thread made ready
++		 * by the interrupt.
++		 */
++
++		/* Increment this thread's counter.  */
++		tm_interrupt_preemption_thread_1_counter++;
++	}
++}
++
++/*
++ * Define the interrupt handler.  This must be called from the RTOS trap handler.
++ * To be fair, it must behave just like a processor interrupt, i.e. it must save
++ * the full context of the interrupted thread during the preemption processing.
++ */
++void tm_interrupt_handler(void)
++{
++
++	/* Increment the interrupt count.  */
++	tm_interrupt_preemption_handler_counter++;
++
++	/* Resume the higher priority thread from the ISR.  */
++	tm_thread_resume(0);
++}
++
++/* Define the interrupt test reporting function.  */
++void tm_interrupt_preemption_thread_report(void)
++{
++
++	unsigned long total;
++	unsigned long relative_time;
++	unsigned long last_total;
++	unsigned long average;
++
++	/* Initialize the last total.  */
++	last_total = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Interrupt Preemption Processing Test **** Relative "
++		       "Time: %lu\n",
++		       relative_time);
++
++		/* Calculate the total of all the counters.  */
++		total = tm_interrupt_preemption_thread_0_counter +
++			tm_interrupt_preemption_thread_1_counter +
++			tm_interrupt_preemption_handler_counter;
++
++		/* Calculate the average of all the counters.  */
++		average = total / 3;
++
++		/* See if there are any errors.  */
++		if ((tm_interrupt_preemption_thread_0_counter < (average - 1)) ||
++		    (tm_interrupt_preemption_thread_0_counter > (average + 1)) ||
++		    (tm_interrupt_preemption_thread_1_counter < (average - 1)) ||
++		    (tm_interrupt_preemption_thread_1_counter > (average + 1)) ||
++		    (tm_interrupt_preemption_handler_counter < (average - 1)) ||
++		    (tm_interrupt_preemption_handler_counter > (average + 1))) {
++
++			printf("ERROR: Invalid counter value(s). Interrupt processing test has "
++			       "failed!\n");
++		}
++
++		/* Show the total interrupts for the time period.  */
++		printf("Time Period Total:  %lu\n\n",
++		       tm_interrupt_preemption_handler_counter - last_total);
++
++		/* Save the last total number of interrupts.  */
++		last_total = tm_interrupt_preemption_handler_counter;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_interrupt_preemption_processing_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_interrupt_preemption_processing", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_interrupt_processing_test.c b/examples/utest/testcases/thread_metric/tm_interrupt_processing_test.c
+new file mode 100644
+index 00000000..4efb3d10
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_interrupt_processing_test.c
+@@ -0,0 +1,220 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Interrupt Processing Test                                           */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_interrupt_processing_test                        PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the No-preemption interrupt processing test.      */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_interrupt_thread_0_counter;
++unsigned long tm_interrupt_handler_counter;
++
++/* Define the test thread prototypes.  */
++
++void tm_interrupt_thread_0_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_interrupt_thread_report(void);
++
++/* Define the interrupt handler.  This must be called from the RTOS.  */
++
++void tm_interrupt_handler(void);
++
++/* Define the initialization prototype.  */
++
++void tm_interrupt_processing_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_interrupt_processing_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_interrupt_processing_initialize);
++
++	return 0;
++}
++
++/* Define the interrupt processing test initialization.  */
++
++void tm_interrupt_processing_initialize(void)
++{
++
++	/* Create thread that generates the interrupt at priority 10.  */
++	tm_thread_create(0, 10, tm_interrupt_thread_0_entry);
++
++	/*
++	 * Create a semaphore that will be posted from the interrupt
++	 * handler.
++	 */
++	tm_semaphore_create(0);
++
++	/* Resume just thread 0.  */
++	tm_thread_resume(0);
++
++	tm_interrupt_thread_report();
++}
++
++/* Define the thread that generates the interrupt.  */
++void tm_interrupt_thread_0_entry(void *p1, void *p2, void *p3)
++{
++
++	int status;
++
++	/* Pickup the semaphore since it is initialized to 1 by default. */
++	status = tm_semaphore_get(0);
++
++	/* Check for good status.  */
++	if (status != TM_SUCCESS) {
++		return;
++	}
++
++	while (1) {
++
++		/*
++		 * Force an interrupt. The underlying RTOS must see that the
++		 * the interrupt handler is called from the appropriate software
++		 * interrupt or trap.
++		 */
++
++		TM_CAUSE_INTERRUPT;
++
++		/*
++		 * We won't get back here until the interrupt processing is
++		 * complete, including the setting of the semaphore from the
++		 * interrupt handler.
++		 */
++
++		/* Pickup the semaphore set by the interrupt handler. */
++		status = tm_semaphore_get(0);
++
++		/* Check for good status.  */
++		if (status != TM_SUCCESS) {
++			return;
++		}
++
++		/* Increment this thread's counter.  */
++		tm_interrupt_thread_0_counter++;
++	}
++}
++
++/*
++ * Define the interrupt handler.  This must be called from the RTOS trap handler.
++ * To be fair, it must behave just like a processor interrupt, i.e. it must save
++ * the full context of the interrupted thread during the preemption processing.
++ */
++void tm_interrupt_handler(void)
++{
++	/* Increment the interrupt count.  */
++	tm_interrupt_handler_counter++;
++
++	/* Put the semaphore from the interrupt handler.  */
++	tm_semaphore_put(0);
++}
++
++/* Define the interrupt test reporting function.  */
++void tm_interrupt_thread_report(void)
++{
++
++	unsigned long total;
++	unsigned long last_total;
++	unsigned long relative_time;
++	unsigned long average;
++
++	/* Initialize the last total.  */
++	last_total = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Interrupt Processing Test **** Relative Time: %lu\n",
++		       relative_time);
++
++		/* Calculate the total of all the counters.  */
++		total = tm_interrupt_thread_0_counter + tm_interrupt_handler_counter;
++
++		/* Calculate the average of all the counters.  */
++		average = total / 2;
++
++		/* See if there are any errors.  */
++		if ((tm_interrupt_thread_0_counter < (average - 1)) ||
++		    (tm_interrupt_thread_0_counter > (average + 1)) ||
++		    (tm_interrupt_handler_counter < (average - 1)) ||
++		    (tm_interrupt_handler_counter > (average + 1))) {
++
++			printf("ERROR: Invalid counter value(s). Interrupt processing test has "
++			       "failed!\n");
++		}
++
++		/* Show the total interrupts for the time period.  */
++		printf("Time Period Total:  %lu\n\n", tm_interrupt_handler_counter - last_total);
++
++		/* Save the last total number of interrupts.  */
++		last_total = tm_interrupt_handler_counter;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_interrupt_processing_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_interrupt_processing", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_memory_allocation_test.c b/examples/utest/testcases/thread_metric/tm_memory_allocation_test.c
+new file mode 100644
+index 00000000..40f5aaa8
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_memory_allocation_test.c
+@@ -0,0 +1,168 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Memory Allocation Test                                              */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_memory_allocation_test                           PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the Message exchange processing test.             */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_memory_allocation_counter;
++
++/* Define the test thread prototypes.  */
++
++void tm_memory_allocation_thread_0_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_memory_allocation_thread_report(void);
++
++/* Define the initialization prototype.  */
++
++void tm_memory_allocation_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_memory_allocation_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_memory_allocation_initialize);
++
++	return 0;
++}
++
++/* Define the memory allocation processing test initialization.  */
++
++void tm_memory_allocation_initialize(void)
++{
++	/* Create a memory pool.  */
++	tm_memory_pool_create(0);
++
++	/* Create thread 0 at priority 10.  */
++	tm_thread_create(0, 10, tm_memory_allocation_thread_0_entry);
++
++	/* Resume thread 0.  */
++	tm_thread_resume(0);
++
++	tm_memory_allocation_thread_report();
++}
++
++/* Define the memory allocation processing thread.  */
++void tm_memory_allocation_thread_0_entry(void *p1, void *p2, void *p3)
++{
++
++	int status;
++	unsigned char *memory_ptr;
++
++	while (1) {
++
++		/* Allocate memory from pool.  */
++		tm_memory_pool_allocate(0, &memory_ptr);
++
++		/* Release the memory back to the pool.  */
++		status = tm_memory_pool_deallocate(0, memory_ptr);
++
++		/* Check for invalid memory allocation/deallocation.  */
++		if (status != TM_SUCCESS) {
++			break;
++		}
++
++		/* Increment the number of memory allocations sent and received.  */
++		tm_memory_allocation_counter++;
++	}
++}
++
++/* Define the memory allocation test reporting function.  */
++void tm_memory_allocation_thread_report(void)
++{
++
++	unsigned long last_counter;
++	unsigned long relative_time;
++
++	/* Initialize the last counter.  */
++	last_counter = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Memory Allocation Test **** Relative Time: %lu\n",
++		       relative_time);
++
++		/* See if there are any errors.  */
++		if (tm_memory_allocation_counter == last_counter) {
++
++			printf("ERROR: Invalid counter value(s). Error allocating/deallocating "
++			       "memory!\n");
++		}
++
++		/* Show the time period total.  */
++		printf("Time Period Total:  %lu\n\n", tm_memory_allocation_counter - last_counter);
++
++		/* Save the last counter.  */
++		last_counter = tm_memory_allocation_counter;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_memory_allocation_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_memory_allocation", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_message_processing_test.c b/examples/utest/testcases/thread_metric/tm_message_processing_test.c
+new file mode 100644
+index 00000000..fad44acc
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_message_processing_test.c
+@@ -0,0 +1,179 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Message Processing Test                                             */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_message_processing_test                          PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    Basic test for message exchange processing.                         */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_message_processing_counter;
++unsigned int tm_message_sent[4];
++unsigned int tm_message_received[4];
++
++/* Define the test thread prototypes.  */
++
++void tm_message_processing_thread_0_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_message_processing_thread_report(void);
++
++/* Define the initialization prototype.  */
++
++void tm_message_processing_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_message_processing_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_message_processing_initialize);
++
++	return 0;
++}
++
++/* Define the message processing test initialization.  */
++
++void tm_message_processing_initialize(void)
++{
++	int prio = CONFIG_MAIN_THREAD_PRIORITY + 1;
++	/* Create thread 0 at priority 10.  */
++	tm_thread_create(0, prio, tm_message_processing_thread_0_entry);
++
++	/* Resume thread 0.  */
++	tm_thread_resume(0);
++
++	/* Create a queue for the message passing.  */
++	tm_queue_create(0);
++
++	tm_message_processing_thread_report();
++}
++
++/* Define the message processing thread.  */
++void tm_message_processing_thread_0_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	/* Initialize the source message.   */
++	tm_message_sent[0] = 0x11112222;
++	tm_message_sent[1] = 0x33334444;
++	tm_message_sent[2] = 0x55556666;
++	tm_message_sent[3] = 0x77778888;
++
++	while (1) {
++		/* Send a message to the queue.  */
++		tm_queue_send(0, (unsigned long *)tm_message_sent);
++
++		/* Receive a message from the queue.  */
++		tm_queue_receive(0, (unsigned long *)tm_message_received);
++
++		/* Check for invalid message.  */
++		if (tm_message_received[3] != tm_message_sent[3]) {
++			break;
++		}
++
++		/* Increment the last word of the 16-byte message.  */
++		tm_message_sent[3]++;
++
++		/* Increment the number of messages sent and received.  */
++		tm_message_processing_counter++;
++	}
++}
++
++/* Define the message test reporting function.  */
++void tm_message_processing_thread_report(void)
++{
++
++	unsigned long last_counter;
++	unsigned long relative_time;
++
++	/* Initialize the last counter.  */
++	last_counter = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Message Processing Test **** Relative Time: %lu\n",
++		       relative_time);
++
++		/* See if there are any errors.  */
++		if (tm_message_processing_counter == last_counter) {
++
++			printf("ERROR: Invalid counter value(s). Error sending/receiving "
++			       "messages!\n");
++		}
++
++		/* Show the time period total.  */
++		printf("Time Period Total:  %lu\n\n", tm_message_processing_counter - last_counter);
++
++		/* Save the last counter.  */
++		last_counter = tm_message_processing_counter;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_message_processing_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_message_processing", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_porting_layer.h b/examples/utest/testcases/thread_metric/tm_porting_layer.h
+new file mode 100644
+index 00000000..ac52b60e
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_porting_layer.h
+@@ -0,0 +1,21 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++#ifndef TM_PORTING_LAYER_H
++#define TM_PORTING_LAYER_H
++
++#include <stdio.h>
++
++extern void tm_cause_interrupt(void);
++
++#define TM_CAUSE_INTERRUPT tm_cause_interrupt()
++#define CONFIG_MAIN_THREAD_PRIORITY FINSH_THREAD_PRIORITY
++
++#endif
+diff --git a/examples/utest/testcases/thread_metric/tm_porting_layer_rtt.c b/examples/utest/testcases/thread_metric/tm_porting_layer_rtt.c
+new file mode 100644
+index 00000000..735a4f7d
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_porting_layer_rtt.c
+@@ -0,0 +1,304 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ * Copyright (c) 2024 Intel Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Porting Layer (Must be completed with RTOS specifics)               */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/* Include necessary files.  */
++
++#include "tm_api.h"
++
++#include <rtthread.h>
++#include <rthw.h>
++
++#define TM_TEST_NUM_THREADS        10
++#define TM_TEST_STACK_SIZE         2048
++#define TM_TEST_NUM_SEMAPHORES     4
++#define TM_TEST_NUM_MESSAGE_QUEUES 4
++#define TM_TEST_NUM_MEMPOOLS       4
++
++#ifdef RT_USING_SMP
++#if (RT_CPUS_NR > 1)
++#error "*** Tests are only designed for single processor systems! ***"
++#endif
++#endif
++
++static rt_thread_t test_thread[TM_TEST_NUM_THREADS];
++static char test_stack[TM_TEST_NUM_THREADS][TM_TEST_STACK_SIZE];
++
++static struct rt_semaphore test_sem[TM_TEST_NUM_SEMAPHORES];
++
++static struct rt_messagequeue test_msgq[TM_TEST_NUM_MESSAGE_QUEUES];
++static char test_msgq_buffer[TM_TEST_NUM_MESSAGE_QUEUES][RT_MQ_BUF_SIZE(16, 8)];
++
++static struct rt_mempool test_mp[TM_TEST_NUM_MEMPOOLS];
++/* Memory pool buffer: (aligned_block_size + sizeof(rt_uint8_t *)) * block_count */
++/* block_size = 128, aligned to RT_ALIGN_SIZE, block_count = 8 */
++#define TM_MP_BLOCK_SIZE    RT_ALIGN(128, RT_ALIGN_SIZE)
++#define TM_MP_BLOCK_COUNT   8
++static char test_mp_buffer[TM_TEST_NUM_MEMPOOLS][(TM_MP_BLOCK_SIZE + sizeof(rt_uint8_t *)) * TM_MP_BLOCK_COUNT];
++
++/*
++ * This function called from main performs basic RTOS initialization,
++ * calls the test initialization function, and then starts the RTOS function.
++ */
++void tm_initialize(void (*test_initialization_function)(void))
++{
++	test_initialization_function();
++}
++
++/*
++ * This function takes a thread ID and priority and attempts to create the
++ * file in the underlying RTOS.  Valid priorities range from 1 through 31,
++ * where 1 is the highest priority and 31 is the lowest. If successful,
++ * the function should return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_thread_create(int thread_id, int priority, void (*entry_function)(void *, void *, void *))
++{
++	//char name[RT_NAME_MAX];
++	rt_thread_t tid;
++	rt_err_t result;
++
++	char name[RT_NAME_MAX];
++	rt_snprintf(name, RT_NAME_MAX, "tm_thd%d", thread_id);
++
++	/* Create thread by directly casting entry function to RT-Thread entry type */
++	tid = rt_thread_create(name,
++	                       (void (*)(void *))entry_function,  /* Cast to RT-Thread entry type */
++	                       NULL,
++	                       TM_TEST_STACK_SIZE,
++	                       priority,
++	                       20);  /* time slice */
++
++	if (tid == RT_NULL)
++	{
++		printf("tm_thread_create failed\n");
++		return TM_ERROR;
++	}
++
++	test_thread[thread_id] = tid;
++	rt_sched_thread_startup(tid);
++
++	/* Thread is created in INIT state, no need to suspend */
++	return TM_SUCCESS;
++}
++
++/*
++ * This function resumes the specified thread.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_thread_resume(int thread_id)
++{
++	rt_err_t result;
++
++	if (test_thread[thread_id] == RT_NULL)
++	{
++		printf("tm_thread_resume failed: thread %d not found\n", thread_id);
++		return TM_ERROR;
++	}
++
++	result = rt_thread_resume(test_thread[thread_id]);
++	if (result != RT_EOK)
++	{
++		printf("tm_thread_resume %d failed: %d \n", thread_id, result);
++		return TM_ERROR;
++	}
++	return TM_SUCCESS;
++}
++
++/*
++ * This function suspends the specified thread.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_thread_suspend(int thread_id)
++{
++	rt_err_t result;
++
++	result = rt_thread_suspend(test_thread[thread_id]);
++	if (result != RT_EOK)
++	{
++		printf("rt_thread_suspend %d failed: %d \n", thread_id, result);
++		return TM_ERROR;
++	}
++	rt_schedule();
++	return TM_SUCCESS;
++}
++
++/*
++ * This function relinquishes to other ready threads at the same
++ * priority.
++ */
++void tm_thread_relinquish(void)
++{
++	rt_thread_yield();
++}
++
++/*
++ * This function suspends the specified thread for the specified number
++ * of seconds.
++ */
++void tm_thread_sleep(int seconds)
++{
++	rt_thread_mdelay(seconds * 1000);
++}
++
++/*
++ * This function creates the specified queue.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_queue_create(int queue_id)
++{
++	rt_err_t result;
++
++	result = rt_mq_init(&test_msgq[queue_id],
++	                    RT_NULL,
++	                    &test_msgq_buffer[queue_id][0],
++	                    16,  /* message size */
++	                    sizeof(test_msgq_buffer[queue_id]),  /* pool size */
++	                    RT_IPC_FLAG_FIFO);
++
++	return (result == RT_EOK) ? TM_SUCCESS : TM_ERROR;
++}
++
++/*
++ * This function sends a 16-byte message to the specified queue.  If successful,
++ * the function should return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_queue_send(int queue_id, unsigned long *message_ptr)
++{
++	rt_err_t result;
++
++	result = rt_mq_send(&test_msgq[queue_id], message_ptr, 16);
++
++	return (result == RT_EOK) ? TM_SUCCESS : TM_ERROR;
++}
++
++/*
++ * This function receives a 16-byte message from the specified queue.  If successful,
++ * the function should return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_queue_receive(int queue_id, unsigned long *message_ptr)
++{
++	rt_ssize_t result;
++
++	result = rt_mq_recv(&test_msgq[queue_id], message_ptr, 16, RT_WAITING_FOREVER);
++
++	return (result >= 0) ? TM_SUCCESS : TM_ERROR;
++}
++
++/*
++ * This function creates the specified semaphore.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_semaphore_create(int semaphore_id)
++{
++	rt_err_t result;
++
++	/* Create an available semaphore with initial value of 1 */
++	result = rt_sem_init(&test_sem[semaphore_id], RT_NULL, 1, RT_IPC_FLAG_FIFO);
++
++	return (result == RT_EOK) ? TM_SUCCESS : TM_ERROR;
++}
++
++/*
++ * This function gets the specified semaphore.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_semaphore_get(int semaphore_id)
++{
++	rt_err_t result;
++
++	result = rt_sem_take(&test_sem[semaphore_id], RT_WAITING_NO);
++
++	return (result == RT_EOK) ? TM_SUCCESS : TM_ERROR;
++}
++
++/*
++ * This function puts the specified semaphore.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_semaphore_put(int semaphore_id)
++{
++	rt_err_t result;
++
++	result = rt_sem_release(&test_sem[semaphore_id]);
++
++	return (result == RT_EOK) ? TM_SUCCESS : TM_ERROR;
++}
++
++/* This function is defined by the benchmark. */
++RT_WEAK void tm_interrupt_handler(void) {}
++
++void tm_cause_interrupt(void)
++{
++	// as there is no rt_hw_interrupt_trigger in RTT, we just call the interrupt handler directly
++	rt_interrupt_enter();
++	tm_interrupt_handler();
++	rt_interrupt_leave();
++}
++
++/*
++ * This function creates the specified memory pool that can support one or more
++ * allocations of 128 bytes.  If successful, the function should
++ * return TM_SUCCESS. Otherwise, TM_ERROR should be returned.
++ */
++int tm_memory_pool_create(int pool_id)
++{
++	rt_err_t result;
++
++	/* Initialize memory pool: block_size = 128, buffer size calculated for 8 blocks */
++	result = rt_mp_init(&test_mp[pool_id],
++	                    RT_NULL,
++	                    &test_mp_buffer[pool_id][0],
++	                    sizeof(test_mp_buffer[pool_id]),
++	                    128);  /* block size */
++
++	return (result == RT_EOK) ? TM_SUCCESS : TM_ERROR;
++}
++
++/*
++ * This function allocates a 128 byte block from the specified memory pool.
++ * If successful, the function should return TM_SUCCESS. Otherwise, TM_ERROR
++ * should be returned.
++ */
++int tm_memory_pool_allocate(int pool_id, unsigned char **memory_ptr)
++{
++	void *block;
++
++	block = rt_mp_alloc(&test_mp[pool_id], RT_WAITING_NO);
++
++	if (block != RT_NULL)
++	{
++		*memory_ptr = (unsigned char *)block;
++		return TM_SUCCESS;
++	}
++
++	return TM_ERROR;
++}
++
++/*
++ * This function releases a previously allocated 128 byte block from the specified
++ * memory pool. If successful, the function should return TM_SUCCESS. Otherwise, TM_ERROR
++ * should be returned.
++ */
++int tm_memory_pool_deallocate(int pool_id, unsigned char *memory_ptr)
++{
++	rt_mp_free(memory_ptr);
++
++	return TM_SUCCESS;
++}
+diff --git a/examples/utest/testcases/thread_metric/tm_preemptive_scheduling_test.c b/examples/utest/testcases/thread_metric/tm_preemptive_scheduling_test.c
+new file mode 100644
+index 00000000..9e3a413e
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_preemptive_scheduling_test.c
+@@ -0,0 +1,300 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Preemptive Scheduling Test                                          */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_preemptive_scheduling_test                       PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the preemptive scheduling test.                   */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_preemptive_thread_0_counter;
++unsigned long tm_preemptive_thread_1_counter;
++unsigned long tm_preemptive_thread_2_counter;
++unsigned long tm_preemptive_thread_3_counter;
++unsigned long tm_preemptive_thread_4_counter;
++
++/* Define the test thread prototypes.  */
++
++void tm_preemptive_thread_0_entry(void *p1, void *p2, void *p3);
++void tm_preemptive_thread_1_entry(void *p1, void *p2, void *p3);
++void tm_preemptive_thread_2_entry(void *p1, void *p2, void *p3);
++void tm_preemptive_thread_3_entry(void *p1, void *p2, void *p3);
++void tm_preemptive_thread_4_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_preemptive_thread_report(void);
++
++/* Define the initialization prototype.  */
++
++void tm_preemptive_scheduling_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_preemptive_scheduling_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_preemptive_scheduling_initialize);
++
++	return 0;
++}
++
++/* Define the preemptive scheduling test initialization.  */
++
++void tm_preemptive_scheduling_initialize(void)
++{
++	int prio = CONFIG_MAIN_THREAD_PRIORITY + 1;
++
++	/* Create thread 0 at priority 10.  */
++	tm_thread_create(0, prio + 5, tm_preemptive_thread_0_entry);
++
++	/* Create thread 1 at priority 9.  */
++	tm_thread_create(1, prio + 4, tm_preemptive_thread_1_entry);
++
++	/* Create thread 2 at priority 8.  */
++	tm_thread_create(2, prio + 3, tm_preemptive_thread_2_entry);
++
++	/* Create thread 3 at priority 7.  */
++	tm_thread_create(3, prio + 2, tm_preemptive_thread_3_entry);
++
++	/* Create thread 4 at priority 6.  */
++	tm_thread_create(4, prio + 1, tm_preemptive_thread_4_entry);
++
++	/* Resume just thread 0.  */
++	tm_thread_resume(0);
++
++	tm_preemptive_thread_report();
++}
++
++/* Define the first preemptive thread.  */
++void tm_preemptive_thread_0_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++		/* Resume thread 1.  */
++		tm_thread_resume(1);
++
++		/*
++		 * We won't get back here until threads 1, 2, 3, and 4 all execute and
++		 * self-suspend.
++		 */
++
++		/* Increment this thread's counter.  */
++		tm_preemptive_thread_0_counter++;
++	}
++}
++
++/* Define the second preemptive thread.  */
++void tm_preemptive_thread_1_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Resume thread 2.  */
++		tm_thread_resume(2);
++
++		/*
++		 * We won't get back here until threads 2, 3, and 4 all execute and
++		 * self-suspend.
++		 */
++
++		/* Increment this thread's counter.  */
++		tm_preemptive_thread_1_counter++;
++
++		/* Suspend self!  */
++		tm_thread_suspend(1);
++	}
++}
++
++/* Define the third preemptive thread.  */
++void tm_preemptive_thread_2_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Resume thread 3.  */
++		tm_thread_resume(3);
++
++		/*
++		 * We won't get back here until threads 3 and 4 execute and
++		 * self-suspend.
++		 */
++
++		/* Increment this thread's counter.  */
++		tm_preemptive_thread_2_counter++;
++
++		/* Suspend self!  */
++		tm_thread_suspend(2);
++	}
++}
++
++/* Define the fourth preemptive thread.  */
++void tm_preemptive_thread_3_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Resume thread 4.  */
++		tm_thread_resume(4);
++
++		/*
++		 * We won't get back here until thread 4 executes and
++		 * self-suspends.
++		 */
++
++		/* Increment this thread's counter.  */
++		tm_preemptive_thread_3_counter++;
++
++		/* Suspend self!  */
++		tm_thread_suspend(3);
++	}
++}
++
++/* Define the fifth preemptive thread.  */
++void tm_preemptive_thread_4_entry(void *p1, void *p2, void *p3)
++{
++	(void)p1;
++	(void)p2;
++	(void)p3;
++
++	while (1) {
++
++		/* Increment this thread's counter.  */
++		tm_preemptive_thread_4_counter++;
++
++		/* Self suspend thread 4.  */
++		tm_thread_suspend(4);
++	}
++}
++
++/* Define the preemptive test reporting function.  */
++void tm_preemptive_thread_report(void)
++{
++
++	unsigned long total;
++	unsigned long relative_time;
++	unsigned long last_total;
++	unsigned long average;
++
++	/* Initialize the last total.  */
++	last_total = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Preemptive Scheduling Test **** Relative Time: %lu\n",
++		       relative_time);
++
++		/* Calculate the total of all the counters.  */
++		total = tm_preemptive_thread_0_counter + tm_preemptive_thread_1_counter +
++			tm_preemptive_thread_2_counter + tm_preemptive_thread_3_counter +
++			tm_preemptive_thread_4_counter;
++
++		/* Calculate the average of all the counters.  */
++		average = total / 5;
++
++		/* See if there are any errors.  */
++		if ((tm_preemptive_thread_0_counter < (average - 1)) ||
++		    (tm_preemptive_thread_0_counter > (average + 1)) ||
++		    (tm_preemptive_thread_1_counter < (average - 1)) ||
++		    (tm_preemptive_thread_1_counter > (average + 1)) ||
++		    (tm_preemptive_thread_2_counter < (average - 1)) ||
++		    (tm_preemptive_thread_2_counter > (average + 1)) ||
++		    (tm_preemptive_thread_3_counter < (average - 1)) ||
++		    (tm_preemptive_thread_3_counter > (average + 1)) ||
++		    (tm_preemptive_thread_4_counter < (average - 1)) ||
++		    (tm_preemptive_thread_4_counter > (average + 1))) {
++
++			printf("ERROR: Invalid counter value(s). Preemptive counters should not be "
++			       "more that 1 different than the average!\n");
++			printf("   Average: %lu, 0: %lu, 1: %lu, 2: %lu, 3: %lu, 4: %lu\n",
++				average, tm_preemptive_thread_0_counter,
++				tm_preemptive_thread_1_counter,
++				tm_preemptive_thread_2_counter,
++				tm_preemptive_thread_3_counter,
++				tm_preemptive_thread_4_counter);
++		}
++
++		/* Show the time period total.  */
++		printf("Time Period Total:  %lu\n\n", total - last_total);
++
++		/* Save the last total.  */
++		last_total = total;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_preemptive_scheduling_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_preemptive_scheduling", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/examples/utest/testcases/thread_metric/tm_synchronization_processing_test.c b/examples/utest/testcases/thread_metric/tm_synchronization_processing_test.c
+new file mode 100644
+index 00000000..47cec1cb
+--- /dev/null
++++ b/examples/utest/testcases/thread_metric/tm_synchronization_processing_test.c
+@@ -0,0 +1,170 @@
++/***************************************************************************
++ * Copyright (c) 2024 Microsoft Corporation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the MIT License which is available at
++ * https://opensource.org/licenses/MIT.
++ *
++ * SPDX-License-Identifier: MIT
++ **************************************************************************/
++
++/**************************************************************************/
++/**************************************************************************/
++/**                                                                       */
++/** Thread-Metric Component                                               */
++/**                                                                       */
++/**   Synchronization Processing Test                                     */
++/**                                                                       */
++/**************************************************************************/
++/**************************************************************************/
++
++/**************************************************************************/
++/*                                                                        */
++/*  FUNCTION                                               RELEASE        */
++/*                                                                        */
++/*    tm_synchronization_processing_test                  PORTABLE C      */
++/*                                                           6.1.7        */
++/*  AUTHOR                                                                */
++/*                                                                        */
++/*    William E. Lamie, Microsoft Corporation                             */
++/*                                                                        */
++/*  DESCRIPTION                                                           */
++/*                                                                        */
++/*    This file defines the Semaphore get/put processing test.            */
++/*                                                                        */
++/*  RELEASE HISTORY                                                       */
++/*                                                                        */
++/*    DATE              NAME                      DESCRIPTION             */
++/*                                                                        */
++/*  10-15-2021     William E. Lamie         Initial Version 6.1.7         */
++/*                                                                        */
++/**************************************************************************/
++#include <rtthread.h>
++#include "utest.h"
++#include "tm_api.h"
++
++/* Define the counters used in the demo application...  */
++
++unsigned long tm_synchronization_processing_counter;
++
++/* Define the test thread prototypes.  */
++
++void tm_synchronization_processing_thread_0_entry(void *p1, void *p2, void *p3);
++
++/* Define the reporting function prototype.  */
++
++void tm_synchronization_processing_thread_report(void);
++
++/* Define the initialization prototype.  */
++
++void tm_synchronization_processing_initialize(void);
++
++/* Define main entry point.  */
++
++static int tm_synchronization_processing_test_main(void)
++{
++
++	/* Initialize the test.  */
++	tm_initialize(tm_synchronization_processing_initialize);
++
++	return 0;
++}
++
++/* Define the synchronization processing test initialization.  */
++
++void tm_synchronization_processing_initialize(void)
++{
++
++	/* Create thread 0 at priority 10.  */
++	tm_thread_create(0, 10, tm_synchronization_processing_thread_0_entry);
++
++	/* Resume thread 0.  */
++	tm_thread_resume(0);
++
++	/* Create a semaphore for the test.  */
++	tm_semaphore_create(0);
++
++	tm_synchronization_processing_thread_report();
++}
++
++/* Define the synchronization processing thread.  */
++void tm_synchronization_processing_thread_0_entry(void *p1, void *p2, void *p3)
++{
++
++	int status;
++
++	while (1) {
++
++		/* Get the semaphore.  */
++		tm_semaphore_get(0);
++
++		/* Release the semaphore.  */
++		status = tm_semaphore_put(0);
++
++		/* Check for semaphore put error.  */
++		if (status != TM_SUCCESS) {
++			break;
++		}
++
++		/* Increment the number of semaphore get/puts.  */
++		tm_synchronization_processing_counter++;
++	}
++}
++
++/* Define the synchronization test reporting function.  */
++void tm_synchronization_processing_thread_report(void)
++{
++
++	unsigned long last_counter;
++	unsigned long relative_time;
++
++	/* Initialize the last counter.  */
++	last_counter = 0;
++
++	/* Initialize the relative time.  */
++	relative_time = 0;
++
++	while (1) {
++
++		/* Sleep to allow the test to run.  */
++		tm_thread_sleep(TM_TEST_DURATION);
++
++		/* Increment the relative time.  */
++		relative_time = relative_time + TM_TEST_DURATION;
++
++		/* Print results to the stdio window.  */
++		printf("**** Thread-Metric Synchronization Processing Test **** Relative Time: "
++		       "%lu\n",
++		       relative_time);
++
++		/* See if there are any errors.  */
++		if (tm_synchronization_processing_counter == last_counter) {
++
++			printf("ERROR: Invalid counter value(s). Error getting/putting "
++			       "semaphore!\n");
++		}
++
++		/* Show the time period total.  */
++		printf("Time Period Total:  %lu\n\n",
++		       tm_synchronization_processing_counter - last_counter);
++
++		/* Save the last counter.  */
++		last_counter = tm_synchronization_processing_counter;
++	}
++}
++
++static rt_err_t utest_tc_init(void)
++{
++    return RT_EOK;
++}
++
++static rt_err_t utest_tc_cleanup(void)
++{
++    return RT_EOK;
++}
++
++static void testcase(void)
++{
++    UTEST_UNIT_RUN(tm_synchronization_processing_test_main);
++}
++UTEST_TC_EXPORT(testcase, "testcases.utest.tm_synchronization_processing", utest_tc_init, utest_tc_cleanup, 10);
+diff --git a/src/thread.c b/src/thread.c
+index 481dfebe..73768d84 100644
+--- a/src/thread.c
++++ b/src/thread.c
+@@ -956,7 +956,7 @@ rt_err_t rt_thread_suspend_to_list(rt_thread_t thread, rt_list_t *susp_list, int
+     }
+     else if ((stat != RT_THREAD_READY) && (stat != RT_THREAD_RUNNING))
+     {
+-        LOG_D("thread suspend: thread disorder, 0x%2x", RT_SCHED_CTX(thread).stat);
++        LOG_E("thread suspend: thread disorder, 0x%2x", RT_SCHED_CTX(thread).stat);
+         rt_sched_unlock(slvl);
+         return -RT_ERROR;
+     }

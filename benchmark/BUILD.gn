@@ -1,0 +1,56 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+pool("custom_pool") {
+  depth = 1
+}
+
+# RT-Thread thread metric test
+# Downloads RT-Thread repository, applies patch, and runs tests
+action("run_rtt_thread_metric_test") {
+  testonly = true
+  script = rebase_path("//kernel/benchmark/thread_metric/run_test.py")
+  args = [
+    "--repo",
+    "https://github.com/RT-Thread/rt-thread",
+    "--tag",
+    "v5.2.2",
+    "--target-dir",
+    "kernel/benchmark/thread_metric/rt-thread",
+    "--patch",
+    "kernel/benchmark/thread_metric/rtt_tm.diff",
+    "--build-dir",
+    "bsp/qemu-vexpress-a9",
+    "--build-cmd",
+    "scons",
+    "--run-cmd",
+    "bash qemu-nographic.sh",
+    "--timeout",
+    "90",
+    "--root-dir",
+    rebase_path("//"),
+  ]
+  inputs = [
+    "thread_metric/run_test.py",
+    "thread_metric/rtt_tm.diff",
+  ]
+  pool = ":custom_pool"
+
+  # Always re-run the test (no outputs to track)
+  outputs = [ "${target_gen_dir}/${target_name}/dummy" ]
+}
