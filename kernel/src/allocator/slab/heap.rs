@@ -16,7 +16,7 @@ use super::SlabHeap as Slab;
 use crate::{allocator::MemoryInfo, sync::spinlock::SpinLock};
 use core::{alloc::Layout, ptr::NonNull};
 
-pub type Heap = SlabHeap<2, 2, 2, 2, 2, 2, 2, 2>;
+pub type Heap = SlabHeap<2, 4, 2, 1, 1, 1, 1, 1>;
 pub struct SlabHeap<
     const S8: usize,
     const S16: usize,
@@ -126,7 +126,6 @@ impl<
             max_used: heap.maximum() + heap.slab_total_size - heap.system_allocator.maximum(),
         }
     }
-
 
     pub fn print_slab_stat(&self) {
         let heap = self.heap.irqsave_lock();
