@@ -401,14 +401,14 @@ mod tests {
         }
     }
 
-    static I2C_BUS: super::bus::Bus = super::bus::Bus::new();
+    static DUMMY_BUS: super::bus::Bus = super::bus::Bus::new();
 
     #[test]
     fn test_device_match() {
-        I2C_BUS
+        DUMMY_BUS
             .register_device(&DUMMY_DEVICE_DATA)
             .expect("Failed to register device");
-        let driver = I2C_BUS.probe_driver(&DummyDriverModule);
+        let driver = DUMMY_BUS.probe_driver(&DummyDriverModule);
         assert!(driver.is_ok());
         let driver = driver.unwrap().init();
         assert!(driver.is_ok());
