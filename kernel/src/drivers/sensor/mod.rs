@@ -14,5 +14,5 @@
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-// #[cfg(use_bme280)]
+#[cfg(use_bme280)]
 mod bme280;
