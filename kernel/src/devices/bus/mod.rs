@@ -14,14 +14,32 @@
 
 use alloc::boxed::Box;
 
-pub struct Bus {
+pub struct Bus<B> {
     devices: super::SpinRwLock<super::DeviceList>,
+    intf: B,
 }
 
-impl Bus {
-    pub const fn new() -> Self {
+pub trait BusInterface: Sync + Send {
+    type MemoryRegion;
+
+    fn read_region(
+        &mut self,
+        region: Self::MemoryRegion,
+        buffer: &mut [u8],
+    ) -> crate::drivers::Result<()>;
+
+    fn write_region(
+        &mut self,
+        region: Self::MemoryRegion,
+        data: &[u8],
+    ) -> crate::drivers::Result<()>;
+}
+
+impl<B> Bus<B> {
+    pub const fn new(intf: B) -> Self {
         Self {
             devices: super::SpinRwLock::new(super::DeviceList::new()),
+            intf,
         }
     }
 
@@ -60,5 +78,7 @@ impl Bus {
     }
 }
 
-unsafe impl Send for Bus {}
-unsafe impl Sync for Bus {}
+pub trait I2cBus
+
+unsafe impl<B: BusInterface> Send for Bus<B> {}
+unsafe impl<B: BusInterface> Sync for Bus<B> {}
