@@ -78,7 +78,7 @@ impl<B> Bus<B> {
     }
 }
 
-pub trait I2cBus
+pub trait I2cBus: Send + Sync {}
 
-unsafe impl<B: BusInterface> Send for Bus<B> {}
-unsafe impl<B: BusInterface> Sync for Bus<B> {}
+unsafe impl<B: I2cBus> Send for Bus<B> {}
+unsafe impl<B: I2cBus> Sync for Bus<B> {}
