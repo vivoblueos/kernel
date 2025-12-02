@@ -311,6 +311,10 @@ pub enum DeviceData {
     Zephyr,
 }
 
+pub const fn new_native_device_data(config: &'static dyn core::any::Any) -> DeviceData {
+    DeviceData::Native(NativeDevice::new(config))
+}
+
 type DeviceList = ListHead<DeviceDataNode, Node>;
 type DeviceListIterator = ListIterator<DeviceDataNode, Node>;
 
@@ -393,10 +397,10 @@ mod tests {
                             base_addr: config.base_addr,
                         })
                     } else {
-                        Err(crate::error::code::ENOTSUP)
+                        Err(crate::error::code::ENODEV)
                     }
                 }
-                _ => Err(crate::error::code::ENOTSUP),
+                _ => Err(crate::error::code::ENODEV),
             }
         }
     }

@@ -22,7 +22,19 @@ macro_rules! define_peripheral {
         paste::paste! {
             $(
                 pub static [<$field_name:upper>]: $device_ty = $v;
+                pub static [<$field_name:upper _DEVICE_DATA>]: crate::devices::DeviceData = crate::devices::new_native_device_data(&[<$field_name:upper>]);
             )*
+
+            // Generate static array containing references to all device data
+            static ALL_DEVICE_DATA: &[&crate::devices::DeviceData] = &[
+                $(
+                    &[<$field_name:upper _DEVICE_DATA>],
+                )*
+            ];
+
+            pub fn get_all_device_data() -> &'static [&'static crate::devices::DeviceData] {
+                ALL_DEVICE_DATA
+            }
         }
 
         #[macro_export]

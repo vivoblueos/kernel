@@ -14,6 +14,7 @@
 
 use blueos_driver::i2c::I2cConfig;
 use blueos_hal::PlatPeri;
+use embedded_hal::i2c::I2c;
 
 pub struct BlockI2c<T: PlatPeri> {
     inner: &'static T,
@@ -26,6 +27,20 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
         write_buf: &[u8],
         read_buf: &mut [u8],
     ) -> blueos_hal::err::Result<()> {
+        todo!()
+    }
+}
+
+impl<T: PlatPeri> embedded_hal::i2c::ErrorType for BlockI2c<T> {
+    type Error = blueos_hal::err::HalError;
+}
+
+impl<T: PlatPeri> I2c for BlockI2c<T> {
+    fn transaction(
+        &mut self,
+        address: u8,
+        operations: &mut [embedded_hal::i2c::Operation<'_>],
+    ) -> Result<(), Self::Error> {
         todo!()
     }
 }
