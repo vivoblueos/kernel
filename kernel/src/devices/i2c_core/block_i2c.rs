@@ -14,7 +14,9 @@
 
 use blueos_driver::i2c::I2cConfig;
 use blueos_hal::PlatPeri;
-use embedded_hal::i2c::I2c;
+
+use crate::devices::bus::BusInterface;
+// use embedded_hal::i2c::I2c;
 
 pub struct BlockI2c<T: PlatPeri> {
     inner: &'static T,
@@ -52,29 +54,52 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
     }
 }
 
-impl<T: PlatPeri> embedded_hal::i2c::ErrorType for BlockI2c<T> {
-    type Error = blueos_hal::err::HalError;
-}
+impl BusInterface for BlockI2c<T>
+where
+    T: blueos_hal::i2c::I2c<I2cConfig, ()>,
+{
+    type MemoryRegion = u8;
 
-impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> I2c for BlockI2c<T> {
-    fn transaction(
+    fn read_region(
         &mut self,
-        address: u8,
-        operations: &mut [embedded_hal::i2c::Operation<'_>],
-    ) -> Result<(), Self::Error> {
-        let mut operations = operations.into_iter().peekable();
+        region: &Self::MemoryRegion,
+        buffer: &mut [u8],
+    ) -> crate::drivers::Result<()> {
+        Ok(())
+    }
 
-        while let Some(operation) = operations.next() {
-            match operation {
-                embedded_hal::i2c::Operation::Read(buf) => {
-                    self.read_bytes(address, buf)?;
-                }
-                embedded_hal::i2c::Operation::Write(buf) => {
-                    self.write_bytes(address, buf.iter().cloned())?;
-                }
-            }
-        }
-
+    fn write_region(
+        &mut self,
+        region: Self::MemoryRegion,
+        data: &[u8],
+    ) -> crate::drivers::Result<()> {
         Ok(())
     }
 }
+
+// impl<T: PlatPeri> embedded_hal::i2c::ErrorType for BlockI2c<T> {
+//     type Error = blueos_hal::err::HalError;
+// }
+
+// impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> I2c for BlockI2c<T> {
+//     fn transaction(
+//         &mut self,
+//         address: u8,
+//         operations: &mut [embedded_hal::i2c::Operation<'_>],
+//     ) -> Result<(), Self::Error> {
+//         let mut operations = operations.into_iter().peekable();
+
+//         while let Some(operation) = operations.next() {
+//             match operation {
+//                 embedded_hal::i2c::Operation::Read(buf) => {
+//                     self.read_bytes(address, buf)?;
+//                 }
+//                 embedded_hal::i2c::Operation::Write(buf) => {
+//                     self.write_bytes(address, buf.iter().cloned())?;
+//                 }
+//             }
+//         }
+
+//         Ok(())
+//     }
+// }

@@ -365,7 +365,7 @@ pub fn init() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drivers::*;
+    use crate::{devices::bus::BusInterface, drivers::*};
     use blueos_test_macro::test;
 
     struct DummyConfig {
@@ -405,7 +405,29 @@ mod tests {
         }
     }
 
-    static DUMMY_BUS: super::bus::Bus = super::bus::Bus::new();
+    struct DummyBus;
+
+    impl BusInterface for DummyBus {
+        type MemoryRegion = ();
+
+        fn read_region(
+            &mut self,
+            region: Self::MemoryRegion,
+            buffer: &mut [u8],
+        ) -> crate::drivers::Result<()> {
+            Ok(())
+        }
+
+        fn write_region(
+            &mut self,
+            region: Self::MemoryRegion,
+            data: &[u8],
+        ) -> crate::drivers::Result<()> {
+            Ok(())
+        }
+    }
+
+    static DUMMY_BUS: super::bus::Bus<DummyBus> = super::bus::Bus::new(DummyBus);
 
     #[test]
     fn test_device_match() {
