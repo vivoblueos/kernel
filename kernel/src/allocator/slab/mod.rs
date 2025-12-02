@@ -370,12 +370,8 @@ impl<
         let offset = ptr - self.slab_begin_addr;
         let slab_index = offset >> PAGE_SHIFT;
 
-        for i in 0..SLAB_ALLOCATOR_COUNT {
-            if slab_index < Self::SLAB_PAGE_END[i] {
-                return i;
-            }
-        }
-        SYSTEM_ALLOCATOR_INDEX
+        // Return SYSTEM_ALLOCATOR_INDEX if slab_index is not in SLAB_PAGE_END range
+        Self::SLAB_PAGE_END.partition_point(|pos| pos <= &slab_index)
     }
 
     // Return the number of bytes that maximum used
@@ -416,12 +412,11 @@ impl<
             return self.system_allocator.size_of_allocation(ptr);
         }
         let offset = raw_ptr - self.slab_begin_addr;
-        let slab_index = offset >> 12;
+        let slab_index = offset >> PAGE_SHIFT;
 
-        for i in 0..SLAB_ALLOCATOR_COUNT {
-            if slab_index < Self::SLAB_PAGE_END[i] {
-                return Some(1 << (i + MIN_SLAB_SHIFT));
-            }
+        let pos = Self::SLAB_PAGE_END.partition_point(|pos| pos <= &slab_index);
+        if pos < SLAB_ALLOCATOR_COUNT {
+            return Some(1 << (pos + MIN_SLAB_SHIFT));
         }
         self.system_allocator.size_of_allocation(ptr)
     }
