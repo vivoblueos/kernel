@@ -353,6 +353,22 @@ impl HasFifo for I2c {
     }
 }
 
+impl blueos_hal::Has8bitDataReg for I2c {
+    fn write_data8(&self, data: u8) {
+        self.registers
+            .ic_data_cmd
+            .write(IC_DATA_CMD::DAT.val(data as u32) + IC_DATA_CMD::CMD::CLEAR);
+    }
+
+    fn read_data8(&self) -> blueos_hal::err::Result<u8> {
+        Ok(self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT) as u8)
+    }
+
+    fn is_data_ready(&self) -> bool {
+        self.registers.ic_status.is_set(IC_STATUS::RFNE)
+    }
+}
+
 impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2c {
     fn start_reading(&self, addr: u16) -> blueos_hal::err::Result<()> {
         self.set_address(addr);
