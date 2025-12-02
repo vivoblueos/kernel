@@ -106,12 +106,20 @@ crate::define_peripheral! {
     blueos_driver::reset::rpi_pico_reset::RpiPicoReset::new(
         0x40020000
     )),
+    (i2c1, blueos_driver::i2c::i2c_dw::I2cDw,
+     blueos_driver::i2c::i2c_dw::I2cDw::new(
+        0x40090000,
+        150_000_000,
+        Some((get_device!(subsys_reset), 5)),
+     )),
 }
 
 crate::define_pin_states!(
     blueos_driver::pinctrl::rpi_pico::RpiPicoPinctrl,
     (2, 11), // GPIO2 as UART0_TX
     (3, 11), // GPIO3 as UART0_RX
+    (4, 3),  // GPIO4 as I2C0_SDA
+    (5, 3),  // GPIO5 as I2C0_SCL
 );
 
 #[no_mangle]
