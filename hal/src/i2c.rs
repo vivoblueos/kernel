@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub trait I2c<P, T>: super::PlatPeri + super::Configuration<P, Target = T> {
+pub trait I2c<P, T>:
+    super::PlatPeri + super::Configuration<P, Target = T> + super::Has8bitDataReg + super::HasFifo
+{
     fn start_writing(&self, addr: u16) -> super::err::Result<()>;
     fn start_reading(&self, addr: u16) -> super::err::Result<()>;
     fn send_byte_with_stop(&self, byte: u8) -> super::err::Result<()>;
