@@ -236,13 +236,25 @@ register_bitfields! [u32,
     ],
 ];
 
-pub struct I2c {
+pub struct I2cDw {
     registers: StaticRef<I2cRegisters>,
     clk: u32,
     pub reset_ctrl: Option<(&'static dyn blueos_hal::reset::ResetCtrlWithDone, u32)>,
 }
 
-impl I2c {
+impl I2cDw {
+    pub const fn new(
+        base: usize,
+        clk: u32,
+        reset_ctrl: Option<(&'static dyn blueos_hal::reset::ResetCtrlWithDone, u32)>,
+    ) -> Self {
+        I2cDw {
+            registers: unsafe { StaticRef::new(base as *const I2cRegisters) },
+            clk,
+            reset_ctrl,
+        }
+    }
+
     fn set_baudrate(&self, baudrate: u32) -> u32 {
         assert!(baudrate != 0);
 
@@ -289,10 +301,10 @@ impl I2c {
     }
 }
 
-unsafe impl Send for I2c {}
-unsafe impl Sync for I2c {}
+unsafe impl Send for I2cDw {}
+unsafe impl Sync for I2cDw {}
 
-impl PlatPeri for I2c {
+impl PlatPeri for I2cDw {
     fn enable(&self) {
         self.registers.ic_enable.set(1);
     }
@@ -302,7 +314,7 @@ impl PlatPeri for I2c {
     }
 }
 
-impl Configuration<super::I2cConfig> for I2c {
+impl Configuration<super::I2cConfig> for I2cDw {
     type Target = ();
     fn configure(&self, param: &super::I2cConfig) -> blueos_hal::err::Result<Self::Target> {
         if let Some(ref reset_ctrl) = self.reset_ctrl {
@@ -336,7 +348,7 @@ impl Configuration<super::I2cConfig> for I2c {
     }
 }
 
-impl HasFifo for I2c {
+impl HasFifo for I2cDw {
     fn enable_fifo(&self, num: u8) -> blueos_hal::err::Result<()> {
         let num = num as u32;
         self.registers.ic_tx_tl.set(num);
@@ -353,7 +365,7 @@ impl HasFifo for I2c {
     }
 }
 
-impl blueos_hal::Has8bitDataReg for I2c {
+impl blueos_hal::Has8bitDataReg for I2cDw {
     fn write_data8(&self, data: u8) {
         self.registers
             .ic_data_cmd
@@ -369,7 +381,7 @@ impl blueos_hal::Has8bitDataReg for I2c {
     }
 }
 
-impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2c {
+impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2cDw {
     fn start_reading(&self, addr: u16) -> blueos_hal::err::Result<()> {
         self.set_address(addr);
         self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::SET);

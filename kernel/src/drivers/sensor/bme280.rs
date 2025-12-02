@@ -45,11 +45,11 @@ pub struct Bme280 {
 
 impl Driver for Bme280 {
     fn init(self) -> crate::drivers::Result<Self> {
-        match self.device_addr {
-            0x76 => {}
-            0x77 => {}
+        let bme280 = match self.device_addr {
+            // 0x76 => BME280::new_primary(),
+            // 0x77 => BME280::new_secondary(),
             _ => return Err(crate::error::code::EINVAL),
-        }
+        };
 
         Ok(self)
     }
