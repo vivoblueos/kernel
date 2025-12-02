@@ -15,7 +15,6 @@
 use blueos_driver::i2c::I2cConfig;
 use blueos_hal::PlatPeri;
 
-use crate::devices::bus::BusInterface;
 // use embedded_hal::i2c::I2c;
 
 pub struct BlockI2c<T: PlatPeri> {
@@ -51,29 +50,6 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
         buffer: &mut [u8],
     ) -> Result<(), blueos_hal::err::HalError> {
         todo!()
-    }
-}
-
-impl BusInterface for BlockI2c<T>
-where
-    T: blueos_hal::i2c::I2c<I2cConfig, ()>,
-{
-    type MemoryRegion = u8;
-
-    fn read_region(
-        &mut self,
-        region: &Self::MemoryRegion,
-        buffer: &mut [u8],
-    ) -> crate::drivers::Result<()> {
-        Ok(())
-    }
-
-    fn write_region(
-        &mut self,
-        region: Self::MemoryRegion,
-        data: &[u8],
-    ) -> crate::drivers::Result<()> {
-        Ok(())
     }
 }
 
