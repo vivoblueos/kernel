@@ -42,3 +42,4 @@ pub const DEFAULT_STACK_SIZE: usize = 16 << 10;
 pub const DEFAULT_STACK_SIZE: usize = 8 << 10;
 
 pub const SOFT_TIMER_THREAD_PRIORITY: ThreadPriority = 0;
+pub const POSIX_TIMER_THREAD_PRIORITY: ThreadPriority = 0;

@@ -28,6 +28,7 @@ use crate::{
     thread::{self, Builder, Entry, Stack, Thread},
     time,
 };
+use blueos_kconfig::TICKS_PER_SECOND;
 
 pub use crate::sync::posix_mqueue;
 use alloc::boxed::Box;
@@ -37,8 +38,9 @@ use core::{
     sync::atomic::AtomicUsize,
 };
 use libc::{
-    addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t,
-    sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
+    addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, itimerspec, mode_t,
+    msghdr, off_t, sigevent, sigset_t, size_t, sockaddr, socklen_t, time_t, timer_t, timespec,
+    EBUSY, EINVAL, ESRCH,
 };
 
 #[cfg(not(enable_vfs))]
@@ -257,6 +259,7 @@ pub struct mq_attr {
     pub mq_curmsgs: c_long,
     pub pad: [c_long; 4],
 }
+
 // For every syscall number in NR, we have to define a module to
 // handle the syscall request.  `handle_context` serves as the
 // dispatcher if syscall is invoked via software interrupt.
@@ -415,18 +418,44 @@ atomic_wake(addr: usize, count: *mut usize) -> c_long {
     })
 });
 
-// Only for posix testsuite, we need to implement a stub for clock_gettime
 define_syscall_handler!(
-    clock_gettime(_clk_id: clockid_t, tp: *mut timespec) -> c_long {
-        // only support CLOCK_MONOTONIC
-        const TICK_TO_NANOSECOND: usize = 1_000_000_000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
-        let ticks = time::TickTime::now().as_ticks();
-        let seconds = ticks / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
-        let nanoseconds = (ticks % (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize)) * TICK_TO_NANOSECOND;
-        unsafe {
-            *tp = timespec { tv_sec: seconds as c_int, tv_nsec: nanoseconds as c_int };
-        }
-        0
+    clock_gettime(clk_id: clockid_t, tp: *mut timespec) -> c_long {
+        posix_timers::clock_gettime(clk_id, tp)
+});
+
+define_syscall_handler!(
+    clock_settime(clk_id: clockid_t, tp: *const timespec) -> c_long {
+        posix_timers::clock_settime(clk_id, tp)
+});
+
+define_syscall_handler!(
+    timer_create(clock_id: clockid_t, evp: *const sigevent, timerid: *mut timer_t) -> c_long {
+        posix_timers::timer_create(clock_id, evp, timerid)
+});
+
+define_syscall_handler!(
+    timer_delete(timerid: timer_t) -> c_long {
+        posix_timers::timer_delete(timerid)
+});
+
+define_syscall_handler!(
+    timer_gettime(timerid: timer_t, value: *mut itimerspec) -> c_long {
+        posix_timers::timer_gettime(timerid, value)
+});
+
+define_syscall_handler!(
+    timer_settime(
+        timerid: timer_t,
+        flags: c_int,
+        value: *const itimerspec,
+        ovalue: *mut itimerspec
+    ) -> c_long {
+        posix_timers::timer_settime(timerid, flags, value, ovalue)
+});
+
+define_syscall_handler!(
+    timer_getoverrun(timerid: timer_t) -> c_long {
+        posix_timers::timer_getoverrun(timerid)
 });
 
 define_syscall_handler!(
@@ -732,31 +761,13 @@ define_syscall_handler!(
 // Netdb syscall end
 
 define_syscall_handler!(
-    sys_clock_nanosleep(
-        clock_id: i32,
-        flags: i32,
+    clock_nanosleep(
+        clock_id: clockid_t,
+        flags: c_int,
         rqtp: *const timespec,
         rmtp: *mut timespec
-    ) -> c_int {
-        // TODO: Valid Clock Id
-
-        // TODO: Valid rqtp
-
-        // TODO: Implement absolute time sleep
-        let duration = timespec {
-            tv_sec: unsafe { rqtp.read().tv_sec },
-            tv_nsec: unsafe { rqtp.read().tv_nsec },
-        };
-
-        // TODO: Implement tv_nsec
-        let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize * duration.tv_sec as usize +
-                    duration.tv_nsec as usize / (1000000000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize));
-        if ticks == 0 {
-            scheduler::yield_me();
-        } else {
-            scheduler::suspend_me_for(ticks);
-        }
-        0
+    ) -> c_long {
+        posix_timers::clock_nanosleep(clock_id, flags, rqtp, rmtp)
     }
 );
 
@@ -815,6 +826,13 @@ syscall_table! {
     (AtomicWait, atomic_wait),
     // For test only
     (ClockGetTime, clock_gettime),
+    (ClockSetTime, clock_settime),
+    (ClockNanoSleep, clock_nanosleep),
+    (TimerCreate, timer_create),
+    (TimerDelete, timer_delete),
+    (TimerGetTime, timer_gettime),
+    (TimerSetTime, timer_settime),
+    (TimerGetOverrun, timer_getoverrun),
     (AllocMem, alloc_mem),
     (FreeMem, free_mem),
     (Write, write),
@@ -861,7 +879,6 @@ syscall_table! {
     (Recvmsg,recvmsg),
     (GetAddrinfo,getaddrinfo),
     (FreeAddrinfo,freeaddrinfo),
-    (NanoSleep,sys_clock_nanosleep),
     (MqOpen, mq_open),
     (MqClose, mq_close),
     (MqUnlink, mq_unlink),
@@ -877,4 +894,5 @@ pub fn dispatch_syscall(ctx: &Context) -> usize {
 
 // Begin syscall modules.
 pub mod echo;
+pub mod posix_timers;
 // End syscall modules.
