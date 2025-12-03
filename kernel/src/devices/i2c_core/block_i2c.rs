@@ -17,8 +17,6 @@ use blueos_hal::PlatPeri;
 
 use crate::devices::bus::{BusInterface, BusWrapper};
 
-// use embedded_hal::i2c::I2c;
-
 pub struct BlockI2c<T: PlatPeri> {
     inner: &'static T,
 }
@@ -71,12 +69,18 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BusInterface for BlockI2c<T> {
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::ErrorType
     for BusWrapper<BlockI2c<T>>
 {
-    type Error = blueos_hal::err::HalError;
+    type Error = crate::error::Error;
 }
 
-// impl<T: PlatPeri> embedded_hal::i2c::ErrorType for BlockI2c<T> {
-// type Error = blueos_hal::err::HalError;
-// }
+#[cfg(use_bme280)]
+impl embedded_hal::i2c::Error for crate::error::Error {
+    fn kind(&self) -> embedded_hal::i2c::ErrorKind {
+        match *self {
+            crate::error::code::EIO => embedded_hal::i2c::ErrorKind::Bus,
+            _ => embedded_hal::i2c::ErrorKind::Other,
+        }
+    }
+}
 
 #[cfg(use_bme280)]
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapper<BlockI2c<T>> {
@@ -85,7 +89,20 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         address: u8,
         operations: &mut [embedded_hal::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
-        todo!()
+        let mut operations = operations.into_iter().peekable();
+
+        while let Some(operation) = operations.next() {
+            match operation {
+                embedded_hal::i2c::Operation::Read(buf) => {
+                    self.0.lock().read_region(address, buf)?
+                }
+                embedded_hal::i2c::Operation::Write(buf) => {
+                    self.0.lock().write_region(address, buf)?
+                }
+            };
+        }
+
+        Ok(())
     }
 }
 // impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> I2c for BlockI2c<T> {
