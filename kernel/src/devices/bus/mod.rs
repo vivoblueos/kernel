@@ -17,7 +17,7 @@ use blueos_infra::tinyarc::TinyArc;
 
 use crate::sync::SpinLock;
 
-pub struct BusWrapper<B: BusInterface>(TinyArc<SpinLock<B>>);
+pub struct BusWrapper<B: BusInterface>(pub(crate) TinyArc<SpinLock<B>>);
 
 impl<B: BusInterface> Clone for BusWrapper<B> {
     fn clone(&self) -> Self {
