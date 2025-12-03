@@ -366,7 +366,10 @@ pub fn init() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{devices::bus::BusInterface, drivers::*};
+    use crate::{
+        devices::bus::{Bus, BusInterface},
+        drivers::*,
+    };
     use blueos_test_macro::test;
 
     #[derive(Debug, Default)]
@@ -384,7 +387,7 @@ mod tests {
 
     impl InitDriver<DummyBus> for DummyConfig {
         type Driver = DummyDriver;
-        fn init(self, bus: &mut DummyBus) -> Result<Self::Driver> {
+        fn init(self, bus: &Bus<DummyBus>) -> Result<Self::Driver> {
             let ret = DummyDriver {
                 base_addr: self.base_addr,
             };
@@ -414,26 +417,31 @@ mod tests {
     struct DummyBus;
 
     impl BusInterface for DummyBus {
-        fn read_region(&self, region: u8, buffer: &mut [u8]) -> crate::drivers::Result<()> {
+        type Region = u8;
+        fn read_region(
+            &self,
+            region: Self::Region,
+            buffer: &mut [u8],
+        ) -> crate::drivers::Result<()> {
             Ok(())
         }
 
-        fn write_region(&self, region: u8, data: &[u8]) -> crate::drivers::Result<()> {
+        fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()> {
             Ok(())
         }
     }
 
     #[test]
     fn test_device_match() {
-        let mut dummy_bus: super::bus::Bus<DummyBus> = super::bus::Bus::new(DummyBus);
+        let mut dummy_bus = super::bus::Bus::new(DummyBus);
         dummy_bus
             .register_device(&DUMMY_DEVICE_DATA)
             .expect("Failed to register device");
         let driver = dummy_bus.probe_driver(&DummyDriverModule);
         assert!(driver.is_ok());
-        let driver = driver.unwrap().init(dummy_bus.interface_mut());
-        // assert!(driver.is_ok());
-        // assert_eq!(driver.unwrap().base_addr, 0x1000);
+        let driver = driver.unwrap().init(&dummy_bus);
+        assert!(driver.is_ok());
+        assert_eq!(driver.unwrap().base_addr, 0x1000);
     }
 
     #[test]

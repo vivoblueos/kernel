@@ -15,31 +15,29 @@
 use alloc::boxed::Box;
 use blueos_infra::tinyarc::TinyArc;
 
+use crate::sync::SpinLock;
+
 pub struct Bus<B: BusInterface> {
     devices: super::SpinRwLock<super::DeviceList>,
-    intf: TinyArc<B>,
-}
-
-impl<B: BusInterface> Bus<B> {
-    pub fn interface_mut(&mut self) -> &mut B {
-        todo!()
-    }
+    // FIXME: SpinLock is not a efficient way to protect bus interface
+    pub intf: TinyArc<SpinLock<B>>,
 }
 
 unsafe impl<B: BusInterface> Send for Bus<B> {}
 unsafe impl<B: BusInterface> Sync for Bus<B> {}
 
 pub trait BusInterface: Sync + Send + Sized {
-    fn read_region(&self, region: u8, buffer: &mut [u8]) -> crate::drivers::Result<()>;
+    type Region;
+    fn read_region(&self, region: Self::Region, buffer: &mut [u8]) -> crate::drivers::Result<()>;
 
-    fn write_region(&self, region: u8, data: &[u8]) -> crate::drivers::Result<()>;
+    fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()>;
 }
 
 impl<B: BusInterface> Bus<B> {
     pub fn new(intf: B) -> Self {
         Self {
             devices: super::SpinRwLock::new(super::DeviceList::new()),
-            intf: TinyArc::new(intf),
+            intf: TinyArc::new(SpinLock::new(intf)),
         }
     }
 
