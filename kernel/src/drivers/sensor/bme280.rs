@@ -41,6 +41,7 @@ pub struct Bme280Config {
 #[derive(Default)]
 pub struct Bme280 {
     device_addr: u8,
+    // intr: Option<&'a dyn crate::devices::BusInterface>,
 }
 
 impl Driver for Bme280 {

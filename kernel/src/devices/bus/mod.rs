@@ -13,33 +13,27 @@
 // limitations under the License.
 
 use alloc::boxed::Box;
+use blueos_infra::tinyarc::TinyArc;
 
-pub struct Bus<B> {
-    devices: super::SpinRwLock<super::DeviceList>,
-    intf: B,
+pub struct Bus<B: BusInterface> {
+    devices: super::SpinRwLock<super::DeviceList<B>>,
+    intf: TinyArc<B>,
 }
 
-pub trait BusInterface: Sync + Send {
-    type MemoryRegion;
+unsafe impl<B: BusInterface> Send for Bus<B> {}
+unsafe impl<B: BusInterface> Sync for Bus<B> {}
 
-    fn read_region(
-        &mut self,
-        region: Self::MemoryRegion,
-        buffer: &mut [u8],
-    ) -> crate::drivers::Result<()>;
+pub trait BusInterface: Sync + Send + Sized {
+    fn read_region(&self, region: u8, buffer: &mut [u8]) -> crate::drivers::Result<()>;
 
-    fn write_region(
-        &mut self,
-        region: Self::MemoryRegion,
-        data: &[u8],
-    ) -> crate::drivers::Result<()>;
+    fn write_region(&self, region: u8, data: &[u8]) -> crate::drivers::Result<()>;
 }
 
-impl<B> Bus<B> {
-    pub const fn new(intf: B) -> Self {
+impl<B: BusInterface> Bus<B> {
+    pub fn new(intf: B) -> Self {
         Self {
             devices: super::SpinRwLock::new(super::DeviceList::new()),
-            intf,
+            intf: unsafe { TinyArc::new(intf) },
         }
     }
 
@@ -47,10 +41,13 @@ impl<B> Bus<B> {
     ///
     /// The caller must ensure limited number of devices are registered to the bus,
     /// and the devices won't be unregistered.
-    pub fn register_device(&self, dev: &'static super::DeviceData) -> crate::drivers::Result<()> {
+    pub fn register_device(
+        &'static self,
+        dev: &'static super::DeviceData,
+    ) -> crate::drivers::Result<()> {
         let mut devices = self.devices.write();
 
-        let device_node = Box::leak(Box::new(super::DeviceDataNode::new(dev)));
+        let device_node = Box::leak(Box::new(super::DeviceDataNode::new(dev, self.intf.clone())));
         super::DeviceList::insert_after(&mut devices, &mut device_node.node);
         Ok(())
     }
@@ -77,8 +74,3 @@ impl<B> Bus<B> {
         Ok(driver)
     }
 }
-
-pub trait I2cBus: Send + Sync {}
-
-unsafe impl<B: I2cBus> Send for Bus<B> {}
-unsafe impl<B: I2cBus> Sync for Bus<B> {}
