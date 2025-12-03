@@ -415,7 +415,6 @@ mod tests {
     }
 
     struct DummyBus;
-
     impl BusInterface for DummyBus {
         type Region = u8;
         fn read_region(

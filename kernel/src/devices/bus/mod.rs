@@ -17,10 +17,18 @@ use blueos_infra::tinyarc::TinyArc;
 
 use crate::sync::SpinLock;
 
+pub struct BusWrapper<B: BusInterface>(TinyArc<SpinLock<B>>);
+
+impl<B: BusInterface> Clone for BusWrapper<B> {
+    fn clone(&self) -> Self {
+        BusWrapper(self.0.clone())
+    }
+}
+
 pub struct Bus<B: BusInterface> {
     devices: super::SpinRwLock<super::DeviceList>,
     // FIXME: SpinLock is not a efficient way to protect bus interface
-    pub intf: TinyArc<SpinLock<B>>,
+    pub intf: BusWrapper<B>,
 }
 
 unsafe impl<B: BusInterface> Send for Bus<B> {}
@@ -37,7 +45,7 @@ impl<B: BusInterface> Bus<B> {
     pub fn new(intf: B) -> Self {
         Self {
             devices: super::SpinRwLock::new(super::DeviceList::new()),
-            intf: TinyArc::new(SpinLock::new(intf)),
+            intf: BusWrapper(TinyArc::new(SpinLock::new(intf))),
         }
     }
 
