@@ -16,8 +16,14 @@ use alloc::boxed::Box;
 use blueos_infra::tinyarc::TinyArc;
 
 pub struct Bus<B: BusInterface> {
-    devices: super::SpinRwLock<super::DeviceList<B>>,
+    devices: super::SpinRwLock<super::DeviceList>,
     intf: TinyArc<B>,
+}
+
+impl<B: BusInterface> Bus<B> {
+    pub fn interface_mut(&mut self) -> &mut B {
+        todo!()
+    }
 }
 
 unsafe impl<B: BusInterface> Send for Bus<B> {}
@@ -33,7 +39,7 @@ impl<B: BusInterface> Bus<B> {
     pub fn new(intf: B) -> Self {
         Self {
             devices: super::SpinRwLock::new(super::DeviceList::new()),
-            intf: unsafe { TinyArc::new(intf) },
+            intf: TinyArc::new(intf),
         }
     }
 
@@ -41,18 +47,19 @@ impl<B: BusInterface> Bus<B> {
     ///
     /// The caller must ensure limited number of devices are registered to the bus,
     /// and the devices won't be unregistered.
-    pub fn register_device(
-        &'static self,
-        dev: &'static super::DeviceData,
-    ) -> crate::drivers::Result<()> {
+    pub fn register_device(&self, dev: &'static super::DeviceData) -> crate::drivers::Result<()> {
         let mut devices = self.devices.write();
 
-        let device_node = Box::leak(Box::new(super::DeviceDataNode::new(dev, self.intf.clone())));
+        let device_node = Box::leak(Box::new(super::DeviceDataNode::new(dev)));
         super::DeviceList::insert_after(&mut devices, &mut device_node.node);
         Ok(())
     }
 
-    pub fn probe_driver<T: crate::drivers::Driver, M: crate::drivers::DriverModule<Data = T>>(
+    pub fn probe_driver<
+        D,
+        T: crate::drivers::InitDriver<B, Driver = D>,
+        M: crate::drivers::DriverModule<B, D, Data = T>,
+    >(
         &self,
         dev: &M,
     ) -> crate::drivers::Result<T> {
