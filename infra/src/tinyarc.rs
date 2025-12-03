@@ -205,7 +205,7 @@ impl<T: Sized> Clone for TinyArc<T> {
     fn clone(&self) -> TinyArc<T> {
         let old = unsafe { self.inner.as_ref() }
             .rc
-            .fetch_add(1, Ordering::AcqRel);
+            .fetch_add(1, Ordering::Relaxed);
         assert!(old >= 1);
         TinyArc { inner: self.inner }
     }
@@ -216,10 +216,11 @@ impl<T: Sized> Drop for TinyArc<T> {
     fn drop(&mut self) {
         let old_val = unsafe { self.inner.as_ref() }
             .rc
-            .fetch_sub(1, Ordering::Acquire);
+            .fetch_sub(1, Ordering::Release);
         if old_val != 1 {
             return;
         }
+        fence(Ordering::Acquire);
         // Static data should never reach here.
         let x = unsafe { Box::from_non_null(self.inner) };
         drop(x);
