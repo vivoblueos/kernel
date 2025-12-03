@@ -56,8 +56,8 @@ impl<const N: usize> RawAllocator<N> {
     /// This function panics if the buffer size is less than `8` (the minimum
     /// useful allocation heap) or if it is not divisible by 4.
     pub const fn new() -> Self {
-        assert!(N >= 8, "too small heap memory: minimum size is 8");
-        assert!(N % 4 == 0, "memory size has to be divisible by 4");
+        debug_assert!(N >= 8, "too small heap memory: minimum size is 8");
+        debug_assert!(N % 4 == 0, "memory size has to be divisible by 4");
 
         let buffer = buffer::Buffer::new();
         Self {
