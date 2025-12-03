@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::Error;
+use crate::{devices::bus::BusInterface, error::Error};
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
 use blueos_infra::{
     impl_simple_intrusive_adapter,
     list::typed_ilist::{ListHead, ListIterator},
+    tinyarc::TinyArc,
 };
 use core::{
     fmt::Debug,
@@ -315,22 +316,24 @@ pub const fn new_native_device_data(config: &'static dyn core::any::Any) -> Devi
     DeviceData::Native(NativeDevice::new(config))
 }
 
-type DeviceList = ListHead<DeviceDataNode, Node>;
-type DeviceListIterator = ListIterator<DeviceDataNode, Node>;
+type DeviceList<B: BusInterface> = ListHead<DeviceDataNode<B>, Node>;
+type DeviceListIterator<B: BusInterface> = ListIterator<DeviceDataNode<B>, Node>;
 
-impl_simple_intrusive_adapter!(Node, DeviceDataNode, node);
+impl_simple_intrusive_adapter!(Node, DeviceDataNode<B: BusInterface>, node);
 
 #[repr(C)]
-struct DeviceDataNode {
-    pub node: DeviceList,
+struct DeviceDataNode<B: BusInterface> {
+    pub node: DeviceList<B>,
     pub data: &'static DeviceData,
+    intr: TinyArc<B>,
 }
 
-impl DeviceDataNode {
-    pub const fn new(data: &'static DeviceData) -> Self {
+impl<B: BusInterface> DeviceDataNode<B> {
+    pub const fn new(data: &'static DeviceData, intr: TinyArc<B>) -> Self {
         Self {
             node: DeviceList::new(),
             data,
+            intr,
         }
     }
 }
@@ -365,10 +368,7 @@ pub fn init() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        devices::bus::{BusInterface, I2cBus},
-        drivers::*,
-    };
+    use crate::{devices::bus::BusInterface, drivers::*};
     use blueos_test_macro::test;
 
     struct DummyConfig {
@@ -410,7 +410,15 @@ mod tests {
 
     struct DummyBus;
 
-    impl I2cBus for DummyBus {}
+    impl BusInterface for DummyBus {
+        fn read_region(&self, region: u8, buffer: &mut [u8]) -> crate::drivers::Result<()> {
+            Ok(())
+        }
+
+        fn write_region(&self, region: u8, data: &[u8]) -> crate::drivers::Result<()> {
+            Ok(())
+        }
+    }
 
     static DUMMY_BUS: super::bus::Bus<DummyBus> = super::bus::Bus::new(DummyBus);
 

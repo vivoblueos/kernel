@@ -29,6 +29,15 @@ macro_rules! impl_simple_intrusive_adapter {
                 core::mem::offset_of!($ty, $($fields)+)
             }
         }
+    };
+    ($name:ident, $ty:ident<$generic:ident: $bound:path>, $($fields:expr)+) => {
+        #[derive(Default, Debug)]
+        pub struct $name;
+        impl<$generic: $bound> const $crate::intrusive::Adapter<$ty<$generic>> for $name {
+            fn offset() -> usize {
+                core::mem::offset_of!($ty<$generic>, $($fields)+)
+            }
+        }
     }
 }
 
