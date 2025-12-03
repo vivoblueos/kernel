@@ -14,17 +14,20 @@
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::devices::bus::BusInterface;
+
 pub(crate) mod ic;
 mod sensor;
 
 /// use c-compatible error type
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
 
-pub trait Driver: Sized + Default {
-    fn init(self) -> Result<Self>;
+pub trait InitDriver<B: BusInterface>: Sized + Default {
+    type Driver;
+    fn init(self, bus: &mut B) -> Result<Self::Driver>;
 }
 
-pub trait DriverModule {
-    type Data: Driver;
+pub trait DriverModule<B: BusInterface, D> {
+    type Data: InitDriver<B, Driver = D>;
     fn probe(dev: &super::devices::DeviceData) -> Result<Self::Data>;
 }
