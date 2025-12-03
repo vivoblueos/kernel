@@ -14,7 +14,7 @@
 
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::devices::bus::BusInterface;
+use crate::devices::bus::{Bus, BusInterface};
 
 pub(crate) mod ic;
 mod sensor;
@@ -24,7 +24,7 @@ pub type Result<T> = core::result::Result<T, crate::error::Error>;
 
 pub trait InitDriver<B: BusInterface>: Sized + Default {
     type Driver;
-    fn init(self, bus: &mut B) -> Result<Self::Driver>;
+    fn init(self, bus: &Bus<B>) -> Result<Self::Driver>;
 }
 
 pub trait DriverModule<B: BusInterface, D> {
