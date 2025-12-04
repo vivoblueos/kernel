@@ -41,9 +41,7 @@ use core::{
 };
 
 mod builder;
-mod posix;
 pub use builder::*;
-use posix::*;
 
 pub type ThreadNode = Arc<Thread>;
 
@@ -146,6 +144,7 @@ impl core::fmt::Debug for SignalContext {
         Ok(())
     }
 }
+
 #[derive(Debug)]
 pub struct Thread {
     global: GlobalQueueListHead,
@@ -170,7 +169,6 @@ pub struct Thread {
     // fields this lock is protecting. lock is protecting the
     // whole struct except those atomic fields.
     lock: ISpinLock<Thread, OffsetOfLock>,
-    posix_compat: Option<PosixCompat>,
     stats: ThreadStats,
     #[cfg(event_flags)]
     event_flags_mode: EventFlagsMode,
@@ -394,7 +392,6 @@ impl Thread {
             priority: 0,
             origin_priority: 0,
             preempt_count: AtomicUint::new(0),
-            posix_compat: None,
             stats: ThreadStats::new(),
             timer: None,
             #[cfg(robin_scheduler)]
