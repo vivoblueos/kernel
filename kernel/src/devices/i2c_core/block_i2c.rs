@@ -22,6 +22,19 @@ pub struct BlockI2c<T: PlatPeri> {
 }
 
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
+    pub fn poll_tx_is_not_full(&self) -> Result<bool, blueos_hal::err::HalError> {
+        if self.inner.get_error_status() != 0 {
+            self.inner.clear_error_status();
+            return Err(blueos_hal::err::HalError::Fail);
+        }
+
+        if self.inner.is_tx_fifo_full() {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+
     pub fn write_bytes(
         &mut self,
         address: u8,
@@ -32,8 +45,21 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
             return Err(blueos_hal::err::HalError::InvalidParam);
         }
 
+        let mut abrt_ret = Ok(();)
         self.inner.start_writing(address as u16)?;
-        while let Some(byte) = peekable.next() {
+        'outer: while let Some(byte) = peekable.next() {
+            if self.inner.is_tx_fifo_full() {
+                loop {
+                    match self.poll_tx_is_not_full() {
+                        Ok(true) => break,
+                        Ok(false) => continue,
+                        Err(e) => {
+                            abrt_ret = Err(e);
+                            break 'outer;
+                        }
+                    }
+                }
+            }
             if peekable.peek().is_none() {
                 self.inner.send_byte_with_stop(byte)?;
             } else {
@@ -105,25 +131,3 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         Ok(())
     }
 }
-// impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> I2c for BlockI2c<T> {
-//     fn transaction(
-//         &mut self,
-//         address: u8,
-//         operations: &mut [embedded_hal::i2c::Operation<'_>],
-//     ) -> Result<(), Self::Error> {
-//         let mut operations = operations.into_iter().peekable();
-
-//         while let Some(operation) = operations.next() {
-//             match operation {
-//                 embedded_hal::i2c::Operation::Read(buf) => {
-//                     self.read_bytes(address, buf)?;
-//                 }
-//                 embedded_hal::i2c::Operation::Write(buf) => {
-//                     self.write_bytes(address, buf.iter().cloned())?;
-//                 }
-//             }
-//         }
-
-//         Ok(())
-//     }
-// }
