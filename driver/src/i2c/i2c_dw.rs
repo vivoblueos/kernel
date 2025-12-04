@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use blueos_hal::{Configuration, HasFifo, PlatPeri};
+use blueos_hal::{Configuration, HasErrorStatusReg, HasFifo, PlatPeri};
 use tock_registers::{
     interfaces::{ReadWriteable, Readable, Writeable},
     register_bitfields, register_structs,
@@ -409,5 +409,17 @@ impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2cDw {
             .ic_data_cmd
             .write(IC_DATA_CMD::DAT.val(byte as u32));
         Ok(())
+    }
+}
+
+impl HasErrorStatusReg for I2cDw {
+    type ErrorStatusType = u32;
+
+    fn get_error_status(&self) -> Self::ErrorStatusType {
+        self.registers.ic_tx_abrt_source.extract()
+    }
+
+    fn clear_error_status(&self) {
+        self.registers.ic_clr_tx_abrt.extract();
     }
 }

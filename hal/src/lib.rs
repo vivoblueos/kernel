@@ -157,6 +157,7 @@ pub trait HasFifo {
 pub trait HasErrorStatusReg {
     type ErrorStatusType;
     fn get_error_status(&self) -> Self::ErrorStatusType;
+    fn clear_error_status(&self) {}
 }
 
 /// Reset register operations trait
