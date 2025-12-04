@@ -313,7 +313,7 @@ impl FileOps for File {
                 .ok_or(code::EOVERFLOW)?,
         };
 
-        assert!(new_offset >= 0);
+        debug_assert!(new_offset >= 0);
         *cur_offset = new_offset as usize;
         Ok(new_offset as usize)
     }

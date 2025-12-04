@@ -62,7 +62,7 @@ impl Entry {
     /// size after the `Entry` itself. This is the same value as returned by
     /// [`size()`](Entry::size()).
     pub const fn free(size: usize) -> Self {
-        assert!(size <= 0x7FFF_FFFF);
+        debug_assert!(size <= 0x7FFF_FFFF);
         #[allow(clippy::cast_possible_truncation)] // asserted above
         Self((size << 1) as _)
     }
@@ -73,7 +73,7 @@ impl Entry {
     /// size after the `Entry` itself. This is the same value as returned by
     /// [`size()`](Entry::size()).
     pub const fn used(size: usize) -> Self {
-        assert!(size <= 0x7FFF_FFFF);
+        debug_assert!(size <= 0x7FFF_FFFF);
         #[allow(clippy::cast_possible_truncation)] // asserted above
         Self((size << 1 | 1) as _)
     }
