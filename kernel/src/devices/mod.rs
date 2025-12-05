@@ -12,19 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::error::Error;
+use crate::{devices::bus::BusInterface, error::Error};
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use blueos_infra::{
+    impl_simple_intrusive_adapter,
+    list::typed_ilist::{ListHead, ListIterator},
+    tinyarc::TinyArc,
+};
 use core::{
     fmt::Debug,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use embedded_io::ErrorKind;
 use libc::*;
 use spin::{Once, RwLock as SpinRwLock};
 #[cfg(virtio)]
 pub mod block;
+pub mod bus;
 pub mod console;
 mod error;
+pub mod i2c_core;
 #[cfg(enable_net)]
 pub(crate) mod net;
 mod null;
@@ -299,6 +306,61 @@ impl DeviceManager {
     }
 }
 
+#[non_exhaustive]
+pub enum DeviceData {
+    Native(NativeDevice),
+    Zephyr,
+}
+
+pub const fn new_native_device_data(config: &'static dyn core::any::Any) -> DeviceData {
+    DeviceData::Native(NativeDevice::new(config))
+}
+
+type DeviceList = ListHead<DeviceDataNode, Node>;
+type DeviceListIterator = ListIterator<DeviceDataNode, Node>;
+
+impl_simple_intrusive_adapter!(Node, DeviceDataNode, node);
+
+#[repr(C)]
+struct DeviceDataNode {
+    pub node: DeviceList,
+    pub data: &'static DeviceData,
+}
+
+impl DeviceDataNode {
+    pub const fn new(data: &'static DeviceData) -> Self {
+        Self {
+            node: DeviceList::new(),
+            data,
+        }
+    }
+}
+
+pub struct NativeDevice {
+    config: &'static dyn core::any::Any,
+    is_attached: AtomicBool,
+}
+
+unsafe impl Send for NativeDevice {}
+unsafe impl Sync for NativeDevice {}
+
+impl NativeDevice {
+    pub const fn new(config: &'static dyn core::any::Any) -> Self {
+        Self {
+            config,
+            is_attached: AtomicBool::new(false),
+        }
+    }
+
+    pub fn config<T: 'static>(&self) -> Option<&'static T> {
+        self.config.downcast_ref::<T>()
+    }
+
+    pub fn is_attached(&self) -> bool {
+        self.is_attached.load(Ordering::Relaxed)
+    }
+}
+
 pub fn init() -> Result<(), Error> {
     null::Null::register().map_err(Error::from)?;
     zero::Zero::register().map_err(Error::from)?;
@@ -308,7 +370,82 @@ pub fn init() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        devices::bus::{Bus, BusInterface},
+        drivers::*,
+    };
     use blueos_test_macro::test;
+
+    #[derive(Debug, Default)]
+    struct DummyConfig {
+        pub base_addr: usize,
+    }
+
+    static DUMMY_CONFIG: DummyConfig = DummyConfig { base_addr: 0x1000 };
+    static DUMMY_DEVICE_DATA: DeviceData = DeviceData::Native(NativeDevice::new(&DUMMY_CONFIG));
+
+    #[derive(Default)]
+    struct DummyDriver {
+        base_addr: usize,
+    }
+
+    impl InitDriver<DummyBus> for DummyConfig {
+        type Data = DummyDriver;
+        fn init(self, bus: &Bus<DummyBus>) -> Result<Self::Data> {
+            let ret = DummyDriver {
+                base_addr: self.base_addr,
+            };
+            Ok(ret)
+        }
+    }
+
+    struct DummyDriverModule;
+    impl DriverModule<DummyBus> for DummyDriverModule {
+        type Data = DummyConfig;
+        fn probe(dev: &DeviceData) -> Result<Self::Data> {
+            match dev {
+                DeviceData::Native(native_dev) => {
+                    if let Some(config) = native_dev.config::<DummyConfig>() {
+                        Ok(DummyConfig {
+                            base_addr: config.base_addr,
+                        })
+                    } else {
+                        Err(crate::error::code::ENODEV)
+                    }
+                }
+                _ => Err(crate::error::code::ENODEV),
+            }
+        }
+    }
+
+    struct DummyBus;
+    impl BusInterface for DummyBus {
+        type Region = u8;
+        fn read_region(
+            &self,
+            region: Self::Region,
+            buffer: &mut [u8],
+        ) -> crate::drivers::Result<()> {
+            Ok(())
+        }
+
+        fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_device_match() {
+        let mut dummy_bus = super::bus::Bus::new(DummyBus);
+        dummy_bus
+            .register_device(&DUMMY_DEVICE_DATA)
+            .expect("Failed to register device");
+        let driver = dummy_bus.probe_driver(&DummyDriverModule);
+        assert!(driver.is_ok());
+        let driver = driver.unwrap().init(&dummy_bus);
+        assert!(driver.is_ok());
+        assert_eq!(driver.unwrap().base_addr, 0x1000);
+    }
 
     #[test]
     fn test_device_id_creation() {

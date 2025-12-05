@@ -21,6 +21,7 @@ use core::num::NonZeroUsize;
 
 use err::Result;
 pub mod clock_control;
+pub mod i2c;
 pub mod pinctrl;
 pub mod reset;
 pub mod uart;
@@ -122,6 +123,8 @@ pub trait HasInterruptReg {
     fn enable_interrupt(&self, intr: Self::InterruptType);
     fn disable_interrupt(&self, intr: Self::InterruptType);
     fn get_interrupt(&self) -> Self::InterruptType;
+
+    // FIXME: dyn trait object may is not efficient enough
     fn set_interrupt_handler(&self, handler: &'static dyn Fn());
 
     fn clear_interrupt(&self, intr: Self::InterruptType);
@@ -151,9 +154,10 @@ pub trait HasFifo {
 /// * `StatusType` - The status type, typically a struct or enum that contains
 ///                  the peripheral's status information
 ///
-pub trait HasStatusReg {
-    type StatusType;
-    fn get_status(&self) -> Self::StatusType;
+pub trait HasErrorStatusReg {
+    type ErrorStatusType;
+    fn get_error_status(&self) -> Self::ErrorStatusType;
+    fn clear_error_status(&self) {}
 }
 
 /// Reset register operations trait
