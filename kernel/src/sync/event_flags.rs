@@ -16,14 +16,15 @@ use super::SpinLock;
 use crate::{
     error::{code, Error},
     irq, scheduler,
-    scheduler::{InsertMode, InsertModeTrait, InsertToEnd, WaitQueue},
+    scheduler::{wait_queue, InsertMode, InsertModeTrait, InsertToEnd, WaitQueue},
     thread,
     thread::Thread,
     time::WAITING_FOREVER,
     types::ArcList,
 };
 use bitflags::bitflags;
-use core::cell::Cell;
+use core::{cell::Cell, ops::DerefMut};
+
 type ThreadList = ArcList<Thread, thread::OffsetOfSchedNode>;
 
 bitflags! {
@@ -172,8 +173,15 @@ impl EventFlags {
             locked_thread.set_event_flags_mask(flags);
             locked_thread.set_event_flags_mode(mode);
         }
-        let timed_out = scheduler::suspend_me_with_timeout(w, timeout, M::MODE);
-        if timed_out {
+        let Some(mut wait_entry) =
+            wait_queue::insert(w.deref_mut(), current_thread.clone(), M::MODE)
+        else {
+            panic!("This insertion should never fail");
+        };
+        let reached_deadline = scheduler::suspend_me_with_timeout(w, timeout);
+        if reached_deadline {
+            let guard = self.pending.irqsave_lock();
+            WaitQueue::detach(&mut wait_entry);
             return Err(code::ETIMEDOUT);
         }
         Ok(current_thread.event_flags_mask())
