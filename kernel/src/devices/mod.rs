@@ -386,8 +386,8 @@ mod tests {
     }
 
     impl InitDriver<DummyBus> for DummyConfig {
-        type Driver = DummyDriver;
-        fn init(self, bus: &Bus<DummyBus>) -> Result<Self::Driver> {
+        type Data = DummyDriver;
+        fn init(self, bus: &Bus<DummyBus>) -> Result<Self::Data> {
             let ret = DummyDriver {
                 base_addr: self.base_addr,
             };
