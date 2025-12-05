@@ -396,7 +396,7 @@ mod tests {
     }
 
     struct DummyDriverModule;
-    impl DriverModule<DummyBus, DummyDriver> for DummyDriverModule {
+    impl DriverModule<DummyBus> for DummyDriverModule {
         type Data = DummyConfig;
         fn probe(dev: &DeviceData) -> Result<Self::Data> {
             match dev {

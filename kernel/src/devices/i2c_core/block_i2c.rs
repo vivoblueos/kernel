@@ -46,7 +46,7 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
         }
 
         let mut abrt_ret = Ok(());
-        let mut peekable = bytes.into_iter().peekable();
+        let mut peekable = bytes.iter().peekable();
 
         'outer: while let Some(byte) = peekable.next() {
             while self.inner.is_tx_fifo_full() {

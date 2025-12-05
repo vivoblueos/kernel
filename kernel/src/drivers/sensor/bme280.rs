@@ -55,8 +55,8 @@ impl Bme280Config {
 }
 
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> InitDriver<BlockI2c<T>> for Bme280Config {
-    type Driver = Bme280Driver;
-    fn init(self, bus: &Bus<BlockI2c<T>>) -> crate::drivers::Result<Self::Driver> {
+    type Data = ();
+    fn init(self, bus: &Bus<BlockI2c<T>>) -> crate::drivers::Result<Self::Data> {
         let mut delay = KernelDelay;
 
         let mut bme280 = match self.device_addr {
@@ -65,18 +65,16 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> InitDriver<BlockI2c<T>> for Bme280C
             _ => return Err(crate::error::code::EINVAL),
         };
 
-        if let Err(e) = bme280.init(&mut delay) {
-            crate::kprintln!("BME280 init failed: {:?}", e);
-        } else {
-            crate::kprintln!(
-                "BME280 initialized successfully at address 0x{:X}",
-                self.device_addr
-            );
-        }
+        bme280
+            .init(&mut delay)
+            .map_err(|_| crate::error::code::EINVAL)?;
 
-        Ok(Bme280Driver {
-            device_addr: self.device_addr,
-        })
+        log::info!(
+            "BME280 initialized successfully at address 0x{:X}",
+            self.device_addr
+        );
+
+        Ok(())
     }
 }
 
