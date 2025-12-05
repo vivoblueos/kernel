@@ -152,13 +152,12 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         operations: &mut [embedded_hal::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
         let mut operations = operations.into_iter().peekable();
-        self.0
-            .lock()
-            .inner
-            .set_address(address as u16)
-            .map_err(|_| crate::error::code::EACCES)?;
         // FIXME: More efficient implementation
         let inner = self.0.lock();
+
+        inner
+            .set_address(address as u16)
+            .map_err(|_| crate::error::code::EACCES)?;
 
         // Every first transaction should clear the bus state
         let mut first = true;
