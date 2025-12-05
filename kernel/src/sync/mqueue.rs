@@ -16,7 +16,7 @@ use crate::{
     allocator,
     error::{code, Error},
     irq,
-    scheduler::{self, InsertMode, WaitQueue},
+    scheduler::{self, wait_queue, InsertMode, WaitQueue},
     support::align_up_size,
     thread,
     time::{self, NO_WAITING, WAITING_FOREVER},
@@ -25,6 +25,7 @@ use crate::{
 use alloc::alloc::{alloc, dealloc, Layout};
 use blueos_infra::ringbuffer::BoxedRingBuffer;
 use core::{
+    ops::DerefMut,
     slice,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -149,6 +150,7 @@ impl MessageQueue {
             return Err(code::EOVERFLOW);
         }
 
+        let this_thread = scheduler::current_thread();
         let mut queue = self.lock();
         while self.sendable_count() == 0 {
             if timeout == NO_WAITING {
@@ -161,12 +163,19 @@ impl MessageQueue {
             let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
             send_queue.take_irq_guard(&mut queue);
             drop(queue);
-            let out_time =
-                scheduler::suspend_me_with_timeout(send_queue, timeout, InsertMode::InsertToEnd);
-            if out_time {
+            let Some(mut wait_entry) = wait_queue::insert(
+                send_queue.deref_mut(),
+                this_thread.clone(),
+                InsertMode::InsertToEnd,
+            ) else {
+                panic!("This insertion should never fail");
+            };
+            let reached_deadline = scheduler::suspend_me_with_timeout(send_queue, timeout);
+            if reached_deadline {
+                let _guard = self.pend_queues[SEND_TYPE].irqsave_lock();
+                WaitQueue::detach(&mut wait_entry);
                 return Err(code::ETIMEDOUT);
             }
-
             queue = self.lock();
             if timeout != WAITING_FOREVER {
                 ticks = time::get_sys_ticks().saturating_sub(ticks);
@@ -221,6 +230,7 @@ impl MessageQueue {
         let head_size = core::mem::size_of::<usize>();
         let mut timeout = timeout;
 
+        let this_thread = scheduler::current_thread();
         let mut queue = self.lock();
         while self.recvable_count() == 0 {
             if timeout == NO_WAITING {
@@ -233,9 +243,17 @@ impl MessageQueue {
             let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
             recv_queue.take_irq_guard(&mut queue);
             drop(queue);
-            let out_time =
-                scheduler::suspend_me_with_timeout(recv_queue, timeout, InsertMode::InsertToEnd);
-            if out_time {
+            let Some(mut wait_entry) = wait_queue::insert(
+                recv_queue.deref_mut(),
+                this_thread.clone(),
+                InsertMode::InsertToEnd,
+            ) else {
+                panic!("This insertion should never fail");
+            };
+            let reached_deadline = scheduler::suspend_me_with_timeout(recv_queue, timeout);
+            if reached_deadline {
+                let _guard = self.pend_queues[RECV_TYPE].irqsave_lock();
+                WaitQueue::detach(&mut wait_entry);
                 return Err(code::ETIMEDOUT);
             }
 
@@ -247,7 +265,6 @@ impl MessageQueue {
         }
 
         queue.decrement_recvable_count();
-
         let mut receiver = unsafe { queue.queue_buffer.reader() };
         let src = receiver.pop_slice();
         let msg_size = unsafe { *(src.as_ptr() as *const usize) };
