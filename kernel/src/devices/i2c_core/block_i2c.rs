@@ -22,6 +22,13 @@ pub struct BlockI2c<T: PlatPeri> {
 }
 
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
+    pub fn new(inner: &'static T) -> Result<Self, blueos_hal::err::HalError> {
+        inner.configure(&I2cConfig {
+            baudrate: 1_000_000,
+        })?;
+        Ok(BlockI2c { inner })
+    }
+
     pub fn poll_tx_is_not_full(&self) -> Result<bool, blueos_hal::err::HalError> {
         if self.inner.get_error_status() != 0 {
             self.inner.clear_error_status();
@@ -36,17 +43,19 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
     }
 
     pub fn write_bytes(
-        &mut self,
+        &self,
         address: u8,
-        bytes: impl IntoIterator<Item = u8>,
+        bytes: &[u8],
+        first_transaction: bool,
+        do_stop: bool,
     ) -> Result<(), blueos_hal::err::HalError> {
         let mut peekable = bytes.into_iter().peekable();
         if peekable.peek().is_none() {
             return Err(blueos_hal::err::HalError::InvalidParam);
         }
 
-        let mut abrt_ret = Ok(();)
-        self.inner.start_writing(address as u16)?;
+        let mut abrt_ret = Ok(());
+
         'outer: while let Some(byte) = peekable.next() {
             if self.inner.is_tx_fifo_full() {
                 loop {
@@ -60,34 +69,66 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
                     }
                 }
             }
+
             if peekable.peek().is_none() {
-                self.inner.send_byte_with_stop(byte)?;
+                self.inner.send_byte_with_stop(*byte)?;
             } else {
-                self.inner.write_data8(byte);
+                self.inner.write_data8(*byte);
+            }
+        }
+
+        // TODO: if err occurs, wait for transfer complete
+        abrt_ret
+    }
+
+    pub fn read_bytes(
+        &self,
+        address: u8,
+        buffer: &mut [u8],
+        first_transaction: bool,
+        do_stop: bool,
+    ) -> Result<(), blueos_hal::err::HalError> {
+        if buffer.is_empty() {
+            return Err(blueos_hal::err::HalError::InvalidParam);
+        }
+
+        let err_status = self.inner.get_error_status();
+
+        if self.inner.get_error_status() != 0 {
+            self.inner.clear_error_status();
+            return Err(blueos_hal::err::HalError::Fail);
+        }
+
+        let lastindex = buffer.len() - 1;
+        for (i, byte) in buffer.iter_mut().enumerate() {
+            let last_byte = i == lastindex;
+
+            if last_byte {
+                *byte = self.inner.read_byte_with_stop()?;
+            } else {
+                *byte = self.inner.read_data8()?;
             }
         }
 
         Ok(())
     }
-
-    pub fn read_bytes(
-        &mut self,
-        address: u8,
-        buffer: &mut [u8],
-    ) -> Result<(), blueos_hal::err::HalError> {
-        todo!()
-    }
 }
 
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BusInterface for BlockI2c<T> {
-    type Region = u8;
+    type Region = (bool, u8, bool);
 
     fn read_region(&self, region: Self::Region, buffer: &mut [u8]) -> crate::drivers::Result<()> {
-        todo!()
+        let (first, address, last) = region;
+        self.read_bytes(address, buffer, first, last)
+            .map_err(|_| crate::error::code::EIO)?;
+        Ok(())
     }
 
     fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()> {
-        todo!()
+        let (first, address, last) = region;
+        self.write_bytes(address, data, first, last)
+            .map_err(|_| crate::error::code::EIO)?;
+        Ok(())
     }
 }
 
@@ -116,14 +157,22 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         operations: &mut [embedded_hal::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
         let mut operations = operations.into_iter().peekable();
+        self.0
+            .lock()
+            .inner
+            .set_address(address as u16)
+            .map_err(|_| crate::error::code::EACCES)?;
+        // FIXME: More efficient implementation
+        let inner = self.0.lock();
 
         while let Some(operation) = operations.next() {
+            let last = operations.peek().is_none();
             match operation {
                 embedded_hal::i2c::Operation::Read(buf) => {
-                    self.0.lock().read_region(address, buf)?
+                    inner.read_region((false, address, last), buf)?
                 }
                 embedded_hal::i2c::Operation::Write(buf) => {
-                    self.0.lock().write_region(address, buf)?
+                    inner.write_region((false, address, last), buf)?
                 }
             };
         }

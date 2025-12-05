@@ -17,10 +17,9 @@ pub trait I2c<P, T>:
     + super::Configuration<P, Target = T>
     + super::Has8bitDataReg
     + super::HasFifo
-    + super::HasErrorStatusReg
+    + super::HasErrorStatusReg<ErrorStatusType = u32>
 {
-    fn start_writing(&self, addr: u16) -> super::err::Result<()>;
-    fn start_reading(&self, addr: u16) -> super::err::Result<()>;
+    fn set_address(&self, address: u16) -> super::err::Result<()>;
     fn send_byte_with_stop(&self, byte: u8) -> super::err::Result<()>;
     fn read_byte_with_stop(&self) -> super::err::Result<u8>;
 }

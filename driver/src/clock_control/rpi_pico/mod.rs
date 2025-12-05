@@ -70,7 +70,6 @@ impl ClockControl for RpiPicoClockControl {
                 Peripheral::Spi0,
                 Peripheral::Spi1,
                 Peripheral::I2c0,
-                Peripheral::I2c1,
                 Peripheral::Uart0,
                 Peripheral::Uart1,
                 Peripheral::UsbCtrl,

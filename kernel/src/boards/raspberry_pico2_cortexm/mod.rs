@@ -106,12 +106,15 @@ crate::define_peripheral! {
     blueos_driver::reset::rpi_pico_reset::RpiPicoReset::new(
         0x40020000
     )),
-    (i2c1, blueos_driver::i2c::i2c_dw::I2cDw,
+    (i2c0, blueos_driver::i2c::i2c_dw::I2cDw,
      blueos_driver::i2c::i2c_dw::I2cDw::new(
         0x40090000,
         150_000_000,
-        Some((get_device!(subsys_reset), 5)),
+        Some((get_device!(subsys_reset), 4)),
      )),
+     (bme280, crate::drivers::sensor::bme280::Bme280Config,
+      crate::drivers::sensor::bme280::Bme280Config::new(0x76)
+    ),
 }
 
 crate::define_pin_states!(
