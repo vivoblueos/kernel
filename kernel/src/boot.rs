@@ -129,7 +129,7 @@ extern "C" fn init() {
                 .expect("Failed to probe Bme280 driver");
             data.init(&i2c0_bus).expect("Failed to init Bme280 driver");
         } else {
-            crate::kprintln!("Failed to init BlockI2c");
+            log::warn!("Failed to init BlockI2c");
         }
     }
 
