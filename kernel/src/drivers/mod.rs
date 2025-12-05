@@ -23,8 +23,8 @@ pub(crate) mod sensor;
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
 
 pub trait InitDriver<B: BusInterface>: Sized + Default {
-    type Driver;
-    fn init(self, bus: &Bus<B>) -> Result<Self::Driver>;
+    type Data;
+    fn init(self, bus: &Bus<B>) -> Result<Self::Data>;
 }
 
 pub trait DriverModule<B: BusInterface> {
