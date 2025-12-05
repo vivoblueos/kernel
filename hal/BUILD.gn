@@ -18,7 +18,7 @@ import("//build/toolchain/blueos.gni")
 build_rust("blueos_hal") {
   sources = [ "src/lib.rs" ]
   features = []
-  
+
   if (defined(thiserror)) {
     deps += [ "//external/vendor/thiserror-2.0.17:thiserror" ]
     features += [ "thiserror" ]
