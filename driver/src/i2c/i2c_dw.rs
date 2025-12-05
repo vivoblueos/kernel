@@ -298,7 +298,7 @@ impl I2cDw {
             self.registers.ic_clr_tx_abrt.get();
             Err(blueos_hal::err::HalError::Fail)
         } else {
-            Ok(0)
+            Ok(err)
         }
     }
 }
@@ -401,7 +401,9 @@ impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2cDw {
         self.registers
             .ic_data_cmd
             .write(IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::SET);
-        while self.is_data_ready() == false {}
+        while self.is_data_ready() == false {
+            self.read_and_clr_err()?;
+        }
         Ok(self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT) as u8)
     }
 

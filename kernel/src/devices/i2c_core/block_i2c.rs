@@ -77,6 +77,13 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
         first_transaction: bool,
         last_transaction: bool,
     ) -> Result<(), blueos_hal::err::HalError> {
+        crate::kprintln!(
+            "BlockI2c read_bytes: addr={:#x}, len={}, first={}, last={}",
+            address,
+            buffer.len(),
+            first_transaction,
+            last_transaction
+        );
         if buffer.is_empty() {
             if !first_transaction {
                 // if buffer is empty and not first transaction,
@@ -85,6 +92,7 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
             }
             return Err(blueos_hal::err::HalError::InvalidParam);
         }
+        crate::kprintln!("BlockI2c read_bytes: start reading");
 
         let lastindex = buffer.len() - 1;
         for (i, byte) in buffer.iter_mut().enumerate() {
