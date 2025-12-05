@@ -385,6 +385,40 @@ mod tests {
         ATOMIC_WAIT_CLEANUP.spin_until_eq(l);
     }
 
+    static MUTEX_CLEANUP: CleanupCounter = CleanupCounter::new();
+    static_arc! {
+        MUTEX(sync::mutex::Mutex, sync::mutex::Mutex::new()),
+    }
+    static mut MUTEX_COUNTER: usize = 0usize;
+
+    extern "C" fn test_mutex() {
+        MUTEX.pend_for(WAITING_FOREVER);
+        unsafe { MUTEX_COUNTER += 1 };
+        MUTEX.post();
+    }
+
+    extern "C" fn test_mutex_cleanup() {
+        MUTEX_CLEANUP.increment();
+    }
+
+    #[test]
+    fn stress_mutex() {
+        MUTEX.init();
+        reset_and_queue_test_threads(test_mutex, Some(test_mutex_cleanup));
+        let l = unsafe { TEST_THREADS.len() };
+        loop {
+            MUTEX.pend_for(WAITING_FOREVER);
+            let n = unsafe { MUTEX_COUNTER };
+            if n == l {
+                MUTEX.post();
+                break;
+            }
+            MUTEX.post();
+            scheduler::yield_me();
+        }
+        MUTEX_CLEANUP.spin_until_eq(l);
+    }
+
     static MQUEUE: Lazy<Arc<sync::mqueue::MessageQueue>> =
         Lazy::new(|| Arc::new(sync::mqueue::MessageQueue::new(4, 2, ptr::null_mut())));
     static TEST_SEND_CNT: AtomicUsize = AtomicUsize::new(0);
