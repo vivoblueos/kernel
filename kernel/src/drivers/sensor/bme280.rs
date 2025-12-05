@@ -48,6 +48,12 @@ pub struct Bme280Driver {
     device_addr: u8,
 }
 
+impl Bme280Config {
+    pub const fn new(device_addr: u8) -> Self {
+        Bme280Config { device_addr }
+    }
+}
+
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> InitDriver<BlockI2c<T>> for Bme280Config {
     type Driver = Bme280Driver;
     fn init(self, bus: &Bus<BlockI2c<T>>) -> crate::drivers::Result<Self::Driver> {
@@ -60,15 +66,21 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> InitDriver<BlockI2c<T>> for Bme280C
         };
 
         if let Err(e) = bme280.init(&mut delay) {
-            log::error!("BME280 init failed: {:?}", e);
+            crate::kprintln!("BME280 init failed: {:?}", e);
+        } else {
+            crate::kprintln!(
+                "BME280 initialized successfully at address 0x{:X}",
+                self.device_addr
+            );
         }
+
         Ok(Bme280Driver {
             device_addr: self.device_addr,
         })
     }
 }
 
-pub struct Bme280DriverModule {}
+pub struct Bme280DriverModule;
 
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> DriverModule<BlockI2c<T>, Bme280Driver>
     for Bme280DriverModule

@@ -116,6 +116,23 @@ extern "C" fn init() {
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
 
+    #[cfg(use_bme280)]
+    {
+        use crate::{devices::i2c_core::block_i2c::BlockI2c, drivers::InitDriver};
+        if let Ok(block_i2c) = BlockI2c::new(crate::boards::get_device!(i2c0)) {
+            let mut i2c0_bus = crate::devices::bus::Bus::new(block_i2c);
+            i2c0_bus
+                .register_device(crate::boards::get_device_data!(bme280))
+                .unwrap();
+            let data = i2c0_bus
+                .probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
+                .expect("Failed to probe Bme280 driver");
+            data.init(&i2c0_bus).expect("Failed to init Bme280 driver");
+        } else {
+            crate::kprintln!("Failed to init BlockI2c");
+        }
+    }
+
     #[cfg(virtio)]
     {
         use crate::devices::virtio;

@@ -18,7 +18,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use blueos_hal::{Configuration, HasErrorStatusReg, HasFifo, PlatPeri};
+use blueos_hal::{Configuration, Has8bitDataReg, HasErrorStatusReg, HasFifo, PlatPeri};
 use tock_registers::{
     interfaces::{ReadWriteable, Readable, Writeable},
     register_bitfields, register_structs,
@@ -273,7 +273,6 @@ impl I2cDw {
         };
         assert!(sda_tx_hold_count <= lcnt - 2);
 
-        self.registers.ic_enable.modify(IC_ENABLE::ENABLE::CLEAR);
         // Always use "fast" mode (<= 400 kHz, works fine for standard mode too)
         self.registers.ic_con.modify(IC_CON::SPEED::FAST);
         self.registers.ic_fs_scl_hcnt.set(hcnt);
@@ -290,14 +289,6 @@ impl I2cDw {
             .modify(IC_SDA_HOLD::IC_SDA_TX_HOLD.val(sda_tx_hold_count));
 
         freq_in / period
-    }
-
-    fn set_address(&self, address: u16) {
-        self.registers.ic_enable.set(0);
-        self.registers
-            .ic_tar
-            .modify(IC_TAR::IC_TAR.val(address as u32));
-        self.registers.ic_enable.set(1);
     }
 }
 
@@ -373,6 +364,8 @@ impl blueos_hal::Has8bitDataReg for I2cDw {
     }
 
     fn read_data8(&self) -> blueos_hal::err::Result<u8> {
+        self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::SET);
+        while self.is_data_ready() == false {}
         Ok(self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT) as u8)
     }
 
@@ -382,15 +375,12 @@ impl blueos_hal::Has8bitDataReg for I2cDw {
 }
 
 impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2cDw {
-    fn start_reading(&self, addr: u16) -> blueos_hal::err::Result<()> {
-        self.set_address(addr);
-        self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::SET);
-        Ok(())
-    }
-
-    fn start_writing(&self, addr: u16) -> blueos_hal::err::Result<()> {
-        self.set_address(addr);
-        self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::CLEAR);
+    fn set_address(&self, address: u16) -> blueos_hal::err::Result<()> {
+        self.registers.ic_enable.set(0);
+        self.registers
+            .ic_tar
+            .modify(IC_TAR::IC_TAR.val(address as u32));
+        self.registers.ic_enable.set(1);
         Ok(())
     }
 
@@ -398,16 +388,14 @@ impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2cDw {
         self.registers
             .ic_data_cmd
             .write(IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::SET);
+        while self.is_data_ready() == false {}
         Ok(self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT) as u8)
     }
 
     fn send_byte_with_stop(&self, byte: u8) -> blueos_hal::err::Result<()> {
-        self.registers
-            .ic_data_cmd
-            .write(IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::CLEAR);
-        self.registers
-            .ic_data_cmd
-            .write(IC_DATA_CMD::DAT.val(byte as u32));
+        self.registers.ic_data_cmd.write(
+            IC_DATA_CMD::DAT.val(byte as u32) + IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::CLEAR,
+        );
         Ok(())
     }
 }
@@ -416,10 +404,10 @@ impl HasErrorStatusReg for I2cDw {
     type ErrorStatusType = u32;
 
     fn get_error_status(&self) -> Self::ErrorStatusType {
-        self.registers.ic_tx_abrt_source.extract()
+        self.registers.ic_tx_abrt_source.get()
     }
 
     fn clear_error_status(&self) {
-        self.registers.ic_clr_tx_abrt.extract();
+        self.registers.ic_clr_tx_abrt.get();
     }
 }
