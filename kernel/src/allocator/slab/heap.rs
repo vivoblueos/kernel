@@ -16,16 +16,35 @@ use super::SlabHeap as Slab;
 use crate::{allocator::MemoryInfo, sync::spinlock::SpinLock};
 use core::{alloc::Layout, ptr::NonNull};
 
-type SlabHeap = Slab<4, 2, 1, 1, 1, 1, 1>;
-pub struct Heap {
-    heap: SpinLock<SlabHeap>,
+pub type Heap = SlabHeap<2, 4, 2, 1, 1, 1, 1, 1>;
+pub struct SlabHeap<
+    const S8: usize,
+    const S16: usize,
+    const S32: usize,
+    const S64: usize,
+    const S128: usize,
+    const S256: usize,
+    const S512: usize,
+    const S1024: usize,
+> {
+    heap: SpinLock<Slab<S8, S16, S32, S64, S128, S256, S512, S1024>>,
 }
 
-impl Heap {
+impl<
+        const S8: usize,
+        const S16: usize,
+        const S32: usize,
+        const S64: usize,
+        const S128: usize,
+        const S256: usize,
+        const S512: usize,
+        const S1024: usize,
+    > SlabHeap<S8, S16, S32, S64, S128, S256, S512, S1024>
+{
     // Create a new UNINITIALIZED heap allocator
     pub const fn new() -> Self {
-        Heap {
-            heap: SpinLock::new(SlabHeap::new()),
+        SlabHeap {
+            heap: SpinLock::new(Slab::<S8, S16, S32, S64, S128, S256, S512, S1024>::new()),
         }
     }
 
@@ -88,6 +107,29 @@ impl Heap {
             used: heap.allocated(),
             max_used: heap.maximum(),
         }
+    }
+
+    pub fn sys_memory_info(&self) -> MemoryInfo {
+        let heap = self.heap.irqsave_lock();
+        MemoryInfo {
+            total: heap.total() - heap.slab_total_size,
+            used: heap.system_allocator.allocated() - heap.slab_total_size,
+            max_used: heap.system_allocator.maximum() - heap.slab_total_size,
+        }
+    }
+
+    pub fn slab_memory_info(&self) -> MemoryInfo {
+        let heap = self.heap.irqsave_lock();
+        MemoryInfo {
+            total: heap.slab_total_size,
+            used: heap.allocated() + heap.slab_total_size - heap.system_allocator.allocated(),
+            max_used: heap.maximum() + heap.slab_total_size - heap.system_allocator.maximum(),
+        }
+    }
+
+    pub fn print_slab_stat(&self) {
+        let heap = self.heap.irqsave_lock();
+        heap.print_slab_stat();
     }
 
     pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> usize {

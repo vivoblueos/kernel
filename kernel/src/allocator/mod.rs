@@ -32,7 +32,9 @@ pub use llff::heap::LlffHeap as Heap;
 #[cfg(allocator = "slab")]
 mod slab;
 #[cfg(allocator = "slab")]
-pub use slab::heap::Heap;
+use slab::heap::Heap;
+#[cfg(allocator = "slab")]
+pub use slab::heap::SlabHeap;
 
 #[derive(Default, Debug)]
 pub struct MemoryInfo {
