@@ -82,9 +82,7 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> InitDriver<BlockI2c<T>> for Bme280C
 
 pub struct Bme280DriverModule;
 
-impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> DriverModule<BlockI2c<T>, Bme280Driver>
-    for Bme280DriverModule
-{
+impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> DriverModule<BlockI2c<T>> for Bme280DriverModule {
     type Data = Bme280Config;
     fn probe(dev: &crate::devices::DeviceData) -> crate::drivers::Result<Self::Data> {
         match dev {

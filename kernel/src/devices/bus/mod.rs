@@ -62,9 +62,8 @@ impl<B: BusInterface> Bus<B> {
     }
 
     pub fn probe_driver<
-        D,
-        T: crate::drivers::InitDriver<B, Driver = D>,
-        M: crate::drivers::DriverModule<B, D, Data = T>,
+        T: crate::drivers::InitDriver<B>,
+        M: crate::drivers::DriverModule<B, Data = T>,
     >(
         &self,
         dev: &M,

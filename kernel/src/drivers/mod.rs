@@ -27,7 +27,7 @@ pub trait InitDriver<B: BusInterface>: Sized + Default {
     fn init(self, bus: &Bus<B>) -> Result<Self::Driver>;
 }
 
-pub trait DriverModule<B: BusInterface, D> {
-    type Data: InitDriver<B, Driver = D>;
+pub trait DriverModule<B: BusInterface> {
+    type Data: InitDriver<B>;
     fn probe(dev: &super::devices::DeviceData) -> Result<Self::Data>;
 }
