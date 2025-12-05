@@ -290,6 +290,17 @@ impl I2cDw {
 
         freq_in / period
     }
+
+    #[inline]
+    fn read_and_clr_err(&self) -> blueos_hal::err::Result<u32> {
+        let err = self.registers.ic_tx_abrt_source.get();
+        if err != 0 {
+            self.registers.ic_clr_tx_abrt.get();
+            Err(blueos_hal::err::HalError::Fail)
+        } else {
+            Ok(0)
+        }
+    }
 }
 
 unsafe impl Send for I2cDw {}
@@ -365,7 +376,9 @@ impl blueos_hal::Has8bitDataReg for I2cDw {
 
     fn read_data8(&self) -> blueos_hal::err::Result<u8> {
         self.registers.ic_data_cmd.write(IC_DATA_CMD::CMD::SET);
-        while self.is_data_ready() == false {}
+        while self.is_data_ready() == false {
+            self.read_and_clr_err()?;
+        }
         Ok(self.registers.ic_data_cmd.read(IC_DATA_CMD::DAT) as u8)
     }
 
@@ -396,6 +409,20 @@ impl blueos_hal::i2c::I2c<super::I2cConfig, ()> for I2cDw {
         self.registers.ic_data_cmd.write(
             IC_DATA_CMD::DAT.val(byte as u32) + IC_DATA_CMD::STOP::SET + IC_DATA_CMD::CMD::CLEAR,
         );
+        Ok(())
+    }
+
+    fn release_bus(&self) -> blueos_hal::err::Result<()> {
+        self.registers.ic_enable.modify(IC_ENABLE::ABORT::SET);
+        while self.registers.ic_enable.is_set(IC_ENABLE::ABORT) {}
+        while self
+            .registers
+            .ic_raw_intr_stat
+            .is_set(IC_RAW_INTR_STAT::TX_ABRT)
+            == false
+        {}
+        self.registers.ic_clr_tx_abrt.get();
+        self.registers.ic_tx_abrt_source.get();
         Ok(())
     }
 }
