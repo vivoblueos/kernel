@@ -450,11 +450,7 @@ pub fn suspend_me_for(ticks: usize) {
     debug_assert!(arch::local_irq_enabled());
 }
 
-pub fn suspend_me_with_timeout(
-    mut w: SpinLockGuard<'_, WaitQueue>,
-    ticks: usize,
-    insert_mode: InsertMode,
-) -> bool {
+pub fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize) -> bool {
     debug_assert_ne!(ticks, 0);
     if unlikely(!is_schedule_ready()) {
         return false;
@@ -471,13 +467,10 @@ pub fn suspend_me_with_timeout(
         current_thread_id(),
         Thread::id(&next)
     );
-    // FIXME: Ideally, we should defer state transfer to context switch hook.
     let to_sp = next.saved_sp();
     let old = current_thread();
     let from_sp_ptr = old.saved_sp_ptr();
 
-    let ok = wait_queue::insert(&mut w, old.clone(), insert_mode);
-    debug_assert!(ok);
     // old's context saving must happen before old is requeued to
     // ready queue.
     // Ideally, we need an API like

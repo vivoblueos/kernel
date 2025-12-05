@@ -15,13 +15,13 @@
 use super::SpinLock;
 use crate::{
     irq, scheduler,
-    scheduler::{InsertMode, InsertModeTrait, WaitQueue},
+    scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitQueue},
     thread,
     thread::Thread,
     time::WAITING_FOREVER,
     types::Uint,
 };
-use core::cell::Cell;
+use core::{cell::Cell, ops::DerefMut};
 
 #[derive(Debug)]
 pub struct Semaphore {
@@ -79,6 +79,7 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         assert!(!irq::is_in_irq());
+        let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
         loop {
             let old = self.counter.get();
@@ -96,7 +97,11 @@ impl Semaphore {
                 self.counter.set(old - 1);
                 return true;
             }
-            scheduler::suspend_me_with_timeout(w, WAITING_FOREVER, M::MODE);
+            let Some(we) = wait_queue::insert(w.deref_mut(), this_thread.clone(), M::MODE) else {
+                panic!("This insertion should never fail");
+            };
+            let timeout = scheduler::suspend_me_with_timeout(w, WAITING_FOREVER);
+            debug_assert!(!timeout);
             w = self.pending.irqsave_lock();
         }
     }
@@ -106,6 +111,7 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         assert!(!irq::is_in_irq());
+        let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
         let mut last_sys_ticks = crate::time::get_sys_ticks();
         loop {
@@ -127,8 +133,15 @@ impl Semaphore {
             if ticks == 0 {
                 return false;
             }
-            let timeout = scheduler::suspend_me_with_timeout(w, ticks, M::MODE);
+            let Some(mut wait_entry) =
+                wait_queue::insert(w.deref_mut(), this_thread.clone(), M::MODE)
+            else {
+                panic!("This insertion should never fail");
+            };
+            let timeout = scheduler::suspend_me_with_timeout(w, ticks);
             if timeout {
+                let _guard = self.pending.irqsave_lock();
+                WaitQueue::detach(&mut wait_entry);
                 return false;
             }
             let now = crate::time::get_sys_ticks();

@@ -16,7 +16,9 @@ extern crate alloc;
 use crate::{
     arch, debug,
     error::{code, Error},
-    scheduler, static_arc, support,
+    scheduler,
+    scheduler::wait_queue,
+    static_arc, support,
     sync::SpinLock,
     thread,
     thread::{Thread, ThreadNode},
@@ -27,7 +29,10 @@ use crate::{
         StaticListOwner, UniqueListHead,
     },
 };
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::{
+    ops::DerefMut,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use scheduler::{InsertMode, WaitQueue};
 use support::PerCpu;
 
@@ -114,13 +119,20 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         scheduler::current_thread_id(),
         addr
     );
+    let Some(mut wait_entry) = wait_queue::insert(we.deref_mut(), t, InsertMode::InsertToEnd)
+    else {
+        panic!("This insertion should never fail");
+    };
     if let Some(timeout) = timeout {
-        let res = scheduler::suspend_me_with_timeout(we, timeout, InsertMode::InsertToEnd);
-        if res {
+        let reached_deadline = scheduler::suspend_me_with_timeout(we, timeout);
+        if reached_deadline {
+            let _guard = entry.pending.irqsave_lock();
+            WaitQueue::detach(&mut wait_entry);
             return Err(code::ETIMEDOUT);
         }
     } else {
-        let _ = scheduler::suspend_me_with_timeout(we, WAITING_FOREVER, InsertMode::InsertToEnd);
+        let reached_deadline = scheduler::suspend_me_with_timeout(we, WAITING_FOREVER);
+        debug_assert!(!reached_deadline);
     }
     Ok(())
 }

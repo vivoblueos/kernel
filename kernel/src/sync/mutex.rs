@@ -39,7 +39,7 @@ use crate::{
 use alloc::string::String;
 use core::{
     cell::{Cell, UnsafeCell},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -178,10 +178,15 @@ impl Mutex {
                 self as *const _
             );
 
-            let timeout = Self::inner_pend_for(ticks, &this_mutex, w, &this_thread, &owner);
+            let (timeout, mut wait_entry) =
+                Self::inner_pend_for(ticks, &this_mutex, w, &this_thread, &owner);
             if timeout {
                 this_thread.replace_pending_on_mutex(None);
                 Self::recover_priority(&this_thread, &this_mutex);
+                {
+                    let _guard = self.pending.irqsave_lock();
+                    WaitQueue::detach(&mut wait_entry);
+                }
                 return false;
             }
 
@@ -201,10 +206,10 @@ impl Mutex {
     fn inner_pend_for(
         ticks: usize,
         this_mutex: &Arc<Self>,
-        this_lock: SpinLockGuard<'_, WaitQueue>,
+        mut this_lock: SpinLockGuard<'_, WaitQueue>,
         this_thread: &ThreadNode,
         owner_thread: &ThreadNode,
-    ) -> bool {
+    ) -> (bool, Arc<WaitEntry>) {
         let this_priority = this_thread.priority();
         // We walk along the blocking chain to scan no more than
         // CHAIN_LENGTH_LIMIT threads.
@@ -282,7 +287,14 @@ impl Mutex {
             debug_assert!(Arc::is(check, this_mutex));
         };
         drop(old);
-        scheduler::suspend_me_with_timeout(this_lock, ticks, InsertMode::InsertByPrio)
+        let Some(we) = wait_queue::insert(
+            this_lock.deref_mut(),
+            this_thread.clone(),
+            InsertMode::InsertByPrio,
+        ) else {
+            panic!("This insertion should never fail");
+        };
+        (scheduler::suspend_me_with_timeout(this_lock, ticks), we)
     }
 
     fn adjust_wait_queue_position_by(
@@ -771,7 +783,6 @@ mod tests {
         for i in 0..M {
             unsafe { Arc::get_mut_unchecked(&mut mu) }.push(Mutex::create());
         }
-
         for i in 0..N {
             let prio = i % ((MAX_THREAD_PRIORITY + 1) as usize);
             let mu = mu.clone();
