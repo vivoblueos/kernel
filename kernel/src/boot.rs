@@ -130,12 +130,12 @@ extern "C" fn init() {
             let i2c0_bus = I2C0_BUS.get().unwrap();
             for device in crate::boards::get_bus_devices!(i2c0_bus) {
                 i2c0_bus.register_device(device).unwrap();
-                if let Ok(d) =
-                    i2c0_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
-                {
-                    if let Err(e) = d.init(&i2c0_bus) {
-                        log::warn!("Failed to init Bme280 driver: {}", e);
-                    }
+            }
+            if let Ok(d) =
+                i2c0_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
+            {
+                if let Err(e) = d.init(&i2c0_bus) {
+                    log::warn!("Failed to init Bme280 driver: {}", e);
                 }
             }
         } else {

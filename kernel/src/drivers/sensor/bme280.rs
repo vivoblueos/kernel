@@ -85,6 +85,10 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> DriverModule<BlockI2c<T>> for Bme28
     fn probe(dev: &crate::devices::DeviceData) -> crate::drivers::Result<Self::Data> {
         match dev {
             DeviceData::Native(native_dev) => {
+                if native_dev.is_attached() {
+                    return Err(crate::error::code::ENODEV);
+                }
+
                 if let Some(config) = native_dev.config::<Bme280Config>() {
                     Ok(Bme280Config {
                         device_addr: config.device_addr,

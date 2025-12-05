@@ -355,6 +355,10 @@ impl NativeDevice {
     pub fn config<T: 'static>(&self) -> Option<&'static T> {
         self.config.downcast_ref::<T>()
     }
+
+    pub fn is_attached(&self) -> bool {
+        self.is_attached.load(Ordering::Relaxed)
+    }
 }
 
 pub fn init() -> Result<(), Error> {
