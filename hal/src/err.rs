@@ -46,16 +46,3 @@ pub enum HalError<T = &'static str> {
 }
 
 pub type Result<T> = core::result::Result<T, HalError>;
-
-impl embedded_hal::i2c::Error for HalError {
-    fn kind(&self) -> embedded_hal::i2c::ErrorKind {
-        match self {
-            Self::IoError => embedded_hal::i2c::ErrorKind::Bus,
-            Self::Timeout => embedded_hal::i2c::ErrorKind::ArbitrationLoss,
-            Self::NoAck => embedded_hal::i2c::ErrorKind::NoAcknowledge(
-                embedded_hal::i2c::NoAcknowledgeSource::Unknown,
-            ),
-            _ => embedded_hal::i2c::ErrorKind::Other,
-        }
-    }
-}
