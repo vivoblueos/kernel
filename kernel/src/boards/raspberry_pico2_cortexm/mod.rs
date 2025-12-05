@@ -112,9 +112,7 @@ crate::define_peripheral! {
         150_000_000,
         Some((get_device!(subsys_reset), 4)),
      )),
-     (bme280, crate::drivers::sensor::bme280::Bme280Config,
-      crate::drivers::sensor::bme280::Bme280Config::new(0x76)
-    ),
+
 }
 
 crate::define_pin_states!(
@@ -124,6 +122,16 @@ crate::define_pin_states!(
     (4, 3),  // GPIO4 as I2C0_SDA
     (5, 3),  // GPIO5 as I2C0_SCL
 );
+
+crate::define_bus! {
+    (
+        i2c0_bus,
+        crate::devices::i2c_core::block_i2c::BlockI2c<blueos_driver::i2c::i2c_dw::I2cDw>,
+        (bme280, crate::drivers::sensor::bme280::Bme280Config,
+            crate::drivers::sensor::bme280::Bme280Config::new(0x76)
+        ),
+    )
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
