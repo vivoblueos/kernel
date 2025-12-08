@@ -79,6 +79,7 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
+        let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
         loop {
             let old = self.counter.get();
@@ -106,6 +107,7 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
+        let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
         let mut last_sys_ticks = crate::time::get_sys_ticks();
         loop {
