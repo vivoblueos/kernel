@@ -329,7 +329,7 @@ impl HoleList {
         let requested_hole_size =
             hole_size.saturating_sub(aligned_hole_addr.wrapping_sub(hole_addr as usize) as usize);
         let aligned_hole_size = align_down_size(requested_hole_size, GRANULARITY);
-        assert!(aligned_hole_size >= GRANULARITY);
+        debug_assert!(aligned_hole_size >= GRANULARITY);
 
         let ptr = aligned_hole_addr as *mut Hole;
         ptr.write(Hole {
@@ -337,7 +337,7 @@ impl HoleList {
             next: None,
         });
 
-        assert_eq!(
+        debug_assert_eq!(
             hole_addr.wrapping_add(hole_size),
             aligned_hole_addr.wrapping_add(requested_hole_size)
         );
@@ -484,7 +484,7 @@ impl HoleList {
     }
 
     pub(crate) unsafe fn extend(&mut self, by: usize) {
-        assert!(!self.top.is_null(), "tried to extend an empty heap");
+        debug_assert!(!self.top.is_null(), "tried to extend an empty heap");
 
         let top = self.top;
 
@@ -539,7 +539,7 @@ impl Cursor {
             let node_size = unsafe { node.as_ref().size };
             let hole_u8 = self.hole.as_ptr().cast::<u8>();
 
-            assert!(
+            debug_assert!(
                 node_u8.wrapping_add(node_size) <= hole_u8,
                 "Freed node aliases existing hole! Bad free?",
             );
@@ -573,7 +573,7 @@ impl Cursor {
         if let Some(next) = self.current().next.as_ref() {
             if node < *next {
                 let node_u8 = node_u8 as *const u8;
-                assert!(
+                debug_assert!(
                     node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>(),
                     "Freed node aliases existing hole! Bad free?",
                 );
@@ -592,7 +592,7 @@ impl Cursor {
         let hole_size = self.current().size;
 
         // Does hole overlap node?
-        assert!(
+        debug_assert!(
             hole_u8.wrapping_add(hole_size) <= node_u8,
             "Freed node ({:?}) aliases existing hole ({:?}[{}])! Bad free?",
             node_u8,
