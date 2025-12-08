@@ -62,6 +62,7 @@ header: # `header` section is configurations for source codes license header.
       - ".licenserc.yaml"
       - "**/*.lds"
       - "**/lib64"
+      - ".github/workflows/**"
 
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
 
