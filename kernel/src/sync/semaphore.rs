@@ -78,17 +78,6 @@ impl Semaphore {
     where
         M: InsertModeTrait,
     {
-<<<<<<< HEAD
-<<<<<<< HEAD
-        debug_assert!(!irq::is_in_irq());
-=======
-<<<<<<< HEAD
-        assert!(!irq::is_in_irq());
->>>>>>> 1d4c732 (replace all assert under kernel with debug_assert)
-        let this_thread = scheduler::current_thread();
-=======
-=======
->>>>>>> 93d3ff8 (Resolved merge conflicts)
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
@@ -121,18 +110,6 @@ impl Semaphore {
     where
         M: InsertModeTrait,
     {
-<<<<<<< HEAD
-<<<<<<< HEAD
-        debug_assert!(!irq::is_in_irq());
-=======
-<<<<<<< HEAD
-        assert!(!irq::is_in_irq());
->>>>>>> 1d4c732 (replace all assert under kernel with debug_assert)
-        let this_thread = scheduler::current_thread();
-=======
-=======
-
->>>>>>> 93d3ff8 (Resolved merge conflicts)
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
