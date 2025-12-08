@@ -110,38 +110,8 @@ impl Semaphore {
     where
         M: InsertModeTrait,
     {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-        assert!(!irq::is_in_irq());
-        let this_thread = scheduler::current_thread();
-=======
-        debug_assert!(!irq::is_in_irq());
-<<<<<<< HEAD
->>>>>>> 919b619 (replace all assert under kernel with debug_assert)
-=======
-        let this_thread = scheduler::current_thread();
->>>>>>> 95f7a35 (Resolved merge conflicts)
-=======
-=======
->>>>>>> f46a029 (fix coflict issue)
-        debug_assert!(!irq::is_in_irq());
-=======
-<<<<<<< HEAD
-        assert!(!irq::is_in_irq());
->>>>>>> 1d4c732 (replace all assert under kernel with debug_assert)
-        let this_thread = scheduler::current_thread();
-=======
-=======
-
->>>>>>> 93d3ff8 (Resolved merge conflicts)
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
-<<<<<<< HEAD
->>>>>>> 919b619 (replace all assert under kernel with debug_assert)
->>>>>>> 40ff17d (replace all assert under kernel with debug_assert)
-=======
->>>>>>> f46a029 (fix coflict issue)
         let mut w = self.pending.irqsave_lock();
         let mut last_sys_ticks = crate::time::get_sys_ticks();
         loop {
