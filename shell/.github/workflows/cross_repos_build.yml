@@ -1,10 +1,9 @@
-name: Trigger build cross multiple repositories
- 
-on:
+true:
   issue_comment:
-    types: [created]
- 
+    types:
+      - created
 jobs:
   call_workflow:
-    uses: vivoblueos/kernel/.github/workflows/reusable_cross_repos_build.yml@main
     secrets: inherit
+    uses: vivoblueos/kernel/.github/workflows/reusable_cross_repos_build.yml@main
+name: Trigger build cross multiple repositories
