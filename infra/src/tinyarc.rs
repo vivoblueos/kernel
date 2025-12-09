@@ -290,7 +290,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     }
 
     #[inline]
-    pub unsafe fn make_arc_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
+    pub unsafe fn clone_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
         let ptr = node as *const _ as *const u8;
         let mut offset = core::mem::offset_of!(TinyArcInner<T>, data);
         offset += A::offset();
@@ -332,7 +332,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
         let Some(mut prev) = self.tail.prev() else {
             panic!("Tail's prev node should not be None");
         };
-        Some(unsafe { Self::make_arc_from(prev.as_ref()) })
+        Some(unsafe { Self::clone_from(prev.as_ref()) })
     }
 
     pub fn front(&self) -> Option<TinyArc<T>> {
@@ -342,7 +342,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
         let Some(mut next) = self.head.next() else {
             panic!("Head's next node should not be None");
         };
-        Some(unsafe { Self::make_arc_from(next.as_ref()) })
+        Some(unsafe { Self::clone_from(next.as_ref()) })
     }
 
     pub fn pop_front(&mut self) -> Option<TinyArc<T>> {
@@ -353,7 +353,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
         let Some(mut next) = self.head.next() else {
             panic!("Head's next node should not be None");
         };
-        let arc = unsafe { Self::make_arc_from(next.as_ref()) };
+        let arc = unsafe { Self::clone_from(next.as_ref()) };
         let ok = AtomicListHead::<T, A>::detach(unsafe { next.as_mut() });
         assert!(ok);
         unsafe { TinyArc::<T>::decrement_strong_count(&arc) };
@@ -504,7 +504,7 @@ impl<T, A: Adapter<T>> Iterator for TinyArcListIterator<T, A> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.it.next()?;
-        Some(unsafe { TinyArcList::<T, A>::make_arc_from(node.as_ref()) })
+        Some(unsafe { TinyArcList::<T, A>::clone_from(node.as_ref()) })
     }
 }
 
@@ -513,7 +513,7 @@ impl<T, A: Adapter<T>> Iterator for TinyArcListReverseIterator<T, A> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.it.next()?;
-        Some(unsafe { TinyArcList::<T, A>::make_arc_from(node.as_ref()) })
+        Some(unsafe { TinyArcList::<T, A>::clone_from(node.as_ref()) })
     }
 }
 
