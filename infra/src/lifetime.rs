@@ -17,7 +17,7 @@ use core::marker::PhantomData;
 #[derive(Default)]
 pub struct LifetimeDelegator<'a, T>(PhantomData<&'a T>);
 
-impl<'a, T> LifetimeDelegator<'a, T> {
+impl<T> LifetimeDelegator<'_, T> {
     pub const fn new() -> Self {
         LifetimeDelegator(PhantomData)
     }
@@ -47,20 +47,20 @@ mod tests {
         val: Option<NonNull<i32>>,
     }
 
-    fn assign_val<'a, 'b>(f: &'a mut Foo, val: &'b mut i32) -> LifetimeDelegator<'b, i32> {
+    fn assign_val<'b>(f: &mut Foo, val: &'b mut i32) -> LifetimeDelegator<'b, i32> {
         f.val = Some(NonNull::from_mut(val));
         LifetimeDelegator::default()
     }
 
-    fn unassign_val<'a, 'b>(
-        _d: LifetimeDelegator<'a, i32>,
+    fn unassign_val<'b>(
+        _d: LifetimeDelegator<'_, i32>,
         f: &'b mut Foo,
     ) -> LifetimeDelegator<'b, i32> {
         f.val = None;
         LifetimeDelegator::default()
     }
 
-    fn operate_on_stack_val<'a>(f: &'a mut Foo) {
+    fn operate_on_stack_val(f: &mut Foo) {
         let mut delegator;
         {
             let mut val = 42;
