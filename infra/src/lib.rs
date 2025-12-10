@@ -31,6 +31,7 @@
 #![feature(strict_provenance_atomic_ptr)]
 
 pub mod intrusive;
+pub mod lifetime;
 pub mod list;
 pub mod ringbuffer;
 pub mod spinarc;
