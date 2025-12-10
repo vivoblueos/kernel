@@ -16,47 +16,11 @@ use super::InsertMode;
 use crate::{
     scheduler,
     sync::SpinLockGuard,
-    thread::{ThreadNode, SUSPENDED},
-    types::{impl_simple_intrusive_adapter, Arc, ArcList, IlistHead},
+    thread::{Thread, ThreadNode, SUSPENDED},
+    types::{impl_simple_intrusive_adapter, Arc, Ilist, IlistHead, IouIlistHeadMut},
 };
 
 impl_simple_intrusive_adapter!(OffsetOfWait, WaitEntry, wait_node);
-
-pub type WaitQueue = ArcList<WaitEntry, OffsetOfWait>;
-
-pub fn insert(wq: &mut WaitQueue, t: ThreadNode, mode: InsertMode) -> Option<Arc<WaitEntry>> {
-    let e = Arc::new(WaitEntry {
-        wait_node: IlistHead::new(),
-        thread: t,
-    });
-    match mode {
-        InsertMode::InsertByPrio => {
-            if !wq.push_by(compare_priority, e.clone()) {
-                return None;
-            }
-        }
-        InsertMode::InsertToEnd => {
-            if !wq.push_back(e.clone()) {
-                return None;
-            }
-        }
-    }
-    Some(e)
-}
-
-pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
-    let mut woken = 0;
-    while let Some(next) = wq.pop_front() {
-        let t = next.thread.clone();
-        if let Some(timer) = &t.timer {
-            timer.stop();
-        }
-        let ok = scheduler::queue_ready_thread(SUSPENDED, t);
-        debug_assert!(ok);
-        woken += 1;
-    }
-    woken
-}
 
 #[derive(Debug)]
 pub struct WaitEntry {
@@ -64,8 +28,46 @@ pub struct WaitEntry {
     pub thread: ThreadNode,
 }
 
+impl WaitEntry {
+    pub fn new(thread: ThreadNode) -> Self {
+        Self {
+            wait_node: IlistHead::new(),
+            thread,
+        }
+    }
+}
+
 impl !Send for WaitEntry {}
 impl !Sync for WaitEntry {}
+
+pub type WaitQueue = Ilist<WaitEntry, OffsetOfWait>;
+
+pub fn insert<'a, 'b>(
+    wq: &'a mut WaitQueue,
+    wait_entry: &'b mut WaitEntry,
+    mode: InsertMode,
+) -> Option<IouIlistHeadMut<'b, WaitEntry, OffsetOfWait>> {
+    match mode {
+        InsertMode::InsertByPrio => wq.push_by(compare_priority, wait_entry),
+        _ => wq.push(wait_entry),
+    }
+}
+
+pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
+    let mut woken = 0;
+    for entry in wq.iter() {
+        let t = entry.thread.clone();
+        if let Some(timer) = &t.timer {
+            timer.stop();
+        }
+        let ok = scheduler::queue_ready_thread(SUSPENDED, t);
+        if !ok {
+            continue;
+        }
+        woken += 1;
+    }
+    woken
+}
 
 #[inline]
 pub(crate) fn compare_priority(lhs: &WaitEntry, rhs: &WaitEntry) -> core::cmp::Ordering {

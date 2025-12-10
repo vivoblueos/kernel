@@ -39,7 +39,7 @@ pub struct IouMut<'a, T> {
     pub val: Option<&'a mut T>,
 }
 
-impl<'a, T> LifetimeDelegator<'a, T> {
+impl<T> LifetimeDelegator<'_, T> {
     pub const fn new() -> Self {
         LifetimeDelegator(PhantomData)
     }

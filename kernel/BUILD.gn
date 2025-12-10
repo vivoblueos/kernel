@@ -54,6 +54,7 @@ _shared_deps = [
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
+  "//external/vendor/semihosting-0.1.20:semihosting",
   "//external/vendor/spin-0.9.8:spin",
   "//external/vendor/thiserror-2.0.17:thiserror",
   "//external/vendor/tock-registers-0.9.0:tock_registers",
