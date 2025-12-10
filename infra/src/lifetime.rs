@@ -15,7 +15,7 @@
 use core::marker::PhantomData;
 
 #[derive(Default)]
-pub struct LifetimeGuard<'a, T>(PhantomData<&'a T>);
+pub struct LifetimeDelegator<'a, T>(PhantomData<&'a T>);
 
 #[cfg(test)]
 mod tests {
@@ -27,41 +27,41 @@ mod tests {
         val: Option<NonNull<i32>>,
     }
 
-    fn assign_val<'a, 'b>(f: &'a mut Foo, val: &'b mut i32) -> LifetimeGuard<'b, i32> {
+    fn assign_val<'a, 'b>(f: &'a mut Foo, val: &'b mut i32) -> LifetimeDelegator<'b, i32> {
         f.val = Some(NonNull::from_mut(val));
-        LifetimeGuard::default()
+        LifetimeDelegator::default()
     }
 
     fn unassign_val<'a, 'b>(
-        _guard: LifetimeGuard<'a, i32>,
+        _d: LifetimeDelegator<'a, i32>,
         f: &'b mut Foo,
-    ) -> LifetimeGuard<'b, i32> {
+    ) -> LifetimeDelegator<'b, i32> {
         f.val = None;
-        LifetimeGuard::default()
+        LifetimeDelegator::default()
     }
 
     fn operate_on_stack_val<'a>(f: &'a mut Foo) {
-        let mut guard;
+        let mut delegator;
         {
             let mut val = 42;
-            guard = assign_val(f, &mut val);
+            delegator = assign_val(f, &mut val);
             assert!(f.val.is_some());
             assert_eq!(unsafe { f.val.unwrap().read() }, 42);
             // The program doesn't compile if the following stmt is omitted.
-            guard = unassign_val(guard, f);
+            delegator = unassign_val(delegator, f);
         }
-        drop(guard);
+        drop(delegator);
     }
 
     fn operate_on_external_val(f: &mut Foo, val: &mut i32) {
-        let mut guard;
+        let mut delegator;
         {
-            guard = assign_val(f, val);
+            delegator = assign_val(f, val);
             assert!(f.val.is_some());
             assert_eq!(unsafe { f.val.unwrap().read() }, 42);
             // We don't need to unassign_val here, since val is still alive.
         }
-        drop(guard);
+        drop(delegator);
     }
 
     #[test]
