@@ -17,6 +17,24 @@ use core::marker::PhantomData;
 #[derive(Default)]
 pub struct LifetimeDelegator<'a, T>(PhantomData<&'a T>);
 
+impl<'a, T> LifetimeDelegator<'a, T> {
+    pub const fn new() -> Self {
+        LifetimeDelegator(PhantomData)
+    }
+}
+
+#[derive(Default)]
+#[repr(transparent)]
+pub struct Borrow<'a, T> {
+    pub val: Option<&'a T>,
+}
+
+#[derive(Default)]
+#[repr(transparent)]
+pub struct BorrowMut<'a, T> {
+    pub val: Option<&'a mut T>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

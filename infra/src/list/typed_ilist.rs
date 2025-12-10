@@ -18,7 +18,7 @@
 // ListHead should be used with smart pointers. It's **NOT**
 // concurrent safe.
 
-use crate::intrusive::Adapter;
+use crate::{intrusive::Adapter, lifetime::BorrowMut};
 use core::{marker::PhantomData, ptr::NonNull};
 
 #[derive(Default, Debug)]
@@ -134,6 +134,16 @@ impl<T, A: Adapter<T>> ListHead<T, A> {
         }
     }
 
+    pub fn safer_insert_after<'a, 'b>(
+        head: &'a mut ListHead<T, A>,
+        me: &'b mut ListHead<T, A>,
+    ) -> Option<BorrowMut<'b, ListHead<T, A>>> {
+        if Self::insert_after(head, me) {
+            return Some(BorrowMut { val: Some(me) });
+        }
+        None
+    }
+
     pub fn insert_before(tail: &mut ListHead<T, A>, me: &mut ListHead<T, A>) -> bool {
         unsafe {
             if !me.is_detached() {
@@ -176,6 +186,18 @@ impl<T, A: Adapter<T>> ListHead<T, A> {
             me.next = None;
             true
         }
+    }
+
+    pub fn safer_detach<'a, 'b>(
+        mut borrow: BorrowMut<'a, ListHead<T, A>>,
+    ) -> Option<BorrowMut<'b, ListHead<T, A>>> {
+        let Some(val) = &mut borrow.val else {
+            panic!("Detaching a nil Node");
+        };
+        if Self::detach(val) {
+            return Some(BorrowMut { val: None });
+        }
+        None
     }
 
     pub fn detach_with_hook<F>(me: &mut ListHead<T, A>, hook: F) -> bool
@@ -348,5 +370,33 @@ mod tests {
         //struct C {
         //    node: ListHead<B, Node>,
         //}
+    }
+
+    #[test]
+    fn test_safer_insert_and_detach() {
+        impl_simple_intrusive_adapter!(Node, A, node);
+
+        struct A {
+            node: ListHead<A, Node>,
+            val: usize,
+        }
+
+        fn inner(f: &mut ListHead<A, Node>) {
+            let mut borrow;
+            // Creating a new scope here is critical to assist the borrow checker.
+            {
+                let mut val = A {
+                    node: ListHead::new(),
+                    val: 42,
+                };
+                borrow = ListHead::safer_insert_after(f, &mut val.node).unwrap();
+                // The program doesn't compile if the following stmt is omitted.
+                borrow = ListHead::safer_detach(borrow).unwrap();
+            }
+            drop(borrow);
+        }
+
+        let mut head: ListHead<A, Node> = ListHead::new();
+        inner(&mut head);
     }
 }
