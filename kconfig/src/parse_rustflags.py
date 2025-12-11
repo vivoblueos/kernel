@@ -50,7 +50,8 @@ if __name__ == '__main__':
     os.environ['KCONFIG_DIR'] = os.path.dirname(args.kconfig)
     # Set KERNEL_SRC_DIR to point to kernel/kernel/src directory
     kconfig_dir = os.path.dirname(args.kconfig)
-    kernel_src_dir = os.path.join(os.path.dirname(os.path.dirname(kconfig_dir)), 'kernel', 'src')
+    kernel_src_dir = os.path.join(
+        os.path.dirname(os.path.dirname(kconfig_dir)), 'kernel', 'src')
     os.environ['KERNEL_SRC_DIR'] = os.path.abspath(kernel_src_dir)
     try:
         rustflags = parse_rustflags(args.kconfig, args.board, args.build_type)
