@@ -1,0 +1,12 @@
+# Virtual File System Configuration
+
+config ENABLE_VFS
+    bool "Enable Virtual File System"
+    default y
+    help
+      Enable virtual file system support. When enabled, vfs will be available.
+
+config PROCFS
+    depends on ENABLE_VFS
+    default n
+    bool "Enable proc file system"

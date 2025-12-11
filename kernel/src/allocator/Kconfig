@@ -1,0 +1,21 @@
+# Memory allocation algorithm configuration
+
+choice
+    prompt "Memory allocation algorithm"
+    default ALLOCATOR_TLSF
+    config ALLOCATOR_TLSF
+        bool "TLSF algorithm"
+    config ALLOCATOR_SLAB
+        bool "SLAB algorithm"
+    config ALLOCATOR_LLFF
+        bool "LLFF algorithm"
+    config ALLOCATOR_BUDDY
+        bool "BUDDY mode"
+endchoice
+
+config ALLOCATOR
+    string
+    default "tlsf" if ALLOCATOR_TLSF
+    default "slab" if ALLOCATOR_SLAB
+    default "llff" if ALLOCATOR_LLFF
+    default "buddy" if ALLOCATOR_BUDDY

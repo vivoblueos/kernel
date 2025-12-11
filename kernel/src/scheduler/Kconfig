@@ -1,0 +1,94 @@
+# Kernel Core Features Configuration
+
+menu "Kernel Core Features"
+
+config SOFT_TIMER
+    default y
+    bool "Enable soft timer"
+
+config EVENT_FLAGS
+    default y if CMSIS_RTOS1_ADAPTER || CMSIS_RTOS2_ADAPTER
+    default n
+    bool "Enable event flags"
+
+config ROBIN_SCHEDULER
+    default y
+    bool "Enable robin scheduler"
+
+config ROBIN_SLICE
+    default 10
+    int "The tick slice of robin scheduler"
+    depends on ROBIN_SCHEDULER
+
+config OVERFLOW_CHECK
+    default y
+    bool "Using stack overflow checking"
+
+config STACK_HIGHWATER_CHECK
+    default y
+    bool "Enable stack overflow checking"
+
+config DEBUGGING_SCHEDULER
+    default n
+    bool "Enable debugging of scheduler"
+
+config MAIN_THREAD_STACK_SIZE
+    default 12288
+    int "Set main thread stack size"
+
+config IDLE_THREAD_STACK_SIZE
+    default 2048
+    int "The stack size of idle thread"
+
+config TIMER_THREAD_STACK_SIZE
+    default 2048
+    int "The stack size of timer thread"
+
+config KERNEL_ASYNC
+    default y
+    bool "Enable async kernel"
+
+config THREAD_PRIORITY
+    default y 
+    bool "use thread stack priority"
+
+choice
+    prompt "Thread priority range"
+    default THREAD_PRIORITY_256
+    depends on THREAD_PRIORITY
+    help
+      Choose the maximum thread priority value.
+    config THREAD_PRIORITY_32
+        bool "32"
+        help
+          Set maximum thread priority to 32.
+    config THREAD_PRIORITY_256
+        bool "256"
+        help
+          Set maximum thread priority to 256.
+endchoice
+
+config THREAD_PRIORITY_MAX
+    default 256 if THREAD_PRIORITY_256
+    default 32 if THREAD_PRIORITY_32
+    depends on THREAD_PRIORITY
+    int "Maximum thread priority value"
+
+config MAIN_THREAD_PRIORITY
+    depends on THREAD_PRIORITY
+    default 100 if THREAD_PRIORITY_256
+    default 10 if THREAD_PRIORITY_32
+    int "Set main thread priority"
+    range 1 THREAD_PRIORITY_MAX
+
+config ASYNC_OUTPUT_THREAD_PRIORITY
+    depends on KERNEL_ASYNC
+    depends on THREAD_PRIORITY
+    default 255 if THREAD_PRIORITY_256
+    default 31 if THREAD_PRIORITY_32
+    int "The async output thread stack priority"
+    range 1 THREAD_PRIORITY_MAX
+    help
+      Set the priority for the async output thread. Maximum value depends on THREAD_PRIORITY_MAX.
+
+endmenu
