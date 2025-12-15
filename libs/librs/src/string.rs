@@ -25,8 +25,8 @@ use crate::{
     iter::{NullTerminated, NullTerminatedInclusive},
     stdio::StringWriter,
 };
-use core::cmp::Ordering;
 use core::{
+    cmp::Ordering,
     ffi::{c_char, c_int, c_long, c_longlong, c_size_t, c_void},
     fmt::Write,
     ptr, slice,

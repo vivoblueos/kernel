@@ -23,21 +23,23 @@ use crate::sync::{
     rwlock::{Pshared, Rwlock as RsRwLock, RwlockAttr},
     waitval::Waitval,
 };
-use alloc::alloc::alloc as system_alloc;
-use alloc::alloc::dealloc as system_dealloc;
-use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{
+    alloc::{alloc as system_alloc, dealloc as system_dealloc},
+    collections::btree_map::BTreeMap,
+    sync::Arc,
+    vec::Vec,
+};
 use blueos_header::{
     syscalls::NR::{CreateThread, ExitThread, GetTid, SchedYield},
     thread::{SpawnArgs, DEFAULT_STACK_SIZE, STACK_ALIGN},
 };
 use blueos_scal::bk_syscall;
-use core::alloc::Layout;
-use core::cell::SyncUnsafeCell;
-use core::num::NonZero;
 use core::{
+    alloc::Layout,
+    cell::SyncUnsafeCell,
     ffi::{c_int, c_size_t, c_uint, c_void},
     intrinsics::transmute,
-    num::NonZeroU32,
+    num::{NonZero, NonZeroU32},
     sync::atomic::{AtomicBool, AtomicI32, AtomicI8, AtomicUsize, Ordering},
 };
 use libc::{
