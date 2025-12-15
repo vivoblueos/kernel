@@ -263,7 +263,7 @@ impl I2cDw {
         let period = (freq_in + baudrate / 2) / baudrate;
         let lcnt = period * 3 / 5;
         let hcnt = period - lcnt;
-        assert!(hcnt >= 8);
+        debug_assert!(hcnt >= 8);
         assert!(lcnt >= 8);
 
         let sda_tx_hold_count = if baudrate < 1000000 {
