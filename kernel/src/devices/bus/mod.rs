@@ -14,7 +14,7 @@
 
 use alloc::boxed::Box;
 use blueos_infra::tinyarc::TinyArc;
-
+use crate::sync::SpinLock;
 
 pub struct BusWrapper<B: BusInterface>(pub(crate) TinyArc<SpinLock<B>>);
 
