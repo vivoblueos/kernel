@@ -305,8 +305,8 @@ impl Timer {
         if self.is_activated() {
             self.flags
                 .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
-            // make_arc_from will increment the strong count of the Arc being cloned.
-            let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+            // clone_from will increment the strong count of the Arc being cloned.
+            let mut timer = unsafe { WheelTimerList::clone_from(&self.wheel_node) };
             #[cfg(soft_timer)]
             if is_soft {
                 SOFT_TIMER_WHEEL.remove_timer(&mut timer);
@@ -331,8 +331,8 @@ impl Timer {
         self.flags
             .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
 
-        // make_arc_from will increment the strong count of the Arc being cloned.
-        let timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+        // clone_from will increment the strong count of the Arc being cloned.
+        let timer = unsafe { WheelTimerList::clone_from(&self.wheel_node) };
         #[cfg(soft_timer)]
         if is_soft {
             SOFT_TIMER_WHEEL.add_timer(timer, inner.timeout_ticks);
@@ -353,8 +353,8 @@ impl Timer {
         if self.is_activated() {
             self.flags
                 .fetch_and(!TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
-            // make_arc_from will increment the strong count of the Arc being cloned.
-            let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+            // clone_from will increment the strong count of the Arc being cloned.
+            let mut timer = unsafe { WheelTimerList::clone_from(&self.wheel_node) };
             #[cfg(soft_timer)]
             if is_soft {
                 SOFT_TIMER_WHEEL.remove_timer(&mut timer);
@@ -374,8 +374,8 @@ impl Timer {
         self.flags
             .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
 
-        // make_arc_from will increment the strong count of the Arc being cloned.
-        let timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+        // clone_from will increment the strong count of the Arc being cloned.
+        let timer = unsafe { WheelTimerList::clone_from(&self.wheel_node) };
         #[cfg(soft_timer)]
         if is_soft {
             SOFT_TIMER_WHEEL.add_timer(timer, inner.timeout_ticks);
@@ -398,7 +398,7 @@ impl Timer {
             let is_soft = self.is_soft();
 
             // remove from wheel first
-            let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+            let mut timer = unsafe { WheelTimerList::clone_from(&self.wheel_node) };
             #[cfg(soft_timer)]
             if is_soft {
                 SOFT_TIMER_WHEEL.remove_timer(&mut timer);
@@ -417,7 +417,7 @@ impl Timer {
         #[cfg(soft_timer)]
         let is_soft = self.is_soft();
 
-        let mut timer = unsafe { WheelTimerList::make_arc_from(&self.wheel_node) };
+        let mut timer = unsafe { WheelTimerList::clone_from(&self.wheel_node) };
         #[cfg(soft_timer)]
         if is_soft {
             if self.is_activated() {

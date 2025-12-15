@@ -120,7 +120,7 @@ impl Mutex {
     pub fn pend_for(&self, mut ticks: usize) -> bool {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
-        let this_mutex = unsafe { MutexList::make_arc_from(&self.mutex_node) };
+        let this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
         #[cfg(debugging_scheduler)]
         crate::trace!(
             "[PEND_FOR] TH:0x{:x} is getting the spinlock of mutex {:?}",
@@ -353,7 +353,7 @@ impl Mutex {
             if self.decrement_nesting_count() > 1 {
                 return;
             }
-            let mut this_mutex = unsafe { MutexList::make_arc_from(&self.mutex_node) };
+            let mut this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
             while let Some(next) = this_lock.pop_front() {
                 let t = next.thread.clone();
                 if let Some(timer) = &t.timer {
