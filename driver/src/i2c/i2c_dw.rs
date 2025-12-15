@@ -256,7 +256,7 @@ impl I2cDw {
     }
 
     fn set_baudrate(&self, baudrate: u32) -> u32 {
-        assert!(baudrate != 0);
+        debug_assert_ne!(baudrate, 0);
 
         let freq_in = self.clk;
 
