@@ -303,6 +303,8 @@ impl I2cDw {
     }
 }
 
+/// Note: This I2cDw does not guarantee against race conditions;
+/// callers must establish their own critical section
 unsafe impl Send for I2cDw {}
 unsafe impl Sync for I2cDw {}
 
