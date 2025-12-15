@@ -256,7 +256,7 @@ impl I2cDw {
     }
 
     fn set_baudrate(&self, baudrate: u32) -> u32 {
-        debug_assert_ne!(baudrate, 0);
+        debug_assert!(baudrate != 0);
 
         let freq_in = self.clk;
 
@@ -264,14 +264,14 @@ impl I2cDw {
         let lcnt = period * 3 / 5;
         let hcnt = period - lcnt;
         debug_assert!(hcnt >= 8);
-        assert!(lcnt >= 8);
+        debug_assert!(lcnt >= 8);
 
         let sda_tx_hold_count = if baudrate < 1000000 {
             ((freq_in * 3) / 10000000) + 1
         } else {
             ((freq_in * 3) / 25000000) + 1
         };
-        assert!(sda_tx_hold_count <= lcnt - 2);
+        debug_assert!(sda_tx_hold_count <= lcnt - 2);
 
         // Always use "fast" mode (<= 400 kHz, works fine for standard mode too)
         self.registers.ic_con.modify(IC_CON::SPEED::FAST);
