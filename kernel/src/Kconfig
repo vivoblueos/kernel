@@ -1,0 +1,63 @@
+# General Kernel Configuration
+
+config ALIGN_SIZE
+    default 8
+    int "Alignment size for CPU architecture data access"
+
+config TICKS_PER_SECOND
+    default 100
+    int "Tick frequency, Hz"
+
+config SMP
+    default n
+    bool "Enable Symmetric multiprocessing"
+
+config NUM_CORES
+    default 4 if SMP
+    default 1 if !SMP
+    int "Number of CPUs"
+
+config USE_KERNEL_BOOT
+    default y
+    bool "Use kernel default boot"
+
+config ENABLE_SYSCALL
+    default y
+    bool "Enable support for syscall"
+
+config FDT
+    default n
+    bool "Enable Flat Device Tree"
+
+config VIRTIO
+    default n
+    bool "Enable VirtIO"
+
+config SERIAL_RX_FIFO_SIZE
+    default 256
+    int "The serial rx fifo size"
+
+config SERIAL_TX_FIFO_SIZE
+    default 256
+    int "The serial tx fifo size"
+
+# os adapter configuration
+menu "os adapter configuration"
+    choice
+        prompt "RTOS Adapter Selection"
+        optional
+        help
+          Select which RTOS adapter to use. Only one can be selected.
+
+    config CMSIS_RTOS1_ADAPTER
+        bool "CMSIS RTOS1 Adapter"
+        help
+          os adapter for CMSIS RTOS1
+
+    config CMSIS_RTOS2_ADAPTER
+        bool "CMSIS RTOS2 Adapter"
+        help
+          os adapter for CMSIS RTOS2
+
+    endchoice
+endmenu # os adapter configuration
