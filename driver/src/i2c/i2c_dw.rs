@@ -18,6 +18,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
+// For I2C specification, see: https://www.ti.com/lit/pdf/slva704
+// For details of DesignWare I2C controller, see: https://iopress.co.uk/Downloads/designware-dwapbi2c-databook-preface-preface.pdf
+
 use blueos_hal::{Configuration, Has8bitDataReg, HasErrorStatusReg, HasFifo, PlatPeri};
 use tock_registers::{
     interfaces::{ReadWriteable, Readable, Writeable},
