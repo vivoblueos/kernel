@@ -254,7 +254,7 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
         };
         GlobalQueueVisitor::remove(&mut t);
         let ok = t.transfer_state(thread::RUNNING, thread::RETIRED);
-        assert!(ok);
+        debug_assert!(ok);
         if ThreadNode::strong_count(&t) != 1 {
             // TODO: Warn if there are still references to the thread.
         }
