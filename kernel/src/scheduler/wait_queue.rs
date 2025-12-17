@@ -42,8 +42,8 @@ impl !Sync for WaitEntry {}
 
 pub type WaitQueue = Ilist<WaitEntry, OffsetOfWait>;
 
-pub fn insert<'a, 'b>(
-    wq: &'a mut WaitQueue,
+pub fn insert<'b>(
+    wq: &mut WaitQueue,
     wait_entry: &'b mut WaitEntry,
     mode: InsertMode,
 ) -> Option<IouIlistHeadMut<'b, WaitEntry, OffsetOfWait>> {

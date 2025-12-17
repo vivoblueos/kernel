@@ -130,7 +130,7 @@ pub fn enqueue_active_tasklet(t: Arc<Tasklet>) {
 fn poll_inner() {
     let mut ctx = Context::from_waker(Waker::noop());
     let mut w = ASYNC_WORK_QUEUE.advance_active_queue();
-    for mut task in w.iter() {
+    for task in w.iter() {
         let mut l = task.lock();
         if let Poll::Ready(()) = l.future.as_mut().poll(&mut ctx) {
             if let Some(t) = l.blocked.take() {
@@ -139,7 +139,8 @@ fn poll_inner() {
             // If we detach the task what ever it's ready or
             // pending, it would be edge-level triggered. Now
             // we're using level-trigger mode conservatively.
-            AsyncWorkQueue::WorkList::detach(&mut task.clone());
+            let mut the_task = unsafe { Arc::clone_from(task) };
+            AsyncWorkQueue::WorkList::detach(&mut the_task);
         } else {
             // FIXME: This is not an efficient impl right now. We
             // might need a waker for each future, so that the poller

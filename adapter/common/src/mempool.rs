@@ -22,7 +22,7 @@ use blueos::{
 };
 use blueos_infra::{
     impl_simple_intrusive_adapter,
-    list::typed_ilist::{ListHead, ListIterator},
+    list::typed_ilist::{ListHead, ListHeadIterator},
 };
 use core::alloc::Layout;
 
@@ -30,7 +30,7 @@ use core::alloc::Layout;
 // HEAP's public API to implement the memory pool. There might be performance degradation.
 
 type BlockList = ListHead<Block, Node>;
-type BlockListIterator = ListIterator<Block, Node>;
+type BlockListIterator = ListHeadIterator<Block, Node>;
 
 #[derive(Debug)]
 struct MemoryPoolInner {

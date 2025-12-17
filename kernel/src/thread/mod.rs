@@ -36,6 +36,7 @@ use crate::{
 use alloc::boxed::Box;
 use core::{
     alloc::Layout,
+    ops::Deref,
     ptr::NonNull,
     sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
 };
@@ -362,7 +363,7 @@ impl Thread {
     pub fn remove_acquired_mutex(&self, mu: &Arc<Mutex>) -> bool {
         self.acquired_mutexes
             .irqsave_write()
-            .remove_if(|e| Arc::is(e, mu))
+            .remove_if(|e| core::ptr::eq(mu.deref(), e))
             .is_some()
     }
 

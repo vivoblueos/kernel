@@ -33,7 +33,8 @@ use crate::{
     thread::{self, Thread, ThreadNode},
     time::{NO_WAITING, WAITING_FOREVER},
     types::{
-        impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, GenericList, ThreadPriority, Uint,
+        impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, ArcListIterator, GenericList,
+        ThreadPriority, Uint,
     },
 };
 use alloc::string::String;
@@ -45,7 +46,7 @@ use core::{
 
 impl_simple_intrusive_adapter!(OffsetOfMutexNode, Mutex, mutex_node);
 pub(crate) type MutexList = ArcList<Mutex, OffsetOfMutexNode>;
-pub(crate) type MutexListIterator = <MutexList as GenericList>::Iter;
+pub(crate) type MutexListIterator<'a> = ArcListIterator<'a, Mutex, OffsetOfMutexNode>;
 type MutexNode = <MutexList as GenericList>::Node;
 
 const CHAIN_LENGTH_LIMIT: usize = 4;
@@ -199,12 +200,12 @@ impl Mutex {
         }
     }
 
-    fn inner_pend_for<'a, 'b>(
+    fn inner_pend_for<'a>(
         ticks: usize,
         this_mutex: &'a Arc<Self>,
         mut this_lock: SpinLockGuard<'a, WaitQueue>,
         this_thread: &'a ThreadNode,
-        owner_thread: &'b ThreadNode,
+        owner_thread: &ThreadNode,
     ) -> (bool, SpinLockGuard<'a, WaitQueue>) {
         let this_priority = this_thread.priority();
         // We walk along the blocking chain to scan no more than
@@ -395,7 +396,7 @@ impl Mutex {
             if limit >= CHAIN_LENGTH_LIMIT {
                 break;
             }
-            debug_assert!(!Arc::is(&mutex, this_mutex));
+            debug_assert_eq!(this_mutex.deref() as *const Self, mutex as *const Self);
             #[cfg(debugging_scheduler)]
             crate::trace!(
                 "Trying to get read lock of mutex {:?}, estimated R {}, W {}",
