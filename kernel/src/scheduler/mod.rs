@@ -436,12 +436,12 @@ pub fn suspend_me_for(ticks: usize) {
     debug_assert_ne!(ticks, 0);
     let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     let to_sp = next.saved_sp();
-    let old = current_thread();
+    let old = current_thread_ref();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     hook_holder.set_prev_thread_target_state(thread::SUSPENDED);
     if ticks != WAITING_FOREVER {
-        setup_timer(&old, ticks, &mut hook_holder);
+        setup_timer(&current_thread(), ticks, &mut hook_holder);
     }
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
@@ -465,7 +465,7 @@ pub fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize
         Thread::id(&next)
     );
     let to_sp = next.saved_sp();
-    let old = current_thread();
+    let old = current_thread_ref();
     let from_sp_ptr = old.saved_sp_ptr();
     // old's context saving must happen before old is requeued to
     // ready queue.
@@ -483,7 +483,7 @@ pub fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize
     hook_holder.set_dropper(dropper);
     hook_holder.set_prev_thread_target_state(thread::SUSPENDED);
     let timeout = if ticks != WAITING_FOREVER {
-        setup_timer(&old, ticks, &mut hook_holder)
+        setup_timer(&current_thread(), ticks, &mut hook_holder)
     } else {
         Arc::new(AtomicBool::new(false))
     };
