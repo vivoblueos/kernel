@@ -393,7 +393,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
         use core::cmp::Ordering;
         let mut last = None;
         for other_val in it {
-            let ord = compare(val, &other_val);
+            let ord = compare(val, other_val);
             if ord == Ordering::Less {
                 return last;
             }
