@@ -387,32 +387,37 @@ fn setup_timer(
     hook_holder: &mut ContextSwitchHookHolder,
 ) -> Arc<AtomicBool> {
     let timeout = Arc::new(AtomicBool::new(false));
-    let timeout_in_callback = timeout.clone();
-    let thread_in_callback = thread.clone();
-    let timeout_callback = TimerEntry::Once(Box::new(move || {
-        #[cfg(debugging_scheduler)]
-        crate::trace!(
-            "Add thread 0x{:x} to ready queue after {} ticks",
-            Thread::id(&th),
-            ticks,
-        );
-        queue_ready_thread_with_post_action(thread::SUSPENDED, thread_in_callback, || {
-            timeout_in_callback.store(true, Ordering::Release)
-        });
-    }));
-    let thread_in_hook = thread.clone();
-    let timeout_in_hook = timeout.clone();
-    let hook = Box::new(move || {
-        if let Some(tm) = &thread_in_hook.timer {
-            tm.set_callback(timeout_callback);
-            tm.start_new_interval(ticks);
-        } else {
-            let tm = Timer::new_hard_oneshot(ticks, timeout_callback);
-            thread_in_hook.lock().timer = Some(tm.clone());
-            compiler_fence(Ordering::SeqCst);
-            tm.start();
-        };
-    });
+    let callback_closure = {
+        let timeout = timeout.clone();
+        let thread = thread.clone();
+        move || {
+            #[cfg(debugging_scheduler)]
+            crate::trace!(
+                "Add thread 0x{:x} to ready queue after {} ticks",
+                Thread::id(&thread),
+                ticks,
+            );
+            queue_ready_thread_with_post_action(thread::SUSPENDED, thread, || {
+                timeout.store(true, Ordering::Release)
+            });
+        }
+    };
+    let timeout_callback = TimerEntry::Once(Box::new(callback_closure));
+    let hook_closure = {
+        let thread = thread.clone();
+        move || {
+            if let Some(tm) = &thread.timer {
+                tm.set_callback(timeout_callback);
+                tm.start_new_interval(ticks);
+            } else {
+                let tm = Timer::new_hard_oneshot(ticks, timeout_callback);
+                thread.lock().timer = Some(tm.clone());
+                compiler_fence(Ordering::SeqCst);
+                tm.start();
+            };
+        }
+    };
+    let hook = Box::new(hook_closure);
     hook_holder.set_closure(hook);
     timeout
 }
