@@ -14,9 +14,10 @@
 
 extern crate proc_macro;
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
 use std::sync::atomic::{AtomicBool, Ordering};
-use syn::{parse_macro_input, FnArg, ItemFn};
+use syn::{parse_macro_input, Expr, ExprLit, FnArg, ItemFn, Lit, LitStr, Meta};
 
 static ENABLE_TEST_ONLY: AtomicBool = AtomicBool::new(false);
 static HAS_ONLY_TEST: AtomicBool = AtomicBool::new(false);
@@ -60,6 +61,28 @@ fn generate_test_case(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
     let test_name = &input.sig.ident;
     let input_block = &input.block;
+    let mut passthrough_attrs = Vec::new();
+    let mut ignore_reason: Option<LitStr> = None;
+
+    for attr in input.attrs.into_iter() {
+        if attr.path().is_ident("ignore") {
+            let reason = match &attr.meta {
+                Meta::Path(_) => LitStr::new("", Span::call_site()),
+                Meta::NameValue(name_value) => match &name_value.value {
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(lit_str),
+                        ..
+                    }) => lit_str.clone(),
+                    _ => LitStr::new("", Span::call_site()),
+                },
+                _ => LitStr::new("", Span::call_site()),
+            };
+            ignore_reason = Some(reason);
+            continue;
+        }
+
+        passthrough_attrs.push(attr);
+    }
 
     let filtered_params = input
         .sig
@@ -72,13 +95,29 @@ fn generate_test_case(_attr: TokenStream, item: TokenStream) -> TokenStream {
         _ => None,
     });
 
+    let ignore_guard = ignore_reason.map(|reason| {
+        quote! {
+            {
+                let msg: &str = #reason;
+                if msg.is_empty() {
+                    println!("[  IGNORED ] {}", stringify!(#test_name));
+                } else {
+                    println!("[  IGNORED ] {} - {}", stringify!(#test_name), msg);
+                }
+                return;
+            }
+        }
+    });
+
     let expanded = quote! {
+        #(#passthrough_attrs)*
         #[test_case]
         fn #test_name(#(#filtered_params),*) {
             #[cfg(not(use_defmt))]
             use semihosting::println;
             #[cfg(use_defmt)]
             use defmt::println as println;
+            #ignore_guard
             println!("[ RUN      ] {}", stringify!(#test_name));
             #( let _ = #param_names; )*
             #input_block

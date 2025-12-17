@@ -143,11 +143,33 @@ fn prepare_signal_handling(t: &ThreadNode) {
     if !l.activate_signal_context() {
         return;
     };
+
+    // Pick one deliverable signal so we can choose the correct stack for this delivery
+    let pending = l.pending_signals();
+    let mut deliverable: i32 = 0;
+    for signum in 1..32 {
+        if pending & (1 << signum) == 0 {
+            continue;
+        }
+        if l.is_signal_blocked(signum) {
+            continue;
+        }
+        deliverable = signum;
+        break;
+    }
+
     let ctx = l.saved_sp() as *mut arch::Context;
     let ctx = unsafe { &mut *ctx };
     // Update ctx so that signal context will be restored.
     ctx.set_return_address(arch::switch_stack as usize)
-        .set_arg(0, l.signal_handler_sp())
+        .set_arg(
+            0,
+            if deliverable != 0 {
+                l.signal_delivery_sp(deliverable)
+            } else {
+                l.signal_handler_sp()
+            },
+        )
         .set_arg(1, signal::handler_entry as usize);
 }
 

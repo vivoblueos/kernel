@@ -37,7 +37,7 @@ use alloc::boxed::Box;
 use core::{
     alloc::Layout,
     ptr::NonNull,
-    sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicI32, AtomicU32, Ordering},
 };
 
 mod builder;
@@ -134,19 +134,76 @@ impl ThreadStats {
 
 pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, GlobalQueue>;
 
-#[derive(Default)]
 pub(crate) struct SignalContext {
+    // Pending signals bitmask (1 << signum).
     pending_signals: u32,
+    // Whether this signal context is currently active (we're on signal stack).
     active: bool,
     // Will recover thread_context at recover_sp on exiting of signal handler.
     recover_sp: usize,
     thread_context: arch::Context,
-    once_action: [Option<Box<dyn FnOnce()>>; 32],
+    // Per-signal installed actions (sa_handler/sa_mask/sa_flags).
+    sigactions: [KernelSigAction; 32],
+
+    // Alternate signal stack description (empty ss_size == 0 means disabled).
+    alt_stack: SigAltStack,
+
+    // Per-signal queued siginfo (we don't support queueing multiple same-signals
+    // yet; slot is overwritten by newer deliveries).
+    pending_siginfo: [Option<SigInfo>; 32],
 }
 
 impl core::fmt::Debug for SignalContext {
     fn fmt(&self, _f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         Ok(())
+    }
+}
+
+impl Default for SignalContext {
+    fn default() -> Self {
+        Self {
+            pending_signals: 0,
+            active: false,
+            recover_sp: 0,
+            thread_context: arch::Context::default(),
+            sigactions: core::array::from_fn(|_| KernelSigAction::default()),
+            alt_stack: SigAltStack::default(),
+            pending_siginfo: core::array::from_fn(|_| None),
+        }
+    }
+}
+
+// Kernel-side lightweight siginfo (subset used by the kernel).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SigInfo {
+    pub si_signo: i32,
+    pub si_errno: i32,
+    pub si_code: i32,
+}
+
+// Kernel representation of sigaction.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KernelSigAction {
+    pub sa_handler: Option<extern "C" fn(i32)>,
+    pub sa_flags: usize,
+    pub sa_mask: libc::sigset_t,
+}
+
+// Kernel-side representation of sigaltstack (small subset).
+#[derive(Clone, Copy, Debug)]
+pub struct SigAltStack {
+    pub ss_sp: *mut core::ffi::c_void,
+    pub ss_flags: i32,
+    pub ss_size: usize,
+}
+
+impl Default for SigAltStack {
+    fn default() -> Self {
+        Self {
+            ss_sp: core::ptr::null_mut(),
+            ss_flags: 0,
+            ss_size: 0,
+        }
     }
 }
 
@@ -198,6 +255,10 @@ pub struct Thread {
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
     signal_context: Option<Box<SignalContext>>,
+    // Current signal mask (POSIX numbering: signal N is bit N-1).
+    blocked_mask: u32,
+    // Saved mask used by syscalls that temporarily replace the mask (e.g. sigsuspend).
+    saved_mask: u32,
 }
 
 extern "C" fn run_simple_c(f: extern "C" fn()) {
@@ -406,6 +467,8 @@ impl Thread {
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
             signal_context: None,
+            blocked_mask: 0,
+            saved_mask: 0,
         }
     }
 
@@ -464,14 +527,6 @@ impl Thread {
         }
     }
 
-    pub fn kill_with_once_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) -> bool {
-        if !self.kill(signum) {
-            return false;
-        }
-        self.register_once_signal_handler(signum, f);
-        true
-    }
-
     pub fn kill(&mut self, signum: i32) -> bool {
         let sig_ctx = self.get_or_create_signal_context();
         let old = sig_ctx.pending_signals;
@@ -480,14 +535,95 @@ impl Thread {
         (old & 1 << signum) == 0
     }
 
-    pub fn register_once_signal_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) {
-        let sig_ctx = self.get_or_create_signal_context();
-        sig_ctx.once_action[signum as usize] = Some(Box::new(f));
+    pub fn install_signal_handler(
+        &mut self,
+        signum: i32,
+        handler: extern "C" fn(i32),
+    ) -> &mut Self {
+        let sa = KernelSigAction {
+            sa_handler: Some(handler),
+            sa_flags: 0,
+            sa_mask: 0,
+        };
+        self.set_sigaction(signum, sa)
     }
 
-    pub fn take_signal_handler(&mut self, signum: i32) -> Option<Box<dyn FnOnce()>> {
+    // Set per-signal action (kernel representation). signum must be 0..32.
+    pub fn set_sigaction(&mut self, signum: i32, sa: KernelSigAction) -> &mut Self {
         let sig_ctx = self.get_or_create_signal_context();
-        sig_ctx.once_action[signum as usize].take()
+        sig_ctx.sigactions[signum as usize] = sa;
+        self
+    }
+
+    // Get per-signal action.
+    pub fn get_sigaction(&self, signum: i32) -> KernelSigAction {
+        self.signal_context
+            .as_ref()
+            .map_or_else(KernelSigAction::default, |c| c.sigactions[signum as usize])
+    }
+
+    // Push a siginfo for `signum` into per-thread slot and mark it pending.
+    pub fn push_siginfo(&mut self, signum: i32, info: SigInfo) -> &mut Self {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.pending_siginfo[signum as usize] = Some(info);
+        sig_ctx.pending_signals |= 1 << signum;
+        self
+    }
+
+    // Take pending siginfo for `signum`.
+    pub fn take_siginfo(&mut self, signum: i32) -> Option<SigInfo> {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.pending_siginfo[signum as usize].take()
+    }
+
+    // Set or query alternate signal stack.
+    pub fn set_sigaltstack(&mut self, ss: SigAltStack) -> &mut Self {
+        let sig_ctx = self.get_or_create_signal_context();
+        sig_ctx.alt_stack = ss;
+        self
+    }
+
+    pub fn get_sigaltstack(&self) -> SigAltStack {
+        self.signal_context
+            .as_ref()
+            .map_or_else(SigAltStack::default, |c| c.alt_stack)
+    }
+
+    pub fn is_signal_blocked(&self, signum: i32) -> bool {
+        if signum <= 0 || signum >= 32 {
+            return false;
+        }
+        // We only support standard signals 1..31 here; treat sigset_t as a
+        // bitset and check the (signum-1) bit.
+        let bit: u32 = 1u32 << ((signum - 1) as u32);
+        (self.blocked_mask & bit) != 0
+    }
+
+    // Returns the current signal mask (POSIX numbering: bit (signum-1)).
+    pub fn signal_mask(&self) -> u32 {
+        self.blocked_mask
+    }
+
+    // Replace the current signal mask.
+    pub fn set_signal_mask(&mut self, new_mask: u32) {
+        self.blocked_mask = new_mask;
+    }
+
+    // Save the current signal mask for later restoration (used by sigsuspend-like syscalls).
+    pub fn save_signal_mask(&mut self) {
+        self.saved_mask = self.blocked_mask;
+    }
+
+    // Restore the previously saved signal mask.
+    pub fn restore_saved_signal_mask(&mut self) {
+        self.blocked_mask = self.saved_mask;
+    }
+
+    // Returns the current pending signal bitmap using *kernel numbering* (bit = 1 << signum).
+    pub fn pending_signals_bitmap(&self) -> u32 {
+        self.signal_context
+            .as_ref()
+            .map_or(0, |c| c.pending_signals)
     }
 
     pub(crate) fn activate_signal_context(&mut self) -> bool {
@@ -525,6 +661,28 @@ impl Thread {
     pub(crate) fn signal_handler_sp(&mut self) -> usize {
         debug_assert_eq!(self.saved_sp % core::mem::align_of::<Context>(), 0);
         self.saved_sp - core::mem::size_of::<Context>()
+    }
+
+    // Compute the stack pointer to use for signal delivery.
+    //
+    // If SA_ONSTACK is requested for the delivered signal and an alternate
+    // signal stack is configured (and not disabled), we deliver on that stack.
+    // Otherwise we fall back to the thread's normal stack (the legacy behavior).
+    pub(crate) fn signal_delivery_sp(&mut self, signum: i32) -> usize {
+        let sa = self.get_sigaction(signum);
+        // Only use altstack when requested.
+        let want_onstack = (sa.sa_flags as i32) & libc::SA_ONSTACK != 0;
+        if want_onstack {
+            let ss = self.get_sigaltstack();
+            if !ss.ss_sp.is_null() && ss.ss_size != 0 && (ss.ss_flags & libc::SS_DISABLE) == 0 {
+                // Place the signal handler context at the top of the alt stack.
+                // Keep it aligned like the normal path.
+                let mut sp = (ss.ss_sp as usize).saturating_add(ss.ss_size);
+                sp &= !(core::mem::align_of::<Context>() - 1);
+                return sp.saturating_sub(core::mem::size_of::<Context>());
+            }
+        }
+        self.signal_handler_sp()
     }
 
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
@@ -679,7 +837,21 @@ impl Thread {
 
     #[inline]
     pub fn has_pending_signals(&mut self) -> bool {
-        self.pending_signals() != 0
+        let pending = self.pending_signals();
+        // `blocked` uses POSIX numbering (signal N is bit (N-1)).
+        // `pending_signals` uses kernel numbering (signal N is bit N).
+        // For now we only consider signals 1..31 (NSIG=32) and treat 0 as unused.
+        for signum in 1..32 {
+            if pending & (1 << signum) == 0 {
+                continue;
+            }
+            let bit: u32 = 1u32 << ((signum - 1) as u32);
+            let is_blocked = (self.blocked_mask & bit) != 0;
+            if !is_blocked {
+                return true;
+            }
+        }
+        false
     }
 
     #[inline]
