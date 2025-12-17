@@ -191,7 +191,7 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     };
     {
         let ok = next.transfer_state(thread::READY, thread::RUNNING);
-        assert!(ok);
+        debug_assert!(ok);
         let mut old = set_current_thread(next.clone());
         #[cfg(debugging_scheduler)]
         crate::trace!(
@@ -225,7 +225,7 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     compiler_fence(Ordering::SeqCst);
     if let Some(t) = pending_thread {
         let ok = t.transfer_state(thread::RUNNING, thread::SUSPENDED);
-        assert!(ok);
+        debug_assert!(ok);
     }
     compiler_fence(Ordering::SeqCst);
     // Local irq is disabled by arch and the scheduler assumes every thread
@@ -342,7 +342,7 @@ pub fn yield_me() {
     // We don't allow thread yielding with irq disabled.
     // The scheduler assumes every thread should be resumed with local
     // irq enabled.
-    assert!(arch::local_irq_enabled());
+    debug_assert!(arch::local_irq_enabled());
     let pg = thread::Thread::try_preempt_me();
     if !pg.preemptable() {
         arch::idle();
@@ -353,7 +353,7 @@ pub fn yield_me() {
 }
 
 fn yield_unconditionally() {
-    assert!(arch::local_irq_enabled());
+    debug_assert!(arch::local_irq_enabled());
     let Some(next) = next_ready_thread() else {
         arch::idle();
         return;
@@ -533,7 +533,7 @@ pub fn wait_and_then_start_schedule() {
 pub extern "C" fn schedule() -> ! {
     READY_CORES.fetch_add(1, Ordering::Relaxed);
     arch::enable_local_irq();
-    assert!(arch::local_irq_enabled());
+    debug_assert!(arch::local_irq_enabled());
     loop {
         yield_unconditionally();
         idle::get_idle_hook()();
@@ -574,7 +574,7 @@ pub(crate) fn handle_tick_increment(elapsed_ticks: usize) -> bool {
 fn set_current_thread(t: ThreadNode) -> ThreadNode {
     let _dig = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
-    assert!(t.validate_saved_sp());
+    debug_assert!(t.validate_saved_sp());
     let old = unsafe { core::mem::replace(RUNNING_THREADS[my_id].assume_init_mut(), t) };
     // Do not validate sp here, since we might be using system stack,
     // like on cortex-m platform.

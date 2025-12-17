@@ -106,7 +106,7 @@ impl Heap {
     /// store the required metadata. Depending on the alignment of the slice, the minimum
     /// size is between `2 * size_of::<usize>` and `3 * size_of::<usize>`.
     pub fn init_from_slice(&mut self, mem: &'static mut [mem::MaybeUninit<u8>]) {
-        assert!(
+        debug_assert!(
             self.bottom().is_null(),
             "The heap has already been initialized."
         );

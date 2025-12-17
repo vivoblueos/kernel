@@ -30,7 +30,7 @@ impl Plic {
     pub fn init(&self) {}
 
     pub fn set_priority(&self, irq: u32, prio: u32) {
-        assert!(irq > 0);
+        debug_assert!(irq > 0);
         unsafe { self.base.offset(irq as isize).write_volatile(prio) };
     }
 

@@ -483,7 +483,7 @@ impl InodeOps for FatInode {
             type_,
             mode.bits()
         );
-        assert!(self.type_() == InodeFileType::Directory);
+        debug_assert!(self.type_() == InodeFileType::Directory);
         if name.len() > NAME_MAX {
             return Err(code::ENAMETOOLONG);
         }
