@@ -396,7 +396,7 @@ impl Mutex {
             if limit >= CHAIN_LENGTH_LIMIT {
                 break;
             }
-            debug_assert_eq!(this_mutex.deref() as *const Self, mutex as *const Self);
+            debug_assert_ne!(this_mutex.deref() as *const Self, mutex as *const Self);
             #[cfg(debugging_scheduler)]
             crate::trace!(
                 "Trying to get read lock of mutex {:?}, estimated R {}, W {}",
