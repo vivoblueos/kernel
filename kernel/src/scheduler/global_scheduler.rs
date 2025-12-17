@@ -163,7 +163,7 @@ pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
     debug_assert_eq!(t.state(), thread::READY);
     let q = &mut tbl.tables[priority as usize];
     // Conservatively search the whole queue.
-    let removed = q.remove_if(|e| ThreadNode::is(e, t));
+    let removed = q.remove_if(|e| Thread::id(e) == Thread::id(t));
     let Some(removed) = removed else {
         return false;
     };

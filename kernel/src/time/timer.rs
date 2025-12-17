@@ -115,10 +115,12 @@ impl TimerWheel {
         let mut wheel = self.wheel.irqsave_lock();
         let cursor = timeout_ticks & (TIMER_WHEEL_SIZE as usize - 1);
         let it = wheel[cursor].iter();
-        for mut t in it {
+        for t in it {
             if t.timeout_ticks() > timeout_ticks {
+                // FIXME: Use AtomicListHead directly can remove this clone.
+                let mut next = unsafe { Arc::clone_from(t) };
                 WheelTimerList::insert_before(
-                    unsafe { WheelTimerList::list_head_of_mut_unchecked(&mut t) },
+                    unsafe { WheelTimerList::list_head_of_mut_unchecked(&mut next) },
                     timer,
                 );
                 return;
@@ -167,12 +169,13 @@ impl TimerWheel {
         {
             let wheel = self.wheel.irqsave_lock();
             let mut iter = wheel[cursor].iter();
-            for mut timer in iter {
+            for timer in iter {
                 if timer.timeout_ticks() > current_ticks {
                     break;
                 }
-                WheelTimerList::detach(&mut timer);
-                task_list.push_back(timer);
+                let mut the_timer = unsafe { Arc::clone_from(timer) };
+                WheelTimerList::detach(&mut the_timer);
+                task_list.push_back(the_timer);
             }
         }
 
