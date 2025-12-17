@@ -62,6 +62,20 @@ os_adapter! {
     }
 }
 
+extern "C" fn cmsis_sigterm_handler(_signum: i32) {
+    let current = scheduler::current_thread();
+    let Some(alien_ptr) = current.get_alien_ptr() else {
+        return;
+    };
+    let t = unsafe { &mut *(alien_ptr.as_ptr() as *mut Os2Thread) };
+    exit_os2_thread(t);
+    scheduler::retire_me();
+}
+
+extern "C" fn cmsis_suspend_handler(_signum: i32) {
+    scheduler::suspend_me_for(usize::MAX)
+}
+
 impl Os2Thread {
     delegate! {
         to self.inner() {
@@ -249,15 +263,9 @@ pub extern "C" fn osThreadNew(
     .build();
     {
         let mut l = t.lock();
-        l.register_once_signal_handler(libc::SIGTERM, move || {
-            let current = scheduler::current_thread();
-            let Some(alien_ptr) = current.get_alien_ptr() else {
-                return;
-            };
-            let t = unsafe { &mut *(alien_ptr.as_ptr() as *mut Os2Thread) };
-            exit_os2_thread(t);
-            scheduler::retire_me();
-        });
+        // CMSIS threads use SIGTERM as the termination request.
+        // Bind a persistent kernel-side handler to perform cleanup + retire.
+        l.install_signal_handler(libc::SIGTERM, cmsis_sigterm_handler);
         if merge_attr.stack_mem.is_null() {
             let stack_base = t.stack_base();
             l.set_cleanup(Entry::Closure(Box::new(move || {
@@ -462,12 +470,14 @@ pub extern "C" fn osThreadSuspend(thread_id: osThreadId_t) -> osStatus_t {
         scheduler::suspend_me_for(usize::MAX);
         return osStatus_t_osOK;
     }
-    // FIXME: We should use SIGUSR1 here, however it's not defined yet.
-    if !t
-        .lock()
-        .kill_with_once_handler(libc::SIGHUP, move || scheduler::suspend_me_for(usize::MAX))
+    // Use SIGUSR1 signal to ask the target thread to self-suspend.
     {
-        return osStatus_t_osErrorResource;
+        let mut guard = t.lock();
+        guard.install_signal_handler(libc::SIGUSR1, cmsis_suspend_handler);
+        // If the signal is already pending, treat it as resource-busy.
+        if !guard.kill(libc::SIGUSR1) {
+            return osStatus_t_osErrorResource;
+        }
     }
     osStatus_t_osOK
 }
