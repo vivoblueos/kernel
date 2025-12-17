@@ -188,10 +188,6 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
         let next_saved_sp = next.saved_sp();
         let next_priority = next.priority();
         let mut old = set_current_thread(next);
-        // FIXME: Signal feature should be optional.
-        {
-            let cycles = time::get_sys_cycles();
-        }
         #[cfg(debugging_scheduler)]
         crate::trace!(
             "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
