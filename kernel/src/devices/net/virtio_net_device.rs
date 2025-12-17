@@ -32,7 +32,7 @@ use virtio_drivers::{
     transport::SomeTransport,
 };
 
-const VIRTIO_NET_BUFFER_SIZE: usize = 65536;
+const VIRTIO_NET_BUFFER_SIZE: usize = 4096;
 const VIRTIO_NET_QUEUE_SIZE: usize = 16;
 
 static VIRTIO_NET_DEVICES: RwLock<

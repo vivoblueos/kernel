@@ -57,7 +57,7 @@ pub mod boards;
 #[cfg(use_kernel_boot)]
 pub(crate) mod boot;
 pub mod config;
-pub(crate) mod console;
+pub mod console;
 #[cfg(coverage)]
 pub mod coverage;
 pub(crate) mod devices;
