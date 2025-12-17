@@ -18,7 +18,7 @@
 // ListHead should be used with smart pointers. It's **NOT**
 // concurrent safe.
 
-use crate::{intrusive::Adapter, lifetime::BorrowMut};
+use crate::{intrusive::Adapter, lifetime::IouMut};
 use core::{marker::PhantomData, ptr::NonNull};
 
 #[derive(Default, Debug)]
@@ -133,9 +133,9 @@ impl<T, A: Adapter<T>> ListHead<T, A> {
     pub fn safer_insert_after<'a, 'b>(
         head: &'a mut ListHead<T, A>,
         me: &'b mut ListHead<T, A>,
-    ) -> Option<BorrowMut<'b, ListHead<T, A>>> {
+    ) -> Option<IouMut<'b, ListHead<T, A>>> {
         if Self::insert_after(head, me) {
-            return Some(BorrowMut { val: Some(me) });
+            return Some(IouMut { val: Some(me) });
         }
         None
     }
@@ -185,13 +185,13 @@ impl<T, A: Adapter<T>> ListHead<T, A> {
     }
 
     pub fn safer_detach<'a, 'b>(
-        mut borrow: BorrowMut<'a, ListHead<T, A>>,
-    ) -> Option<BorrowMut<'b, ListHead<T, A>>> {
+        mut borrow: IouMut<'a, ListHead<T, A>>,
+    ) -> Option<IouMut<'b, ListHead<T, A>>> {
         let Some(val) = &mut borrow.val else {
             panic!("Detaching a nil Node");
         };
         if Self::detach(val) {
-            return Some(BorrowMut { val: None });
+            return Some(IouMut { val: None });
         }
         None
     }

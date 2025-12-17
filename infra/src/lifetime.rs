@@ -45,15 +45,17 @@ impl<'a, T> LifetimeDelegator<'a, T> {
     }
 }
 
+// Borrow and BorrowMut have been used in [rust-std](https://doc.rust-lang.org/std/borrow/trait.BorrowMut.html),
+// so we use Iou (I Owe You, aka, 借据) to name this struct.
 #[derive(Default)]
 #[repr(transparent)]
-pub struct Borrow<'a, T> {
+pub struct Iou<'a, T> {
     pub val: Option<&'a T>,
 }
 
 #[derive(Default)]
 #[repr(transparent)]
-pub struct BorrowMut<'a, T> {
+pub struct IouMut<'a, T> {
     pub val: Option<&'a mut T>,
 }
 
