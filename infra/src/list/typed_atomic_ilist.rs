@@ -72,10 +72,17 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
     }
 
     #[inline]
-    pub unsafe fn list_head_of_mut_unchecked(this: &mut T) -> &mut Self {
+    pub fn list_head_of_mut(this: &mut T) -> &mut Self {
         let ptr = this as *mut _ as *mut u8;
-        let list_head_ptr = ptr.add(A::offset()) as *mut Self;
-        &mut *list_head_ptr
+        let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
+        unsafe { &mut *list_head_ptr }
+    }
+
+    #[inline]
+    pub unsafe fn list_head_of(this: &T) -> &mut Self {
+        let ptr: *mut u8 = core::mem::transmute(this as *const _ as *const u8);
+        let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
+        unsafe { &mut *list_head_ptr }
     }
 
     #[inline]
@@ -339,9 +346,7 @@ mod tests {
             let inserted = inserted.clone();
             let detached = detached.clone();
             let t = thread::spawn(move || {
-                let lh = unsafe {
-                    Ty::list_head_of_mut_unchecked(Arc::<Foo>::get_mut_unchecked(&mut f))
-                };
+                let lh = unsafe { Ty::list_head_of_mut(Arc::<Foo>::get_mut_unchecked(&mut f)) };
                 for k in 0..256 {
                     {
                         let mut h = head.write();
@@ -383,9 +388,7 @@ mod tests {
             let num_bob = num_bob.clone();
             let now_in = now_in.clone();
             let t = thread::spawn(move || {
-                let lh = unsafe {
-                    Ty::list_head_of_mut_unchecked(Arc::<Foo>::get_mut_unchecked(&mut f))
-                };
+                let lh = unsafe { Ty::list_head_of_mut(Arc::<Foo>::get_mut_unchecked(&mut f)) };
                 if i & 1 == 0 {
                     let mut aw = alice.write();
                     if Ty::insert_after(&mut *aw, lh) {
