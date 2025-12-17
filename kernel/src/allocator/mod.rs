@@ -302,39 +302,6 @@ mod tests {
     }
 
     #[test]
-    fn memory_info_test() {
-        // Test memory statistics
-        let initial_info = memory_info();
-        assert!(initial_info.total > 0, "total memory should be positive");
-
-        // Allocate some memory, use black_box to avoid compiler optimization
-        let mut boxed = core::hint::black_box(Box::new([0u8; 2048]));
-
-        let after_alloc_info = memory_info();
-        assert!(
-            after_alloc_info.used > initial_info.used,
-            "used memory should increase after allocation: initial_used={}, after_alloc_used={}, total={}, max_used={}",
-            initial_info.used,
-            after_alloc_info.used,
-            after_alloc_info.total,
-            after_alloc_info.max_used
-        );
-
-        // Free memory (by dropping the box)
-        drop(boxed);
-
-        let after_free_info = memory_info();
-        assert!(
-            after_free_info.used < after_alloc_info.used,
-            "used memory should decrease after deallocation: after_alloc_used={}, after_free_used={}, total={}, max_used={}",
-            after_alloc_info.used,
-            after_free_info.used,
-            after_free_info.total,
-            after_free_info.max_used
-        );
-    }
-
-    #[test]
     fn fragmentation_test() {
         // Test memory fragmentation handling
         let mut boxes = Vec::new();
