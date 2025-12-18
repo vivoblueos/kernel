@@ -199,12 +199,12 @@ impl Mutex {
         }
     }
 
-    fn inner_pend_for<'a, 'b>(
+    fn inner_pend_for<'a>(
         ticks: usize,
         this_mutex: &'a Arc<Self>,
         mut this_lock: SpinLockGuard<'a, WaitQueue>,
         this_thread: &'a ThreadNode,
-        owner_thread: &'b ThreadNode,
+        owner_thread: &ThreadNode,
     ) -> (bool, SpinLockGuard<'a, WaitQueue>) {
         let this_priority = this_thread.priority();
         // We walk along the blocking chain to scan no more than

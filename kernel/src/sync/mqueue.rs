@@ -130,7 +130,7 @@ impl MessageQueue {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     pub fn send(
