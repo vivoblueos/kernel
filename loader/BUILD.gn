@@ -22,7 +22,7 @@ group("check_loader") {
 
 group("inputs") {
   testonly = true
-  deps = [ "tests/inputs:inputs" ]
+  deps = [ "tests/inputs" ]
 }
 
 if (coverage || profile) {
@@ -41,7 +41,7 @@ build_rust("blueos_loader") {
   sources = [ "src/lib.rs" ]
   deps = [
     "//external/vendor/goblin-0.9.3:goblin",
-    "//librs:librs",
+    "//librs",
   ]
 }
 

@@ -46,13 +46,13 @@ group("check_kernel_probe") {
 
 _shared_deps = [
   ":atomic",
+  "//external/rust-fatfs/v0.4:fatfs",
   "//external/vendor/bitflags-2.10.0:bitflags",
   "//external/vendor/cfg-if-1.0.4:cfg_if",
   "//external/vendor/const-default-1.0.0:const_default",
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
-  "//external/rust-fatfs/v0.4:fatfs",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
   "//external/vendor/spin-0.9.8:spin",
   "//external/vendor/thiserror-2.0.17:thiserror",
@@ -81,8 +81,8 @@ build_rust("kernel_unittest") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/vendor/paste-1.0.15:paste",
     "//external/vendor/delegate-0.13.4:delegate",
+    "//external/vendor/paste-1.0.15:paste",
     "//kernel/macro:blueos_macro",
     "//kernel/test_harness:blueos_test_macro",
   ]
@@ -139,8 +139,8 @@ build_rust("blueos") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/vendor/paste-1.0.15:paste",
     "//external/vendor/delegate-0.13.4:delegate",
+    "//external/vendor/paste-1.0.15:paste",
     "//kernel/macro:blueos_macro",
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
