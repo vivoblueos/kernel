@@ -129,7 +129,7 @@ impl Mutex {
             self as *const _
         );
         let mut w = self.pending.irqsave_lock();
-        //#[cfg(debugging_scheduler)]
+        #[cfg(debugging_scheduler)]
         crate::trace!(
             "[PEND_FOR] TH:0x{:x} has got the spinlock of mutex {:?}",
             Thread::id(&this_thread),
@@ -147,7 +147,7 @@ impl Mutex {
                 let ok = guard.add_acquired_mutex(this_mutex.clone());
                 debug_assert!(ok);
                 let _ = guard.replace_pending_on_mutex(None);
-                //#[cfg(debugging_scheduler)]
+                #[cfg(debugging_scheduler)]
                 crate::trace!(
                     "TH:0x{:x} @ P{} has got mutex {:?}",
                     Thread::id(&this_thread),
