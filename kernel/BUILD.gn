@@ -123,10 +123,6 @@ build_rust("kernel_integration_test") {
     deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
   }
   cfgs = _kernel_default_cfgs
-  configs += [
-    "//kernel/kconfig:kconfigs",
-    "//build/boards/${board}:kernel_config",
-  ]
   rustflags = [
     "--test",
     "-Zpanic-abort-tests",
@@ -150,7 +146,7 @@ build_rust("blueos") {
   rustenv = [ "TARGET_BOARD=${board}" ]
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
-  configs += [
+  public_configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
   ]
