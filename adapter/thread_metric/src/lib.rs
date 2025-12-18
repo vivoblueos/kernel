@@ -16,7 +16,7 @@
 
 use blueos::{
     scheduler, thread,
-    thread::{Entry, Thread, ThreadNode, CREATED, READY, RUNNING, SUSPENDED},
+    thread::{Entry, Thread, ThreadNode, IDLE, READY, RUNNING, SUSPENDED},
     time,
     types::{Arc, ThreadPriority},
 };
@@ -71,8 +71,7 @@ pub extern "C" fn tm_thread_create(
 pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref().clone() };
     // Resuming myself should not happen.
-    if scheduler::queue_ready_thread(SUSPENDED, t.clone())
-        || scheduler::queue_ready_thread(CREATED, t)
+    if scheduler::queue_ready_thread(SUSPENDED, t.clone()) || scheduler::queue_ready_thread(IDLE, t)
     {
         scheduler::relinquish_me();
         return TM_SUCCESS;

@@ -131,7 +131,7 @@ mod tests {
         // 1 in global queue, 1 in os_thread, 1 in ready queue
         // total 3, drop one reference here
         drop(os_thread);
-        scheduler::queue_ready_thread(thread::CREATED, thread);
+        scheduler::queue_ready_thread(thread::IDLE, thread);
         scheduler::yield_me(); // to retire the thread
     }
 
@@ -143,7 +143,7 @@ mod tests {
         // 1 in global queue, 1 in os_thread, 1 in ready queue
         // total 3, drop one reference here
         drop(os_thread);
-        scheduler::queue_ready_thread(thread::CREATED, thread);
+        scheduler::queue_ready_thread(thread::IDLE, thread);
         scheduler::yield_me(); // to retire the thread
     }
 }

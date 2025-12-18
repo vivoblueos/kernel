@@ -89,10 +89,15 @@ impl_simple_intrusive_adapter!(OffsetOfSchedNode, Thread, sched_node);
 impl_simple_intrusive_adapter!(OffsetOfGlobal, Thread, global);
 impl_simple_intrusive_adapter!(OffsetOfLock, Thread, lock);
 
-pub const CREATED: Uint = 0;
+// When a thread is created or is removed from the RQ.
+pub const IDLE: Uint = 0;
+// When a thread is added to a RQ.
 pub const READY: Uint = 1;
+// When a thread is running.
 pub const RUNNING: Uint = 2;
+// When a thread is suspended.
 pub const SUSPENDED: Uint = 3;
+// When a thread is retired.
 pub const RETIRED: Uint = 4;
 
 // ThreadStats is protected by thread scheduler.
@@ -272,7 +277,7 @@ impl Thread {
     pub fn state_to_str(&self) -> &str {
         let state = self.state.load(Ordering::Relaxed);
         match state {
-            CREATED => "created",
+            IDLE => "idle",
             READY => "ready",
             RUNNING => "running",
             SUSPENDED => "suspended",
@@ -384,7 +389,7 @@ impl Thread {
         Self {
             cleanup: None,
             stack: Stack::new(),
-            state: AtomicUint::new(CREATED),
+            state: AtomicUint::new(IDLE),
             lock: ISpinLock::new(),
             sched_node: IlistHead::<Thread, OffsetOfSchedNode>::new(),
             global: UniqueListHead::new(),

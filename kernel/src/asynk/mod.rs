@@ -71,11 +71,11 @@ pub(crate) fn init() {
         unsafe { &mut POLLER },
         unsafe { &mut POLLER_STORAGE },
         MAX_THREAD_PRIORITY,
-        thread::CREATED,
+        thread::IDLE,
         Entry::C(poll),
         ThreadKind::AsyncPoller,
     );
-    let ok = scheduler::queue_ready_thread(thread::CREATED, poller);
+    let ok = scheduler::queue_ready_thread(thread::IDLE, poller);
     debug_assert!(ok);
 }
 

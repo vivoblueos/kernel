@@ -187,7 +187,7 @@ mod tests {
             unsafe { &mut TEST_THREADS[i] },
             unsafe { &mut TEST_THREAD_STORAGES[i] },
             config::MAX_THREAD_PRIORITY / 2,
-            thread::CREATED,
+            thread::IDLE,
             Entry::C(test_main),
             ThreadKind::Normal,
         );
@@ -202,11 +202,11 @@ mod tests {
             unsafe { &mut MAIN_THREAD },
             unsafe { &mut MAIN_THREAD_STORAGE },
             config::MAX_THREAD_PRIORITY / 2,
-            thread::CREATED,
+            thread::IDLE,
             Entry::C(test_main),
             ThreadKind::Normal,
         );
-        let ok = scheduler::queue_ready_thread(thread::CREATED, t.clone());
+        let ok = scheduler::queue_ready_thread(thread::IDLE, t.clone());
         assert!(ok);
     }
 
