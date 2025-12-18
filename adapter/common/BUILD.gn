@@ -38,7 +38,7 @@ build_rust("blueos_adapter_unittest") {
   edition = "2021"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [ "//external/vendor/semihosting-0.1.20:semihosting" ] + shared_deps
-    configs += [
+  configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
   ]
