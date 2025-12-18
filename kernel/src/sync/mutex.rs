@@ -138,7 +138,6 @@ impl Mutex {
 
         let mut last_sys_ticks = crate::time::get_sys_ticks();
         loop {
-            crate::trace!("nesting_count: {}", self.nesting_count());
             if self.nesting_count() == 0 {
                 self.increment_nesting_count();
                 let old = self.replace_owner(Some(this_thread.clone()));
