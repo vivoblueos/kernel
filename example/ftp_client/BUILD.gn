@@ -25,7 +25,7 @@ executable("ftp_client_example") {
     "//external/rust-ftp/master:ftp",
     "//external/vendor/log-0.4.28:log",
     "//kernel/rsrt:rsrt_std",
-    "//librs:librs",
+    "//librs",
   ]
   configs += [ "//build/boards/${board}:kernel_config" ]
   rustflags = [

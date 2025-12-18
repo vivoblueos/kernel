@@ -22,7 +22,7 @@ executable("fs_example") {
   sources = [ "src/main.rs" ]
   deps = [
     "//kernel/rsrt:rsrt_std",
-    "//librs:librs",
+    "//librs",
   ]
   configs += [ "//build/boards/${board}:kernel_config" ]
 }

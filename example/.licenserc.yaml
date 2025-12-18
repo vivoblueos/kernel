@@ -1,11 +1,10 @@
 header: # `header` section is configurations for source codes license header.
   - paths:
-     - '**'
+      - '**'
     license:
       spdx-id: Apache-2.0 # the spdx id of the license, it's convenient when your license is standard SPDX license.
       copyright-owner: vivo Mobile Communication Co., Ltd # the copyright owner to replace the [owner] in the `spdx-id` template.
-      content:
-        | # `license` will be used as the content when `fix` command needs to insert a license header.
+      content: | # `license` will be used as the content when `fix` command needs to insert a license header.
         Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
 
         Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +33,6 @@ header: # `header` section is configurations for source codes license header.
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
-
     paths-ignore: # `paths-ignore` are the path list that will be ignored by license-eye.
       - "licenses"
       - "**/cov.rs"
@@ -62,13 +60,11 @@ header: # `header` section is configurations for source codes license header.
       - ".licenserc.yaml"
       - "**/*.lds"
       - "**/lib64"
-
+      - ".github/**"
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
-
     # license-location-threshold specifies the index threshold where the license header can be located,
     # after all, a "header" cannot be TOO far from the file start.
     license-location-threshold: 75
-
     language:
       Rust:
         extensions:
@@ -88,4 +84,3 @@ header: # `header` section is configurations for source codes license header.
           - ".cc"
           - ".hpp"
         comment_style_id: SlashAsterisk
-
