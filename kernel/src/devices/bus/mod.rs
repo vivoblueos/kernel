@@ -25,7 +25,7 @@ impl<B: BusInterface> Clone for BusWrapper<B> {
 }
 
 pub struct Bus<B: BusInterface> {
-    devices: super::SpinRwLock<super::DeviceList>,
+    devices: SpinLock<super::DeviceList>,
     // FIXME: SpinLock is not a efficient way to protect bus interface
     pub intf: BusWrapper<B>,
 }
@@ -43,7 +43,7 @@ pub trait BusInterface: Sync + Send + Sized {
 impl<B: BusInterface> Bus<B> {
     pub fn new(intf: B) -> Self {
         Self {
-            devices: super::SpinRwLock::new(super::DeviceList::new()),
+            devices: SpinLock::new(super::DeviceList::new()),
             intf: BusWrapper(TinyArc::new(SpinLock::new(intf))),
         }
     }
