@@ -1,106 +1,95 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 use crate::intrusive::Adapter;
-
-#[warn(unused_imports)]
-use core::{marker::PhantomData, ops::Drop};
-use std::{boxed::Box, cmp::Ordering, fmt::Debug, ptr};
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[warn(unused_imports)]
+use core::{marker::PhantomData, ops::Drop, ptr::NonNull};
+use std::{cmp::Ordering, fmt::Debug};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Color {
-    Red,
-    Black,
+    Red = 0,
+    Black = 1,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(C)]
+const COLOR_MASK: usize = 1;
+const PTR_MASK: usize = !COLOR_MASK;
+
+#[derive(Debug)]
+#[repr(C, align(2))]
 pub struct RBLink {
-    color: Color,
-    parent: *mut RBLink,
-    right: *mut RBLink,
-    left: *mut RBLink,
-}
+    parent_tagged: usize,
 
+    left: Option<NonNull<RBLink>>,
+    right: Option<NonNull<RBLink>>,
+}
 impl RBLink {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            color: Color::Red,
-            parent: ptr::null_mut(),
-            right: ptr::null_mut(),
-            left: ptr::null_mut(),
+            parent_tagged: 0,
+            left: None,
+            right: None,
         }
     }
 
     #[inline]
+    pub fn color(&self) -> Color {
+        if (self.parent_tagged & COLOR_MASK) == 0 {
+            Color::Red
+        } else {
+            Color::Black
+        }
+    }
+    #[inline]
+    pub fn set_color(&mut self, color: Color) {
+        let bit = color as usize;
+        self.parent_tagged = (self.parent_tagged & PTR_MASK) | bit;
+    }
+    #[inline]
     pub fn is_red(&self) -> bool {
-        self.color == Color::Red
+        self.color() == Color::Red
+    }
+    #[inline]
+    pub fn is_black(&self) -> bool {
+        self.color() == Color::Black
+    }
+    #[inline]
+    pub fn parent(&self) -> Option<NonNull<RBLink>> {
+        let ptr = (self.parent_tagged & PTR_MASK) as *mut RBLink;
+        NonNull::new(ptr)
+    }
+    #[inline]
+    pub fn set_parent(&mut self, parent: Option<NonNull<RBLink>>) {
+        let ptr_val = match parent {
+            Some(p) => p.as_ptr() as usize,
+            None => 0,
+        };
+
+        debug_assert!(ptr_val & COLOR_MASK == 0, "Pointer not aligned!");
+
+        let current_color = self.parent_tagged & COLOR_MASK;
+        self.parent_tagged = ptr_val | current_color;
     }
 }
 
 pub struct RBTree<T, A: Adapter<T>> {
-    root: *mut RBLink,
+    root: Option<NonNull<RBLink>>,
     size: usize,
-    //Set sentry to judge null and double-black situation to make ptr opreation easy.
-    nil: *mut RBLink,
     _marker: PhantomData<(T, A)>,
 }
-
 impl<T, A: Adapter<T>> RBTree<T, A> {
     pub fn new() -> Self {
-        unsafe {
-            // Color of sentry must be black so that black height can be ensured.
-            let nil_link = Box::new(RBLink {
-                color: Color::Black,
-                parent: ptr::null_mut(),
-                right: ptr::null_mut(),
-                left: ptr::null_mut(),
-            });
-
-            let nil = Box::into_raw(nil_link);
-            (*nil).left = nil;
-            (*nil).right = nil;
-            (*nil).parent = nil;
-
-            Self {
-                root: nil,
-                size: 0,
-                nil,
-                _marker: PhantomData,
-            }
+        Self {
+            root: None,
+            size: 0,
+            _marker: PhantomData,
         }
     }
 
-    unsafe fn get_link(&self, object: *mut T) -> *mut RBLink {
+    unsafe fn get_link(&self, object: *mut T) -> NonNull<RBLink> {
         unsafe {
-            if object.is_null() {
-                return self.nil;
-            }
-
-            (object as *mut u8).add(A::offset()) as *mut RBLink
+            let ptr = (object as *mut u8).add(A::offset()) as *mut RBLink;
+            NonNull::new_unchecked(ptr)
         }
     }
 
-    pub unsafe fn get_obj(&self, link: *mut RBLink) -> *mut T {
-        unsafe {
-            if link == self.nil || link.is_null() {
-                return ptr::null_mut();
-            }
-
-            (link as *mut u8).sub(A::offset()) as *mut T
-        }
+    pub unsafe fn get_obj(&self, link: NonNull<RBLink>) -> *mut T {
+        unsafe { (link.as_ptr() as *mut u8).sub(A::offset()) as *mut T }
     }
 
     pub fn search<K, F>(&self, key: &K, compare: F) -> Option<&T>
@@ -109,12 +98,13 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
     {
         unsafe {
             let mut current = self.root;
-            while current != self.nil {
-                let current_obj = self.get_obj(current);
-                match compare(key, &*current_obj) {
-                    Ordering::Equal => return Some(&*current_obj),
-                    Ordering::Less => current = (*current).left,
-                    Ordering::Greater => current = (*current).right,
+            while let Some(node) = current {
+                let node_ref = node.as_ref();
+                let obj = self.get_obj(node);
+                match compare(key, &*obj) {
+                    Ordering::Equal => return Some(&*obj),
+                    Ordering::Less => current = node_ref.left,
+                    Ordering::Greater => current = node_ref.right,
                 }
             }
         }
@@ -126,321 +116,339 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
         F: Fn(&T, &T) -> Ordering,
     {
         unsafe {
-            // New node two children point to sentry.
-            let new_link = self.get_link(object);
-            (*new_link).left = self.nil;
-            (*new_link).right = self.nil;
-            (*new_link).color = Color::Red;
-            let mut y = self.nil;
+            let mut new_link = self.get_link(object);
+
+            {
+                let node = new_link.as_mut();
+                node.left = None;
+                node.right = None;
+                node.set_color(Color::Red);
+            }
+            let mut y = None;
             let mut x = self.root;
-
-            while x != self.nil {
-                y = x;
-                let x_obj = self.get_obj(x);
-
-                match compare(&*object, &*x_obj) {
-                    Ordering::Less => x = (*x).left,
-                    Ordering::Greater => x = (*x).right,
+            while let Some(node) = x {
+                y = Some(node);
+                let obj = self.get_obj(node);
+                match compare(&*object, &*obj) {
+                    Ordering::Less => x = node.as_ref().left,
+                    Ordering::Greater => x = node.as_ref().right,
                     Ordering::Equal => return,
                 }
             }
 
-            (*new_link).parent = y;
-
-            if y == self.nil {
-                self.root = new_link;
+            new_link.as_mut().set_parent(y);
+            if y.is_none() {
+                self.root = Some(new_link);
             } else {
-                let y_obj = self.get_obj(y);
+                let mut y_ptr = y.unwrap();
+                let y_obj = self.get_obj(y_ptr);
+                let y_mut = y_ptr.as_mut();
+
                 match compare(&*object, &*y_obj) {
-                    Ordering::Less => (*y).left = new_link,
-                    _ => (*y).right = new_link,
+                    Ordering::Less => y_mut.left = Some(new_link),
+                    _ => y_mut.right = Some(new_link),
                 }
             }
-
             self.size += 1;
             self.fix_after_insertion(new_link);
         }
     }
 
-    pub fn fix_after_insertion(&mut self, mut z: *mut RBLink) {
+    unsafe fn fix_after_insertion(&mut self, mut z: NonNull<RBLink>) {
         unsafe {
-            while z != self.root && (*((*z).parent)).is_red() {
-                let parent = (*z).parent;
-                let grandparent = (*parent).parent;
-                let is_parent_left = (*grandparent).left == parent;
+            while let Some(mut parent) = z.as_ref().parent() {
+                if !parent.as_ref().is_red() {
+                    break;
+                }
+
+                let mut grandparent = parent.as_ref().parent().unwrap_unchecked();
+                let is_parent_left = grandparent.as_ref().left == Some(parent);
                 let uncle = if is_parent_left {
-                    (*grandparent).right
+                    grandparent.as_ref().right
                 } else {
-                    (*grandparent).left
+                    grandparent.as_ref().left
                 };
-
-                // Situation 2. Uncle is red.
-                if uncle != self.nil && (*uncle).is_red() {
-                    (*parent).color = Color::Black;
-                    (*uncle).color = Color::Black;
-                    (*grandparent).color = Color::Red;
-                    z = grandparent;
-                    continue;
-                }
-
-                let is_link_left = (*parent).left == z;
-
-                // Situation 2, direction is differnt with parent.
-                if is_parent_left ^ is_link_left {
-                    if is_parent_left {
-                        self.rotate_left(parent);
-                    } else {
-                        self.rotate_right(parent);
+                // Case 1: Uncle is Red
+                if let Some(mut uncle_node) = uncle {
+                    if uncle_node.as_ref().is_red() {
+                        parent.as_mut().set_color(Color::Black);
+                        uncle_node.as_mut().set_color(Color::Black);
+                        grandparent.as_mut().set_color(Color::Red);
+                        z = grandparent;
+                        continue;
                     }
-
-                    z = parent;
-                    continue;
                 }
-
-                // Situation 2, direction is same to parent.
-                (*parent).color = Color::Black;
-                (*grandparent).color = Color::Red;
-
+                // Case 2 & 3: Uncle is Black (or None)
+                let is_z_left = parent.as_ref().left == Some(z);
                 if is_parent_left {
+                    if !is_z_left {
+                        // Case 2: Triangle shape (Left-Right) -> Rotate Left
+                        self.rotate_left(parent);
+                        z = parent;
+                        parent = z.as_ref().parent().unwrap_unchecked();
+                    }
+                    // Case 3: Line shape (Left-Left) -> Rotate Right
+                    parent.as_mut().set_color(Color::Black);
+                    grandparent.as_mut().set_color(Color::Red);
                     self.rotate_right(grandparent);
                 } else {
+                    if is_z_left {
+                        // Case 2: Triangle shape (Right-Left) -> Rotate Right
+                        self.rotate_right(parent);
+                        z = parent;
+                        parent = z.as_ref().parent().unwrap_unchecked();
+                    }
+                    // Case 3: Line shape (Right-Right) -> Rotate Left
+                    parent.as_mut().set_color(Color::Black);
+                    grandparent.as_mut().set_color(Color::Red);
                     self.rotate_left(grandparent);
                 }
-
-                break;
             }
 
             // Sometime we changed color of root.
-            (*self.root).color = Color::Black;
+            if let Some(mut root) = self.root {
+                root.as_mut().set_color(Color::Black);
+            }
         }
     }
-
-    pub fn rotate_left(&mut self, x: *mut RBLink) {
+    unsafe fn rotate_left(&mut self, mut x: NonNull<RBLink>) {
         unsafe {
-            let right = (*x).right;
-            (*x).right = (*right).left;
+            let mut y = x.as_ref().right.expect("Rotate left expects right child");
 
-            if (*right).left != self.nil {
-                (*(*right).left).parent = x;
+            x.as_mut().right = y.as_ref().left;
+            if let Some(mut beta) = y.as_ref().left {
+                beta.as_mut().set_parent(Some(x));
             }
 
-            (*right).parent = (*x).parent;
-            let parent = (*x).parent;
-
-            if x == self.root {
-                self.root = right;
-            } else if x == (*parent).left {
-                (*parent).left = right;
+            let p = x.as_ref().parent();
+            y.as_mut().set_parent(p);
+            if p.is_none() {
+                self.root = Some(y);
             } else {
-                (*parent).right = right;
+                let mut p_node = p.unwrap();
+                if p_node.as_ref().left == Some(x) {
+                    p_node.as_mut().left = Some(y);
+                } else {
+                    p_node.as_mut().right = Some(y);
+                }
             }
-
-            (*right).left = x;
-            (*x).parent = right;
+            y.as_mut().left = Some(x);
+            x.as_mut().set_parent(Some(y));
         }
     }
 
-    pub fn rotate_right(&mut self, x: *mut RBLink) {
+    unsafe fn rotate_right(&mut self, mut x: NonNull<RBLink>) {
         unsafe {
-            let left = (*x).left;
-            (*x).left = (*left).right;
+            let mut y = x.as_ref().left.expect("Rotate right expects left child");
 
-            if (*left).right != self.nil {
-                let left_right = (*left).right;
-                (*left_right).parent = x;
+            x.as_mut().left = y.as_ref().right;
+            if let Some(mut beta) = y.as_ref().right {
+                beta.as_mut().set_parent(Some(x));
             }
 
-            (*left).parent = (*x).parent;
-            let parent = (*x).parent;
-
-            if x == self.root {
-                self.root = left;
-            } else if x == (*parent).right {
-                (*parent).right = left;
+            let p = x.as_ref().parent();
+            y.as_mut().set_parent(p);
+            if p.is_none() {
+                self.root = Some(y);
             } else {
-                (*parent).left = left;
-            }
-
-            (*left).right = x;
-            (*x).parent = left;
-        }
-    }
-
-    pub fn minimum(&self, mut node: *mut RBLink) -> *mut RBLink {
-        unsafe {
-            while node != self.nil {
-                if (*node).left == self.nil {
-                    break;
+                let mut p_node = p.unwrap();
+                if p_node.as_ref().right == Some(x) {
+                    p_node.as_mut().right = Some(y);
+                } else {
+                    p_node.as_mut().left = Some(y);
                 }
-                node = (*node).left;
             }
-        }
-        node
-    }
 
-    pub fn maximum(&self, mut node: *mut RBLink) -> *mut RBLink {
-        unsafe {
-            while node != self.nil {
-                if (*node).right == self.nil {
-                    break;
-                }
-                node = (*node).right;
-            }
-            node
+            y.as_mut().right = Some(x);
+            x.as_mut().set_parent(Some(y));
         }
     }
 
     pub fn delete(&mut self, object: *mut T) {
         unsafe {
             let node = self.get_link(object);
-            if node == self.nil || node.is_null() {
-                return;
-            }
-
             self.delete_node(node);
             self.size -= 1;
         }
     }
 
-    pub unsafe fn delete_node(&mut self, z: *mut RBLink) {
+    unsafe fn delete_node(&mut self, mut z: NonNull<RBLink>) {
         unsafe {
             let mut y = z;
-            let mut y_original_color = (*y).color;
-            let x;
-            let x_parent;
-
-            // Situation 1: Only a child
-            if (*z).left == self.nil {
-                x = (*z).right;
-                self.transplant(z, (*z).right);
-                x_parent = (*z).parent;
-            } else if (*z).right == self.nil {
-                x = (*z).left;
-                self.transplant(z, (*z).left);
-                x_parent = (*z).parent;
+            let mut y_original_color = y.as_ref().color();
+            let x: Option<NonNull<RBLink>>;
+            let x_parent: Option<NonNull<RBLink>>;
+            //Case 1. Just a child.
+            if z.as_ref().left.is_none() {
+                x = z.as_ref().right;
+                x_parent = z.as_ref().parent();
+                self.transplant(z, z.as_ref().right);
+            } else if z.as_ref().right.is_none() {
+                x = z.as_ref().left;
+                x_parent = z.as_ref().parent();
+                self.transplant(z, z.as_ref().left);
             } else {
-                // Situation 2: left and right both exists
-                y = self.minimum((*z).right);
-                y_original_color = (*y).color;
-                x = (*y).right;
-
-                if (*y).parent == z {
-                    //(*x).parent = y;
-                    x_parent = y;
+                //Case 2. There are two children.
+                let z_right = z.as_ref().right.unwrap();
+                y = self.minimum(z_right);
+                y_original_color = y.as_ref().color();
+                x = y.as_ref().right;
+                if y.as_ref().parent() == Some(z) {
+                    x_parent = Some(y);
                 } else {
-                    x_parent = (*y).parent;
-
-                    self.transplant(y, x);
-                    (*y).right = (*z).right;
-                    let node_right = (*y).right;
-                    (*node_right).parent = y;
+                    x_parent = y.as_ref().parent();
+                    self.transplant(y, y.as_ref().right);
+                    y.as_mut().right = z.as_ref().right;
+                    if let Some(mut yr) = y.as_ref().right {
+                        yr.as_mut().set_parent(Some(y));
+                    }
                 }
-
-                self.transplant(z, y);
-                (*y).left = (*z).left;
-                (*(*y).left).parent = y;
-                (*y).color = (*z).color;
+                self.transplant(z, Some(y));
+                y.as_mut().left = z.as_ref().left;
+                if let Some(mut yl) = y.as_ref().left {
+                    yl.as_mut().set_parent(Some(y));
+                }
+                y.as_mut().set_color(z.as_ref().color());
             }
-
-            // If delete a black node, black height changed. Fix it!!!
             if y_original_color == Color::Black {
                 self.fix_after_deletion(x, x_parent);
             }
 
-            //In case of overhang ref.
-            (*z).left = ptr::null_mut();
-            (*z).right = ptr::null_mut();
-            (*z).parent = ptr::null_mut();
+            let z_mut = z.as_mut();
+            z_mut.left = None;
+            z_mut.right = None;
+            z_mut.parent_tagged = 0;
         }
     }
 
-    pub unsafe fn transplant(&mut self, u: *mut RBLink, v: *mut RBLink) {
+    unsafe fn fix_after_deletion(
+        &mut self,
+        mut x: Option<NonNull<RBLink>>,
+        mut parent: Option<NonNull<RBLink>>,
+    ) {
         unsafe {
-            if (*u).parent == self.nil {
-                self.root = v;
-            } else if u == (*(*u).parent).left {
-                (*(*u).parent).left = v;
-            } else {
-                (*(*u).parent).right = v;
-            }
-            if v != self.nil {
-                (*v).parent = (*u).parent;
-            }
-        }
-    }
-
-    pub unsafe fn fix_after_deletion(&mut self, mut x: *mut RBLink, mut parent: *mut RBLink) {
-        unsafe {
-            //w is sibling of x.
-            while x != self.root && !(*x).is_red() {
-                if x != self.nil {
-                    parent = (*x).parent;
+            // w is silbling of x.
+            while x != self.root && (x.is_none() || x.unwrap().as_ref().is_black()) {
+                if parent.is_none() {
+                    break;
                 }
+                let mut p_node = parent.unwrap();
 
-                let is_x_left = x == (*parent).left;
+                let is_x_left = x == p_node.as_ref().left;
+
                 let mut w = if is_x_left {
-                    (*parent).right
+                    p_node.as_ref().right
                 } else {
-                    (*parent).left
+                    p_node.as_ref().left
                 };
-
-                // Situation 1: w is red.
-                if (*w).is_red() {
-                    (*w).color = Color::Black;
-                    (*parent).color = Color::Red;
-
-                    if is_x_left {
-                        self.rotate_left(parent);
-                        w = (*parent).right;
-                    } else {
-                        self.rotate_right(parent);
-                        w = (*parent).left;
-                    }
-                }
-
-                // situation 2: x and w are black.
-                if !(*(*w).left).is_red() && !(*(*w).right).is_red() {
-                    (*w).color = Color::Red;
+                if w.is_none() {
                     x = parent;
+                    parent = x.unwrap().as_ref().parent();
+                    continue;
+                }
+                let mut w_node = w.unwrap();
+                // Case 1: Sibling w is Red
+                if w_node.as_ref().is_red() {
+                    w_node.as_mut().set_color(Color::Black);
+                    p_node.as_mut().set_color(Color::Red);
+                    if is_x_left {
+                        self.rotate_left(p_node);
+                        w = p_node.as_ref().right;
+                    } else {
+                        self.rotate_right(p_node);
+                        w = p_node.as_ref().left;
+                    }
+                    w_node = w.unwrap();
+                }
+                // w is Black now
+                let left_child = w_node.as_ref().left;
+                let right_child = w_node.as_ref().right;
+                let left_black = left_child.map_or(true, |n| n.as_ref().is_black());
+                let right_black = right_child.map_or(true, |n| n.as_ref().is_black());
+                // Case 2: Sibling w's children are both Black
+                if left_black && right_black {
+                    w_node.as_mut().set_color(Color::Red);
+                    x = parent;
+                    parent = x.unwrap().as_ref().parent();
                 } else {
                     if is_x_left {
-                        // Situation 3：sibling is black with red left and black right.
-                        if !(*(*w).right).is_red() {
-                            (*(*w).left).color = Color::Black;
-                            (*w).color = Color::Red;
-                            self.rotate_right(w);
-                            w = (*parent).right;
+                        // Case 3: w is black, w.left is red, w.right is black
+                        if right_black {
+                            if let Some(mut l) = left_child {
+                                l.as_mut().set_color(Color::Black);
+                            }
+                            w_node.as_mut().set_color(Color::Red);
+                            self.rotate_right(w_node);
+                            w = p_node.as_ref().right;
+                            w_node = w.unwrap();
                         }
-
-                        // Situation 4：sibling is black with red right.
-                        (*w).color = (*parent).color;
-                        (*parent).color = Color::Black;
-                        (*(*w).right).color = Color::Black;
-                        self.rotate_left(parent);
+                        // Case 4: w is black, w.right is red
+                        w_node.as_mut().set_color(p_node.as_ref().color());
+                        p_node.as_mut().set_color(Color::Black);
+                        if let Some(mut r) = w_node.as_ref().right {
+                            r.as_mut().set_color(Color::Black);
+                        }
+                        self.rotate_left(p_node);
                         x = self.root;
                     } else {
-                        // Situation 5：sibling is black with red right and black left.
-                        if !(*(*w).left).is_red() {
-                            (*(*w).right).color = Color::Black;
-                            (*w).color = Color::Red;
-                            self.rotate_left(w);
-                            w = (*parent).left;
+                        // Mirror Case 3
+                        if left_black {
+                            if let Some(mut r) = right_child {
+                                r.as_mut().set_color(Color::Black);
+                            }
+                            w_node.as_mut().set_color(Color::Red);
+                            self.rotate_left(w_node);
+                            w = p_node.as_ref().left;
+                            w_node = w.unwrap();
                         }
-
-                        // Situation 6：sibling is black with red left.
-                        (*w).color = (*parent).color;
-                        (*parent).color = Color::Black;
-                        (*(*w).left).color = Color::Black;
-                        self.rotate_right(parent);
+                        // Mirror Case 4
+                        w_node.as_mut().set_color(p_node.as_ref().color());
+                        p_node.as_mut().set_color(Color::Black);
+                        if let Some(mut l) = w_node.as_ref().left {
+                            l.as_mut().set_color(Color::Black);
+                        }
+                        self.rotate_right(p_node);
                         x = self.root;
                     }
                 }
             }
-
-            (*x).color = Color::Black;
+            if let Some(mut x_node) = x {
+                x_node.as_mut().set_color(Color::Black);
+            }
         }
     }
 
+    unsafe fn transplant(&mut self, u: NonNull<RBLink>, v: Option<NonNull<RBLink>>) {
+        unsafe {
+            let p = u.as_ref().parent();
+            if p.is_none() {
+                self.root = v;
+            } else {
+                let mut p_node = p.unwrap();
+                if Some(u) == p_node.as_ref().left {
+                    p_node.as_mut().left = v;
+                } else {
+                    p_node.as_mut().right = v;
+                }
+            }
+            if let Some(mut v_node) = v {
+                v_node.as_mut().set_parent(p);
+            }
+        }
+    }
+
+    pub fn minimum(&self, mut node: NonNull<RBLink>) -> NonNull<RBLink> {
+        unsafe {
+            while let Some(left) = node.as_ref().left {
+                node = left;
+            }
+            node
+        }
+    }
+
+    pub fn iter(&self) -> RBIterator<'_, T, A> {
+        RBIterator::new(self)
+    }
     pub fn print_structure(&self)
     where
         T: std::fmt::Debug,
@@ -450,31 +458,26 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
         }
     }
 
-    unsafe fn print_node(&self, node: *mut RBLink, depth: usize)
+    unsafe fn print_node(&self, node: Option<NonNull<RBLink>>, depth: usize)
     where
         T: std::fmt::Debug,
     {
         unsafe {
-            if node == self.nil || node.is_null() {
-                return;
+            if let Some(n) = node {
+                self.print_node(n.as_ref().right, depth + 1);
+                let indent = "    ".repeat(depth);
+                let obj = self.get_obj(n);
+                let color = if n.as_ref().is_red() { "RED" } else { "BLK" };
+                println!("{}Node ({}) -> {:?}", indent, color, *obj);
+                self.print_node(n.as_ref().left, depth + 1);
             }
-            self.print_node((*node).right, depth + 1);
-            let indent = "    ".repeat(depth);
-            let obj = self.get_obj(node);
-            let color = if (*node).is_red() { "RED" } else { "BLK" };
-            println!("{}Node ({}) -> {:?}", indent, color, *obj);
-            self.print_node((*node).left, depth + 1);
         }
-    }
-
-    pub fn iter(&self) -> RBIterator<'_, T, A> {
-        RBIterator::new(self)
     }
 }
 
 pub struct RBIterator<'a, T, A: Adapter<T>> {
     tree: &'a RBTree<T, A>,
-    stack: Vec<*mut RBLink>,
+    stack: Vec<NonNull<RBLink>>,
 }
 
 impl<'a, T, A: Adapter<T>> RBIterator<'a, T, A> {
@@ -483,19 +486,16 @@ impl<'a, T, A: Adapter<T>> RBIterator<'a, T, A> {
             tree,
             stack: Vec::new(),
         };
-
         unsafe {
             iter.push_left(tree.root);
         }
-
         iter
     }
-
-    pub unsafe fn push_left(&mut self, mut node: *mut RBLink) {
+    unsafe fn push_left(&mut self, mut node: Option<NonNull<RBLink>>) {
         unsafe {
-            while node != self.tree.nil {
-                self.stack.push(node);
-                node = (*node).left;
+            while let Some(n) = node {
+                self.stack.push(n);
+                node = n.as_ref().left;
             }
         }
     }
@@ -506,8 +506,8 @@ impl<'a, T, A: Adapter<T>> Iterator for RBIterator<'a, T, A> {
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
             let node = self.stack.pop()?;
-            let right = (*node).right;
-            if right != self.tree.nil {
+            let right = node.as_ref().right;
+            if right.is_some() {
                 self.push_left(right);
             }
             let obj_ptr = self.tree.get_obj(node);
@@ -515,26 +515,18 @@ impl<'a, T, A: Adapter<T>> Iterator for RBIterator<'a, T, A> {
         }
     }
 }
-
 impl<T, A: Adapter<T>> Drop for RBTree<T, A> {
-    fn drop(&mut self) {
-        unsafe {
-            drop(Box::from_raw(self.nil));
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-
     use std::{
         boxed::Box,
         string::{String, ToString},
         vec::Vec,
     };
-
     #[derive(Debug)]
     #[repr(C)]
     struct MyNode {
@@ -542,6 +534,7 @@ mod tests {
         value: String,
         link: RBLink,
     }
+
     impl MyNode {
         fn new(key: i32, value: &str) -> Self {
             Self {
@@ -554,43 +547,43 @@ mod tests {
     crate::impl_simple_intrusive_adapter!(MyNodeAdapter, MyNode, link);
 
     unsafe fn check_rb_properties(tree: &RBTree<MyNode, MyNodeAdapter>) {
-        if tree.root == tree.nil {
+        if tree.root.is_none() {
             return;
         }
-
         unsafe {
-            assert!((*tree.root).color == Color::Black, "Root must be black");
-            check_node_properties(tree, tree.root, tree.nil);
+            assert!(tree.root.unwrap().as_ref().is_black(), "Root must be black");
+            check_node_properties(tree, tree.root);
         }
     }
 
     unsafe fn check_node_properties(
         tree: &RBTree<MyNode, MyNodeAdapter>,
-        node: *mut RBLink,
-        nil: *mut RBLink,
+        node: Option<NonNull<RBLink>>,
     ) -> usize {
         unsafe {
-            if node == nil {
-                return 1;
-            }
-
-            let left = (*node).left;
-            let right = (*node).right;
-
-            if (*node).is_red() {
-                assert!(!(*left).is_red(), "Red node has red left child");
-                assert!(!(*right).is_red(), "Red node has red right child");
-            }
-
-            let left_bh = check_node_properties(tree, left, nil);
-            let right_bh = check_node_properties(tree, right, nil);
-
-            assert_eq!(left_bh, right_bh, "Black height mismatch at node");
-
-            if (*node).color == Color::Black {
-                left_bh + 1
-            } else {
-                left_bh
+            match node {
+                None => 1,
+                Some(n) => {
+                    let n_ref = n.as_ref();
+                    let left = n_ref.left;
+                    let right = n_ref.right;
+                    if n_ref.is_red() {
+                        if let Some(l) = left {
+                            assert!(l.as_ref().is_black(), "Red node has red left child");
+                        }
+                        if let Some(r) = right {
+                            assert!(r.as_ref().is_black(), "Red node has red right child");
+                        }
+                    }
+                    let left_bh = check_node_properties(tree, left);
+                    let right_bh = check_node_properties(tree, right);
+                    assert_eq!(left_bh, right_bh, "Black height mismatch at node");
+                    if n_ref.is_black() {
+                        left_bh + 1
+                    } else {
+                        left_bh
+                    }
+                }
             }
         }
     }
@@ -603,15 +596,12 @@ mod tests {
         let n1 = Box::into_raw(Box::new(MyNode::new(10, "Ten")));
         let n2 = Box::into_raw(Box::new(MyNode::new(5, "Five")));
         let n3 = Box::into_raw(Box::new(MyNode::new(20, "Twenty")));
-
         unsafe {
             tree.insert(n1, cmp);
             tree.insert(n2, cmp);
             tree.insert(n3, cmp);
-
             check_rb_properties(&tree);
         }
-
         assert_eq!(tree.size, 3);
         eprintln!("============================");
         tree.print_structure();
@@ -620,7 +610,6 @@ mod tests {
         assert_eq!(res.unwrap().value, "Ten");
         let res = tree.search(&99, search_cmp);
         assert!(res.is_none());
-
         unsafe {
             drop(Box::from_raw(n1));
             drop(Box::from_raw(n2));
@@ -632,21 +621,17 @@ mod tests {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
         let mut nodes = Vec::new();
-
         for i in 0..20 {
             let node = Box::into_raw(Box::new(MyNode::new(i, "Val")));
             nodes.push(node);
             tree.insert(node, cmp);
         }
-
         eprintln!("=============before delete===============");
         tree.print_structure();
-
         unsafe {
             check_rb_properties(&tree);
         }
         assert_eq!(tree.size, 20);
-
         unsafe {
             for i in (0..20).step_by(2) {
                 let node_ptr = nodes[i as usize];
@@ -655,11 +640,9 @@ mod tests {
                 drop(Box::from_raw(node_ptr));
             }
         }
-
         eprintln!("=============after delete================");
         tree.print_structure();
         assert_eq!(tree.size, 10);
-
         unsafe {
             for i in (1..20).step_by(2) {
                 let node_ptr = nodes[i as usize];
@@ -677,11 +660,9 @@ mod tests {
             Box::into_raw(Box::new(MyNode::new(2, "B"))),
             Box::into_raw(Box::new(MyNode::new(4, "D"))),
         ];
-
         for p in &ptrs {
             tree.insert(*p, cmp);
         }
-
         tree.print_structure();
         let mut iter = tree.iter();
         assert_eq!(iter.next().unwrap().key, 1);
@@ -695,86 +676,73 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn test_sequential_insert_stress() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
         let count = 2000;
         let mut nodes = Vec::new();
-
         for i in 0..count {
             let val_str = format!("Val-{}", i);
             let node = Box::into_raw(Box::new(MyNode::new(i, &val_str)));
             nodes.push(node);
             tree.insert(node, cmp);
         }
-
         assert_eq!(tree.size, count as usize);
         unsafe {
             check_rb_properties(&tree);
         }
         let mut i = 0;
-
         for node in tree.iter() {
             assert_eq!(node.key, i);
             assert_eq!(node.value, format!("Val-{}", i));
             i += 1;
         }
-
         assert_eq!(i, count);
-
         unsafe {
             for node in nodes {
                 drop(Box::from_raw(node));
             }
         }
     }
-
     #[test]
     fn test_delete_root_scenarios() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
         let n1 = Box::into_raw(Box::new(MyNode::new(10, "Root")));
-
         unsafe {
             tree.insert(n1, cmp);
             tree.delete(n1);
             assert_eq!(tree.size, 0);
-            assert_eq!(tree.root, tree.nil);
+            assert!(tree.root.is_none());
             drop(Box::from_raw(n1));
         }
-
         let n1 = Box::into_raw(Box::new(MyNode::new(10, "Root")));
         let n2 = Box::into_raw(Box::new(MyNode::new(5, "Left")));
-
         unsafe {
             tree.insert(n1, cmp);
             tree.insert(n2, cmp);
             tree.delete(n1);
             assert_eq!(tree.size, 1);
-            assert_eq!(tree.root, tree.get_link(n2));
-            assert!((*tree.root).color == Color::Black);
+            assert_eq!(tree.root, Some(tree.get_link(n2)));
+            assert!(tree.root.unwrap().as_ref().is_black());
             tree.delete(n2);
             drop(Box::from_raw(n1));
             drop(Box::from_raw(n2));
         }
-
         let n1 = Box::into_raw(Box::new(MyNode::new(10, "Root")));
         let n2 = Box::into_raw(Box::new(MyNode::new(15, "Right")));
-
         unsafe {
             tree.insert(n1, cmp);
             tree.insert(n2, cmp);
             tree.delete(n1);
             assert_eq!(tree.size, 1);
-            assert_eq!(tree.root, tree.get_link(n2));
-            assert!((*tree.root).color == Color::Black);
+            assert_eq!(tree.root, Some(tree.get_link(n2)));
+            assert!(tree.root.unwrap().as_ref().is_black());
             drop(Box::from_raw(n1));
             drop(Box::from_raw(n2));
         }
     }
-
     #[test]
     fn test_clrs_13_4_3() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
@@ -785,7 +753,6 @@ mod tests {
         let n4 = Box::into_raw(Box::new(MyNode::new(12, "Twelve")));
         let n5 = Box::into_raw(Box::new(MyNode::new(19, "Nineteen")));
         let n6 = Box::into_raw(Box::new(MyNode::new(8, "Eight")));
-
         unsafe {
             eprintln!("=========insert node========");
             tree.insert(n1, cmp);
@@ -795,32 +762,25 @@ mod tests {
             tree.insert(n5, cmp);
             tree.insert(n6, cmp);
             tree.print_structure();
-
             eprintln!("========delete node=========");
             tree.delete(n6);
             eprintln!("========delete node6=========");
             tree.print_structure();
-
             tree.delete(n4);
             eprintln!("========delete node4=========");
             tree.print_structure();
-
             tree.delete(n5);
             eprintln!("========delete node5=========");
             tree.print_structure();
-
             tree.delete(n3);
             eprintln!("========delete node3=========");
             tree.print_structure();
-
             tree.delete(n2);
             eprintln!("========delete node2=========");
             tree.print_structure();
-
             tree.delete(n1);
             eprintln!("========delete node1=========");
             tree.print_structure();
-
             drop(Box::from_raw(n1));
             drop(Box::from_raw(n2));
             drop(Box::from_raw(n3));
@@ -835,16 +795,18 @@ mod tests {
 mod benches {
     extern crate test;
     use super::*;
+
     use std::{boxed::Box, collections::BTreeMap, vec::Vec};
     use test::Bencher;
 
     #[derive(Debug)]
-    struct BenchNode {
+    #[repr(C)]
+    struct NoSentinelNode {
         key: i32,
         link1: RBLink,
         link2: RBLink,
     }
-    impl BenchNode {
+    impl NoSentinelNode {
         fn new(key: i32) -> Self {
             Self {
                 key,
@@ -855,54 +817,73 @@ mod benches {
     }
 
     #[derive(Clone, Copy)]
-    struct Adapter1;
-    impl Adapter<BenchNode> for Adapter1 {
+    struct NoSentinelAdapter1;
+    impl Adapter<NoSentinelNode> for NoSentinelAdapter1 {
         fn offset() -> usize {
-            let dummy = std::mem::MaybeUninit::<BenchNode>::uninit();
-            let dummy_ptr = dummy.as_ptr();
+            let dummy = std::mem::MaybeUninit::<NoSentinelNode>::uninit();
             unsafe {
-                let member_ptr = std::ptr::addr_of!((*dummy_ptr).link1);
-                (member_ptr as usize) - (dummy_ptr as usize)
+                let base = dummy.as_ptr();
+                let member = std::ptr::addr_of!((*base).link1);
+                (member as usize) - (base as usize)
             }
         }
     }
-
     #[derive(Clone, Copy)]
-    struct Adapter2;
-    impl Adapter<BenchNode> for Adapter2 {
+    struct NoSentinelAdapter2;
+    impl Adapter<NoSentinelNode> for NoSentinelAdapter2 {
         fn offset() -> usize {
-            let dummy = std::mem::MaybeUninit::<BenchNode>::uninit();
-            let dummy_ptr = dummy.as_ptr();
+            let dummy = std::mem::MaybeUninit::<NoSentinelNode>::uninit();
             unsafe {
-                let member_ptr = std::ptr::addr_of!((*dummy_ptr).link2);
-                (member_ptr as usize) - (dummy_ptr as usize)
+                let base = dummy.as_ptr();
+                let member = std::ptr::addr_of!((*base).link2);
+                (member as usize) - (base as usize)
             }
         }
     }
 
     #[bench]
-    fn bench_rbtree_insert_and_delete_2_trees(b: &mut Bencher) {
-        // data scale：2^12 = 4096.
+    fn bench_rbtree_no_sentinel_2_trees(b: &mut Bencher) {
         let n = 1 << 12;
+        let cmp = |a: &NoSentinelNode, b: &NoSentinelNode| a.key.cmp(&b.key);
 
-        let cmp = |a: &BenchNode, b: &BenchNode| a.key.cmp(&b.key);
-        b.iter(|| {
-            let mut tree1 = RBTree::<BenchNode, Adapter1>::new();
-            let mut tree2 = RBTree::<BenchNode, Adapter2>::new();
+        // === 手动预热开始 ===
+        // 跑一次完整的流程，但不计入时间
+        {
+            let mut tree1 = RBTree::<NoSentinelNode, NoSentinelAdapter1>::new();
+            let mut tree2 = RBTree::<NoSentinelNode, NoSentinelAdapter2>::new();
             let mut nodes = Vec::with_capacity(n);
-
             for i in 0..n {
-                let node = Box::into_raw(Box::new(BenchNode::new(i as i32)));
+                let node = Box::into_raw(Box::new(NoSentinelNode::new(i as i32)));
                 nodes.push(node);
                 tree1.insert(node, cmp);
                 tree2.insert(node, cmp);
             }
-
             for node in &nodes {
                 tree1.delete(*node);
                 tree2.delete(*node);
             }
-            // In real Operation, arc do it propably, but we dropping node by ourselves.
+            for node in nodes {
+                unsafe {
+                    drop(Box::from_raw(node));
+                }
+            }
+        }
+        // === 手动预热结束 ===
+
+        b.iter(|| {
+            let mut tree1 = RBTree::<NoSentinelNode, NoSentinelAdapter1>::new();
+            let mut tree2 = RBTree::<NoSentinelNode, NoSentinelAdapter2>::new();
+            let mut nodes = Vec::with_capacity(n);
+            for i in 0..n {
+                let node = Box::into_raw(Box::new(NoSentinelNode::new(i as i32)));
+                nodes.push(node);
+                tree1.insert(node, cmp);
+                tree2.insert(node, cmp);
+            }
+            for node in &nodes {
+                tree1.delete(*node);
+                tree2.delete(*node);
+            }
             for node in nodes {
                 unsafe {
                     drop(Box::from_raw(node));
@@ -911,9 +892,8 @@ mod benches {
         });
     }
 
-    //Comparation: std::btree
     #[bench]
-    fn bench_std_btree_insert_and_delete_2_trees(b: &mut Bencher) {
+    fn bench_std_btree_2_trees(b: &mut Bencher) {
         let n = 1 << 12;
         b.iter(|| {
             let mut map1 = BTreeMap::new();
@@ -923,7 +903,6 @@ mod benches {
                 map1.insert(i, i);
                 map2.insert(i, i);
             }
-
             for i in 0..n {
                 map1.remove(&i);
                 map2.remove(&i);
