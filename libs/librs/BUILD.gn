@@ -68,7 +68,6 @@ build_rust("librs_unittest_image") {
     "//libc:libc",
   ]
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
-  configs += [ "//build/boards/${board}:kernel_config" ]
   rustflags = [ "--test" ]
 }
 

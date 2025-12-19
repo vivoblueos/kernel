@@ -38,7 +38,6 @@ build_rust("librs_integration_test_image") {
       "//external/vendor/semihosting-0.1.20:semihosting",
     ]
   }
-  configs += [ "//build/boards/${board}:kernel_config" ]
   rustflags = [ "--test" ]
 }
 
