@@ -1,3 +1,17 @@
+// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//       http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::intrusive::Adapter;
 use core::{marker::PhantomData, ops::Drop, ptr::NonNull};
 use std::{cmp::Ordering, fmt::Debug};
@@ -521,12 +535,19 @@ impl<T, A: Adapter<T>> Drop for RBTree<T, A> {
 
 #[cfg(test)]
 mod tests {
+    // 引入 Rust 内置的 benchmark 框架
+    extern crate test;
+    use test::{black_box, Bencher};
+
     use super::*;
     use std::{
         boxed::Box,
+        ptr::NonNull,
         string::{String, ToString},
+        time::{Duration, Instant},
         vec::Vec,
     };
+
     #[derive(Debug)]
     #[repr(C)]
     struct MyNode {
@@ -534,7 +555,6 @@ mod tests {
         value: String,
         link: RBLink,
     }
-
     impl MyNode {
         fn new(key: i32, value: &str) -> Self {
             Self {
@@ -544,6 +564,7 @@ mod tests {
             }
         }
     }
+
     crate::impl_simple_intrusive_adapter!(MyNodeAdapter, MyNode, link);
 
     unsafe fn check_rb_properties(tree: &RBTree<MyNode, MyNodeAdapter>) {
@@ -555,7 +576,6 @@ mod tests {
             check_node_properties(tree, tree.root);
         }
     }
-
     unsafe fn check_node_properties(
         tree: &RBTree<MyNode, MyNodeAdapter>,
         node: Option<NonNull<RBLink>>,
@@ -603,8 +623,7 @@ mod tests {
             check_rb_properties(&tree);
         }
         assert_eq!(tree.size, 3);
-        eprintln!("============================");
-        tree.print_structure();
+
         let res = tree.search(&10, search_cmp);
         assert!(res.is_some());
         assert_eq!(res.unwrap().value, "Ten");
@@ -626,8 +645,7 @@ mod tests {
             nodes.push(node);
             tree.insert(node, cmp);
         }
-        eprintln!("=============before delete===============");
-        tree.print_structure();
+
         unsafe {
             check_rb_properties(&tree);
         }
@@ -640,8 +658,7 @@ mod tests {
                 drop(Box::from_raw(node_ptr));
             }
         }
-        eprintln!("=============after delete================");
-        tree.print_structure();
+
         assert_eq!(tree.size, 10);
         unsafe {
             for i in (1..20).step_by(2) {
@@ -663,7 +680,7 @@ mod tests {
         for p in &ptrs {
             tree.insert(*p, cmp);
         }
-        tree.print_structure();
+        // tree.print_structure();
         let mut iter = tree.iter();
         assert_eq!(iter.next().unwrap().key, 1);
         assert_eq!(iter.next().unwrap().key, 2);
@@ -754,33 +771,19 @@ mod tests {
         let n5 = Box::into_raw(Box::new(MyNode::new(19, "Nineteen")));
         let n6 = Box::into_raw(Box::new(MyNode::new(8, "Eight")));
         unsafe {
-            eprintln!("=========insert node========");
             tree.insert(n1, cmp);
             tree.insert(n2, cmp);
             tree.insert(n3, cmp);
             tree.insert(n4, cmp);
             tree.insert(n5, cmp);
             tree.insert(n6, cmp);
-            tree.print_structure();
-            eprintln!("========delete node=========");
+
             tree.delete(n6);
-            eprintln!("========delete node6=========");
-            tree.print_structure();
             tree.delete(n4);
-            eprintln!("========delete node4=========");
-            tree.print_structure();
             tree.delete(n5);
-            eprintln!("========delete node5=========");
-            tree.print_structure();
             tree.delete(n3);
-            eprintln!("========delete node3=========");
-            tree.print_structure();
             tree.delete(n2);
-            eprintln!("========delete node2=========");
-            tree.print_structure();
             tree.delete(n1);
-            eprintln!("========delete node1=========");
-            tree.print_structure();
             drop(Box::from_raw(n1));
             drop(Box::from_raw(n2));
             drop(Box::from_raw(n3));
@@ -789,15 +792,82 @@ mod tests {
             drop(Box::from_raw(n6));
         }
     }
-}
 
-#[cfg(test)]
-mod benches {
-    extern crate test;
-    use super::*;
+    #[bench]
+    fn bench_admin_suite(_b: &mut Bencher) {
+        println!("\n===Benchmark Start ===");
 
-    use std::{boxed::Box, collections::BTreeMap, vec::Vec};
-    use test::Bencher;
+        let sizes = [1_000, 10_000, 100_000];
+        let repeat_count = 5;
+        for &n in &sizes {
+            println!(
+                "-----------All Test Repeat: {}, All Tree Num: {}-------------------",
+                repeat_count, n
+            );
+            let mut insert_times = Vec::with_capacity(repeat_count);
+            let mut get_times = Vec::with_capacity(repeat_count);
+            let mut remove_times = Vec::with_capacity(repeat_count);
+            for _ in 0..repeat_count {
+                let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
+                let mut created_ptrs = Vec::with_capacity(n);
+                // 1. Insert Test
+                let start = Instant::now();
+                for i in 0..n {
+                    let node = Box::into_raw(Box::new(MyNode::new(i as i32, "bench")));
+                    created_ptrs.push(node);
+                    let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
+                    black_box(tree.insert(node, cmp));
+                }
+                insert_times.push(start.elapsed());
+                // 2. Get Test (key=20)
+                let target_key = 20;
+                let search_cmp = |k: &i32, n: &MyNode| k.cmp(&n.key);
+                let start = Instant::now();
+                black_box(tree.search(&target_key, search_cmp));
+                get_times.push(start.elapsed());
+                // 3. Remove Test (key=20)
+                let start = Instant::now();
+                if let Some(node_ref) = tree.search(&target_key, search_cmp) {
+                    let node_ptr = node_ref as *const MyNode as *mut MyNode;
+                    black_box(tree.delete(node_ptr));
+                }
+                remove_times.push(start.elapsed());
+
+                for ptr in created_ptrs {
+                    unsafe {
+                        drop(Box::from_raw(ptr));
+                    }
+                }
+            }
+            print_stats("Insert Test", &insert_times, true);
+            print_stats("Get data by key=20", &get_times, false);
+            print_stats("Remove data by key=20", &remove_times, false);
+            println!("-----------End Tree Test----------------------------------------------\n");
+        }
+    }
+    fn print_stats(label: &str, times: &[Duration], use_micros: bool) {
+        let max = times.iter().max().unwrap();
+        let min = times.iter().min().unwrap();
+        let sum: Duration = times.iter().sum();
+        let avg = sum / times.len() as u32;
+        if use_micros {
+            println!(
+                "{:<22} Max Cost: {}us, Min Cost: {}us, Aver Cost: {}us",
+                format!("{},", label),
+                max.as_micros(),
+                min.as_micros(),
+                avg.as_micros()
+            );
+        } else {
+            println!(
+                "{:<22} Max Cost: {}ns, Min Cost: {}ns, Aver Cost: {}ns",
+                format!("{},", label),
+                max.as_nanos(),
+                min.as_nanos(),
+                avg.as_nanos()
+            );
+        }
+    }
 
     #[derive(Debug)]
     #[repr(C)]
@@ -815,16 +885,13 @@ mod benches {
             }
         }
     }
-
     #[derive(Clone, Copy)]
     struct NoSentinelAdapter1;
     impl Adapter<NoSentinelNode> for NoSentinelAdapter1 {
         fn offset() -> usize {
             let dummy = std::mem::MaybeUninit::<NoSentinelNode>::uninit();
             unsafe {
-                let base = dummy.as_ptr();
-                let member = std::ptr::addr_of!((*base).link1);
-                (member as usize) - (base as usize)
+                (std::ptr::addr_of!((*dummy.as_ptr()).link1) as usize) - (dummy.as_ptr() as usize)
             }
         }
     }
@@ -834,42 +901,14 @@ mod benches {
         fn offset() -> usize {
             let dummy = std::mem::MaybeUninit::<NoSentinelNode>::uninit();
             unsafe {
-                let base = dummy.as_ptr();
-                let member = std::ptr::addr_of!((*base).link2);
-                (member as usize) - (base as usize)
+                (std::ptr::addr_of!((*dummy.as_ptr()).link2) as usize) - (dummy.as_ptr() as usize)
             }
         }
     }
-
     #[bench]
     fn bench_rbtree_no_sentinel_2_trees(b: &mut Bencher) {
         let n = 1 << 12;
         let cmp = |a: &NoSentinelNode, b: &NoSentinelNode| a.key.cmp(&b.key);
-
-        // === 手动预热开始 ===
-        // 跑一次完整的流程，但不计入时间
-        {
-            let mut tree1 = RBTree::<NoSentinelNode, NoSentinelAdapter1>::new();
-            let mut tree2 = RBTree::<NoSentinelNode, NoSentinelAdapter2>::new();
-            let mut nodes = Vec::with_capacity(n);
-            for i in 0..n {
-                let node = Box::into_raw(Box::new(NoSentinelNode::new(i as i32)));
-                nodes.push(node);
-                tree1.insert(node, cmp);
-                tree2.insert(node, cmp);
-            }
-            for node in &nodes {
-                tree1.delete(*node);
-                tree2.delete(*node);
-            }
-            for node in nodes {
-                unsafe {
-                    drop(Box::from_raw(node));
-                }
-            }
-        }
-        // === 手动预热结束 ===
-
         b.iter(|| {
             let mut tree1 = RBTree::<NoSentinelNode, NoSentinelAdapter1>::new();
             let mut tree2 = RBTree::<NoSentinelNode, NoSentinelAdapter2>::new();
@@ -891,14 +930,13 @@ mod benches {
             }
         });
     }
-
     #[bench]
     fn bench_std_btree_2_trees(b: &mut Bencher) {
+        use std::collections::BTreeMap;
         let n = 1 << 12;
         b.iter(|| {
             let mut map1 = BTreeMap::new();
             let mut map2 = BTreeMap::new();
-
             for i in 0..n {
                 map1.insert(i, i);
                 map2.insert(i, i);
