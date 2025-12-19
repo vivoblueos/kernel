@@ -14,7 +14,7 @@
 
 use crate::{
     boards, config, scheduler, sync, thread,
-    time::get_sys_ticks,
+    time::TickTime,
     types::{impl_simple_intrusive_adapter, Arc, ArcList, AtomicIlistHead as IlistHead},
 };
 use alloc::boxed::Box;
@@ -44,11 +44,11 @@ extern "C" fn run_soft_timer() {
     loop {
         let next_timeout = SOFT_TIMER_WHEEL.next_timeout();
         if next_timeout != usize::MAX {
-            let ct = get_sys_ticks();
+            let ct = TickTime::now().as_ticks();
             let wait_time = next_timeout.saturating_sub(ct);
             if wait_time > 0 {
                 scheduler::suspend_me_for(wait_time);
-                let wakeup_ct = get_sys_ticks();
+                let wakeup_ct = TickTime::now().as_ticks();
                 if wakeup_ct < next_timeout {
                     continue;
                 }
@@ -327,7 +327,7 @@ impl Timer {
             return;
         }
 
-        inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
+        inner.timeout_ticks = TickTime::now().as_ticks().saturating_add(inner.interval);
         self.flags
             .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
 
@@ -370,7 +370,7 @@ impl Timer {
 
         let mut inner = self.inner.irqsave_lock();
         inner.interval = interval;
-        inner.timeout_ticks = get_sys_ticks().saturating_add(interval);
+        inner.timeout_ticks = TickTime::now().as_ticks().saturating_add(interval);
         self.flags
             .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
 
@@ -426,7 +426,7 @@ impl Timer {
                 SOFT_TIMER_WHEEL.remove_timer(&mut timer);
             }
             let mut inner = self.inner.irqsave_lock();
-            inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
+            inner.timeout_ticks = TickTime::now().as_ticks().saturating_add(inner.interval);
             self.flags
                 .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
             SOFT_TIMER_WHEEL.add_timer(timer, inner.timeout_ticks);
@@ -437,7 +437,7 @@ impl Timer {
                 HARD_TIMER_WHEEL.remove_timer(&mut timer);
             }
             let mut inner = self.inner.irqsave_lock();
-            inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
+            inner.timeout_ticks = TickTime::now().as_ticks().saturating_add(inner.interval);
             self.flags
                 .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
             HARD_TIMER_WHEEL.add_timer(timer, inner.timeout_ticks);
@@ -451,7 +451,7 @@ impl Timer {
                 HARD_TIMER_WHEEL.remove_timer(&timer);
             }
             let mut inner = self.inner.irqsave_lock();
-            inner.timeout_ticks = get_sys_ticks().saturating_add(inner.interval);
+            inner.timeout_ticks = TickTime::now().as_ticks().saturating_add(inner.interval);
             self.flags
                 .fetch_or(TimerFlags::ACTIVATED.bits(), Ordering::Relaxed);
             HARD_TIMER_WHEEL.add_timer(timer, inner.timeout_ticks);
@@ -1004,7 +1004,7 @@ mod tests {
         let callback1 = create_test_callback(counter1.clone());
         let callback2 = create_test_callback(counter2.clone());
 
-        let ticks = crate::time::get_sys_ticks();
+        let ticks = crate::time::TickTime::now().as_ticks();
         let hard_timer = Timer::new_hard_oneshot(10, callback1);
         let soft_timer = Timer::new_soft_oneshot(10, callback2);
 
@@ -1017,7 +1017,10 @@ mod tests {
 
         scheduler::suspend_me_for(11);
 
-        println!("run ticks: {}", crate::time::get_sys_ticks() - ticks);
+        println!(
+            "run ticks: {}",
+            crate::time::TickTime::now().as_ticks() - ticks
+        );
         assert_eq!(counter1.load(Ordering::Relaxed), 1);
         assert_eq!(counter2.load(Ordering::Relaxed), 1);
         assert_eq!(SOFT_TIMER_WHEEL.next_timeout(), usize::MAX);

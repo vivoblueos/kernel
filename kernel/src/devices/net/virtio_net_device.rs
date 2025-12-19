@@ -17,7 +17,7 @@ use core::cell::RefCell;
 use crate::{
     devices::virtio::{self, VirtioHal},
     net::net_interface::NetInterface,
-    time::tick_get_millisecond,
+    time::TickTime,
 };
 use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 use smoltcp::{
@@ -89,7 +89,7 @@ impl NetInterface<'_> {
         let mut interface = Interface::new(
             config,
             &mut inner,
-            Instant::from_millis(i64::try_from(tick_get_millisecond()).unwrap_or(0)),
+            Instant::from_millis(i64::try_from(TickTime::now().as_millis()).unwrap_or(0)),
         );
 
         // Configure static guest IP (QEMU user networking)

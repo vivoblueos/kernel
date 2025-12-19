@@ -29,7 +29,7 @@ pub extern "C" fn osDelayUntil(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
     }
-    let current_tick = time::get_sys_ticks() as u32;
+    let current_tick = time::TickTime::now().as_ticks() as u32;
     let delay = ticks - current_tick;
     if delay == 0 || delay > 0x7fffffff {
         return osStatus_t_osErrorParameter;
@@ -45,19 +45,19 @@ mod tests {
     #[test]
     fn test_os_delay() {
         // This test is a placeholder. Actual testing would require a proper environment setup.
-        let current_tick = time::get_sys_ticks() as u32;
+        let current_tick = time::TickTime::now().as_ticks() as u32;
         let result = osDelay(10);
         assert_eq!(result, osStatus_t_osOK);
-        let new_tick = time::get_sys_ticks() as u32;
+        let new_tick = time::TickTime::now().as_ticks() as u32;
         assert!(new_tick >= current_tick + 10);
     }
 
     #[test]
     fn test_os_delay_until() {
-        let current_tick = time::get_sys_ticks() as u32;
+        let current_tick = time::TickTime::now().as_ticks() as u32;
         let result = osDelayUntil(current_tick + 20);
         assert_eq!(result, osStatus_t_osOK);
-        let new_tick = time::get_sys_ticks() as u32;
+        let new_tick = time::TickTime::now().as_ticks() as u32;
         assert!(new_tick >= current_tick + 20);
     }
 }

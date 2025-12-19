@@ -25,7 +25,7 @@ pub static os_tickfreq: u32 = TICKS_PER_SECOND as u32; // System timer frequency
 /// uint32_t osKernelSysTick (void);
 #[no_mangle]
 pub extern "C" fn osKernelSysTick() -> u32 {
-    time::get_sys_ticks() as u32
+    time::TickTime::now().as_ticks() as u32
 }
 
 #[cfg(test)]

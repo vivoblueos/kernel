@@ -27,10 +27,6 @@ pub fn systick_init(sys_clock: u32) -> bool {
     SYSTICK.init(sys_clock, TICKS_PER_SECOND as u32)
 }
 
-pub fn get_sys_ticks() -> usize {
-    SYSTICK.get_tick()
-}
-
 pub fn get_sys_cycles() -> u64 {
     SYSTICK.get_cycles()
 }
@@ -77,7 +73,42 @@ pub fn tick_to_millisecond(ticks: usize) -> usize {
     ticks * (1000 / TICKS_PER_SECOND)
 }
 
-pub fn tick_get_millisecond() -> usize {
-    crate::static_assert!(TICKS_PER_SECOND > 0);
-    tick_to_millisecond(get_sys_ticks())
+/// TickTime represents time in ticks.
+///
+/// Each tick corresponds to a system tick, which is defined by the system's tick rate (TICKS_PER_SECOND).
+/// So the resolution of TickTime is 1 / TICKS_PER_SECOND seconds.
+/// Use u64 to store ticks to avoid overflow in long running systems.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct TickTime(u64);
+
+impl TickTime {
+    #[inline(always)]
+    pub fn now() -> Self {
+        TickTime(SYSTICK.get_tick() as u64)
+    }
+
+    #[inline(always)]
+    pub fn as_ticks(&self) -> usize {
+        // FIXME: there are many places use usize for ticks
+        // so we need to convert u64 to usize here temporarily
+        // This may cause overflow in long running systems
+        // Should be careful in future.
+        self.0 as usize
+    }
+
+    #[inline(always)]
+    pub fn as_millis(&self) -> usize {
+        crate::static_assert!(TICKS_PER_SECOND > 0);
+        // FIXME: there are many places use usize for millis
+        // so we need to convert u64 to usize here temporarily
+        ((self.0 * 1000) / (TICKS_PER_SECOND as u64)) as usize
+    }
+
+    #[inline(always)]
+    pub fn from_ticks(ticks: usize) -> Self {
+        // FIXME: there are many places use usize for millis
+        // so we need to convert u64 to usize here temporarily
+        TickTime(ticks as u64)
+    }
 }

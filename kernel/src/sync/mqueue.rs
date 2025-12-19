@@ -159,7 +159,7 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = time::get_sys_ticks();
+            let mut ticks = time::TickTime::now().as_ticks();
             let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
             send_queue.take_irq_guard(&mut queue);
             drop(queue);
@@ -178,7 +178,7 @@ impl MessageQueue {
             }
             queue = self.lock();
             if timeout != WAITING_FOREVER {
-                ticks = time::get_sys_ticks().saturating_sub(ticks);
+                ticks = time::TickTime::now().as_ticks().saturating_sub(ticks);
                 timeout = timeout.saturating_sub(ticks);
             }
         }
@@ -239,7 +239,7 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = time::get_sys_ticks();
+            let mut ticks = time::TickTime::now().as_ticks();
             let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
             recv_queue.take_irq_guard(&mut queue);
             drop(queue);
@@ -259,7 +259,7 @@ impl MessageQueue {
 
             queue = self.lock();
             if timeout != WAITING_FOREVER {
-                ticks = time::get_sys_ticks().saturating_sub(ticks);
+                ticks = time::TickTime::now().as_ticks().saturating_sub(ticks);
                 timeout = timeout.saturating_sub(ticks);
             }
         }
