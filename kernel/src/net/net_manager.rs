@@ -26,7 +26,7 @@ use crate::{
     scheduler,
     support::Storage,
     thread::{self, Builder as ThreadBuilder, Entry, Stack, SystemThreadStorage, ThreadNode},
-    time::{tick_from_millisecond, tick_get_millisecond},
+    time::{tick_from_millisecond, TickTime},
 };
 use alloc::{
     boxed::Box,
@@ -188,7 +188,7 @@ where
         F: FnMut(Rc<RefCell<NetworkManager<'a>>>) -> bool,
     {
         let is_forever = timeout_millis == 0;
-        let timeout = tick_get_millisecond() + timeout_millis;
+        let timeout = TickTime::now().as_millis() + timeout_millis;
         log::trace!(
             "[NetworkManager] start with timeout_millis={} timeout={}",
             timeout_millis,
@@ -198,15 +198,15 @@ where
         let net_manager = network_manager.clone();
 
         // Loop for request finish
-        while is_forever || tick_get_millisecond() < timeout {
+        while is_forever || TickTime::now().as_millis() < timeout {
             // Step1 : poll smoltcp network stack
             {
                 let network_manager = network_manager.borrow();
 
                 if let Err(e) = network_manager.net_interfaces.iter().try_for_each(
                     |interface| -> Result<(), String> {
-                        let millis_i64 =
-                            i64::try_from(tick_get_millisecond()).map_err(|e| e.to_string())?;
+                        let millis_i64 = i64::try_from(TickTime::now().as_millis())
+                            .map_err(|e| e.to_string())?;
                         interface
                             .borrow_mut()
                             .poll(Instant::from_millis(millis_i64));
@@ -233,7 +233,7 @@ where
                     .net_interfaces
                     .iter()
                     .map(|interface| {
-                        let Ok(millis_i64) = i64::try_from(tick_get_millisecond()) else {
+                        let Ok(millis_i64) = i64::try_from(TickTime::now().as_millis()) else {
                             log::error!("[NetworkManager]: Interface poll_delay get ms fail");
                             return DEFAULT_DELAY_TIME_IN_MILLIS;
                         };

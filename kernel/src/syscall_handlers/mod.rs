@@ -370,7 +370,7 @@ define_syscall_handler!(
     clock_gettime(_clk_id: clockid_t, tp: *mut timespec) -> c_long {
         // only support CLOCK_MONOTONIC
         const TICK_TO_NANOSECOND: usize = 1_000_000_000 / blueos_kconfig::TICKS_PER_SECOND;
-        let ticks = time::get_sys_ticks();
+        let ticks = time::TickTime::now().as_ticks();
         let seconds = ticks / blueos_kconfig::TICKS_PER_SECOND;
         let nanoseconds = (ticks % blueos_kconfig::TICKS_PER_SECOND) * TICK_TO_NANOSECOND;
         unsafe {

@@ -113,7 +113,7 @@ impl Semaphore {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
-        let mut last_sys_ticks = crate::time::get_sys_ticks();
+        let mut last_sys_ticks = crate::time::TickTime::now().as_ticks();
         loop {
             let old = self.counter.get();
             #[cfg(debugging_scheduler)]
@@ -144,7 +144,7 @@ impl Semaphore {
                 WaitQueue::detach(&mut wait_entry);
                 return false;
             }
-            let now = crate::time::get_sys_ticks();
+            let now = crate::time::TickTime::now().as_ticks();
             let elapsed_ticks = now - last_sys_ticks;
             if elapsed_ticks >= ticks {
                 ticks = 0;

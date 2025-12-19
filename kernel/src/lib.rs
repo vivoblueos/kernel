@@ -272,11 +272,11 @@ mod tests {
     #[cfg(cortex_m)]
     #[test]
     fn test_sys_tick() {
-        let tick = time::get_sys_ticks();
+        let tick = time::TickTime::now().as_ticks();
         assert!(scheduler::current_thread().validate_sp());
         scheduler::suspend_me_for(10);
         assert!(scheduler::current_thread().validate_sp());
-        let tick2 = time::get_sys_ticks();
+        let tick2 = time::TickTime::now().as_ticks();
         assert!(tick2 - tick >= 10);
         assert!(tick2 - tick <= 11);
     }

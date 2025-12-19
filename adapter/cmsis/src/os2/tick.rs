@@ -20,7 +20,7 @@ use blueos_kconfig::TICKS_PER_SECOND;
 // uint32_t osKernelGetTickCount (void);
 #[no_mangle]
 pub extern "C" fn osKernelGetTickCount() -> u32 {
-    time::get_sys_ticks() as u32
+    time::TickTime::now().as_ticks() as u32
 }
 
 // Get the RTOS kernel tick frequency.

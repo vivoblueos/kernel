@@ -135,7 +135,7 @@ impl Mutex {
             self as *const _
         );
 
-        let mut last_sys_ticks = crate::time::get_sys_ticks();
+        let mut last_sys_ticks = crate::time::TickTime::now().as_ticks();
         loop {
             if self.nesting_count() == 0 {
                 self.increment_nesting_count();
@@ -190,7 +190,7 @@ impl Mutex {
                 return false;
             }
 
-            let now = crate::time::get_sys_ticks();
+            let now = crate::time::TickTime::now().as_ticks();
             let elapsed_ticks = now - last_sys_ticks;
             if elapsed_ticks >= ticks {
                 ticks = 0;
@@ -622,11 +622,11 @@ mod tests {
         assert_eq!(mutex.nesting_count(), 1);
         pend_flag.fetch_add(1, Ordering::SeqCst);
         scheduler::yield_me();
-        let start = time::get_sys_ticks();
-        let mut current = time::get_sys_ticks();
+        let start = time::TickTime::now().as_ticks();
+        let mut current = time::TickTime::now().as_ticks();
         while current - start < 10 {
             scheduler::yield_me();
-            current = time::get_sys_ticks();
+            current = time::TickTime::now().as_ticks();
         }
         mutex.post();
         while pend_flag.load(Ordering::SeqCst) != 2 {}
