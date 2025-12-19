@@ -16,7 +16,7 @@ use crate::{devices::bus::BusInterface, error::Error};
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
 use blueos_infra::{
     impl_simple_intrusive_adapter,
-    list::typed_ilist::{ListHead, ListIterator},
+    list::typed_atomic_ilist::{AtomicListHead, AtomicListIterator},
     tinyarc::TinyArc,
 };
 use core::{
@@ -316,8 +316,8 @@ pub const fn new_native_device_data(config: &'static dyn core::any::Any) -> Devi
     DeviceData::Native(NativeDevice::new(config))
 }
 
-type DeviceList = ListHead<DeviceDataNode, Node>;
-type DeviceListIterator = ListIterator<DeviceDataNode, Node>;
+type DeviceList = AtomicListHead<DeviceDataNode, Node>;
+type DeviceListIterator = AtomicListIterator<DeviceDataNode, Node>;
 
 impl_simple_intrusive_adapter!(Node, DeviceDataNode, node);
 

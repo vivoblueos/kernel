@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::sync::SpinLock;
 use alloc::boxed::Box;
 use blueos_infra::tinyarc::TinyArc;
-use crate::sync::SpinLock;
 
 pub struct BusWrapper<B: BusInterface>(pub(crate) TinyArc<SpinLock<B>>);
 
