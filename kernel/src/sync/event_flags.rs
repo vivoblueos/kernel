@@ -16,7 +16,7 @@ use super::SpinLock;
 use crate::{
     error::{code, Error},
     irq, scheduler,
-    scheduler::{wait_queue, InsertMode, InsertModeTrait, InsertToEnd, WaitQueue},
+    scheduler::{wait_queue, InsertMode, InsertModeTrait, InsertToEnd, WaitEntry, WaitQueue},
     thread,
     thread::Thread,
     time::WAITING_FOREVER,
@@ -24,8 +24,6 @@ use crate::{
 };
 use bitflags::bitflags;
 use core::{cell::Cell, ops::DerefMut};
-
-type ThreadList = ArcList<Thread, thread::OffsetOfSchedNode>;
 
 bitflags! {
     #[derive(Default, Debug, Clone, Copy)]
@@ -68,12 +66,10 @@ impl EventFlags {
             return Err(code::EINVAL);
         }
 
-        let mut thread_list = ThreadList::new();
-        thread_list.init();
-
         let mut w = self.pending.irqsave_lock();
         let new_flags = self.flags.get() | flags;
         let mut clear_flags = 0;
+        let mut need_schedule = false;
         for mut entry in w.iter() {
             let mut thread = entry.thread.clone();
             let event_mask = thread.event_flags_mask();
@@ -89,22 +85,16 @@ impl EventFlags {
                 need_wake = true;
             }
             if need_wake {
-                WaitQueue::detach(&mut entry);
                 if !thread.event_flags_mode().contains(EventFlagsMode::NO_CLEAR) {
                     clear_flags |= thread.event_flags_mask();
                 }
-                thread_list.push_back(thread);
+                need_schedule = true;
+                if let Some(timer) = &thread.timer {
+                    timer.stop();
+                }
+                scheduler::queue_ready_thread(thread::SUSPENDED, thread);
             }
         }
-
-        let need_schedule = !thread_list.is_empty();
-        while let Some(thread) = thread_list.pop_front() {
-            if let Some(timer) = &thread.timer {
-                timer.stop();
-            }
-            scheduler::queue_ready_thread(thread::SUSPENDED, thread);
-        }
-
         let new_flags = if clear_flags != 0 {
             new_flags & !clear_flags
         } else {
@@ -112,11 +102,9 @@ impl EventFlags {
         };
         self.flags.set(new_flags);
         drop(w);
-
         if need_schedule {
             scheduler::yield_me_now_or_later();
         }
-
         Ok(new_flags)
     }
 
@@ -173,15 +161,18 @@ impl EventFlags {
             locked_thread.set_event_flags_mask(flags);
             locked_thread.set_event_flags_mode(mode);
         }
-        let Some(mut wait_entry) =
-            wait_queue::insert(w.deref_mut(), current_thread.clone(), M::MODE)
-        else {
-            panic!("This insertion should never fail");
-        };
-        let reached_deadline = scheduler::suspend_me_with_timeout(w, timeout);
+        let mut wait_entry = WaitEntry::new(current_thread.clone());
+        let mut borrowed_wait_entry;
+        let reached_deadline;
+        {
+            borrowed_wait_entry =
+                wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+            reached_deadline = scheduler::suspend_me_with_timeout(w, timeout);
+            w = self.pending.irqsave_lock();
+            borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+        }
+        drop(borrowed_wait_entry);
         if reached_deadline {
-            let guard = self.pending.irqsave_lock();
-            WaitQueue::detach(&mut wait_entry);
             return Err(code::ETIMEDOUT);
         }
         Ok(current_thread.event_flags_mask())
@@ -190,12 +181,15 @@ impl EventFlags {
     pub fn reset(&self) {
         let mut w = self.pending.irqsave_lock();
         self.flags.set(0);
-        while let Some(entry) = w.pop_front() {
-            let thread = entry.thread.clone();
+        for we in w.iter() {
+            let thread = we.thread.clone();
             if let Some(timer) = &thread.timer {
                 timer.stop();
             }
-            scheduler::queue_ready_thread(thread::SUSPENDED, thread);
+            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, thread);
+            if !ok {
+                // TODO: Add log indicates the thread is not suspended anymore.
+            }
         }
         drop(w);
         scheduler::yield_me_now_or_later();

@@ -19,7 +19,11 @@ pub use blueos_infra::{
         Adapter as IntrusiveAdapter, Nested as NestedAdapter, Relative as RelativeAdapter,
     },
     list::{
-        typed_atomic_ilist::AtomicListHead as AtomicIlistHead, typed_ilist::ListHead as IlistHead,
+        typed_atomic_ilist::AtomicListHead as AtomicIlistHead,
+        typed_ilist::{
+            IouListHeadMut as IouIlistHeadMut, List as Ilist, ListHead as IlistHead,
+            ListIterator as IlistIterator,
+        },
         GenericList,
     },
     tinyarc::{
