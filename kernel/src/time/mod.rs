@@ -109,6 +109,6 @@ impl TickTime {
     pub fn from_ticks(ticks: usize) -> Self {
         // FIXME: there are many places use usize for millis
         // so we need to convert u64 to usize here temporarily
-        TickTime(ticks)
+        TickTime(ticks as u64)
     }
 }
