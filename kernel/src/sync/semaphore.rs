@@ -31,15 +31,11 @@ pub struct Semaphore {
 }
 
 impl Semaphore {
-    pub const fn const_new() -> Self {
+    pub const fn new() -> Self {
         Self {
             counter: Cell::new(1),
             pending: SpinLock::new(WaitQueue::new()),
         }
-    }
-
-    pub const fn new() -> Self {
-        Self::const_new()
     }
 
     pub fn init(&self, counter: Uint) -> bool {

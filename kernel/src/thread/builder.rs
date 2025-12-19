@@ -159,17 +159,13 @@ pub(crate) struct SystemThreadStorage {
 }
 
 impl SystemThreadStorage {
-    pub(crate) const fn const_new(kind: ThreadKind) -> Self {
+    pub(crate) const fn new(kind: ThreadKind) -> Self {
         Self {
             arc: ArcInner::<Thread>::new(Thread::new(kind)),
             stack: SystemThreadStack {
                 rep: [0u8; SYSTEM_THREAD_STACK_SIZE],
             },
         }
-    }
-
-    pub(crate) const fn new(kind: ThreadKind) -> Self {
-        Self::const_new(kind)
     }
 }
 
@@ -185,7 +181,7 @@ pub(crate) fn build_static_thread(
 ) -> ThreadNode {
     let inner = &s.arc;
     let stack = &mut s.stack;
-    let arc = unsafe { ThreadNode::const_new(inner) };
+    let arc = unsafe { ThreadNode::from_static_inner_ref(inner) };
     debug_assert_eq!(ThreadNode::strong_count(&arc), 1);
     let _id = Thread::id(&arc);
     let mut w = arc.lock();

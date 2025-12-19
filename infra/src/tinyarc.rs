@@ -51,15 +51,11 @@ pub struct TinyArcInner<T: Sized> {
 }
 
 impl<T: Sized> TinyArcInner<T> {
-    pub const fn const_new(data: T) -> Self {
+    pub const fn new(data: T) -> Self {
         Self {
             data,
             rc: AtomicUint::new(1),
         }
-    }
-
-    pub const fn new(data: T) -> Self {
-        Self::const_new(data)
     }
 }
 
@@ -87,7 +83,7 @@ impl<T: Default + Sized> Default for TinyArc<T> {
 impl<T> TinyArc<T> {
     #[inline]
     pub fn new(data: T) -> Self {
-        let x = Box::new(TinyArcInner::const_new(data));
+        let x = Box::new(TinyArcInner::new(data));
         assert_eq!(Box::as_ptr(&x) as usize % core::mem::align_of::<T>(), 0);
         Self {
             inner: unsafe { NonNull::new_unchecked(Box::into_raw(x)) },
@@ -95,7 +91,7 @@ impl<T> TinyArc<T> {
     }
 
     #[inline]
-    pub const unsafe fn const_new(inner: &'static TinyArcInner<T>) -> Self {
+    pub const unsafe fn from_static_inner_ref(inner: &'static TinyArcInner<T>) -> Self {
         TinyArc {
             inner: NonNull::from_ref(inner),
         }
@@ -187,16 +183,13 @@ impl<T> TinyArc<T> {
     }
 
     #[inline]
-    unsafe fn inner(this: &Self) -> &NonNull<TinyArcInner<T>> {
-        &this.inner
+    pub unsafe fn inner(this: &Self) -> NonNull<TinyArcInner<T>> {
+        this.inner
     }
 
     #[inline]
-    unsafe fn from_inner_ptr(inner: *mut TinyArcInner<T>) -> Self {
-        debug_assert!(!inner.is_null());
-        TinyArc {
-            inner: NonNull::new_unchecked(inner),
-        }
+    pub unsafe fn from_inner(inner: NonNull<TinyArcInner<T>>) -> Self {
+        TinyArc { inner }
     }
 }
 
@@ -253,15 +246,11 @@ pub struct TinyArcList<T: Sized, A: Adapter<T>> {
 }
 
 impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
-    pub const fn const_new() -> Self {
+    pub const fn new() -> Self {
         Self {
             head: AtomicListHead::<T, A>::new(),
             tail: AtomicListHead::<T, A>::new(),
         }
-    }
-
-    pub const fn new() -> Self {
-        Self::const_new()
     }
 
     #[inline]
@@ -536,7 +525,7 @@ impl<T: Sized> TinyArcCas<T> {
     #[inline]
     fn as_mut_ptr(this: &Option<TinyArc<T>>) -> *mut TinyArcInner<T> {
         this.as_ref().map_or(core::ptr::null_mut(), |v| unsafe {
-            (*TinyArc::inner(v)).as_ptr()
+            TinyArc::inner(v).as_ptr()
         })
     }
 
@@ -612,7 +601,7 @@ impl<T: Sized> TinyArcCas<T> {
         }
         // old_ptr must be a valid *mut TinyArcInner<T>, we can use it to
         // recover a TinyArc<T>.
-        Some(unsafe { TinyArc::from_inner_ptr(old_ptr) })
+        Some(unsafe { TinyArc::from_inner(NonNull::new_unchecked(old_ptr)) })
     }
 }
 

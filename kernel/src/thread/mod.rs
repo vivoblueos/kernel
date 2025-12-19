@@ -338,10 +338,6 @@ impl Thread {
         self
     }
 
-    const fn new(kind: ThreadKind) -> Self {
-        Self::const_new(kind)
-    }
-
     #[inline]
     pub fn take_cleanup(&mut self) -> Option<Entry> {
         self.cleanup.take()
@@ -380,7 +376,7 @@ impl Thread {
         self.pending_on_mutex.swap(mu, Ordering::Release)
     }
 
-    const fn const_new(kind: ThreadKind) -> Self {
+    const fn new(kind: ThreadKind) -> Self {
         Self {
             cleanup: None,
             stack: Stack::new(),

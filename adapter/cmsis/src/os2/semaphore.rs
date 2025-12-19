@@ -73,7 +73,7 @@ pub extern "C" fn osSemaphoreNew(
     unsafe {
         ptr::write(
             attr_ref.cb_mem as *mut ArcInner<OsSemaphore>,
-            ArcInner::const_new(OsSemaphore::with_name(semaphore, attr_ref.name)),
+            ArcInner::new(OsSemaphore::with_name(semaphore, attr_ref.name)),
         )
     };
     let os_sem = unsafe { Arc::from_raw(attr_ref.cb_mem as *mut _ as *mut OsSemaphore) };

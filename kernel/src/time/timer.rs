@@ -30,14 +30,14 @@ use thread::{Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode};
 
 const TIMER_WHEEL_SIZE: u32 = 32;
 
-static HARD_TIMER_WHEEL: TimerWheel = TimerWheel::const_new();
+static HARD_TIMER_WHEEL: TimerWheel = TimerWheel::new();
 #[cfg(soft_timer)]
-static SOFT_TIMER_WHEEL: TimerWheel = TimerWheel::const_new();
+static SOFT_TIMER_WHEEL: TimerWheel = TimerWheel::new();
 #[cfg(soft_timer)]
 static mut SOFT_TIMER_THREAD: MaybeUninit<ThreadNode> = MaybeUninit::zeroed();
 #[cfg(soft_timer)]
 static mut SOFT_TIMER_THREAD_STACK: SystemThreadStorage =
-    SystemThreadStorage::const_new(ThreadKind::SoftTimer);
+    SystemThreadStorage::new(ThreadKind::SoftTimer);
 
 #[cfg(soft_timer)]
 extern "C" fn run_soft_timer() {
@@ -95,11 +95,9 @@ struct TimerWheel {
 unsafe impl Sync for TimerWheel {}
 
 impl TimerWheel {
-    const fn const_new() -> Self {
+    const fn new() -> Self {
         Self {
-            wheel: SpinLock::const_new(
-                [const { WheelTimerList::const_new() }; TIMER_WHEEL_SIZE as usize],
-            ),
+            wheel: SpinLock::new([const { WheelTimerList::new() }; TIMER_WHEEL_SIZE as usize]),
         }
     }
 

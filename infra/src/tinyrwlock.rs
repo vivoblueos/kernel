@@ -824,16 +824,12 @@ pub struct IRwLock<T: Sized, A: Adapter<T>> {
 }
 
 impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
-    pub const fn const_new() -> Self {
+    pub const fn new() -> Self {
         Self {
             rwlock: RwLock::new(()),
             _t: PhantomData,
             _a: PhantomData,
         }
-    }
-
-    pub const fn new() -> Self {
-        Self::const_new()
     }
 
     #[inline]
