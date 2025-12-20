@@ -53,7 +53,12 @@ pub fn insert<'b>(
     }
 }
 
+#[inline]
 pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
+    wake_up(wq, usize::MAX)
+}
+
+pub fn wake_up(wq: &mut WaitQueue, how_many: usize) -> usize {
     let mut woken = 0;
     for entry in wq.iter() {
         let t = entry.thread.clone();
@@ -62,9 +67,21 @@ pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
         }
         let ok = scheduler::queue_ready_thread(SUSPENDED, t);
         if !ok {
+            #[cfg(debugging_scheduler)]
+            {
+                crate::trace!(
+                    "[TH:0x{:x}] Failed to enqueue 0x{:x}, state: {}",
+                    scheduler::current_thread_id(),
+                    Thread::id(&entry.thread),
+                    entry.thread.state()
+                );
+            }
             continue;
         }
         woken += 1;
+        if woken == how_many {
+            break;
+        }
     }
     woken
 }

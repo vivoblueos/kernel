@@ -185,26 +185,7 @@ impl Semaphore {
         if old > 0 {
             return;
         }
-        for next in w.iter() {
-            let t = next.thread.clone();
-            if let Some(timer) = &t.timer {
-                timer.stop();
-            }
-            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
-            if ok {
-                break;
-            }
-            #[cfg(debugging_scheduler)]
-            {
-                use crate::arch;
-                crate::trace!(
-                    "[TH:0x{:x}] Failed to enqueue 0x{:x}, state: {}",
-                    scheduler::current_thread_id(),
-                    Thread::id(&next.thread),
-                    next.thread.state()
-                );
-            }
-        }
+        wait_queue::wake_up(&mut w, 1);
         drop(w);
         scheduler::yield_me_now_or_later();
     }

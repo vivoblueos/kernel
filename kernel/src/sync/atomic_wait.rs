@@ -161,20 +161,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
             continue;
         }
         let mut we = e.pending.irqsave_lock();
-        for next in we.iter() {
-            if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()) {
-                woken += 1;
-                #[cfg(debugging_scheduler)]
-                crate::trace!(
-                    "[TH:0x{:x}] Woken up 0x{:x}",
-                    scheduler::current_thread_id(),
-                    Thread::id(&next.thread)
-                );
-            }
-            if woken == how_many {
-                break;
-            }
-        }
+        woken += wait_queue::wake_up(&mut we, how_many);
         if we.is_empty() {
             let mut the_entry = unsafe { Arc::clone_from(e) };
             w.detach(&mut the_entry);

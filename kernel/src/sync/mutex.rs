@@ -345,15 +345,7 @@ impl Mutex {
                 return;
             }
             let mut this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
-            for we in this_lock.iter() {
-                let t = we.thread.clone();
-                if let Some(timer) = &t.timer {
-                    timer.stop();
-                }
-                if scheduler::queue_ready_thread(thread::SUSPENDED, t) {
-                    break;
-                }
-            }
+            wait_queue::wake_up(&mut this_lock, 1);
             {
                 let ok = this_thread.remove_acquired_mutex(&this_mutex);
                 debug_assert!(ok);
