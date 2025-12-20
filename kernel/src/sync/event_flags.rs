@@ -181,16 +181,7 @@ impl EventFlags {
     pub fn reset(&self) {
         let mut w = self.pending.irqsave_lock();
         self.flags.set(0);
-        for we in w.iter() {
-            let thread = we.thread.clone();
-            if let Some(timer) = &thread.timer {
-                timer.stop();
-            }
-            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, thread);
-            if !ok {
-                // TODO: Add log indicates the thread is not suspended anymore.
-            }
-        }
+        let _ = wait_queue::wake_up_all(&mut w);
         drop(w);
         scheduler::yield_me_now_or_later();
     }

@@ -47,10 +47,10 @@ pub(crate) unsafe extern "C" fn handler_entry(_sp: usize, _old_sp: usize) {
         let mut l = current.lock();
         l.deactivate_signal_context();
     }
-    let saved_sp = current.saved_sp();
-    current.transfer_state(thread::RUNNING, thread::READY);
+    let ok = current.transfer_state(thread::RUNNING, thread::READY);
+    debug_assert!(ok);
     let mut hook_holder = scheduler::ContextSwitchHookHolder::new(current);
     // We are switching from current thread's signal context to its thread
     // context.
-    arch::restore_context_with_hook(saved_sp, &mut hook_holder as *mut _);
+    arch::switch_context_with_hook(&mut hook_holder as *mut _);
 }

@@ -24,27 +24,6 @@ impl LiveFor<'_> {
     }
 }
 
-// Similar to LiveFor, additionally contains a reference to a value.
-// Borrow and BorrowMut have been used in [rust-std](https://doc.rust-lang.org/std/borrow/trait.BorrowMut.html),
-// so we use Iou (I Owe U, aka, 借据) to name this struct.
-#[derive(Default)]
-#[repr(transparent)]
-pub struct Iou<'a, T> {
-    pub val: Option<&'a T>,
-}
-
-#[derive(Default)]
-#[repr(transparent)]
-pub struct IouMut<'a, T> {
-    pub val: Option<&'a mut T>,
-}
-
-impl<T> LifetimeDelegator<'_, T> {
-    pub const fn new() -> Self {
-        LifetimeDelegator(PhantomData)
-    }
-}
-
 // Borrow and BorrowMut have been used in [rust-std](https://doc.rust-lang.org/std/borrow/trait.BorrowMut.html),
 // so we use Iou (I Owe You, aka, 借据) to name this struct.
 #[derive(Default)]
