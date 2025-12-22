@@ -34,10 +34,9 @@
 pub mod intrusive;
 pub mod lifetime;
 pub mod list;
+pub mod rbtree;
 pub mod ringbuffer;
 pub mod spinarc;
 pub mod string;
 pub mod tinyarc;
 pub mod tinyrwlock;
-#[path = "rbtree/rbtree.rs"]
-pub mod rbtree;

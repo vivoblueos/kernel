@@ -74,7 +74,7 @@ impl RBLink {
             None => 0,
         };
 
-        debug_assert!(ptr_val & COLOR_MASK == 0, "Pointer not aligned!");
+        debug_assert_eq!(ptr_val & COLOR_MASK, 0, "Pointer not aligned!");
 
         let current_color = self.tagged_parent_ptr & COLOR_MASK;
         self.tagged_parent_ptr = ptr_val | current_color;
@@ -569,12 +569,13 @@ impl<T, A: Adapter<T>> Drop for RBTree<T, A> {
 #[cfg(test)]
 mod tests {
     extern crate test;
-    use super::TinyArc;
-    use super::*;
-    use std::ptr::NonNull;
-    use std::string::{String, ToString};
-    use std::time::{Duration, Instant};
-    use std::vec::Vec;
+    use super::{TinyArc, *};
+    use std::{
+        ptr::NonNull,
+        string::{String, ToString},
+        time::{Duration, Instant},
+        vec::Vec,
+    };
     use test::{black_box, Bencher};
     #[derive(Debug)]
     #[repr(C)]
@@ -684,6 +685,7 @@ mod tests {
         }
         assert_eq!(tree.size, 10);
     }
+    
     #[test]
     fn test_iterator() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
@@ -888,15 +890,15 @@ mod tests {
             let mut tree1 = RBTree::<NoSentinelNode, NoSentinelAdapter1>::new();
             let mut tree2 = RBTree::<NoSentinelNode, NoSentinelAdapter2>::new();
             let mut nodes = Vec::with_capacity(n);
-            
+
             for i in 0..n {
                 let node = TinyArc::new(NoSentinelNode::new(i as i32));
                 nodes.push(node.clone());
-                
+
                 tree1.insert(node.clone(), cmp);
                 tree2.insert(node, cmp);
             }
-            
+
             for node in &nodes {
                 black_box(tree1.remove(&node.key, search_cmp));
                 black_box(tree2.remove(&node.key, search_cmp));
