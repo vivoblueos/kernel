@@ -24,7 +24,7 @@ use crate::{
         timer::{Timer, TimerEntry},
         WAITING_FOREVER,
     },
-    types::{Arc, IlistHead},
+    types::{Arc, IlistHead, Uint},
 };
 use alloc::boxed::Box;
 use blueos_kconfig::NUM_CORES;
@@ -106,9 +106,7 @@ pub(crate) fn init() {
 pub(crate) struct ContextSwitchHookHolder<'a> {
     // Next thread is a must.
     next_thread: Option<ThreadNode>,
-    ready_thread: Option<ThreadNode>,
-    retiring_thread: Option<ThreadNode>,
-    pending_thread: Option<ThreadNode>,
+    prev_thread_target_state: Uint,
     closure: Option<Box<dyn FnOnce()>>,
     dropper: Option<DefaultWaitQueueGuardDropper<'a>>,
 }
@@ -117,11 +115,9 @@ impl<'a> ContextSwitchHookHolder<'a> {
     pub fn new(next_thread: ThreadNode) -> Self {
         Self {
             next_thread: Some(next_thread),
-            ready_thread: None,
-            retiring_thread: None,
-            pending_thread: None,
             closure: None,
             dropper: None,
+            prev_thread_target_state: thread::READY,
         }
     }
 
@@ -130,23 +126,13 @@ impl<'a> ContextSwitchHookHolder<'a> {
         self
     }
 
-    pub fn set_ready_thread(&mut self, t: ThreadNode) -> &mut Self {
-        self.ready_thread = Some(t);
-        self
-    }
-
-    pub fn set_pending_thread(&mut self, t: ThreadNode) -> &mut Self {
-        self.pending_thread = Some(t);
-        self
-    }
-
-    pub fn set_retiring_thread(&mut self, t: ThreadNode) -> &mut Self {
-        self.retiring_thread = Some(t);
-        self
-    }
-
     pub fn set_closure(&mut self, closure: Box<dyn FnOnce()>) -> &mut Self {
         self.closure = Some(closure);
+        self
+    }
+
+    pub fn set_prev_thread_target_state(&mut self, state: Uint) -> &mut Self {
+        self.prev_thread_target_state = state;
         self
     }
 }
@@ -167,8 +153,6 @@ fn prepare_signal_handling(t: &ThreadNode) {
 
 // Must use next's thread's stack or system stack to exeucte this function.
 // We assume this hook is invoked with local irq disabled.
-// FIXME: rustc miscompiles it if inlined.
-#[inline(never)]
 pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitchHookHolder>) {
     let Some(hook) = hook else {
         return;
@@ -179,12 +163,11 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     // resolve race condition of the stack, we first take the
     // ownership of all pending actions in the `hook`, so that these
     // actions are on current stack.
-    let ready_thread = hook.ready_thread.take();
-    let retiring_thread = hook.retiring_thread.take();
-    let closure = hook.closure.take();
-    let pending_thread = hook.pending_thread.take();
-    let mut dropper = hook.dropper.take();
+    // FIXME: We must be careful about performance issue of Option::take, since besides
+    // loading content from the Option, storing None into the Option also happens.
     let next = hook.next_thread.take();
+    let closure = hook.closure.take();
+    let mut dropper = hook.dropper.take();
     compiler_fence(Ordering::SeqCst);
     let Some(mut next) = next else {
         panic!("Next thread must be specified!");
@@ -192,40 +175,60 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     {
         let ok = next.transfer_state(thread::READY, thread::RUNNING);
         debug_assert!(ok);
-        let mut old = set_current_thread(next.clone());
+        // FIXME: Statistics of cycles should be optional.
+        let cycles = time::get_sys_cycles();
+        {
+            next.lock().set_start_cycles(cycles);
+        }
+        // FIXME: Signal feature should be optional.
+        if next.lock().has_pending_signals() {
+            prepare_signal_handling(&next);
+        }
+        let next_id = Thread::id(&next);
+        let next_saved_sp = next.saved_sp();
+        let next_priority = next.priority();
+        let mut old = set_current_thread(next);
         #[cfg(debugging_scheduler)]
         crate::trace!(
             "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
             Thread::id(&old),
             old.saved_sp(),
             old.priority(),
-            Thread::id(&next),
-            next.saved_sp(),
-            next.priority(),
+            next_id,
+            next_saved_sp,
+            next_priority,
         );
-
-        let cycles = time::get_sys_cycles();
-        old.lock().increment_cycles(cycles);
-        next.lock().set_start_cycles(cycles);
-
-        if next.lock().has_pending_signals() {
-            prepare_signal_handling(&next);
+        match hook.prev_thread_target_state {
+            thread::READY => {
+                let ok = if Thread::id(&old) != Thread::id(idle::current_idle_thread_ref()) {
+                    queue_ready_thread(thread::RUNNING, old)
+                } else {
+                    // Idle thread should be never enqueued.
+                    old.transfer_state(thread::RUNNING, thread::READY)
+                };
+                debug_assert!(ok);
+            }
+            thread::RETIRED => {
+                let ok = old.transfer_state(thread::RUNNING, thread::RETIRED);
+                debug_assert!(ok);
+                let cleanup = old.lock().take_cleanup();
+                if let Some(entry) = cleanup {
+                    match entry {
+                        Entry::C(f) => f(),
+                        Entry::Closure(f) => f(),
+                        Entry::Posix(f, arg) => f(arg),
+                    }
+                };
+                GlobalQueueVisitor::remove(&mut old);
+                if ThreadNode::strong_count(&old) != 1 {
+                    // TODO: Add warning log that there are still references to the old thread.
+                }
+            }
+            _ => {
+                let ok = old.transfer_state(thread::RUNNING, hook.prev_thread_target_state);
+                debug_assert!(ok);
+            }
         }
-    }
-    compiler_fence(Ordering::SeqCst);
-    if let Some(t) = ready_thread {
-        let ok = if Thread::id(&t) == Thread::id(idle::current_idle_thread()) {
-            // We don't put idle threads into ready queues.
-            t.transfer_state(thread::RUNNING, thread::READY)
-        } else {
-            crate::scheduler::queue_ready_thread(thread::RUNNING, t)
-        };
-        debug_assert!(ok);
-    }
-    compiler_fence(Ordering::SeqCst);
-    if let Some(t) = pending_thread {
-        let ok = t.transfer_state(thread::RUNNING, thread::SUSPENDED);
-        debug_assert!(ok);
     }
     compiler_fence(Ordering::SeqCst);
     // Local irq is disabled by arch and the scheduler assumes every thread
@@ -242,50 +245,40 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     if let Some(f) = closure {
         f()
     }
-    compiler_fence(Ordering::SeqCst);
-    if let Some(mut t) = retiring_thread {
-        let cleanup = t.lock().take_cleanup();
-        if let Some(entry) = cleanup {
-            match entry {
-                Entry::C(f) => f(),
-                Entry::Closure(f) => f(),
-                Entry::Posix(f, arg) => f(arg),
-            }
-        };
-        GlobalQueueVisitor::remove(&mut t);
-        let ok = t.transfer_state(thread::RUNNING, thread::RETIRED);
-        assert!(ok);
-        if ThreadNode::strong_count(&t) != 1 {
-            // TODO: Warn if there are still references to the thread.
-        }
-    }
 }
 
 fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
     let to_sp = next.saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert!(ok);
-    let old = set_current_thread(next.clone());
+    let next_id = Thread::id(&next);
+    let next_saved_sp = next.saved_sp();
+    let next_priority = next.priority();
+    // FIXME: Statistics of cycles should be optional.
+    let cycles = time::get_sys_cycles();
+    {
+        next.lock().set_start_cycles(cycles);
+    }
+    let old = set_current_thread(next);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[PENDSV] Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
         Thread::id(&old),
         old.saved_sp(),
         old.priority(),
-        Thread::id(&next),
-        next.saved_sp(),
-        next.priority(),
+        next_id,
+        next_saved_sp,
+        next_priority,
     );
-    let cycles = time::get_sys_cycles();
-    next.lock().set_start_cycles(cycles);
 
     {
         let mut old_lock = old.lock();
+        // FIXME: Statistics of cycles should be optional.
         old_lock.increment_cycles(cycles);
         old_lock.set_saved_sp(old_sp);
     }
 
-    if Thread::id(&old) == Thread::id(idle::current_idle_thread()) {
+    if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert!(ok);
         drop(old);
@@ -299,7 +292,7 @@ fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
-    let Some(next) = next_preferred_thread(current_thread().priority()) else {
+    let Some(next) = next_preferred_thread(current_thread_ref().priority()) else {
         #[cfg(debugging_scheduler)]
         crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
         return old_sp;
@@ -321,20 +314,19 @@ pub(crate) extern "C" fn yield_me_and_return_next_sp(old_sp: usize) -> usize {
 }
 
 pub fn retire_me() -> ! {
-    let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     let to_sp = next.saved_sp();
 
-    let old = current_thread();
     #[cfg(procfs)]
     {
-        let _ = crate::vfs::trace_thread_close(old.clone());
+        let _ = crate::vfs::trace_thread_close(current_thread());
     }
     // FIXME: Some WaitQueue might still share the ownership of
     // the `old`, shall we record which WaitQueue the `old`
     // belongs to? Weak reference might not help to reduce memory
     // usage.
     let mut hooks = ContextSwitchHookHolder::new(next);
-    hooks.set_retiring_thread(old);
+    hooks.set_prev_thread_target_state(thread::RETIRED);
     arch::restore_context_with_hook(to_sp, &mut hooks as *mut _);
 }
 
@@ -359,24 +351,24 @@ fn yield_unconditionally() {
         return;
     };
     let to_sp = next.saved_sp();
-    let old = current_thread();
+    let old = current_thread_ref();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
-    hook_holder.set_ready_thread(old);
+    hook_holder.set_prev_thread_target_state(thread::READY);
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
 }
 
 pub fn relinquish_me() {
     debug_assert!(arch::local_irq_enabled());
-    let old = current_thread();
+    let old = current_thread_ref();
     let Some(next) = next_preferred_thread(old.priority()) else {
         return;
     };
     let to_sp = next.saved_sp();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
-    hook_holder.set_ready_thread(old);
+    hook_holder.set_prev_thread_target_state(thread::READY);
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
 }
@@ -426,12 +418,13 @@ pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
     if unlikely(!is_schedule_ready()) {
         return;
     }
-    let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     let to_sp = next.saved_sp();
-    let old = current_thread();
+    let old = current_thread_ref();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     let hook = Box::new(hook);
+    hook_holder.set_prev_thread_target_state(thread::SUSPENDED);
     hook_holder.set_closure(hook);
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
@@ -442,14 +435,14 @@ pub fn suspend_me_for(ticks: usize) {
         return;
     }
     debug_assert_ne!(ticks, 0);
-    let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     let to_sp = next.saved_sp();
-    let old = current_thread();
+    let old = current_thread_ref();
     let from_sp_ptr = old.saved_sp_ptr();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
-    hook_holder.set_pending_thread(old.clone());
+    hook_holder.set_prev_thread_target_state(thread::SUSPENDED);
     if ticks != WAITING_FOREVER {
-        setup_timer(&old, ticks, &mut hook_holder);
+        setup_timer(&current_thread(), ticks, &mut hook_holder);
     }
     arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
@@ -465,7 +458,7 @@ pub fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize
         "[TH:0x{:x}] is looking for the next thread",
         current_thread_id()
     );
-    let next = next_ready_thread().map_or_else(|| idle::current_idle_thread().clone(), |v| v);
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] next thread is 0x{:x}",
@@ -473,9 +466,8 @@ pub fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize
         Thread::id(&next)
     );
     let to_sp = next.saved_sp();
-    let old = current_thread();
+    let old = current_thread_ref();
     let from_sp_ptr = old.saved_sp_ptr();
-
     // old's context saving must happen before old is requeued to
     // ready queue.
     // Ideally, we need an API like
@@ -490,9 +482,9 @@ pub fn suspend_me_with_timeout(mut w: SpinLockGuard<'_, WaitQueue>, ticks: usize
     dropper.add(w);
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     hook_holder.set_dropper(dropper);
-    hook_holder.set_pending_thread(old.clone());
+    hook_holder.set_prev_thread_target_state(thread::SUSPENDED);
     let timeout = if ticks != WAITING_FOREVER {
-        setup_timer(&old, ticks, &mut hook_holder)
+        setup_timer(&current_thread(), ticks, &mut hook_holder)
     } else {
         Arc::new(AtomicBool::new(false))
     };
@@ -554,6 +546,13 @@ pub fn current_thread() -> ThreadNode {
 }
 
 #[inline]
+pub fn current_thread_ref() -> &'static Thread {
+    let _guard = DisableInterruptGuard::new();
+    let my_id = arch::current_cpu_id();
+    unsafe { RUNNING_THREADS[my_id].assume_init_ref() }
+}
+
+#[inline]
 pub fn current_thread_id() -> usize {
     let _guard = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
@@ -564,8 +563,8 @@ pub fn current_thread_id() -> usize {
 pub(crate) fn handle_tick_increment(elapsed_ticks: usize) -> bool {
     #[cfg(robin_scheduler)]
     {
-        let th = current_thread();
-        if Thread::id(&th) != Thread::id(idle::current_idle_thread())
+        let th = current_thread_ref();
+        if Thread::id(th) != Thread::id(idle::current_idle_thread_ref())
             && th.round_robin(elapsed_ticks) <= 0
             && th.is_preemptable()
         {

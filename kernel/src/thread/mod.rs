@@ -409,8 +409,8 @@ impl Thread {
     }
 
     #[inline]
-    pub fn id(me: &ThreadNode) -> usize {
-        unsafe { ThreadNode::get_handle(me) as usize }
+    pub fn id(me: &Self) -> usize {
+        me as *const Self as usize
     }
 
     #[inline]

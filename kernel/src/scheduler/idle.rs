@@ -18,7 +18,7 @@ use crate::{
     config::MAX_THREAD_PRIORITY,
     scheduler::RUNNING_THREADS,
     support,
-    thread::{self, Entry, SystemThreadStorage, ThreadKind, ThreadNode},
+    thread::{self, Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode},
 };
 use blueos_kconfig::NUM_CORES;
 use core::{
@@ -74,14 +74,27 @@ pub(super) fn init_idle_threads() {
 }
 
 #[inline]
-pub(super) fn current_idle_thread<'a>() -> &'a ThreadNode {
+pub(super) fn current_idle_thread_ref() -> &'static Thread {
     let _dig = support::DisableInterruptGuard::new();
     let id = arch::current_cpu_id();
     unsafe { IDLE_THREADS[id].assume_init_ref() }
 }
 
 #[inline]
-pub fn get_idle_thread<'a>(cpu_id: usize) -> &'a ThreadNode {
+pub(super) fn current_idle_thread() -> ThreadNode {
+    let _dig = support::DisableInterruptGuard::new();
+    let id = arch::current_cpu_id();
+    unsafe { IDLE_THREADS[id].assume_init_ref() }.clone()
+}
+
+#[inline]
+pub fn get_idle_thread_ref(cpu_id: usize) -> &'static Thread {
     let _dig = support::DisableInterruptGuard::new();
     unsafe { IDLE_THREADS[cpu_id].assume_init_ref() }
+}
+
+#[inline]
+pub fn get_idle_thread(cpu_id: usize) -> ThreadNode {
+    let _dig = support::DisableInterruptGuard::new();
+    unsafe { IDLE_THREADS[cpu_id].assume_init_ref() }.clone()
 }
