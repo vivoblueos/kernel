@@ -66,6 +66,7 @@ pub enum ThreadKind {
     Idle,
     #[default]
     Normal,
+    PosixTimer,
     #[cfg(soft_timer)]
     SoftTimer,
 }
@@ -294,6 +295,7 @@ impl Thread {
             ThreadKind::Normal => "normal",
             #[cfg(soft_timer)]
             ThreadKind::SoftTimer => "soft_timer",
+            ThreadKind::PosixTimer => "posix_timer",
         }
     }
 
