@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::intrusive::Adapter;
+use crate::{intrusive::Adapter, tinyarc::TinyArc};
 use core::{marker::PhantomData, ops::Drop, ptr::NonNull};
 use std::{cmp::Ordering, fmt::Debug};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +27,7 @@ const PTR_MASK: usize = !COLOR_MASK;
 #[derive(Debug)]
 #[repr(C, align(2))]
 pub struct RBLink {
-    parent_tagged: usize,
+    tagged_parent_ptr: usize,
 
     left: Option<NonNull<RBLink>>,
     right: Option<NonNull<RBLink>>,
@@ -35,7 +35,7 @@ pub struct RBLink {
 impl RBLink {
     pub const fn new() -> Self {
         Self {
-            parent_tagged: 0,
+            tagged_parent_ptr: 0,
             left: None,
             right: None,
         }
@@ -43,7 +43,7 @@ impl RBLink {
 
     #[inline]
     pub fn color(&self) -> Color {
-        if (self.parent_tagged & COLOR_MASK) == 0 {
+        if (self.tagged_parent_ptr & COLOR_MASK) == 0 {
             Color::Red
         } else {
             Color::Black
@@ -52,7 +52,7 @@ impl RBLink {
     #[inline]
     pub fn set_color(&mut self, color: Color) {
         let bit = color as usize;
-        self.parent_tagged = (self.parent_tagged & PTR_MASK) | bit;
+        self.tagged_parent_ptr = (self.tagged_parent_ptr & PTR_MASK) | bit;
     }
     #[inline]
     pub fn is_red(&self) -> bool {
@@ -64,7 +64,7 @@ impl RBLink {
     }
     #[inline]
     pub fn parent(&self) -> Option<NonNull<RBLink>> {
-        let ptr = (self.parent_tagged & PTR_MASK) as *mut RBLink;
+        let ptr = (self.tagged_parent_ptr & PTR_MASK) as *mut RBLink;
         NonNull::new(ptr)
     }
     #[inline]
@@ -76,8 +76,8 @@ impl RBLink {
 
         debug_assert!(ptr_val & COLOR_MASK == 0, "Pointer not aligned!");
 
-        let current_color = self.parent_tagged & COLOR_MASK;
-        self.parent_tagged = ptr_val | current_color;
+        let current_color = self.tagged_parent_ptr & COLOR_MASK;
+        self.tagged_parent_ptr = ptr_val | current_color;
     }
 }
 
@@ -86,6 +86,10 @@ pub struct RBTree<T, A: Adapter<T>> {
     size: usize,
     _marker: PhantomData<(T, A)>,
 }
+
+unsafe impl<T: Send + Sync, A: Adapter<T>> Send for RBTree<T, A> {}
+unsafe impl<T: Send + Sync, A: Adapter<T>> Sync for RBTree<T, A> {}
+
 impl<T, A: Adapter<T>> RBTree<T, A> {
     pub fn new() -> Self {
         Self {
@@ -125,12 +129,13 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
         None
     }
 
-    pub fn insert<F>(&mut self, object: *mut T, compare: F)
+    pub fn insert<F>(&mut self, object: TinyArc<T>, compare: F)
     where
-        F: Fn(&T, &T) -> Ordering,
+        F: Fn(&T, &T) -> core::cmp::Ordering,
     {
+        let object_ptr = TinyArc::into_raw(object) as *mut T;
         unsafe {
-            let mut new_link = self.get_link(object);
+            let mut new_link = self.get_link(object_ptr);
 
             {
                 let node = new_link.as_mut();
@@ -143,10 +148,13 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
             while let Some(node) = x {
                 y = Some(node);
                 let obj = self.get_obj(node);
-                match compare(&*object, &*obj) {
+                match compare(&*object_ptr, &*obj) {
                     Ordering::Less => x = node.as_ref().left,
                     Ordering::Greater => x = node.as_ref().right,
-                    Ordering::Equal => return,
+                    Ordering::Equal => {
+                        let _ = TinyArc::from_raw(object_ptr);
+                        return;
+                    }
                 }
             }
 
@@ -158,7 +166,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                 let y_obj = self.get_obj(y_ptr);
                 let y_mut = y_ptr.as_mut();
 
-                match compare(&*object, &*y_obj) {
+                match compare(&*object_ptr, &*y_obj) {
                     Ordering::Less => y_mut.left = Some(new_link),
                     _ => y_mut.right = Some(new_link),
                 }
@@ -278,12 +286,29 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
         }
     }
 
-    pub fn delete(&mut self, object: *mut T) {
+    pub fn remove<K, F>(&mut self, key: &K, compare: F) -> Option<TinyArc<T>>
+    where
+        F: Fn(&K, &T) -> Ordering,
+    {
         unsafe {
-            let node = self.get_link(object);
-            self.delete_node(node);
-            self.size -= 1;
+            let mut current = self.root;
+            while let Some(node) = current {
+                let node_ref = node.as_ref();
+                let obj = self.get_obj(node);
+                match compare(key, &*obj) {
+                    Ordering::Equal => {
+                        //Delete node from tree after finding it.
+                        self.delete_node(node);
+                        self.size -= 1;
+                        // Key Point: give back ownership.
+                        return Some(TinyArc::from_raw(obj));
+                    }
+                    Ordering::Less => current = node_ref.left,
+                    Ordering::Greater => current = node_ref.right,
+                }
+            }
         }
+        None
     }
 
     unsafe fn delete_node(&mut self, mut z: NonNull<RBLink>) {
@@ -331,7 +356,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
             let z_mut = z.as_mut();
             z_mut.left = None;
             z_mut.right = None;
-            z_mut.parent_tagged = 0;
+            z_mut.tagged_parent_ptr = 0;
         }
     }
 
@@ -530,24 +555,27 @@ impl<'a, T, A: Adapter<T>> Iterator for RBIterator<'a, T, A> {
     }
 }
 impl<T, A: Adapter<T>> Drop for RBTree<T, A> {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        while let Some(root) = self.root {
+            unsafe {
+                let obj_ptr = self.get_obj(root);
+                self.delete_node(root);
+                let _ = TinyArc::from_raw(obj_ptr);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    // 引入 Rust 内置的 benchmark 框架
     extern crate test;
-    use test::{black_box, Bencher};
-
+    use super::TinyArc;
     use super::*;
-    use std::{
-        boxed::Box,
-        ptr::NonNull,
-        string::{String, ToString},
-        time::{Duration, Instant},
-        vec::Vec,
-    };
-
+    use std::ptr::NonNull;
+    use std::string::{String, ToString};
+    use std::time::{Duration, Instant};
+    use std::vec::Vec;
+    use test::{black_box, Bencher};
     #[derive(Debug)]
     #[repr(C)]
     struct MyNode {
@@ -564,9 +592,7 @@ mod tests {
             }
         }
     }
-
     crate::impl_simple_intrusive_adapter!(MyNodeAdapter, MyNode, link);
-
     unsafe fn check_rb_properties(tree: &RBTree<MyNode, MyNodeAdapter>) {
         if tree.root.is_none() {
             return;
@@ -607,102 +633,88 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn test_insert_and_search() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
         let search_cmp = |k: &i32, n: &MyNode| k.cmp(&n.key);
-        let n1 = Box::into_raw(Box::new(MyNode::new(10, "Ten")));
-        let n2 = Box::into_raw(Box::new(MyNode::new(5, "Five")));
-        let n3 = Box::into_raw(Box::new(MyNode::new(20, "Twenty")));
+
+        let n1 = TinyArc::new(MyNode::new(10, "Ten"));
+        let n2 = TinyArc::new(MyNode::new(5, "Five"));
+        let n3 = TinyArc::new(MyNode::new(20, "Twenty"));
+
+        tree.insert(n1.clone(), cmp);
+        tree.insert(n2.clone(), cmp);
+        tree.insert(n3.clone(), cmp);
+
         unsafe {
-            tree.insert(n1, cmp);
-            tree.insert(n2, cmp);
-            tree.insert(n3, cmp);
             check_rb_properties(&tree);
         }
         assert_eq!(tree.size, 3);
-
         let res = tree.search(&10, search_cmp);
         assert!(res.is_some());
         assert_eq!(res.unwrap().value, "Ten");
         let res = tree.search(&99, search_cmp);
         assert!(res.is_none());
-        unsafe {
-            drop(Box::from_raw(n1));
-            drop(Box::from_raw(n2));
-            drop(Box::from_raw(n3));
-        }
     }
     #[test]
     fn test_delete_complex() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
-        let mut nodes = Vec::new();
+        let search_cmp = |k: &i32, n: &MyNode| k.cmp(&n.key);
+
+        let mut keys = Vec::new();
         for i in 0..20 {
-            let node = Box::into_raw(Box::new(MyNode::new(i, "Val")));
-            nodes.push(node);
+            let node = TinyArc::new(MyNode::new(i, "Val"));
+            keys.push(i);
             tree.insert(node, cmp);
         }
-
         unsafe {
             check_rb_properties(&tree);
         }
         assert_eq!(tree.size, 20);
-        unsafe {
-            for i in (0..20).step_by(2) {
-                let node_ptr = nodes[i as usize];
-                tree.delete(node_ptr);
-                check_rb_properties(&tree);
-                drop(Box::from_raw(node_ptr));
-            }
-        }
 
-        assert_eq!(tree.size, 10);
-        unsafe {
-            for i in (1..20).step_by(2) {
-                let node_ptr = nodes[i as usize];
-                drop(Box::from_raw(node_ptr));
+        for i in (0..20).step_by(2) {
+            let key = keys[i as usize];
+            let removed = tree.remove(&key, search_cmp);
+            assert!(removed.is_some());
+            unsafe {
+                check_rb_properties(&tree);
             }
         }
+        assert_eq!(tree.size, 10);
     }
     #[test]
     fn test_iterator() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
-        let ptrs = [
-            Box::into_raw(Box::new(MyNode::new(3, "C"))),
-            Box::into_raw(Box::new(MyNode::new(1, "A"))),
-            Box::into_raw(Box::new(MyNode::new(2, "B"))),
-            Box::into_raw(Box::new(MyNode::new(4, "D"))),
+
+        let nodes = [
+            TinyArc::new(MyNode::new(3, "C")),
+            TinyArc::new(MyNode::new(1, "A")),
+            TinyArc::new(MyNode::new(2, "B")),
+            TinyArc::new(MyNode::new(4, "D")),
         ];
-        for p in &ptrs {
-            tree.insert(*p, cmp);
+        for p in &nodes {
+            tree.insert(p.clone(), cmp);
         }
-        // tree.print_structure();
+
         let mut iter = tree.iter();
         assert_eq!(iter.next().unwrap().key, 1);
         assert_eq!(iter.next().unwrap().key, 2);
         assert_eq!(iter.next().unwrap().key, 3);
         assert_eq!(iter.next().unwrap().key, 4);
         assert!(iter.next().is_none());
-        unsafe {
-            for p in ptrs {
-                drop(Box::from_raw(p));
-            }
-        }
     }
     #[test]
     fn test_sequential_insert_stress() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
         let count = 2000;
-        let mut nodes = Vec::new();
+
         for i in 0..count {
             let val_str = format!("Val-{}", i);
-            let node = Box::into_raw(Box::new(MyNode::new(i, &val_str)));
-            nodes.push(node);
+            let node = TinyArc::new(MyNode::new(i, &val_str));
             tree.insert(node, cmp);
         }
         assert_eq!(tree.size, count as usize);
@@ -716,87 +728,60 @@ mod tests {
             i += 1;
         }
         assert_eq!(i, count);
-        unsafe {
-            for node in nodes {
-                drop(Box::from_raw(node));
-            }
-        }
     }
     #[test]
     fn test_delete_root_scenarios() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
-        let n1 = Box::into_raw(Box::new(MyNode::new(10, "Root")));
-        unsafe {
-            tree.insert(n1, cmp);
-            tree.delete(n1);
-            assert_eq!(tree.size, 0);
-            assert!(tree.root.is_none());
-            drop(Box::from_raw(n1));
-        }
-        let n1 = Box::into_raw(Box::new(MyNode::new(10, "Root")));
-        let n2 = Box::into_raw(Box::new(MyNode::new(5, "Left")));
-        unsafe {
-            tree.insert(n1, cmp);
-            tree.insert(n2, cmp);
-            tree.delete(n1);
-            assert_eq!(tree.size, 1);
-            assert_eq!(tree.root, Some(tree.get_link(n2)));
-            assert!(tree.root.unwrap().as_ref().is_black());
-            tree.delete(n2);
-            drop(Box::from_raw(n1));
-            drop(Box::from_raw(n2));
-        }
-        let n1 = Box::into_raw(Box::new(MyNode::new(10, "Root")));
-        let n2 = Box::into_raw(Box::new(MyNode::new(15, "Right")));
-        unsafe {
-            tree.insert(n1, cmp);
-            tree.insert(n2, cmp);
-            tree.delete(n1);
-            assert_eq!(tree.size, 1);
-            assert_eq!(tree.root, Some(tree.get_link(n2)));
-            assert!(tree.root.unwrap().as_ref().is_black());
-            drop(Box::from_raw(n1));
-            drop(Box::from_raw(n2));
-        }
+        let search_cmp = |k: &i32, n: &MyNode| k.cmp(&n.key);
+        // Scenario 1: Root only
+        let n1 = TinyArc::new(MyNode::new(10, "Root"));
+        tree.insert(n1.clone(), cmp);
+        tree.remove(&10, search_cmp);
+        assert_eq!(tree.size, 0);
+        assert!(tree.root.is_none());
+        // Scenario 2: Root + Left
+        let n1 = TinyArc::new(MyNode::new(10, "Root"));
+        let n2 = TinyArc::new(MyNode::new(5, "Left"));
+        tree.insert(n1.clone(), cmp);
+        tree.insert(n2.clone(), cmp);
+
+        tree.remove(&10, search_cmp); // Remove Root
+        assert_eq!(tree.size, 1);
+        //Root isn't exposed
+        assert!(tree.search(&5, search_cmp).is_some());
+
+        tree.remove(&5, search_cmp); // Remove Left
+                                     // Scenario 3: Root + Right
+        let n1 = TinyArc::new(MyNode::new(10, "Root"));
+        let n2 = TinyArc::new(MyNode::new(15, "Right"));
+        tree.insert(n1.clone(), cmp);
+        tree.insert(n2.clone(), cmp);
+        tree.remove(&10, search_cmp);
+        assert_eq!(tree.size, 1);
+        assert!(tree.search(&15, search_cmp).is_some());
     }
     #[test]
     fn test_clrs_13_4_3() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
         let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
-        let n1 = Box::into_raw(Box::new(MyNode::new(41, "Forty_one")));
-        let n2 = Box::into_raw(Box::new(MyNode::new(38, "Thirty_eight")));
-        let n3 = Box::into_raw(Box::new(MyNode::new(31, "Thirty_one")));
-        let n4 = Box::into_raw(Box::new(MyNode::new(12, "Twelve")));
-        let n5 = Box::into_raw(Box::new(MyNode::new(19, "Nineteen")));
-        let n6 = Box::into_raw(Box::new(MyNode::new(8, "Eight")));
-        unsafe {
-            tree.insert(n1, cmp);
-            tree.insert(n2, cmp);
-            tree.insert(n3, cmp);
-            tree.insert(n4, cmp);
-            tree.insert(n5, cmp);
-            tree.insert(n6, cmp);
+        let search_cmp = |k: &i32, n: &MyNode| k.cmp(&n.key);
 
-            tree.delete(n6);
-            tree.delete(n4);
-            tree.delete(n5);
-            tree.delete(n3);
-            tree.delete(n2);
-            tree.delete(n1);
-            drop(Box::from_raw(n1));
-            drop(Box::from_raw(n2));
-            drop(Box::from_raw(n3));
-            drop(Box::from_raw(n4));
-            drop(Box::from_raw(n5));
-            drop(Box::from_raw(n6));
+        let nodes = [41, 38, 31, 12, 19, 8];
+        for &val in &nodes {
+            let node = TinyArc::new(MyNode::new(val, "Val"));
+            tree.insert(node, cmp);
+
+            let delete_order = [8, 12, 19, 31, 38, 41];
+            for &val in &delete_order {
+                tree.remove(&val, search_cmp);
+            }
+            assert_eq!(tree.size, 0);
         }
     }
-
     #[bench]
     fn bench_admin_suite(_b: &mut Bencher) {
-        println!("\n===Benchmark Start ===");
-
+        println!("\n===Benchmark Start (TinyArc Version) ===");
         let sizes = [1_000, 10_000, 100_000];
         let repeat_count = 5;
         for &n in &sizes {
@@ -809,12 +794,10 @@ mod tests {
             let mut remove_times = Vec::with_capacity(repeat_count);
             for _ in 0..repeat_count {
                 let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
-                let mut created_ptrs = Vec::with_capacity(n);
                 // 1. Insert Test
                 let start = Instant::now();
                 for i in 0..n {
-                    let node = Box::into_raw(Box::new(MyNode::new(i as i32, "bench")));
-                    created_ptrs.push(node);
+                    let node = TinyArc::new(MyNode::new(i as i32, "bench"));
                     let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
                     black_box(tree.insert(node, cmp));
                 }
@@ -827,17 +810,8 @@ mod tests {
                 get_times.push(start.elapsed());
                 // 3. Remove Test (key=20)
                 let start = Instant::now();
-                if let Some(node_ref) = tree.search(&target_key, search_cmp) {
-                    let node_ptr = node_ref as *const MyNode as *mut MyNode;
-                    black_box(tree.delete(node_ptr));
-                }
+                black_box(tree.remove(&target_key, search_cmp));
                 remove_times.push(start.elapsed());
-
-                for ptr in created_ptrs {
-                    unsafe {
-                        drop(Box::from_raw(ptr));
-                    }
-                }
             }
             print_stats("Insert Test", &insert_times, true);
             print_stats("Get data by key=20", &get_times, false);
@@ -868,7 +842,6 @@ mod tests {
             );
         }
     }
-
     #[derive(Debug)]
     #[repr(C)]
     struct NoSentinelNode {
@@ -905,33 +878,34 @@ mod tests {
             }
         }
     }
+
     #[bench]
-    fn bench_rbtree_no_sentinel_2_trees(b: &mut Bencher) {
+    fn bench_insert_and_detach_rbtree(b: &mut Bencher) {
         let n = 1 << 12;
         let cmp = |a: &NoSentinelNode, b: &NoSentinelNode| a.key.cmp(&b.key);
+        let search_cmp = |k: &i32, n: &NoSentinelNode| k.cmp(&n.key);
         b.iter(|| {
             let mut tree1 = RBTree::<NoSentinelNode, NoSentinelAdapter1>::new();
             let mut tree2 = RBTree::<NoSentinelNode, NoSentinelAdapter2>::new();
             let mut nodes = Vec::with_capacity(n);
+            
             for i in 0..n {
-                let node = Box::into_raw(Box::new(NoSentinelNode::new(i as i32)));
-                nodes.push(node);
-                tree1.insert(node, cmp);
+                let node = TinyArc::new(NoSentinelNode::new(i as i32));
+                nodes.push(node.clone());
+                
+                tree1.insert(node.clone(), cmp);
                 tree2.insert(node, cmp);
             }
+            
             for node in &nodes {
-                tree1.delete(*node);
-                tree2.delete(*node);
-            }
-            for node in nodes {
-                unsafe {
-                    drop(Box::from_raw(node));
-                }
+                black_box(tree1.remove(&node.key, search_cmp));
+                black_box(tree2.remove(&node.key, search_cmp));
             }
         });
     }
+
     #[bench]
-    fn bench_std_btree_2_trees(b: &mut Bencher) {
+    fn bench_insert_and_detach_btree_std(b: &mut Bencher) {
         use std::collections::BTreeMap;
         let n = 1 << 12;
         b.iter(|| {
@@ -942,8 +916,8 @@ mod tests {
                 map2.insert(i, i);
             }
             for i in 0..n {
-                map1.remove(&i);
-                map2.remove(&i);
+                black_box(map1.remove(&i));
+                black_box(map2.remove(&i));
             }
         });
     }

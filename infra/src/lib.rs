@@ -39,3 +39,5 @@ pub mod spinarc;
 pub mod string;
 pub mod tinyarc;
 pub mod tinyrwlock;
+#[path = "rbtree/rbtree.rs"]
+pub mod rbtree;
