@@ -34,7 +34,6 @@ def parse_int_configs(kconfig_path, board, build_type, output_headers):
 
     kconf.write_autoconf(output_headers)
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--kconfig", help="Kconfig dir")
