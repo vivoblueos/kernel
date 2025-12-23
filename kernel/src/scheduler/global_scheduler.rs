@@ -156,8 +156,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
     queue_ready_thread_inner(&mut tbl, t)
 }
 
-pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
-    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+fn remove_from_ready_queue_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadNode) -> bool {
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
     debug_assert_eq!(t.state(), thread::READY);
@@ -171,4 +170,30 @@ pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
         tbl.clear_active_queue(priority as u32);
     }
     true
+}
+
+pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    remove_from_ready_queue_inner(&mut tbl, t)
+}
+
+pub fn update_ready_thread_priority(
+    t: &ThreadNode,
+    new_priority: ThreadPriority,
+) -> Result<(), Uint> {
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    if !remove_from_ready_queue_inner(&mut tbl, t) {
+        let state = t.state();
+        return Err(state);
+    }
+
+    let mut thread_guard = t.lock();
+    thread_guard.set_origin_priority(new_priority);
+    thread_guard.set_priority(new_priority);
+    drop(thread_guard);
+
+    if queue_ready_thread_inner(&mut tbl, t.clone()) {
+        return Ok(());
+    }
+    Err(thread::RUNNING)
 }

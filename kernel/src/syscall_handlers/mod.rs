@@ -23,7 +23,7 @@ use crate::vfs::syscalls as vfs_syscalls;
 #[cfg(enable_vfs)]
 pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
 use crate::{
-    scheduler,
+    config, scheduler,
     sync::atomic_wait as futex,
     thread::{self, Builder, Entry, Stack, Thread},
     time,
@@ -38,7 +38,7 @@ use core::{
 };
 use libc::{
     addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t,
-    sigset_t, size_t, sockaddr, socklen_t, timespec, EINVAL,
+    sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
 };
 
 #[cfg(not(enable_vfs))]
@@ -323,7 +323,57 @@ get_tid() -> c_long {
 });
 
 define_syscall_handler!(
-create_thread(spawn_args_ptr: *mut SpawnArgs) -> c_long {
+get_sched_param(tid: usize) -> c_long {
+
+    let target = thread::GlobalQueueVisitor::find_if(|t| {
+        thread::Thread::id(t) == tid
+    });
+    let Some(target) = target else {
+        return -(ESRCH as c_long);
+    };
+    target.priority() as c_long
+});
+
+define_syscall_handler!(
+set_sched_param(tid: usize, prio: c_int) -> c_long {
+    if prio < 0 || (prio as u32) > (config::MAX_THREAD_PRIORITY as u32) {
+        return -(EINVAL as c_long);
+    }
+    let p = prio as crate::types::ThreadPriority;
+    let mut was_ready = false;
+    let target = thread::GlobalQueueVisitor::find_if(|t| {
+        if thread::Thread::id(t) == tid {
+            was_ready = t.state() == thread::READY;
+            if !was_ready {
+                let mut w = t.lock();
+                w.set_origin_priority(p);
+                w.set_priority(p);
+            }
+            true
+        } else {
+            false
+        }
+    });
+
+    let Some(target) = target else {
+        return -(ESRCH as c_long);
+    };
+
+    let preempt_guard = thread::Thread::try_preempt_me();
+    let ret = if was_ready {
+        match scheduler::update_ready_thread_priority(&target, p) {
+            Ok(()) => 0,
+            Err(_) => -(EBUSY as c_long),
+        }
+    } else {
+        0
+    };
+    drop(preempt_guard);
+    ret
+});
+
+define_syscall_handler!(
+create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     let spawn_args = unsafe {&*spawn_args_ptr};
     let t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
                 .set_stack(Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size))
@@ -757,6 +807,8 @@ syscall_table! {
     (Echo, echo),
     (Nop, nop),
     (GetTid, get_tid),
+    (GetSchedParam, get_sched_param),
+    (SetSchedParam, set_sched_param),
     (CreateThread, create_thread),
     (ExitThread, exit_thread),
     (AtomicWake, atomic_wake),
