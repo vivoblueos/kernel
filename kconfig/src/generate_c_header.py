@@ -33,46 +33,7 @@ def parse_int_configs(kconfig_path, board, build_type, output_headers):
         kconf.load_config(dotconfig)
 
     kconf.write_autoconf(output_headers)
-    configs = {}
 
-    for sym in kconf.defined_syms:
-        if sym.orig_type != INT or not sym.visibility:
-            continue
-
-        # check depends on
-        if sym.direct_dep is not None:
-            # Handle both single dependency and tuple of dependencies
-            if isinstance(sym.direct_dep, tuple):
-                # If it's a tuple, check if any dependency is false
-                if any(dep.tri_value == 0 for dep in sym.direct_dep
-                       if hasattr(dep, 'tri_value')):
-                    continue
-            else:
-                # If it's a single dependency
-                if hasattr(sym.direct_dep,
-                           'tri_value') and sym.direct_dep.tri_value == 0:
-                    continue
-
-        value = None
-        try:
-            # 1. The value set in .config is used first
-            if sym.str_value:
-                value = int(sym.str_value)
-            # 2. Try to get a default value (check the default ... if ... condition)
-            elif sym.defaults:
-                for default, cond in sym.defaults:
-                    if cond is None or cond.eval():
-                        value = int(default.str_value)
-                        break
-
-            if value is not None:
-                configs[sym.name.upper()] = value
-
-        except (ValueError, TypeError) as e:
-            print(f"[WARN] items {sym.name} value conversion failed: {e}",
-                  file=sys.stderr)
-
-    return configs
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -90,7 +51,8 @@ if __name__ == "__main__":
         os.path.dirname(os.path.dirname(kconfig_dir)), 'kernel', 'src')
     os.environ['KERNEL_SRC_DIR'] = os.path.abspath(kernel_src_dir)
     try:
-        results = parse_int_configs(args.kconfig, args.board, args.build_type, args.output_headers)
+        parse_int_configs(args.kconfig, args.board, args.build_type,
+                          args.output_headers)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
         sys.exit(1)
