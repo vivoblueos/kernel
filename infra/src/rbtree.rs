@@ -297,7 +297,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                 let obj = self.get_obj(node);
                 match compare(key, &*obj) {
                     Ordering::Equal => {
-                        //Delete node from tree after finding it.
+                        // Delete node from tree after finding it.
                         self.delete_node(node);
                         self.size -= 1;
                         // Key Point: give back ownership.
