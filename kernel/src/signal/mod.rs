@@ -14,6 +14,8 @@
 
 use crate::{arch, scheduler, thread, thread::ThreadNode};
 
+pub mod syscall;
+
 fn handle_signal_fallback(signum: i32) {
     if signum != libc::SIGTERM {
         return;
@@ -22,30 +24,48 @@ fn handle_signal_fallback(signum: i32) {
 }
 
 fn handle_signal(t: &ThreadNode, signum: i32) {
-    let mut l = t.lock();
-    let Some(handler) = l.take_signal_handler(signum) else {
-        drop(l);
+    // Don't use once handler now
+    // POSIX-ish: consult installed sigaction.
+    let sa = {
+        let l = t.lock();
+        l.get_sigaction(signum)
+    };
+
+    // None => SIG_DFL in our kernel representation.
+    let Some(handler) = sa.sa_handler else {
+        // almost all non realtime signals' default action is terminate the process
         return handle_signal_fallback(signum);
     };
-    drop(l);
-    handler();
+
+    handler(signum);
 }
 
 // This routine is supposed to be executed in THREAD mode.
 #[inline(never)]
 pub(crate) unsafe extern "C" fn handler_entry(_sp: usize, _old_sp: usize) {
     let current = scheduler::current_thread();
+    // Deliver only unblocked signals.
+    // NOTE: pending_signals uses kernel numbering (bit = 1<<signum).
+    // blocked uses POSIX numbering (bit = 1<<(signum-1)).
     let sigset = current.lock().pending_signals();
-    for i in 0..32 {
-        if sigset & (1 << i) == 0 {
+    for signum in 1..32 {
+        if sigset & (1 << signum) == 0 {
             continue;
         }
-        handle_signal(&current, i);
-        current.lock().clear_signal(i);
+        let blocked = current.lock().is_signal_blocked(signum);
+        if blocked {
+            continue;
+        }
+
+        handle_signal(&current, signum);
+        // Clear the delivered signal from pending set.
+        current.lock().clear_signal(signum);
     }
     {
         let mut l = current.lock();
         l.deactivate_signal_context();
+        // after handling signals, the saved_sp should be restored to thread context,
+        // add an assert here to make sure?
     }
     let saved_sp = current.saved_sp();
     current.transfer_state(thread::RUNNING, thread::READY);
