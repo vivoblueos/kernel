@@ -20,7 +20,7 @@ use crate::{
     thread,
     thread::Thread,
     time::WAITING_FOREVER,
-    types::ArcList,
+    types::{Arc, ArcList},
 };
 use bitflags::bitflags;
 use core::{cell::Cell, ops::DerefMut};
@@ -74,8 +74,8 @@ impl EventFlags {
         let mut w = self.pending.irqsave_lock();
         let new_flags = self.flags.get() | flags;
         let mut clear_flags = 0;
-        for mut entry in w.iter() {
-            let mut thread = entry.thread.clone();
+        for val in w.iter() {
+            let mut thread = val.thread.clone();
             let event_mask = thread.event_flags_mask();
             let event_mode = thread.event_flags_mode();
             let mut need_wake = false;
@@ -89,7 +89,7 @@ impl EventFlags {
                 need_wake = true;
             }
             if need_wake {
-                WaitQueue::detach(&mut entry);
+                WaitQueue::detach(&mut unsafe { Arc::clone_from(val) });
                 if !thread.event_flags_mode().contains(EventFlagsMode::NO_CLEAR) {
                     clear_flags |= thread.event_flags_mask();
                 }

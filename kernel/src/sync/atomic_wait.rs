@@ -107,7 +107,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
             w.insert(entry.clone());
             entry
         },
-        |e| e,
+        |e| unsafe { Arc::clone_from(e) },
     );
     let t = scheduler::current_thread();
     let mut we = entry.pending.irqsave_lock();
@@ -170,7 +170,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
             }
         }
         if we.is_empty() {
-            w.detach(&mut e.clone());
+            w.detach(&mut unsafe { Arc::clone_from(e) });
         }
         if woken == how_many {
             break;

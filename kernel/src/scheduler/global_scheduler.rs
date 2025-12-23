@@ -162,7 +162,7 @@ fn remove_from_ready_queue_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &Th
     debug_assert_eq!(t.state(), thread::READY);
     let q = &mut tbl.tables[priority as usize];
     // Conservatively search the whole queue.
-    let removed = q.remove_if(|e| ThreadNode::is(e, t));
+    let removed = q.remove_if(|e| ThreadNode::as_ptr(t) == e as *const _);
     let Some(removed) = removed else {
         return false;
     };
