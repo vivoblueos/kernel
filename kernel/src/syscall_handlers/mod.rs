@@ -369,10 +369,10 @@ atomic_wake(addr: usize, count: *mut usize) -> c_long {
 define_syscall_handler!(
     clock_gettime(_clk_id: clockid_t, tp: *mut timespec) -> c_long {
         // only support CLOCK_MONOTONIC
-        const TICK_TO_NANOSECOND: usize = 1_000_000_000 / blueos_kconfig::TICKS_PER_SECOND;
+        const TICK_TO_NANOSECOND: usize = 1_000_000_000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
         let ticks = time::TickTime::now().as_ticks();
-        let seconds = ticks / blueos_kconfig::TICKS_PER_SECOND;
-        let nanoseconds = (ticks % blueos_kconfig::TICKS_PER_SECOND) * TICK_TO_NANOSECOND;
+        let seconds = ticks / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
+        let nanoseconds = (ticks % (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize)) * TICK_TO_NANOSECOND;
         unsafe {
             *tp = timespec { tv_sec: seconds as c_int, tv_nsec: nanoseconds as c_int };
         }
@@ -699,8 +699,8 @@ define_syscall_handler!(
         };
 
         // TODO: Implement tv_nsec
-        let ticks = blueos_kconfig::TICKS_PER_SECOND * duration.tv_sec as usize +
-                    duration.tv_nsec as usize / (1000000000 / blueos_kconfig::TICKS_PER_SECOND);
+        let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize * duration.tv_sec as usize +
+                    duration.tv_nsec as usize / (1000000000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize));
         if ticks == 0 {
             scheduler::yield_me();
         } else {

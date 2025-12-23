@@ -35,7 +35,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use blueos_kconfig::NETWORK_STACK_SIZE;
+use blueos_kconfig::CONFIG_NETWORK_STACK_SIZE as NETWORK_STACK_SIZE;
 use core::{cell::RefCell, mem::MaybeUninit, time};
 use smoltcp::{
     time::{Duration, Instant},
@@ -294,11 +294,11 @@ extern "C" fn net_stack_main_loop() {
 #[repr(align(16))]
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct NetworkStack {
-    pub(crate) rep: [u8; NETWORK_STACK_SIZE],
+    pub(crate) rep: [u8; NETWORK_STACK_SIZE as usize],
 }
 
 static mut NETWORK_STACK: NetworkStack = NetworkStack {
-    rep: [0u8; NETWORK_STACK_SIZE],
+    rep: [0u8; NETWORK_STACK_SIZE as usize],
 };
 
 pub(crate) fn init() {

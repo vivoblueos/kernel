@@ -16,7 +16,6 @@ pub(crate) mod irq;
 mod trap;
 
 use crate::{irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
-use blueos_kconfig::NUM_CORES;
 use core::{
     mem::offset_of,
     sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
@@ -24,7 +23,7 @@ use core::{
 pub use trap::*;
 
 pub(crate) const NR_SWITCH: usize = !0;
-
+const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 // See https://five-embeddev.com/riscv-priv-isa-manual/Priv-v1.12/machine.html#machine-status-registers-mstatus-and-mstatush
 pub(crate) const MSTATUS_MIE: usize = 1 << 3;
 pub(crate) const MSTATUS_MPIE: usize = 1 << 7;

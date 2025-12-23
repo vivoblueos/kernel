@@ -595,7 +595,7 @@ impl Thread {
     #[inline]
     pub fn reset_robin(&self) {
         self.robin_count
-            .store(blueos_kconfig::ROBIN_SLICE as i32, Ordering::Relaxed);
+            .store(blueos_kconfig::CONFIG_ROBIN_SLICE as i32, Ordering::Relaxed);
     }
 
     #[inline]

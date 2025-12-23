@@ -539,7 +539,7 @@ pub extern "C" fn pend_switch_context() {}
 
 pub fn secondary_cpu_setup(psci_base: u32) {
     atomic::fence(Ordering::SeqCst);
-    for i in 1..blueos_kconfig::NUM_CORES {
+    for i in 1..blueos_kconfig::CONFIG_NUM_CORES {
         psci::cpu_on(psci_base, i as usize, crate::boot::_start as usize, 0);
     }
 }

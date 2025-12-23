@@ -16,9 +16,9 @@ pub mod systick;
 pub mod timer;
 
 use crate::{arch, boards, scheduler, support::DisableInterruptGuard, thread::Thread};
-use blueos_kconfig::TICKS_PER_SECOND;
 use systick::SYSTICK;
 
+pub const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 pub const NO_WAITING: usize = 0;
 pub const WAITING_FOREVER: usize = usize::MAX;
 
