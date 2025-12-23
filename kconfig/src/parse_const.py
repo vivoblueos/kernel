@@ -47,5 +47,4 @@ if __name__ == "__main__":
         generate_rust_const(args.src, args.output)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
-        sys.exit(1) 
-
+        sys.exit(1)
