@@ -37,6 +37,8 @@ pub enum HalError<T = &'static str> {
     NoMemory,
     /// No acknowledgment received.
     NoAck,
+    /// No data available.
+    NoData,
     /// I/O error.
     IoError,
     /// Other errors.

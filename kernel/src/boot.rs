@@ -74,7 +74,14 @@ extern "C" {
     pub static mut _end: u8;
 }
 
+use crate::{
+    devices::{bus::Bus, i2c_core::block_i2c::BlockI2c},
+    drivers::InitDriver,
+};
+
 static SERIAL0: Once<Arc<Serial>> = Once::new();
+#[cfg(use_bme280)]
+static I2C0_BUS: Once<Arc<Bus<crate::boards::get_bus_ty!(i2c0_bus)>>> = Once::new();
 
 pub fn get_serial(index: u32) -> &'static Arc<Serial> {
     match index {
@@ -114,6 +121,26 @@ extern "C" fn init() {
     match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
         Ok(_) => {}
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
+    }
+
+    #[cfg(use_bme280)]
+    {
+        if let Ok(block_i2c) = BlockI2c::new(crate::boards::get_device!(i2c0)) {
+            I2C0_BUS.call_once(|| Arc::new(Bus::new(block_i2c)));
+            let i2c0_bus = I2C0_BUS.get().unwrap();
+            for device in crate::boards::get_bus_devices!(i2c0_bus) {
+                i2c0_bus.register_device(device).unwrap();
+            }
+            if let Ok(d) =
+                i2c0_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
+            {
+                if let Err(e) = d.init(&i2c0_bus) {
+                    log::warn!("Failed to init Bme280 driver: {}", e);
+                }
+            }
+        } else {
+            log::warn!("Failed to init BlockI2c");
+        }
     }
 
     #[cfg(virtio)]
