@@ -1,6 +1,5 @@
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
-import("//build/toolchain/cflags.gni")
 
 template("librs_linux_emulation_case") {
   forward_variables_from(invoker, "*")
