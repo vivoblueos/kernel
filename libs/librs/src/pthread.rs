@@ -30,7 +30,7 @@ use alloc::{
     vec::Vec,
 };
 use blueos_header::{
-    syscalls::NR::{CreateThread, ExitThread, GetTid, SchedYield},
+    syscalls::NR::{CreateThread, ExitThread, GetSchedParam, GetTid, SchedYield, SetSchedParam},
     thread::{SpawnArgs, DEFAULT_STACK_SIZE, STACK_ALIGN},
 };
 use blueos_scal::bk_syscall;
@@ -174,14 +174,24 @@ pub extern "C" fn gettid() -> pthread_t {
 #[linkage = "weak"]
 #[no_mangle]
 pub extern "C" fn pthread_getschedparam(
-    _thread: pthread_t,
+    thread: pthread_t,
     policy: *mut c_int,
-    _param: *mut sched_param,
+    param: *mut sched_param,
 ) -> c_int {
-    // TODO: Currently BlueKernel only supports SCHED_RR.
+    // TODO: Currently kernel only supports SCHED_RR.
+    if policy.is_null() || param.is_null() {
+        return EINVAL;
+    }
+
     unsafe {
         *policy = SCHED_RR;
+        let ret = bk_syscall!(GetSchedParam, thread as usize) as isize;
+        if ret < 0 {
+            return ret as c_int;
+        }
+        (*param).sched_priority = ret as c_int;
     }
+
     0
 }
 
@@ -190,10 +200,20 @@ pub extern "C" fn pthread_getschedparam(
 #[linkage = "weak"]
 #[no_mangle]
 pub unsafe extern "C" fn pthread_setschedparam(
-    _thread: pthread_t,
-    _policy: c_int,
-    _param: *const sched_param,
+    thread: pthread_t,
+    policy: c_int,
+    param: *const sched_param,
 ) -> c_int {
+    if param.is_null() {
+        return EINVAL;
+    }
+    // Only SCHED_RR is supported now. set policy is an non-op.
+    // Only set current thread's priority for now.
+    let prio = (*param).sched_priority as c_int;
+    let ret = bk_syscall!(SetSchedParam, thread as usize, prio) as isize;
+    if ret < 0 {
+        return ret as c_int;
+    }
     0
 }
 
@@ -890,6 +910,35 @@ mod tests {
     use super::*;
     use crate::println;
     use blueos_test_macro::test;
+    use core::ptr;
+
+    type WaitPair = (*const Waitval<()>, *const Waitval<()>);
+
+    extern "C" fn block_child_entry(arg: *mut c_void) -> *mut c_void {
+        let pair = unsafe { &*(arg as *const WaitPair) };
+        let notify = unsafe { &*pair.0 };
+        let blocker = unsafe { &*pair.1 };
+
+        notify.post(());
+        blocker.wait();
+        ptr::null_mut()
+    }
+
+    type ReadyPair = (*const Waitval<()>, *const AtomicBool);
+
+    extern "C" fn ready_child_entry(arg: *mut c_void) -> *mut c_void {
+        let pair = unsafe { &*(arg as *const ReadyPair) };
+        let ready = unsafe { &*pair.0 };
+        let release = unsafe { &*pair.1 };
+        ready.post(());
+        loop {
+            if release.load(Ordering::Acquire) {
+                break;
+            }
+            bk_syscall!(SchedYield);
+        }
+        ptr::null_mut()
+    }
 
     macro_rules! check_align {
         ($lhs:ident, $rhs:ident) => {
@@ -939,6 +988,88 @@ mod tests {
                 #[cfg(target_arch = "riscv64")]
                 bk_syscall!(SchedYield);
             }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "arm")] // FIXME: riscv64 test hangs here
+    fn check_pthread_setschedparam_ready_thread() {
+        let ready = Waitval::new();
+        let release = AtomicBool::new(false);
+        let mut pair: ReadyPair = (&ready as *const _, &release as *const _);
+
+        let mut th: pthread_t = 0;
+        let ret = unsafe {
+            pthread_create(
+                &mut th,
+                ptr::null(),
+                ready_child_entry,
+                (&mut pair as *mut ReadyPair as *mut c_void),
+            )
+        };
+        assert_eq!(ret, 0);
+
+        ready.wait();
+
+        let desired = sched_param { sched_priority: 3 };
+        let ret = unsafe { pthread_setschedparam(th, SCHED_RR, &desired) };
+
+        let mut policy = 0;
+        let mut observed = sched_param { sched_priority: 0 };
+        pthread_getschedparam(th, &mut policy, &mut observed);
+
+        assert_eq!(policy, SCHED_RR);
+        assert_eq!(observed.sched_priority, desired.sched_priority);
+
+        release.store(true, Ordering::Release);
+
+        unsafe {
+            pthread_join(th, ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn check_pthread_setschedparam_running_thread() {
+        let tid = pthread_self();
+        let mut policy = 0;
+        let mut current = sched_param { sched_priority: 0 };
+        assert_eq!(pthread_getschedparam(tid, &mut policy, &mut current), 0);
+
+        assert_eq!(unsafe { pthread_setschedparam(tid, policy, &current) }, 0);
+    }
+
+    #[test]
+    #[cfg(target_arch = "arm")] // FIXME: riscv64 test hangs here
+    fn check_pthread_setschedparam_blocked_thread() {
+        let notify = Waitval::new();
+        let blocker = Waitval::new();
+        let mut pair: WaitPair = (&notify as *const _, &blocker as *const _);
+
+        let mut th: pthread_t = 0;
+        let ret = unsafe {
+            pthread_create(
+                &mut th,
+                ptr::null(),
+                block_child_entry,
+                (&mut pair as *mut WaitPair as *mut c_void),
+            )
+        };
+        assert_eq!(ret, 0);
+
+        notify.wait();
+
+        let desired = sched_param { sched_priority: 2 };
+        unsafe { pthread_setschedparam(th, SCHED_RR, &desired) };
+
+        let mut policy = 0;
+        let mut observed = sched_param { sched_priority: 0 };
+        pthread_getschedparam(th, &mut policy, &mut observed);
+        assert_eq!(policy, SCHED_RR);
+        assert_eq!(observed.sched_priority, desired.sched_priority);
+
+        blocker.post(());
+        unsafe {
+            pthread_join(th, ptr::null_mut());
         }
     }
 }
