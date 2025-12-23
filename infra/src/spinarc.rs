@@ -456,7 +456,7 @@ mod tests {
             let mut handle = move || {
                 Node::insert_after(&mut head, node);
             };
-            let t = thread::spawn(move || handle());
+            let t = thread::spawn(handle);
             vt.push(t);
         }
         for t in vt {
