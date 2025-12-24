@@ -41,7 +41,7 @@ pub struct Slab {
     block_size: usize,
     len: usize,
     min_len: usize,
-    free_block_list: SinglyLinkedList,
+    free_block_list: SinglyLinkedList<usize>,
     #[cfg(debug_slab)]
     start_addr: usize,
     #[cfg(debug_slab)]
@@ -72,7 +72,7 @@ impl Slab {
         }
         for i in (0..count).rev() {
             let new_block = (start_addr + i * block_size) as *mut usize;
-            self.free_block_list.push(new_block);
+            self.free_block_list.push(NonNull::new_unchecked(new_block));
         }
 
         self.len = count;
@@ -92,7 +92,7 @@ impl Slab {
                         panic!("alloc ptr is not in the heap\n");
                     }
                 }
-                let ptr = block as *mut usize;
+                let ptr = block.as_ptr();
                 // clear the magic number
                 let magic_ptr = ptr.wrapping_add(1);
                 // Safety: magic_ptr is not null.
@@ -125,7 +125,7 @@ impl Slab {
             log::warn!("0x{:p} is already freed", ptr);
             return;
         }
-        self.free_block_list.push(ptr);
+        self.free_block_list.push(NonNull::new_unchecked(ptr));
         ptr::write(magic_ptr, 0xdeadbeef);
         self.len += 1;
     }
