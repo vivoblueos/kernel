@@ -27,11 +27,11 @@ use crate::{
 };
 use alloc::boxed::Box;
 use blueos_hal::HasInterruptReg;
-use blueos_kconfig::NUM_CORES;
 use core::sync::atomic::Ordering;
 use tock_registers::interfaces::Readable;
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
+const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 pub(crate) fn init() {
     STAGING.run(0, true, crate::boot::init_runtime);
     STAGING.run(1, true, crate::boot::init_heap);

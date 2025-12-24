@@ -117,7 +117,6 @@ mod tests {
     };
     use alloc::vec::Vec;
     use blueos_header::syscalls::NR::Nop;
-    use blueos_kconfig::NUM_CORES;
     use blueos_test_macro::test;
     use core::{
         mem::MaybeUninit,
@@ -146,6 +145,7 @@ mod tests {
     #[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
     pub const K: usize = 64;
 
+    const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
     static mut TEST_THREAD_STORAGES: [SystemThreadStorage; NUM_CORES * K] =
         [const { SystemThreadStorage::new(ThreadKind::Normal) }; NUM_CORES * K];
     static mut TEST_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES * K] =

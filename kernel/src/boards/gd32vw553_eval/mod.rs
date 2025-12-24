@@ -35,8 +35,8 @@ use alloc::{
     string::String,
 };
 use blueos_driver::pinctrl::gd32_af::{AfioMode, Gd32Alterfunc, OutputSpeed, OutputType, PullMode};
-use blueos_kconfig::TICKS_PER_SECOND;
 
+const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 const CLOCK_ADDR: usize = 0xD1000000;
 const CLOCK_TIME: usize = CLOCK_ADDR;
 const CLOCK_CMP: usize = CLOCK_ADDR + core::mem::size_of::<u64>();

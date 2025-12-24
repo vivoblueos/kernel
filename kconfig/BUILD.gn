@@ -15,8 +15,8 @@
 import("//build/templates/build_template.gni")
 import("//kernel/features.gni")
 
-action("kconfig_const") {
-  script = "//kernel/kconfig/src/parse_const.py"
+action("generate_c_header") {
+  script = "//kernel/kconfig/src/generate_c_header.py"
   inputs = [
     "config/Kconfig",
     "config/${board}/${build_type}/defconfig",
@@ -27,8 +27,8 @@ action("kconfig_const") {
     "//kernel/kernel/src/vfs/Kconfig",
     "//kernel/kernel/src/net/Kconfig",
   ]
-  output = rebase_path("${target_gen_dir}/kconfig.rs")
-  outputs = [ "${target_gen_dir}/kconfig.rs" ]
+  output_headers = rebase_path("${target_gen_dir}/autoconf.h")
+  outputs = [ "${target_gen_dir}/autoconf.h" ]
   args = [
     "--kconfig",
     rebase_path("config/Kconfig"),
@@ -36,16 +36,43 @@ action("kconfig_const") {
     "${board}",
     "--build_type",
     "${build_type}",
-    "--output",
+    "--output_headers",
+    "${output_headers}",
+  ]
+}
+
+bindgen("autoconf_header") {
+  bindgen_flags = [
+    "--use-core",
+    "--ctypes-prefix",
+    "core::ffi",
+    "--no-layout-tests",
+  ]
+  sources = get_target_outputs(":generate_c_header")
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  deps = [ ":generate_c_header" ]
+}
+
+action("parse_const") {
+  script = "//kernel/kconfig/src/parse_const.py"
+  inputs = get_target_outputs(":autoconf_header")
+  output = rebase_path("${target_gen_dir}/kconfig.rs")
+  input = rebase_path(inputs[0])
+  outputs = [ "${target_gen_dir}/kconfig.rs" ]
+  args = [
+    "--src",
+    "${input}",
+    "--out",
     "${output}",
   ]
+  deps = [ ":autoconf_header" ]
 }
 
 build_rust("blueos_kconfig") {
   crate_type = "rlib"
-  sources = get_target_outputs(":kconfig_const")
+  sources = get_target_outputs(":parse_const")
   edition = "2021"
-  deps = [ ":kconfig_const" ]
+  deps = [ ":parse_const" ]
 }
 
 _kernel_configs = exec_script("//kernel/kconfig/src/parse_rustflags.py",

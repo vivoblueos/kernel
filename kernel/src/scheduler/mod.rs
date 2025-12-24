@@ -27,7 +27,7 @@ use crate::{
     types::{Arc, IlistHead, Uint},
 };
 use alloc::boxed::Box;
-use blueos_kconfig::NUM_CORES;
+use blueos_kconfig::CONFIG_NUM_CORES as NUM_CORES;
 use core::{
     intrinsics::unlikely,
     mem::MaybeUninit,
@@ -92,8 +92,8 @@ impl InsertModeTrait for InsertToEnd {
     const MODE: InsertMode = InsertMode::InsertToEnd;
 }
 
-pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
-    [const { MaybeUninit::zeroed() }; NUM_CORES];
+pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES as usize] =
+    [const { MaybeUninit::zeroed() }; NUM_CORES as usize];
 
 pub(crate) fn init() {
     idle::init_idle_threads();

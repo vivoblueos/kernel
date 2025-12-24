@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use blueos::time;
-use blueos_kconfig::TICKS_PER_SECOND;
 
+const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 // Define constants that will be exported to C
 // These match the extern const declarations in cmsis_os.h
 #[no_mangle]

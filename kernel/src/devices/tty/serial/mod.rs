@@ -23,13 +23,16 @@ use crate::{
 };
 use alloc::{format, string::String, sync::Arc};
 use blueos_infra::ringbuffer::BoxedRingBuffer;
-use blueos_kconfig::{SERIAL_RX_FIFO_SIZE, SERIAL_TX_FIFO_SIZE};
+use blueos_kconfig::{
+    CONFIG_SERIAL_RX_FIFO_SIZE as SERIAL_RX_FIFO_SIZE,
+    CONFIG_SERIAL_TX_FIFO_SIZE as SERIAL_TX_FIFO_SIZE,
+};
 use core::sync::atomic::AtomicUsize;
 use delegate::delegate;
 use embedded_io::{ErrorKind, ErrorType, Read, ReadReady, Write, WriteReady};
 
-const SERIAL_RX_FIFO_MIN_SIZE: usize = 256;
-const SERIAL_TX_FIFO_MIN_SIZE: usize = 256;
+const SERIAL_RX_FIFO_MIN_SIZE: u32 = 256;
+const SERIAL_TX_FIFO_MIN_SIZE: u32 = 256;
 
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum SerialError {
@@ -142,8 +145,8 @@ impl Serial {
             base: DeviceBase::new(),
             index,
             termios,
-            rx_fifo: SerialRxFifo::new(SERIAL_RX_FIFO_SIZE.max(SERIAL_RX_FIFO_MIN_SIZE)),
-            tx_fifo: SerialTxFifo::new(SERIAL_TX_FIFO_SIZE.max(SERIAL_TX_FIFO_MIN_SIZE)),
+            rx_fifo: SerialRxFifo::new(SERIAL_RX_FIFO_SIZE.max(SERIAL_RX_FIFO_MIN_SIZE) as usize),
+            tx_fifo: SerialTxFifo::new(SERIAL_TX_FIFO_SIZE.max(SERIAL_TX_FIFO_MIN_SIZE) as usize),
             uart_ops,
         }
     }

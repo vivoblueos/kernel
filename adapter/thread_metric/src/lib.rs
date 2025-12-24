@@ -20,10 +20,10 @@ use blueos::{
     time,
     types::{Arc, ThreadPriority},
 };
-use blueos_kconfig::TICKS_PER_SECOND;
 use core::mem::MaybeUninit;
 use libc::c_int;
 
+const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 const TM_SUCCESS: c_int = 0;
 const TM_ERROR: c_int = 1;
 

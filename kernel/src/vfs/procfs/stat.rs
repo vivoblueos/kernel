@@ -19,13 +19,14 @@ use crate::{
     scheduler, thread, time,
 };
 use alloc::{string::String, vec::Vec};
-use blueos_kconfig::NUM_CORES;
 use core::{
     fmt::{self, Write},
     sync::atomic::Ordering::Relaxed,
 };
 
 pub(crate) struct SystemStat;
+
+const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 
 impl ProcFileOps for SystemStat {
     fn get_content(&self) -> Result<Vec<u8>, Error> {

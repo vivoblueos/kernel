@@ -13,11 +13,12 @@
 // limitations under the License.
 
 use crate::{arch, support::DisableInterruptGuard, time, types::Uint};
-use blueos_kconfig::NUM_CORES;
+use blueos_kconfig::CONFIG_NUM_CORES as NUM_CORES;
 use core::sync::atomic::Ordering;
 
 // Nesting level might not be very large, use AtomicUint here.
-pub(crate) static mut IRQ_NESTING_COUNT: [Uint; NUM_CORES] = [const { 0 }; NUM_CORES];
+pub(crate) static mut IRQ_NESTING_COUNT: [Uint; NUM_CORES as usize] =
+    [const { 0 }; NUM_CORES as usize];
 
 pub struct IrqTrace {
     irq_number: arch::irq::IrqNumber,
@@ -94,19 +95,19 @@ pub extern "C" fn leave_irq() -> usize {
 #[cfg(procfs)]
 pub mod irq_trace {
     use crate::{arch::irq::INTERRUPT_TABLE_LEN, time};
-    use blueos_kconfig::NUM_CORES;
+    use blueos_kconfig::CONFIG_NUM_CORES as NUM_CORES;
     use core::sync::atomic::AtomicUsize;
 
     pub static IRQ_COUNTERS: [AtomicUsize; INTERRUPT_TABLE_LEN] =
         [const { AtomicUsize::new(0) }; INTERRUPT_TABLE_LEN];
 
-    pub static mut PER_CPU_TRACE_INFO: [IrqTraceInfo; NUM_CORES] = {
+    pub static mut PER_CPU_TRACE_INFO: [IrqTraceInfo; NUM_CORES as usize] = {
         [const {
             IrqTraceInfo {
                 last_irq_enter_cycles: 0,
                 total_irq_process_cycles: 0,
             }
-        }; NUM_CORES]
+        }; NUM_CORES as usize]
     };
 
     pub struct IrqTraceInfo {

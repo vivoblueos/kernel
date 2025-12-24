@@ -20,7 +20,7 @@ use crate::{
     support,
     thread::{self, Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode},
 };
-use blueos_kconfig::NUM_CORES;
+use blueos_kconfig::CONFIG_NUM_CORES as NUM_CORES;
 use core::{
     mem::MaybeUninit,
     ptr,
@@ -28,10 +28,10 @@ use core::{
 };
 use spin::Once;
 
-static mut IDLE_THREAD_BLOCKS: [SystemThreadStorage; NUM_CORES] =
-    [const { SystemThreadStorage::new(ThreadKind::Idle) }; NUM_CORES];
-static mut IDLE_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
-    [const { MaybeUninit::zeroed() }; NUM_CORES];
+static mut IDLE_THREAD_BLOCKS: [SystemThreadStorage; NUM_CORES as usize] =
+    [const { SystemThreadStorage::new(ThreadKind::Idle) }; NUM_CORES as usize];
+static mut IDLE_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES as usize] =
+    [const { MaybeUninit::zeroed() }; NUM_CORES as usize];
 
 // Idle is per core, disable interrupt to set idle hook
 pub type IdleHook = extern "C" fn();
@@ -69,7 +69,7 @@ fn init_idle_thread(i: usize) {
 
 pub(super) fn init_idle_threads() {
     for i in 0..NUM_CORES {
-        init_idle_thread(i);
+        init_idle_thread(i as usize);
     }
 }
 

@@ -13,7 +13,8 @@
 // limitations under the License.
 
 use blueos::time;
-use blueos_kconfig::TICKS_PER_SECOND;
+
+const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 
 // Get the RTOS kernel tick count.
 // \return RTOS kernel current tick count.
