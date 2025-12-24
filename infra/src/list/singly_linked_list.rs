@@ -15,65 +15,66 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use core::{fmt, marker::PhantomData, mem, ops::Drop, ptr};
+use core::{fmt, marker::PhantomData, mem, ops::Drop, ptr::NonNull};
 
 /// An intrusive linked list
 #[derive(Copy, Clone)]
-pub struct SinglyLinkedList {
-    head: *mut usize,
+pub struct SinglyLinkedList<T> {
+    head: Option<NonNull<T>>,
+    _marker: PhantomData<T>,
 }
 
-/// SAFETY: SinglyLinkedList only contains a raw pointer field, which is safe to share between threads
-/// because all modification operations require exclusive mutable reference (&mut self),
-/// ensuring that only one thread can modify the list at any time.
-unsafe impl Send for SinglyLinkedList {}
+unsafe impl<T: Send> Send for SinglyLinkedList<T> {}
 
-impl Default for SinglyLinkedList {
+impl<T> Default for SinglyLinkedList<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SinglyLinkedList {
+impl<T> SinglyLinkedList<T> {
     /// Create a new SinglyLinkedList
-    pub const fn new() -> SinglyLinkedList {
+    pub const fn new() -> Self {
         SinglyLinkedList {
-            head: ptr::null_mut(),
+            head: None,
+            _marker: PhantomData,
         }
     }
 
     /// Return `true` if the list is empty
     pub fn is_empty(&self) -> bool {
-        self.head.is_null()
+        self.head.is_none()
     }
 
     /// Push `item` to the front of the list
     /// # SAFETY
     /// - `item` must be a valid, non-null pointer
     /// - `item` must point to valid memory that can be written to
-    pub unsafe fn push(&mut self, item: *mut usize) {
-        debug_assert!(!item.is_null(), "item cannot be null");
-
-        *item = self.head as usize;
-        self.head = item;
+    pub unsafe fn push(&mut self, item: NonNull<T>) {
+        // Making sure T is big enough to memory next pointer.
+        debug_assert!(mem::size_of::<T>() >= mem::size_of::<Option<NonNull<T>>>());
+        let item_ptr = item.as_ptr() as *mut Option<NonNull<T>>;
+        *item_ptr = self.head;
+        self.head = Some(item);
     }
 
     /// Try to remove the first item in the list
-    pub fn pop(&mut self) -> Option<*mut usize> {
+    pub fn pop(&mut self) -> Option<NonNull<T>> {
         match self.is_empty() {
             true => None,
             false => {
-                let item = self.head;
-                // SAFETY: We have checked that self.head is not null, and item points to
-                // a valid address stored by previous push operations
-                self.head = unsafe { *item as *mut usize };
+                let item = self.head?;
+                let next_ptr = item.as_ptr() as *mut Option<NonNull<T>>;
+                unsafe {
+                    self.head = *next_ptr;
+                }
                 Some(item)
             }
         }
     }
 
     /// Return an iterator over the items in the list
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             curr: self.head,
             list: PhantomData,
@@ -81,91 +82,92 @@ impl SinglyLinkedList {
     }
 
     /// Return an mutable iterator over the items in the list
-    pub fn iter_mut(&mut self) -> IterMut {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut {
-            prev: &mut self.head as *mut *mut usize as *mut usize,
+            prev: &mut self.head as *mut Option<NonNull<T>>,
             curr: self.head,
             list: PhantomData,
         }
     }
 }
 
-impl fmt::Debug for SinglyLinkedList {
+impl<T> fmt::Debug for SinglyLinkedList<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
 /// An iterator over the linked list
-pub struct Iter<'a> {
-    curr: *mut usize,
-    list: PhantomData<&'a SinglyLinkedList>,
+pub struct Iter<'a, T> {
+    curr: Option<NonNull<T>>,
+    list: PhantomData<&'a SinglyLinkedList<T>>,
 }
 
-impl Iterator for Iter<'_> {
-    type Item = *mut usize;
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = NonNull<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.curr.is_null() {
+        if self.curr.is_none() {
             None
         } else {
             let item = self.curr;
             // SAFETY: We have checked that self.curr is not null
-            let next = unsafe { *item as *mut usize };
-            self.curr = next;
-            Some(item)
+            let next = item?.as_ptr() as *const Option<NonNull<T>>;
+            unsafe {
+                self.curr = *next;
+            }
+            item
         }
     }
 }
 
 /// Represent a mutable node in `SinglyLinkedList`
-pub struct ListNode {
-    prev: *mut usize,
-    curr: *mut usize,
+pub struct ListNode<'a, T> {
+    prev: *mut Option<NonNull<T>>,
+    curr: NonNull<T>,
+    _marker: PhantomData<&'a mut T>,
 }
 
-impl ListNode {
+impl<T> ListNode<'_, T> {
     /// Remove the node from the list
-    pub fn pop(self) -> *mut usize {
-        debug_assert!(!self.prev.is_null(), "prev pointer cannot be null");
-        debug_assert!(!self.curr.is_null(), "curr pointer cannot be null");
-
-        // SAFETY: We have checked that self.prev and self.curr are not null
-        // If prev or curr is null, the list is corrupted
+    pub fn pop(self) -> NonNull<T> {
         unsafe {
             // skip the curr one.
-            *(self.prev) = *(self.curr);
+            let curr_ptr = self.curr.as_ptr() as *mut Option<NonNull<T>>;
+            *(self.prev) = *curr_ptr;
         }
         self.curr
     }
 
     /// Returns the pointed address
-    pub fn value(&self) -> *mut usize {
+    pub fn value(&self) -> NonNull<T> {
         self.curr
     }
 }
 
 /// A mutable iterator over the linked list
-pub struct IterMut<'a> {
-    list: PhantomData<&'a mut SinglyLinkedList>,
-    prev: *mut usize,
-    curr: *mut usize,
+pub struct IterMut<'a, T> {
+    list: PhantomData<&'a mut SinglyLinkedList<T>>,
+    prev: *mut Option<NonNull<T>>,
+    curr: Option<NonNull<T>>,
 }
 
-impl Iterator for IterMut<'_> {
-    type Item = ListNode;
+impl<'a, T: 'a> Iterator for IterMut<'a, T> {
+    type Item = ListNode<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.curr.is_null() {
+        if self.curr.is_none() {
             None
         } else {
+            let cur_node = self.curr?;
             let res = ListNode {
                 prev: self.prev,
-                curr: self.curr,
+                curr: cur_node,
+                _marker: PhantomData,
             };
-            self.prev = self.curr;
+            self.prev = cur_node.as_ptr() as *mut Option<NonNull<T>>;
             // SAFETY: We have checked that self.curr is not null
-            self.curr = unsafe { *self.curr as *mut usize };
+            self.curr = unsafe { *self.prev };
             Some(res)
         }
     }
@@ -286,7 +288,22 @@ mod tests {
     extern crate test;
 
     use super::*;
+    use crate::list::singly_linked_list;
     use test::{black_box, Bencher};
+
+    #[derive(Debug)]
+    struct BenchNode {
+        _next: usize,
+        _payload: [u8; 64],
+    }
+    impl BenchNode {
+        fn new() -> Self {
+            Self {
+                _next: 0,
+                _payload: [0; 64],
+            }
+        }
+    }
 
     #[bench]
     #[allow(clippy::unit_arg)]
@@ -295,9 +312,15 @@ mod tests {
         let mut l = SinglyLinkedList::new();
         b.iter(|| unsafe {
             for _ in 0..n {
-                let v = Box::new(0usize);
-                // Let the memory leak.
-                black_box(l.push(Box::<usize>::into_raw(v)))
+                let v = Box::new(BenchNode::new());
+                let ptr = unsafe { NonNull::new_unchecked(Box::into_raw(v)) };
+                unsafe { l.push(ptr) };
+            }
+
+            while let Some(ptr) = l.pop() {
+                unsafe {
+                    let _ = Box::from_raw(ptr.as_ptr());
+                }
             }
         });
     }
@@ -306,17 +329,91 @@ mod tests {
     #[allow(clippy::unit_arg)]
     fn raw_list_bench_push_and_pop(b: &mut Bencher) {
         let n = 1 << 16;
-        let mut l = SinglyLinkedList::new();
         b.iter(|| unsafe {
+            let mut l = SinglyLinkedList::new();
+
+            // Push
             for _ in 0..n {
-                let v = Box::new(0usize);
-                // Let the memory leak.
-                black_box(l.push(Box::<usize>::into_raw(v)))
+                let v = Box::new(BenchNode::new());
+                let ptr = unsafe { NonNull::new_unchecked(Box::into_raw(v)) };
+                unsafe { l.push(ptr) };
             }
-            while !l.is_empty() {
-                l.pop();
+            // Pop and Free
+            while let Some(ptr) = l.pop() {
+                unsafe {
+                    let _ = Box::from_raw(ptr.as_ptr());
+                }
             }
         });
+    }
+
+    #[test]
+    fn singlylinkedlist_basic_ops() {
+        let mut list = SinglyLinkedList::<usize>::new();
+
+        // Simulating heap allocating usize
+        let v1 = Box::new(100usize);
+        let v2 = Box::new(200usize);
+        let p1 = unsafe { NonNull::new_unchecked(Box::into_raw(v1)) };
+        let p2 = unsafe { NonNull::new_unchecked(Box::into_raw(v2)) };
+        unsafe {
+            list.push(p1);
+            list.push(p2);
+        }
+        let popped1 = list.pop().unwrap();
+        assert_eq!(popped1, p2);
+
+        let popped2 = list.pop().unwrap();
+        assert_eq!(popped2, p1);
+        assert!(list.pop().is_none());
+        // clear memory
+        unsafe {
+            let _ = Box::from_raw(p1.as_ptr());
+            let _ = Box::from_raw(p2.as_ptr());
+        }
+    }
+    #[test]
+    fn listnode_pop_via_iter_mut() {
+        #[repr(C)]
+        struct Node {
+            next: usize,
+            data: usize,
+        }
+
+        let mut list = SinglyLinkedList::<Node>::new();
+
+        let v1 = Box::new(Node { next: 0, data: 1 });
+        let v2 = Box::new(Node { next: 0, data: 2 });
+        let v3 = Box::new(Node { next: 0, data: 3 });
+        unsafe {
+            list.push(NonNull::new_unchecked(Box::into_raw(v1)));
+            list.push(NonNull::new_unchecked(Box::into_raw(v2))); // 2 在中间
+            list.push(NonNull::new_unchecked(Box::into_raw(v3))); // 3 在头
+        }
+
+        {
+            let mut iter = list.iter_mut();
+            let node3 = iter.next().unwrap();
+            assert_eq!(unsafe { node3.value().as_ref().data }, 3);
+
+            let node2 = iter.next().unwrap();
+            assert_eq!(unsafe { node2.value().as_ref().data }, 2);
+
+            let popped_ptr = node2.pop();
+            unsafe {
+                let _ = Box::from_raw(popped_ptr.as_ptr());
+            }
+        }
+
+        let p3 = list.pop().unwrap();
+        assert_eq!(unsafe { p3.as_ref().data }, 3);
+
+        let p1 = list.pop().unwrap();
+        assert_eq!(unsafe { p1.as_ref().data }, 1);
+        unsafe {
+            let _ = Box::from_raw(p3.as_ptr());
+            let _ = Box::from_raw(p1.as_ptr());
+        }
     }
 
     #[test]
@@ -440,18 +537,21 @@ mod tests {
 
     #[test]
     fn singlylinkedlist_pop_from_empty() {
-        let mut l = SinglyLinkedList::default();
+        let mut l: singly_linked_list::SinglyLinkedList<usize> = SinglyLinkedList::default();
         let result = l.pop();
         assert!(result.is_none());
     }
 
     #[test]
     fn singlylinkedlist_iter() {
-        let mut list = SinglyLinkedList::new();
+        let mut list: singly_linked_list::SinglyLinkedList<usize> = SinglyLinkedList::new();
         let data1: usize = 1;
         let data2: usize = 2;
-        let ptr1 = &data1 as *const usize as *mut usize;
-        let ptr2 = &data2 as *const usize as *mut usize;
+
+        let v1 = Box::new(data1);
+        let v2 = Box::new(data2);
+        let ptr1 = unsafe { NonNull::new_unchecked(Box::into_raw(v1)) };
+        let ptr2 = unsafe { NonNull::new_unchecked(Box::into_raw(v2)) };
         unsafe {
             list.push(ptr2);
             list.push(ptr1);
@@ -460,18 +560,48 @@ mod tests {
         assert_eq!(iter.next(), Some(ptr1));
         assert_eq!(iter.next(), Some(ptr2));
         assert!(iter.next().is_none());
+
+        unsafe {
+            let _ = Box::from_raw(ptr1.as_ptr());
+            let _ = Box::from_raw(ptr2.as_ptr());
+        }
     }
 
     #[test]
     fn listnode_push_pop() {
-        let mut prev_next = 0x2000usize;
-        let mut curr_next = 0x3000usize;
+        let mut node1 = Box::new(100usize);
+        let mut node2 = Box::new(200usize);
+
+        let ptr1 = unsafe { NonNull::new_unchecked(Box::into_raw(node1)) };
+        let ptr2 = unsafe { NonNull::new_unchecked(Box::into_raw(node2)) };
+
+        unsafe {
+            let node1_next_ptr = ptr1.as_ptr() as *mut Option<NonNull<usize>>;
+            *node1_next_ptr = Some(ptr2);
+        }
+
+        let prev_ptr = unsafe { ptr1.as_ptr() as *mut Option<NonNull<usize>> };
+
         let list_node = ListNode {
-            prev: &mut prev_next as *mut usize,
-            curr: &mut curr_next as *mut usize,
+            prev: prev_ptr,
+            curr: ptr2,
+            _marker: PhantomData,
         };
-        assert!(!list_node.value().is_null());
+
+        assert_eq!(list_node.value(), ptr2);
+
         list_node.pop();
-        assert_eq!(prev_next, 0x3000usize);
+
+        unsafe {
+            let node1_next = *prev_ptr;
+            let node2_payload_as_next = ptr2.as_ptr() as *mut Option<NonNull<usize>>;
+            let expected_next = *node2_payload_as_next;
+
+            assert_eq!(node1_next, expected_next);
+
+            // Clean up
+            let _ = Box::from_raw(ptr1.as_ptr());
+            let _ = Box::from_raw(ptr2.as_ptr());
+        }
     }
 }
