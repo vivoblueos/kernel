@@ -103,7 +103,7 @@ pub struct Iter<'a, T> {
     list: PhantomData<&'a SinglyLinkedList<T>>,
 }
 
-impl<'a, T> Iterator for Iter<'a, T> {
+impl<T> Iterator for Iter<'_, T> {
     type Item = NonNull<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
