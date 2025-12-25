@@ -698,6 +698,36 @@ mod tests {
     }
 
     #[test]
+    fn test_list_basic_hole() {
+        impl_simple_intrusive_adapter!(Node, A, node);
+
+        struct A {
+            node: ListHead<A, Node>,
+            val: usize,
+        }
+        let mut l = List::<A, Node>::new();
+        l.init();
+        let mut fake = List::new();
+        fake.init();
+        let mut borrow;
+        {
+            let mut val = A {
+                node: ListHead::new(),
+                val: 42,
+            };
+            borrow = l.push(&mut val).unwrap();
+            for v in l.iter() {
+                assert_eq!(v.val, 42);
+            }
+            drop(l);
+            // l has been dropped, now val.node's prev and next pointer become dangling,
+            // however the program still compiles.
+            borrow = fake.pop(borrow).unwrap();
+        }
+        drop(borrow);
+    }
+
+    #[test]
     fn test_list_push_and_pop_several() {
         impl_simple_intrusive_adapter!(Node, A, node);
         struct A {
