@@ -177,60 +177,58 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
     }
 
     unsafe fn fix_after_insertion(&mut self, mut z: NonNull<RBLink>) {
-        unsafe {
-            while let Some(mut parent) = z.as_ref().parent() {
-                if !parent.as_ref().is_red() {
-                    break;
-                }
-
-                let mut grandparent = parent.as_ref().parent().unwrap_unchecked();
-                let is_parent_left = grandparent.as_ref().left == Some(parent);
-                let uncle = if is_parent_left {
-                    grandparent.as_ref().right
-                } else {
-                    grandparent.as_ref().left
-                };
-                // Case 1: Uncle is Red
-                if let Some(mut uncle_node) = uncle {
-                    if uncle_node.as_ref().is_red() {
-                        parent.as_mut().set_color(Color::Black);
-                        uncle_node.as_mut().set_color(Color::Black);
-                        grandparent.as_mut().set_color(Color::Red);
-                        z = grandparent;
-                        continue;
-                    }
-                }
-                // Case 2 & 3: Uncle is Black (or None)
-                let is_z_left = parent.as_ref().left == Some(z);
-                if is_parent_left {
-                    if !is_z_left {
-                        // Case 2: Triangle shape (Left-Right) -> Rotate Left
-                        self.rotate_left(parent);
-                        z = parent;
-                        parent = z.as_ref().parent().unwrap_unchecked();
-                    }
-                    // Case 3: Line shape (Left-Left) -> Rotate Right
-                    parent.as_mut().set_color(Color::Black);
-                    grandparent.as_mut().set_color(Color::Red);
-                    self.rotate_right(grandparent);
-                } else {
-                    if is_z_left {
-                        // Case 2: Triangle shape (Right-Left) -> Rotate Right
-                        self.rotate_right(parent);
-                        z = parent;
-                        parent = z.as_ref().parent().unwrap_unchecked();
-                    }
-                    // Case 3: Line shape (Right-Right) -> Rotate Left
-                    parent.as_mut().set_color(Color::Black);
-                    grandparent.as_mut().set_color(Color::Red);
-                    self.rotate_left(grandparent);
-                }
+        while let Some(mut parent) = z.as_ref().parent() {
+            if !parent.as_ref().is_red() {
+                break;
             }
 
-            // Sometime we changed color of root.
-            if let Some(mut root) = self.root {
-                root.as_mut().set_color(Color::Black);
+            let mut grandparent = parent.as_ref().parent().unwrap_unchecked();
+            let is_parent_left = grandparent.as_ref().left == Some(parent);
+            let uncle = if is_parent_left {
+                grandparent.as_ref().right
+            } else {
+                grandparent.as_ref().left
+            };
+            // Case 1: Uncle is Red
+            if let Some(mut uncle_node) = uncle {
+                if uncle_node.as_ref().is_red() {
+                    parent.as_mut().set_color(Color::Black);
+                    uncle_node.as_mut().set_color(Color::Black);
+                    grandparent.as_mut().set_color(Color::Red);
+                    z = grandparent;
+                    continue;
+                }
             }
+            // Case 2 & 3: Uncle is Black (or None)
+            let is_z_left = parent.as_ref().left == Some(z);
+            if is_parent_left {
+                if !is_z_left {
+                    // Case 2: Triangle shape (Left-Right) -> Rotate Left
+                    self.rotate_left(parent);
+                    z = parent;
+                    parent = z.as_ref().parent().unwrap_unchecked();
+                }
+                // Case 3: Line shape (Left-Left) -> Rotate Right
+                parent.as_mut().set_color(Color::Black);
+                grandparent.as_mut().set_color(Color::Red);
+                self.rotate_right(grandparent);
+            } else {
+                if is_z_left {
+                    // Case 2: Triangle shape (Right-Left) -> Rotate Right
+                    self.rotate_right(parent);
+                    z = parent;
+                    parent = z.as_ref().parent().unwrap_unchecked();
+                }
+                // Case 3: Line shape (Right-Right) -> Rotate Left
+                parent.as_mut().set_color(Color::Black);
+                grandparent.as_mut().set_color(Color::Red);
+                self.rotate_left(grandparent);
+            }
+        }
+
+        // Sometime we changed color of root.
+        if let Some(mut root) = self.root {
+            root.as_mut().set_color(Color::Black);
         }
     }
     unsafe fn rotate_left(&mut self, mut x: NonNull<RBLink>) {
@@ -317,7 +315,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
             let mut y_original_color = y.as_ref().color();
             let x: Option<NonNull<RBLink>>;
             let x_parent: Option<NonNull<RBLink>>;
-            //Case 1. Just a child.
+            //Case 1. z has no more than one child node.
             if z.as_ref().left.is_none() {
                 x = z.as_ref().right;
                 x_parent = z.as_ref().parent();
@@ -327,7 +325,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                 x_parent = z.as_ref().parent();
                 self.transplant(z, z.as_ref().left);
             } else {
-                //Case 2. There are two children.
+                //Case 2. z is internal node.
                 let z_right = z.as_ref().right.unwrap();
                 y = self.minimum(z_right);
                 y_original_color = y.as_ref().color();
@@ -399,7 +397,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                     }
                     w_node = w.unwrap();
                 }
-                // w is Black now
+                // w is Black now.
                 let left_child = w_node.as_ref().left;
                 let right_child = w_node.as_ref().right;
                 let left_black = left_child.map_or(true, |n| n.as_ref().is_black());
@@ -488,6 +486,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
     pub fn iter(&self) -> RBIterator<'_, T, A> {
         RBIterator::new(self)
     }
+
     pub fn print_structure(&self)
     where
         T: std::fmt::Debug,
@@ -554,6 +553,7 @@ impl<'a, T, A: Adapter<T>> Iterator for RBIterator<'a, T, A> {
         }
     }
 }
+
 impl<T, A: Adapter<T>> Drop for RBTree<T, A> {
     fn drop(&mut self) {
         while let Some(root) = self.root {
