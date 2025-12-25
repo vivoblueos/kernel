@@ -22,8 +22,17 @@
 #define ROM_BASE CONFIG_FLASH_BASE_ADDRESS
 #define ROM_SIZE (CONFIG_FLASH_SIZE * 1K)
 
+/* In some soc, there are extra rom to place irq vectors and boot-vector SP/PC */
+#if defined(CONFIG_ROMSTART_RELOCATION)
+#define FLASH_EXT_BASE CONFIG_ROMSTART_ROM_ADDRESS
+#define FLASH_EXT_SIZE (CONFIG_ROMSTART_ROM_SIZE * 1K)
+#endif
+
 MEMORY
 {
+#if defined(CONFIG_ROMSTART_RELOCATION)
+  FLASH_EXT (rx) : ORIGIN = FLASH_EXT_BASE, LENGTH = FLASH_EXT_SIZE
+#endif
   FLASH (rx) : ORIGIN = ROM_BASE, LENGTH = ROM_SIZE
   RAM (rwx) : ORIGIN = RAM_BASE, LENGTH = RAM_SIZE
 }
@@ -39,7 +48,11 @@ EXTERN(__INTERRUPT_HANDLERS__)
 
 SECTIONS
 {
+#if defined(CONFIG_ROMSTART_RELOCATION)
+  .vector_table ORIGIN(FLASH_EXT) :
+#else
   .vector_table ORIGIN(FLASH) :
+#endif
   {
     __vector_table_start = .;
     LONG(__init_msp);
@@ -47,7 +60,11 @@ SECTIONS
     KEEP(*(.exception.vectors));
     KEEP(*(.interrupt.vectors));
     __vector_table_end = .;
+#if defined(CONFIG_ROMSTART_RELOCATION)
+  } > FLASH_EXT
+#else
   } > FLASH
+#endif
 
   .text :
   {

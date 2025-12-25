@@ -26,3 +26,25 @@ config STACK_SIZE
 	int "Stack Size in kB"
 	help
 	  Stack Size in kB used by Kernel.
+
+config ROMSTART_RELOCATION
+	bool "Relocate start region"
+	default n
+	help
+	  Relocates the start region containing the irq vector
+
+if ROMSTART_RELOCATION
+
+	config ROMSTART_ROM_ADDRESS
+		hex "Base address of the region"
+		default 0x00000000
+		help
+		  Start address of the region.
+
+	config ROMSTART_ROM_SIZE
+		hex "Size of the region"
+		default 1
+		help
+		  Size of the region in KB.
+
+endif
