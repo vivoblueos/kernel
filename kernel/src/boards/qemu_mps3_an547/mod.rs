@@ -41,13 +41,26 @@ struct ZeroTable {
     wlen: u32,
 }
 
-// mps3 qemu boot image can not bigger than 512K,
-// we set LMA same as VMA, and not need to copy data.
+// Copy data from FLASH to RAM.
 #[inline(never)]
-unsafe fn init_bss() {
+unsafe fn copy_data() {
     extern "C" {
         static __zero_table_start: ZeroTable;
         static __zero_table_end: ZeroTable;
+        static __copy_table_start: CopyTable;
+        static __copy_table_end: CopyTable;
+    }
+
+    let mut p_table = addr_of!(__copy_table_start);
+    while p_table < addr_of!(__copy_table_end) {
+        let table = &(*p_table);
+        for i in 0..table.wlen {
+            core::ptr::write(
+                table.dest.add(i as usize),
+                core::ptr::read(table.src.add(i as usize)),
+            );
+        }
+        p_table = p_table.offset(1);
     }
 
     let mut p_table = addr_of!(__zero_table_start);
@@ -72,7 +85,7 @@ pub(crate) fn init() {
     unsafe { enable_fpu() };
 
     unsafe {
-        init_bss();
+        copy_data();
     }
     boot::init_runtime();
     unsafe { boot::init_heap() };
