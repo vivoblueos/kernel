@@ -1,15 +1,17 @@
-/**
- * Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+/*
+ * Copyright (c) 2009-2019 Arm Limited. All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the License); you may
+ * not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
+ * www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * distributed under the License is distributed on an AS IS BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
@@ -57,8 +59,8 @@ SECTIONS
     __vector_table_start = .;
     LONG(__init_msp);
     /* We have to put reference of _start in vector.exceptions. */
-    KEEP(*(.exception.vectors));
-    KEEP(*(.interrupt.vectors));
+    KEEP(*(.exception.handlers));
+    KEEP(*(.interrupt.handlers));
     __vector_table_end = .;
 #if defined(CONFIG_ROMSTART_RELOCATION)
   } > FLASH_EXT
@@ -123,8 +125,8 @@ SECTIONS
 
   .data : AT (__etext)
   {
-    __data_start = .;
     . = ALIGN(4);
+    __data_start = .;
     *(vtable)
     *(.data)
     *(.data.*)

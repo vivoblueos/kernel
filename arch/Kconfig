@@ -42,7 +42,7 @@ if ROMSTART_RELOCATION
 		  Start address of the region.
 
 	config ROMSTART_ROM_SIZE
-		hex "Size of the region"
+		int "Size of the region"
 		default 1
 		help
 		  Size of the region in KB.
