@@ -41,6 +41,8 @@ struct ZeroTable {
     wlen: u32,
 }
 
+// mps3 qemu boot image can not bigger than 512K,
+// we set LMA same as VMA, and not need to copy data.
 #[inline(never)]
 unsafe fn init_bss() {
     extern "C" {
