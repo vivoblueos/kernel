@@ -1,26 +1,26 @@
-/*
- * Copyright (c) 2009-2019 Arm Limited. All rights reserved.
+/**
+ * Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
  *
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the License); you may
- * not use this file except in compliance with the License.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * www.apache.org/licenses/LICENSE-2.0
+ *       http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an AS IS BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
 
-ROM_BASE = 0x00000000;
-ROM_SIZE = 0x00400000;
-RAM_BASE = 0x21000000;
-RAM_SIZE = 0x01000000;
-STACK_SIZE = 0x00002000;
+#include <autoconf.h>
+
+#define RAM_SIZE (CONFIG_SRAM_SIZE * 1K)
+#define RAM_BASE CONFIG_SRAM_BASE_ADDRESS
+#define STACK_SIZE (CONFIG_STACK_SIZE * 1K)
+#define ROM_BASE CONFIG_FLASH_BASE_ADDRESS
+#define ROM_SIZE (CONFIG_FLASH_SIZE * 1K)
 
 MEMORY
 {
@@ -28,7 +28,12 @@ MEMORY
   RAM (rwx) : ORIGIN = RAM_BASE, LENGTH = RAM_SIZE
 }
 
+#ifdef CONFIG_KERNEL_ENTRY
+ENTRY(CONFIG_KERNEL_ENTRY)
+#else
 ENTRY(_start)
+#endif
+
 EXTERN(__EXCEPTION_HANDLERS__)
 EXTERN(__INTERRUPT_HANDLERS__)
 
@@ -168,5 +173,13 @@ SECTIONS
   } > RAM
   PROVIDE(__init_msp = __sys_stack_end);
 
+  /DISCARD/ :
+  {
+    *(.ARM.exidx);
+    *(.ARM.exidx.*);
+    *(.ARM.extab.*);
+    *(.ARM.extab);
+    *(.noinit);
+  }
   ASSERT(__sys_stack_start >= __heap_end, "Stack and heap overlap each other!")
 }

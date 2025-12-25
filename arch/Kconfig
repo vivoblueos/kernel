@@ -1,0 +1,28 @@
+# Configuration corresponding to architecture 
+
+config SRAM_SIZE
+	int "SRAM Size in kB"
+	help
+	  The SRAM size in kB. 
+
+config SRAM_BASE_ADDRESS
+	hex "SRAM Base Address"
+	help
+	  The SRAM base address. 
+
+config FLASH_BASE_ADDRESS
+	hex "Flash Base Address"
+	default 0x0
+	help
+	  The Flash base address.
+
+config FLASH_SIZE
+	int "Flash Size in kB"
+	default 0
+	help
+	  The Flash size in kB.
+
+config STACK_SIZE
+	int "Stack Size in kB"
+	help
+	  Stack Size in kB used by Kernel.

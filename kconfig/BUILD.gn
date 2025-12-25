@@ -20,6 +20,7 @@ action("generate_c_header") {
   inputs = [
     "config/Kconfig",
     "config/${board}/${build_type}/defconfig",
+    "//kernel/arch/Kconfig",
     "//kernel/kernel/src/boards/${board}/Kconfig",
     "//kernel/kernel/src/Kconfig",
     "//kernel/kernel/src/allocator/Kconfig",
@@ -27,8 +28,8 @@ action("generate_c_header") {
     "//kernel/kernel/src/vfs/Kconfig",
     "//kernel/kernel/src/net/Kconfig",
   ]
-  output_headers = rebase_path("${target_gen_dir}/autoconf.h")
-  outputs = [ "${target_gen_dir}/autoconf.h" ]
+  output_headers = rebase_path("${root_build_dir}/autoconf.h")
+  outputs = [ "${root_build_dir}/autoconf.h" ]
   args = [
     "--kconfig",
     rebase_path("config/Kconfig"),
