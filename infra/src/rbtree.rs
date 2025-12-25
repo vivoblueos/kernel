@@ -409,7 +409,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                     parent = x.unwrap().as_ref().parent();
                 } else {
                     if is_x_left {
-                        // Case 3: w is black, w.left is red, w.right is black
+                        // Case 3: w is black, w.left is red, w.right is black.
                         if right_black {
                             if let Some(mut l) = left_child {
                                 l.as_mut().set_color(Color::Black);
@@ -419,7 +419,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                             w = p_node.as_ref().right;
                             w_node = w.unwrap();
                         }
-                        // Case 4: w is black, w.right is red
+                        // Case 4: w is black, w.right is red.
                         w_node.as_mut().set_color(p_node.as_ref().color());
                         p_node.as_mut().set_color(Color::Black);
                         if let Some(mut r) = w_node.as_ref().right {
