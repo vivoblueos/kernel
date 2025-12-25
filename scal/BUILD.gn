@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import("//build/templates/rust.gni")
-import("//kernel/features.gni")
+import("features.gni")
 
 build_rust("blueos_scal") {
   crate_name = "blueos_scal"
