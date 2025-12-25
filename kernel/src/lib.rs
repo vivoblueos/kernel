@@ -448,7 +448,7 @@ mod tests {
             recv_cnt += 1;
             assert!(result.is_ok());
             assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
-            scheduler::yield_me();
+            scheduler::relinquish_me();
         }
         while TEST_SEND_CNT.load(Ordering::Acquire) != l {}
     }
