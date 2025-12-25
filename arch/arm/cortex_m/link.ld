@@ -66,7 +66,16 @@ SECTIONS
   } > FLASH
 #endif
 
-  .text :
+  .start_block : ALIGN(4)
+  {
+    __start_block_addr = .;
+    KEEP(*(.start_block));
+    KEEP(*(.boot_info));
+  } > FLASH
+
+  PROVIDE(_stext = ADDR(.start_block) + SIZEOF(.start_block));
+
+  .text _stext :
   {
     . = ALIGN(4);
     *(.text*)
