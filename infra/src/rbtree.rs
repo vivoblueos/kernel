@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use crate::{intrusive::Adapter, tinyarc::TinyArc};
-use core::{marker::PhantomData, ops::Drop, ptr::NonNull};
-use std::{cmp::Ordering, fmt::Debug};
+use core::{cmp::Ordering, marker::PhantomData, ops::Drop, ptr::NonNull};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Color {
     Red = 0,
@@ -507,7 +507,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                 let indent = "    ".repeat(depth);
                 let obj = self.get_obj(n);
                 let color = if n.as_ref().is_red() { "RED" } else { "BLK" };
-                println!("{}Node ({}) -> {:?}", indent, color, *obj);
+                println!("{}Node ({})", indent, color);
                 self.print_node(n.as_ref().left, depth + 1);
             }
         }
@@ -685,7 +685,7 @@ mod tests {
         }
         assert_eq!(tree.size, 10);
     }
-    
+
     #[test]
     fn test_iterator() {
         let mut tree = RBTree::<MyNode, MyNodeAdapter>::new();
