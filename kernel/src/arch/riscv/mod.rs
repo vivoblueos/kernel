@@ -45,6 +45,10 @@ static PENDING_SWITCH_CONTEXT: [AtomicBool; NUM_CORES] =
 
 #[inline]
 pub(crate) extern "C" fn pend_switch_context() {
+    if !sysirq::is_in_irq() {
+        scheduler::relinquish_me();
+        return;
+    }
     let level = disable_local_irq_save();
     let id = current_cpu_id();
     PENDING_SWITCH_CONTEXT[id].store(true, Ordering::Release);
