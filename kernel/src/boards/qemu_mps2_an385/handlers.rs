@@ -49,7 +49,7 @@ pub unsafe extern "C" fn bk_handle_hardfault() {
 }
 
 #[used]
-#[link_section = ".exception.vectors"]
+#[link_section = ".exception.handlers"]
 #[no_mangle]
 pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
 
@@ -121,7 +121,7 @@ default_irq_handler!(gpio0_6_handler);
 default_irq_handler!(gpio0_7_handler);
 
 #[used]
-#[link_section = ".interrupt.vectors"]
+#[link_section = ".interrupt.handlers"]
 #[no_mangle]
 pub static __INTERRUPT_HANDLERS__: InterruptTable = {
     let mut tbl = [Vector { reserved: 0 }; INTERRUPT_TABLE_LEN];

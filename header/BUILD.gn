@@ -20,4 +20,6 @@ build_rust("blueos_header") {
   edition = "2021"
   configs += [ "//build/boards/${board}:kernel_config" ]
   cfgs = [ "${build_type}" ]
+  deps = board_deps
+  public_deps = board_deps
 }

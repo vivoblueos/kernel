@@ -3,6 +3,7 @@ mainmenu "BlueOS Kernel"
 # Use rsource for relative paths from current file location
 # From kernel/kconfig/config/ to kernel/kernel/src/ is ../../kernel/src
 # rsource allows using relative paths with environment variables
+rsource "../../arch/Kconfig"
 rsource "../../kernel/src/boards/$BOARD/Kconfig"
 rsource "../../kernel/src/Kconfig"
 rsource "../../kernel/src/allocator/Kconfig"

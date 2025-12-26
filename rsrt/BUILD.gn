@@ -42,6 +42,7 @@ build_rust("rsrt_std") {
     "//kernel/kernel:blueos",
   ]
   features = [ "std" ]
+  public_deps = board_deps
 }
 
 run_clippy("rsrt_std_clippy") {

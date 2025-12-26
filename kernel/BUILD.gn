@@ -146,6 +146,7 @@ build_rust("blueos") {
   rustenv = [ "TARGET_BOARD=${board}" ]
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
+  public_deps = board_deps
   public_configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",

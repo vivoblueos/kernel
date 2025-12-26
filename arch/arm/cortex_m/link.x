@@ -16,25 +16,45 @@
  * limitations under the License.
  */
 
-ROM_BASE = 0x08000000;
-ROM_SIZE = 0x00080000;
-RAM_BASE = 0x20000000;
-RAM_SIZE = 0x00020000;
-STACK_SIZE = 0x00004000;
+#include <autoconf.h>
+
+#define RAM_SIZE (CONFIG_SRAM_SIZE * 1K)
+#define RAM_BASE CONFIG_SRAM_BASE_ADDRESS
+#define STACK_SIZE (CONFIG_STACK_SIZE * 1K)
+#define ROM_BASE CONFIG_FLASH_BASE_ADDRESS
+#define ROM_SIZE (CONFIG_FLASH_SIZE * 1K)
+
+/* In some soc, there are extra rom to place irq vectors and boot-vector SP/PC */
+#if defined(CONFIG_ROMSTART_RELOCATION)
+#define FLASH_EXT_BASE CONFIG_ROMSTART_ROM_ADDRESS
+#define FLASH_EXT_SIZE (CONFIG_ROMSTART_ROM_SIZE * 1K)
+#endif
 
 MEMORY
 {
+#if defined(CONFIG_ROMSTART_RELOCATION)
+  FLASH_EXT (rx) : ORIGIN = FLASH_EXT_BASE, LENGTH = FLASH_EXT_SIZE
+#endif
   FLASH (rx) : ORIGIN = ROM_BASE, LENGTH = ROM_SIZE
   RAM (rwx) : ORIGIN = RAM_BASE, LENGTH = RAM_SIZE
 }
 
+#ifdef CONFIG_KERNEL_ENTRY
+ENTRY(CONFIG_KERNEL_ENTRY)
+#else
 ENTRY(_start)
+#endif
+
 EXTERN(__EXCEPTION_HANDLERS__)
 EXTERN(__INTERRUPT_HANDLERS__)
 
 SECTIONS
 {
+#if defined(CONFIG_ROMSTART_RELOCATION)
+  .vector_table ORIGIN(FLASH_EXT) :
+#else
   .vector_table ORIGIN(FLASH) :
+#endif
   {
     __vector_table_start = .;
     LONG(__init_msp);
@@ -42,13 +62,31 @@ SECTIONS
     KEEP(*(.exception.handlers));
     KEEP(*(.interrupt.handlers));
     __vector_table_end = .;
+#if defined(CONFIG_ROMSTART_RELOCATION)
+  } > FLASH_EXT
+#else
+  } > FLASH
+#endif
+
+  .start_block : ALIGN(4)
+  {
+    __start_block_addr = .;
+    KEEP(*(.start_block));
+    KEEP(*(.boot_info));
   } > FLASH
 
-  .text :
+  PROVIDE(_stext = ADDR(.start_block) + SIZEOF(.start_block));
+
+  .text _stext :
   {
     . = ALIGN(4);
     *(.text*)
   } > FLASH
+
+  . = ALIGN(4);
+  __rodata_start = .;
+  .rodata : { *(.rodata*) } > FLASH
+  __rodata_end = .;
 
   .ARM.extab :
   {
@@ -72,9 +110,6 @@ SECTIONS
     __zero_table_end = .;
   } > FLASH
 
-  /* mps3 qemu boot image can not bigger than 512K, we set LMA same as VMA,
-   * and not need to copy data.
-   */
   /* Put .data to RAM */
   .copy.table :
   {
@@ -85,18 +120,6 @@ SECTIONS
     LONG ((__data_end - __data_start) / 4)
     __copy_table_end = .;
   } > FLASH
-
-  __etext = ALIGN (4);
-
-  .rodata :
-  {
-    . = ALIGN(4);
-    __rodata_start = .;
-    *(.rodata*)
-    __rodata_end = .;
-  } > FLASH
-  
-  __erodata = ALIGN (4);
 
   __etext = ALIGN (4);
 
@@ -130,6 +153,16 @@ SECTIONS
     KEEP(*(SORT(.bk_app_array.*)))
     KEEP(*(.bk_app_array))
     PROVIDE_HIDDEN (__bk_app_array_end = .);
+
+    . = ALIGN(4);
+    __start___llvm_prf_cnts = .;
+    KEEP(*(__llvm_prf_cnts))
+    __stop___llvm_prf_cnts = .;
+
+    . = ALIGN(4);
+    __start___llvm_prf_data = .;
+    KEEP(*(__llvm_prf_data))
+    __stop___llvm_prf_data = .;
 
     KEEP(*(.jcr*))
     . = ALIGN(4);
@@ -176,6 +209,5 @@ SECTIONS
     *(.ARM.extab);
     *(.noinit);
   }
-  
   ASSERT(__sys_stack_start >= __heap_end, "Stack and heap overlap each other!")
 }

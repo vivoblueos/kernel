@@ -25,6 +25,7 @@ template("tm_case") {
     # Default is 30 in source code, too long for inpsecting immediate result.
     cflags = [ "-DTM_TEST_DURATION=2" ]
     configs += [ "//build/boards/${board}:kernel_config" ]
+    deps = board_deps
   }
 
   build_rust(target_name) {
@@ -37,6 +38,7 @@ template("tm_case") {
       "//kernel/rsrt",
       "//librs",
     ]
+    deps += board_deps
   }
 
   # Since we're calling another template `gen_qemu_runner`, it's essential to
