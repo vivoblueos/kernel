@@ -96,7 +96,7 @@ pub extern "C" fn osTimerNew(
     unsafe {
         ptr::write(
             attr_ref.cb_mem as *mut ArcInner<OsTimer>,
-            ArcInner::const_new(OsTimer::with_name(timer, attr_ref.name)),
+            ArcInner::new(OsTimer::with_name(timer, attr_ref.name)),
         )
     };
     let os_timer = unsafe { Arc::from_raw(attr_ref.cb_mem as *mut _ as *mut OsTimer) };

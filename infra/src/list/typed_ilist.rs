@@ -91,10 +91,6 @@ impl<T, A: Adapter<T>> Iterator for ListReverseIterator<T, A> {
 
 impl<T, A: Adapter<T>> ListHead<T, A> {
     pub const fn new() -> Self {
-        Self::const_new()
-    }
-
-    pub const fn const_new() -> Self {
         Self {
             prev: None,
             next: None,

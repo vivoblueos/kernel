@@ -53,7 +53,7 @@ impl<T> IlistNode<T> {
         self
     }
 
-    pub const unsafe fn const_new(object: &'static T) -> Self {
+    pub const unsafe fn from_static(object: &'static T) -> Self {
         Self {
             version: 0,
             prev: None,

@@ -76,7 +76,7 @@ pub extern "C" fn osEventFlagsNew(attr: *const osEventFlagsAttr_t) -> osEventFla
     unsafe {
         ptr::write(
             attr_ref.cb_mem as *mut ArcInner<OsEventFlags>,
-            ArcInner::const_new(OsEventFlags::with_name(event_flags, attr_ref.name)),
+            ArcInner::new(OsEventFlags::with_name(event_flags, attr_ref.name)),
         )
     };
     let os_event = unsafe { Arc::from_raw(attr_ref.cb_mem as *mut _ as *mut OsEventFlags) };

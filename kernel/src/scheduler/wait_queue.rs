@@ -78,15 +78,11 @@ pub(crate) struct WaitQueueGuardDropper<'a, const N: usize> {
 }
 
 impl<'a, const N: usize> WaitQueueGuardDropper<'a, N> {
-    pub const fn const_new() -> Self {
+    pub const fn new() -> Self {
         Self {
             guards: [const { None }; N],
             num_active_guards: 0,
         }
-    }
-
-    pub const fn new() -> Self {
-        Self::const_new()
     }
 
     #[inline]

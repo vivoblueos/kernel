@@ -82,14 +82,10 @@ impl<'a, T: 'a + ?Sized> Deref for SpinLockReadGuard<'a, T> {
 }
 
 impl<T> SpinLock<T> {
-    pub const fn const_new(val: T) -> Self {
+    pub const fn new(val: T) -> Self {
         Self {
             lock: RwLock::new(val),
         }
-    }
-
-    pub const fn new(val: T) -> Self {
-        Self::const_new(val)
     }
 }
 

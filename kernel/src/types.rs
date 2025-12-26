@@ -57,8 +57,8 @@ macro_rules! static_arc {
         mod $name {
             use super::*;
             use $crate::types::{Arc, ArcInner};
-            static CTRL_BLOCK: ArcInner<$ty> = ArcInner::const_new($val);
-            pub(super) static PTR: Arc<$ty> = unsafe { Arc::const_new(&CTRL_BLOCK) };
+            static CTRL_BLOCK: ArcInner<$ty> = ArcInner::new($val);
+            pub(super) static PTR: Arc<$ty> = unsafe { Arc::from_static_inner_ref(&CTRL_BLOCK) };
         }
         use $name::PTR as $name;
     };
