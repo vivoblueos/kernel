@@ -29,7 +29,7 @@ action("generate_c_header") {
     "//kernel/kernel/src/net/Kconfig",
   ]
   output_headers = rebase_path("${root_gen_dir}/autoconf.h")
-  outputs = [ "${root_build_dir}/autoconf.h" ]
+  outputs = [ "${root_gen_dir}/autoconf.h" ]
   args = [
     "--kconfig",
     rebase_path("config/Kconfig"),
