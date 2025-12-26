@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import("//build/templates/build_template.gni")
-import("//kernel/features.gni")
 
 action("generate_c_header") {
   script = "//kernel/kconfig/src/generate_c_header.py"
