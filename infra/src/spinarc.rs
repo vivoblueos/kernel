@@ -427,6 +427,11 @@ impl<T> Ilist<T> {
     pub fn pop_front(&mut self) -> Option<SpinArc<Node<T>>> {
         Node::<T>::remove_after(self.head_mut())
     }
+
+    pub fn destroy(&mut self) {
+        debug_assert!(self.is_empty());
+        Node::<T>::detach(&mut self.head);
+    }
 }
 
 #[cfg(test)]
@@ -439,16 +444,19 @@ mod tests {
     #[test]
     fn threaded_insert_after_many() {
         type Node = IlistNode<usize>;
+        let mut nodes = Vec::new();
         let head = Arc::new(RwLock::new(Node::new(0)));
+        nodes.push(head.clone());
         let n = 1024;
         let mut vt = Vec::new();
         for i in 1..n {
-            let handle = |id, mut head| {
-                let node = Arc::new(RwLock::new(Node::new(id)));
+            let node = Arc::new(RwLock::new(Node::new(i)));
+            nodes.push(node.clone());
+            let mut head = head.clone();
+            let mut handle = move || {
                 Node::insert_after(&mut head, node);
             };
-            let head = head.clone();
-            let t = thread::spawn(move || handle(i, head));
+            let t = thread::spawn(handle);
             vt.push(t);
         }
         for t in vt {
@@ -469,15 +477,21 @@ mod tests {
         for i in 0..n {
             ids.contains(&i);
         }
+        for mut n in nodes {
+            Node::detach(&mut n);
+        }
     }
 
     #[test]
     fn insert_after_many() {
         type Node = IlistNode<usize>;
+        let mut nodes = Vec::new();
         let head = Arc::new(RwLock::new(Node::new(0)));
+        nodes.push(head.clone());
         let mut prev = head.clone();
         for i in 1..1024 {
             let next = Arc::new(RwLock::new(Node::new(i)));
+            nodes.push(next.clone());
             Node::insert_after(&mut prev, next);
             let tmp = prev.read().next.as_ref().unwrap().clone();
             prev = tmp;
@@ -494,18 +508,25 @@ mod tests {
         let mut prev = head.clone();
         for i in 1..2000 {
             let next = Arc::new(RwLock::new(Node::new(0)));
+            nodes.push(next.clone());
             let wrong_version = Node::versioned_insert_after(Some(i), &mut prev, next);
             assert!(!wrong_version);
+        }
+        for mut n in nodes {
+            Node::detach(&mut n);
         }
     }
 
     #[test]
     fn insert_before_many() {
         type Node = IlistNode<usize>;
+        let mut nodes = Vec::new();
         let mut tail = Arc::new(RwLock::new(Node::new(0)));
+        nodes.push(tail.clone());
         let mut me = tail.clone();
         for i in 1..1024 {
             let prev = Arc::new(RwLock::new(Node::new(i)));
+            nodes.push(prev.clone());
             Node::insert_before(&mut me, prev);
             let tmp = me.read().prev.as_ref().unwrap().clone();
             me = tmp;
@@ -524,17 +545,21 @@ mod tests {
                 continue;
             }
             let prev = Arc::new(RwLock::new(Node::new(0)));
+            nodes.push(prev.clone());
             let wrong_version = Node::versioned_insert_before(Some(i), &mut me, prev);
             assert!(!wrong_version);
         }
 
         let mut a = Arc::new(RwLock::new(Node::new(0)));
+        nodes.push(a.clone());
         let mut b = Arc::new(RwLock::new(Node::new(1)));
+        nodes.push(b.clone());
         Node::insert_before(&mut b, a);
         let insert_not_detached = Node::insert_before(&mut me, b);
         assert!(!insert_not_detached);
 
         let prev = Arc::new(RwLock::new(Node::new(1025)));
+        nodes.push(prev.clone());
         let result = Node::insert_before(&mut tail, prev);
         assert!(result);
         let mut cursor = Some(tail.clone());
@@ -550,6 +575,9 @@ mod tests {
             counter += 1;
             let tmp = cursor.unwrap().read().prev.clone();
             cursor = tmp;
+        }
+        for mut n in nodes {
+            Node::detach(&mut n);
         }
     }
 
@@ -612,6 +640,9 @@ mod tests {
         assert!(c.read().next.is_none());
         assert_eq!(**a.read().next.as_ref().unwrap().read(), 2);
         assert_eq!(**c.read().prev.as_ref().unwrap().read(), 0);
+        Node::detach(&mut a);
+        Node::detach(&mut b);
+        Node::detach(&mut c);
     }
 
     #[test]
@@ -621,7 +652,7 @@ mod tests {
         let mut node1 = Arc::new(RwLock::new(Node::new(1)));
         let node2 = Arc::new(RwLock::new(Node::new(2)));
 
-        Node::insert_after(&mut node1, node2);
+        Node::insert_after(&mut node1, node2.clone());
 
         let mut iter: MutexIter<'_, usize> = MutexIter::new(&node1);
 
@@ -633,6 +664,10 @@ mod tests {
         assert_eq!(**current_guard, 2);
 
         assert!(iter.next().is_none());
+        drop(current_guard);
+        drop(iter);
+        // Break link so that memory won't leak.
+        Node::detach(&mut node1);
     }
 
     #[test]
@@ -640,9 +675,9 @@ mod tests {
         use std::time::Duration;
         type Node = IlistNode<usize>;
 
-        let node1 = Arc::new(RwLock::new(Node::new(1)));
+        let mut node1 = Arc::new(RwLock::new(Node::new(1)));
         let mut node2 = Arc::new(RwLock::new(Node::new(2)));
-        let node3 = Arc::new(RwLock::new(Node::new(3)));
+        let mut node3 = Arc::new(RwLock::new(Node::new(3)));
 
         Node::insert_before(&mut node2, node1.clone());
         Node::insert_after(&mut node2, node3.clone());
@@ -684,14 +719,19 @@ mod tests {
             r.join().unwrap();
         }
         writer.join().unwrap();
+        Node::detach(&mut node1);
+        Node::detach(&mut node2);
     }
 
     #[test]
-    fn vec_iter() {
+    fn ver_iter() {
         type Node = IlistNode<usize>;
+        let mut nodes = Vec::new();
 
         let mut node1 = Arc::new(RwLock::new(Node::new(1)));
+        nodes.push(node1.clone());
         let node2 = Arc::new(RwLock::new(Node::new(2)));
+        nodes.push(node2.clone());
 
         Node::insert_after(&mut node1, node2);
 
@@ -704,7 +744,9 @@ mod tests {
         assert!(iter.next().is_none());
 
         let mut node1 = Arc::new(RwLock::new(Node::new(1)));
+        nodes.push(node1.clone());
         let node2 = Arc::new(RwLock::new(Node::new(2)));
+        nodes.push(node2.clone());
 
         Node::insert_after(&mut node1, node2);
 
@@ -716,6 +758,9 @@ mod tests {
         }
 
         assert!(iter.next().is_none());
+        for mut n in nodes {
+            Node::detach(&mut n);
+        }
     }
 
     #[test]
@@ -725,13 +770,13 @@ mod tests {
         let mut i_list: Ilist<usize> = Ilist::new();
         assert!(i_list.is_empty());
 
-        let a = Arc::new(RwLock::new(Node::new(0)));
-        let b = Arc::new(RwLock::new(Node::new(1)));
-        let c = Arc::new(RwLock::new(Node::new(2)));
+        let mut a = Arc::new(RwLock::new(Node::new(0)));
+        let mut b = Arc::new(RwLock::new(Node::new(1)));
+        let mut c = Arc::new(RwLock::new(Node::new(2)));
 
-        i_list.push_back(a);
-        i_list.push_back(b);
-        i_list.push_back(c);
+        i_list.push_back(a.clone());
+        i_list.push_back(b.clone());
+        i_list.push_back(c.clone());
 
         let head = i_list.head();
         assert!(head.read().prev.is_none());
@@ -758,6 +803,8 @@ mod tests {
         assert!(head.read().prev.is_none());
         assert!(head.read().object.is_none());
         assert_eq!(**head.read().next.as_ref().unwrap().read(), 2);
+        i_list.pop_front();
+        i_list.destroy();
     }
 
     #[bench]
@@ -765,13 +812,19 @@ mod tests {
         b.iter(|| {
             let n = 1usize << 16;
             type Node = IlistNode<usize>;
+            let mut nodes = Vec::new();
             let head = Arc::new(RwLock::new(Node::new(0)));
+            nodes.push(head.clone());
             let mut prev = head.clone();
             for i in 1..n {
                 let next = Arc::new(RwLock::new(Node::new(i)));
+                nodes.push(next.clone());
                 black_box(Node::insert_after(&mut prev, next));
                 let tmp = prev.read().next.as_ref().unwrap().clone();
                 prev = tmp;
+            }
+            for mut n in nodes {
+                Node::detach(&mut n);
             }
         });
     }
