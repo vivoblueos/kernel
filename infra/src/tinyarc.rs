@@ -104,8 +104,10 @@ impl<T> TinyArc<T> {
     }
 
     #[inline]
-    pub fn get_handle(this: &Self) -> *const u8 {
-        Self::as_ptr(this) as *const u8
+    pub unsafe fn clone_from(this: &T) -> Self {
+        let this = Self::from_raw(this as *const T);
+        Self::increment_strong_count(&this);
+        this
     }
 
     #[inline]
@@ -134,14 +136,13 @@ impl<T> TinyArc<T> {
 
     #[inline]
     pub fn is(this: &Self, that: &Self) -> bool {
-        Self::get_handle(this) == Self::get_handle(that)
+        Self::ptr_eq(this, that)
     }
 
     #[inline]
     #[must_use]
     pub fn as_ptr(this: &Self) -> *const T {
         let ptr: *mut TinyArcInner<T> = NonNull::as_ptr(this.inner);
-
         // SAFETY: This cannot go through Deref::deref because this is required to retain raw/mut provenance
         unsafe { &raw mut (*ptr).data }
     }
@@ -361,32 +362,32 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
 
     pub fn clear(&mut self) -> usize {
         let mut c = 0;
-        for mut i in
-            TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
+        for val in TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
         {
-            Self::detach(&mut i);
+            Self::detach(&mut unsafe { TinyArc::clone_from(val) });
             c += 1;
         }
         c
     }
 
-    pub fn iter(&self) -> TinyArcListIterator<T, A> {
+    pub fn iter(&self) -> TinyArcListIterator<'_, T, A> {
         TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
     }
 
     // Find a stable sorting position.
-    fn find_insert_position_by<Compare>(
+    fn find_insert_position_by<'a, 'b, Compare>(
         compare: Compare,
-        it: TinyArcListIterator<T, A>,
-        val: &TinyArc<T>,
-    ) -> Option<TinyArc<T>>
+        it: TinyArcListIterator<'a, T, A>,
+        val: &'b T,
+    ) -> Option<&'a T>
     where
         Compare: Fn(&T, &T) -> core::cmp::Ordering,
+        A: 'a,
     {
         use core::cmp::Ordering;
         let mut last = None;
         for other_val in it {
-            let ord = compare(val, &other_val);
+            let ord = compare(val, other_val);
             if ord == Ordering::Less {
                 return last;
             }
@@ -405,45 +406,40 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     where
         Compare: Fn(&T, &T) -> core::cmp::Ordering,
     {
-        let Some(mut other_val) =
+        let Some(other_val) =
             Self::find_insert_position_by(compare, TinyArcListIterator::new(head, None), &val)
         else {
             return Self::insert_after(head, val);
         };
-        Self::insert_after(
-            unsafe { Self::list_head_of_mut_unchecked(&mut other_val) },
-            val,
-        )
+        Self::insert_after(unsafe { AtomicListHead::list_head_of(other_val) }, val)
     }
 
     pub fn push_by<Compare>(&mut self, compare: Compare, val: TinyArc<T>) -> bool
     where
         Compare: Fn(&T, &T) -> core::cmp::Ordering,
     {
-        let Some(mut other_val) = Self::find_insert_position_by(
+        let Some(other_val) = Self::find_insert_position_by(
             compare,
             TinyArcListIterator::new(&self.head, Some(NonNull::from_ref(&self.tail))),
             &val,
         ) else {
             return Self::insert_after(&mut self.head, val);
         };
-        Self::insert_after(
-            unsafe { Self::list_head_of_mut_unchecked(&mut other_val) },
-            val,
-        )
+        Self::insert_after(unsafe { AtomicListHead::list_head_of(other_val) }, val)
     }
 
     pub fn remove_if<Predicate>(&mut self, is: Predicate) -> Option<TinyArc<T>>
     where
-        Predicate: Fn(&TinyArc<T>) -> bool,
+        Predicate: Fn(&T) -> bool,
     {
-        for mut e in self.iter() {
-            if !is(&e) {
+        for val in self.iter() {
+            if !is(val) {
                 continue;
             }
-            let ok = Self::detach(&mut e);
+            let mut found = unsafe { TinyArc::clone_from(val) };
+            let ok = Self::detach(&mut found);
             debug_assert!(ok);
-            return Some(e);
+            return Some(found);
         }
         None
     }
@@ -462,48 +458,51 @@ impl<T: Sized, A: Adapter<T>> Drop for TinyArcList<T, A> {
 
 impl<T: Sized, A: Adapter<T>> GenericList for TinyArcList<T, A> {
     type Node = AtomicListHead<T, A>;
-    type Iter = TinyArcListIterator<T, A>;
 }
 
-pub struct TinyArcListIterator<T, A: Adapter<T>> {
+pub struct TinyArcListIterator<'a, T, A: Adapter<T>> {
     it: ListIterator<T, A>,
+    _lt: PhantomData<&'a T>,
 }
 
-pub struct TinyArcListReverseIterator<T, A: Adapter<T>> {
+pub struct TinyArcListReverseIterator<'a, T, A: Adapter<T>> {
     it: ListReverseIterator<T, A>,
+    _lt: PhantomData<&'a T>,
 }
 
-impl<T, A: Adapter<T>> TinyArcListIterator<T, A> {
+impl<T, A: Adapter<T>> TinyArcListIterator<'_, T, A> {
     pub fn new(head: &AtomicListHead<T, A>, tail: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListIterator::new(head, tail),
+            _lt: PhantomData,
         }
     }
 }
 
-impl<T, A: Adapter<T>> TinyArcListReverseIterator<T, A> {
+impl<T, A: Adapter<T>> TinyArcListReverseIterator<'_, T, A> {
     pub fn new(tail: &AtomicListHead<T, A>, head: Option<NonNull<AtomicListHead<T, A>>>) -> Self {
         Self {
             it: ListReverseIterator::new(tail, head),
+            _lt: PhantomData,
         }
     }
 }
 
-impl<T, A: Adapter<T>> Iterator for TinyArcListIterator<T, A> {
-    type Item = TinyArc<T>;
+impl<'a, T, A: Adapter<T> + 'a> Iterator for TinyArcListIterator<'a, T, A> {
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.it.next()?;
-        Some(unsafe { TinyArcList::<T, A>::clone_from(node.as_ref()) })
+        Some(unsafe { node.as_ref().owner() })
     }
 }
 
-impl<T, A: Adapter<T>> Iterator for TinyArcListReverseIterator<T, A> {
-    type Item = TinyArc<T>;
+impl<'a, T, A: Adapter<T> + 'a> Iterator for TinyArcListReverseIterator<'a, T, A> {
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.it.next()?;
-        Some(unsafe { TinyArcList::<T, A>::clone_from(node.as_ref()) })
+        Some(unsafe { node.as_ref().owner() })
     }
 }
 
@@ -662,8 +661,8 @@ mod tests {
         let mut w = head.write();
         let t = TinyArc::new(Thread::default());
         ControlStatusList::insert_after(&mut *w, t);
-        for mut e in TinyArcListIterator::new(&*w, None) {
-            ControlStatusList::detach(&mut e);
+        for val in TinyArcListIterator::new(&*w, None) {
+            ControlStatusList::detach(&mut unsafe { TinyArc::clone_from(val) });
         }
     }
 
@@ -712,7 +711,8 @@ mod tests {
             assert_eq!(TinyArc::strong_count(&t), 2);
         }
         let mut counter = (n - 1) as isize;
-        for mut i in TinyArcListIterator::new(&head, None) {
+        for val in TinyArcListIterator::new(&head, None) {
+            let mut i = unsafe { TinyArc::clone_from(val) };
             assert_eq!(i.id, counter as usize);
             assert_eq!(TinyArc::strong_count(&i), 2);
             counter -= 1;
@@ -733,7 +733,8 @@ mod tests {
             assert_eq!(TinyArc::strong_count(&t), 2);
         }
         let mut counter = (n - 1) as isize;
-        for mut i in TinyArcListReverseIterator::new(&tail, None) {
+        for val in TinyArcListReverseIterator::new(&tail, None) {
+            let mut i = unsafe { TinyArc::clone_from(val) };
             assert_eq!(i.id, counter as usize);
             assert_eq!(TinyArc::strong_count(&i), 2);
             counter -= 1;
@@ -800,7 +801,8 @@ mod tests {
 
         loop {
             let mut iter = l.iter();
-            if let Some(mut t) = iter.next() {
+            if let Some(val) = iter.next() {
+                let mut t = unsafe { TinyArc::clone_from(val) };
                 assert_eq!(TinyArc::strong_count(&t), 2);
                 assert!(ControlStatusList::detach(&mut t));
                 assert_eq!(TinyArc::strong_count(&t), 1);
@@ -828,7 +830,8 @@ mod tests {
 
         for i in 0..n {
             let mut iter = l.iter();
-            if let Some(mut t) = iter.next() {
+            if let Some(val) = iter.next() {
+                let mut t = unsafe { TinyArc::clone_from(val) };
                 assert_eq!(TinyArc::strong_count(&t), 2);
                 assert!(ControlStatusList::detach(&mut t));
                 assert_eq!(TinyArc::strong_count(&t), 1);
@@ -863,7 +866,8 @@ mod tests {
                 assert_eq!(TinyArc::strong_count(&t), 2);
             }
             let mut counter = (n - 1) as isize;
-            for mut i in TinyArcListIterator::new(&head, Some(NonNull::from_ref(&tail))) {
+            for val in TinyArcListIterator::new(&head, Some(NonNull::from_ref(&tail))) {
+                let mut i = unsafe { TinyArc::clone_from(val) };
                 assert_eq!(i.id, counter as usize);
                 assert_eq!(TinyArc::strong_count(&i), 2);
                 counter -= 1;
@@ -1078,20 +1082,20 @@ mod tests {
         // We expect the list is sorted as {t1, t3, t2, t0}.
         let mut it = TinyArcListIterator::new(&head, None);
         let mut fst = it.next().unwrap();
-        assert_eq!(TinyArc::as_ptr(&fst), TinyArc::as_ptr(&t1));
-        let ok = ControlStatusList::detach(&mut fst);
+        assert_eq!(fst as *const _, TinyArc::as_ptr(&t1));
+        let ok = ControlStatusList::detach(&mut unsafe { TinyArc::clone_from(fst) });
         assert!(ok);
         let mut sec = it.next().unwrap();
-        assert_eq!(TinyArc::as_ptr(&sec), TinyArc::as_ptr(&t3));
-        let ok = ControlStatusList::detach(&mut sec);
+        assert_eq!(sec as *const _, TinyArc::as_ptr(&t3));
+        let ok = ControlStatusList::detach(&mut unsafe { TinyArc::clone_from(sec) });
         assert!(ok);
         let mut third = it.next().unwrap();
-        assert_eq!(TinyArc::as_ptr(&third), TinyArc::as_ptr(&t2));
-        let ok = ControlStatusList::detach(&mut third);
+        assert_eq!(third as *const _, TinyArc::as_ptr(&t2));
+        let ok = ControlStatusList::detach(&mut unsafe { TinyArc::clone_from(third) });
         assert!(ok);
         let mut fourth = it.next().unwrap();
-        assert_eq!(TinyArc::as_ptr(&fourth), TinyArc::as_ptr(&t0));
-        let ok = ControlStatusList::detach(&mut fourth);
+        assert_eq!(fourth as *const _, TinyArc::as_ptr(&t0));
+        let ok = ControlStatusList::detach(&mut unsafe { TinyArc::clone_from(fourth) });
         assert!(ok);
     }
 

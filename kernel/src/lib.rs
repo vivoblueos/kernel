@@ -37,6 +37,7 @@
 #![feature(naked_functions)]
 #![feature(negative_impls)]
 #![feature(new_zeroed_alloc)]
+#![feature(non_null_from_ref)]
 #![feature(noop_waker)]
 #![feature(pointer_is_aligned_to)]
 #![feature(trait_upcasting)]

@@ -33,7 +33,8 @@ use crate::{
     thread::{self, Thread, ThreadNode},
     time::{NO_WAITING, WAITING_FOREVER},
     types::{
-        impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, GenericList, ThreadPriority, Uint,
+        impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, ArcListIterator, GenericList,
+        ThreadPriority, Uint,
     },
 };
 use alloc::string::String;
@@ -45,7 +46,7 @@ use core::{
 
 impl_simple_intrusive_adapter!(OffsetOfMutexNode, Mutex, mutex_node);
 pub(crate) type MutexList = ArcList<Mutex, OffsetOfMutexNode>;
-pub(crate) type MutexListIterator = <MutexList as GenericList>::Iter;
+pub(crate) type MutexListIterator<'a> = ArcListIterator<'a, Mutex, OffsetOfMutexNode>;
 type MutexNode = <MutexList as GenericList>::Node;
 
 const CHAIN_LENGTH_LIMIT: usize = 4;
@@ -312,7 +313,7 @@ impl Mutex {
         let mut entry = None;
         for e in mutex_lock.iter() {
             if Arc::is(&e.thread, who) {
-                entry = Some(e);
+                entry = Some(unsafe { Arc::clone_from(e) });
                 break;
             }
         }
@@ -405,7 +406,7 @@ impl Mutex {
             if limit >= CHAIN_LENGTH_LIMIT {
                 break;
             }
-            debug_assert!(!Arc::is(&mutex, this_mutex));
+            debug_assert_ne!(mutex as *const _, Arc::as_ptr(this_mutex));
             #[cfg(debugging_scheduler)]
             crate::trace!(
                 "Trying to get read lock of mutex {:?}, estimated R {}, W {}",

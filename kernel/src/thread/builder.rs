@@ -42,7 +42,7 @@ static_arc! {
 
 pub struct GlobalQueueVisitor<'a> {
     lock: SpinLockGuard<'a, Head>,
-    it: ArcListIterator<Thread, OffsetOfGlobal>,
+    it: ArcListIterator<'a, Thread, OffsetOfGlobal>,
 }
 
 #[derive(Default, Debug)]
@@ -63,7 +63,7 @@ impl GlobalQueueVisitor<'_> {
 
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<ThreadNode> {
-        self.it.next()
+        Some(unsafe { Arc::clone_from(self.it.next()?) })
     }
 
     pub fn add(t: ThreadNode) -> bool {
