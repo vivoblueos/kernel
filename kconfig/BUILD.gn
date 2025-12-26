@@ -50,7 +50,6 @@ bindgen("autoconf_header") {
     "--no-layout-tests",
   ]
   sources = get_target_outputs(":generate_c_header")
-  configs += [ "//build/boards/${board}:kernel_config" ]
   deps = [ ":generate_c_header" ]
 }
 
