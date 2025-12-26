@@ -78,7 +78,7 @@ impl Os2Thread {
 #[inline(always)]
 pub fn to_os_state(state: u8) -> osThreadState_t {
     match state as Uint {
-        thread::CREATED => osThreadState_t_osThreadInactive,
+        thread::IDLE => osThreadState_t_osThreadInactive,
         thread::READY => osThreadState_t_osThreadReady,
         thread::RUNNING => osThreadState_t_osThreadRunning,
         thread::SUSPENDED => osThreadState_t_osThreadBlocked,
@@ -91,7 +91,7 @@ pub fn to_os_state(state: u8) -> osThreadState_t {
 #[inline(always)]
 pub fn to_thread_state(state: osThreadState_t) -> u8 {
     match state {
-        osThreadState_t_osThreadInactive => thread::CREATED as u8,
+        osThreadState_t_osThreadInactive => thread::IDLE as u8,
         osThreadState_t_osThreadReady => thread::READY as u8,
         osThreadState_t_osThreadRunning => thread::RUNNING as u8,
         osThreadState_t_osThreadBlocked => thread::SUSPENDED as u8,

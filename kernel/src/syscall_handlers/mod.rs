@@ -383,7 +383,7 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     };
     let handle = Thread::id(&t);
     if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args_ptr as *mut _); }
-    let ok = scheduler::queue_ready_thread(thread::CREATED, t);
+    let ok = scheduler::queue_ready_thread(thread::IDLE, t);
     // We don't increment the rc of the created thread since it's also
     // referenced by the global queue. When this thread is retired,
     // it's removed from the global queue.

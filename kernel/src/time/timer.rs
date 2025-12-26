@@ -69,12 +69,12 @@ pub fn system_timer_init() {
             unsafe { &mut SOFT_TIMER_THREAD },
             unsafe { &mut SOFT_TIMER_THREAD_STACK },
             config::SOFT_TIMER_THREAD_PRIORITY,
-            thread::CREATED,
+            thread::IDLE,
             Entry::C(run_soft_timer),
             ThreadKind::SoftTimer,
         );
         unsafe { SOFT_TIMER_THREAD.write(th.clone()) };
-        let ok = scheduler::queue_ready_thread(thread::CREATED, th);
+        let ok = scheduler::queue_ready_thread(thread::IDLE, th);
         debug_assert!(ok);
     }
 }

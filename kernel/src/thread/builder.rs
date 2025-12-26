@@ -95,7 +95,7 @@ where
     let entry = Box::new(f);
     let builder = Builder::new(Entry::Closure(entry));
     let t = builder.build();
-    if scheduler::queue_ready_thread(thread::CREATED, t.clone()) {
+    if scheduler::queue_ready_thread(thread::IDLE, t.clone()) {
         return Some(t);
     }
     None
@@ -151,7 +151,7 @@ impl Builder {
 
     pub fn start(self) -> ThreadNode {
         let t = self.build();
-        let ok = scheduler::queue_ready_thread(super::CREATED, t.clone());
+        let ok = scheduler::queue_ready_thread(super::IDLE, t.clone());
         debug_assert!(ok);
         // TODO: Invoke yield_me_now_or_later for better realtime performance. However
         // this breaks some existed tests and need TBI.
@@ -209,7 +209,7 @@ pub(crate) fn build_static_thread(
     w.set_origin_priority(p);
     w.set_priority(p);
     w.set_kind(kind);
-    debug_assert!((thread::CREATED..=thread::RETIRED).contains(&init_state));
+    debug_assert!((thread::IDLE..=thread::RETIRED).contains(&init_state));
     unsafe { w.set_state(init_state) };
     debug!(
         "System thread 0x{:x} created: sp: 0x{:x}, stack base: {:?}, stack size: {}, context size: {}",
