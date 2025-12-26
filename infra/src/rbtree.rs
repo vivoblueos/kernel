@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate alloc;
 use crate::{intrusive::Adapter, tinyarc::TinyArc};
+use alloc::vec::Vec;
 use core::{cmp::Ordering, marker::PhantomData, ops::Drop, ptr::NonNull};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -407,51 +409,49 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                     w_node.as_mut().set_color(Color::Red);
                     x = parent;
                     parent = x.unwrap().as_ref().parent();
-                } else {
-                    if is_x_left {
-                        // Case 3: w is black, w.left is red, w.right is black.
-                        if right_black {
-                            if let Some(mut l) = left_child {
-                                l.as_mut().set_color(Color::Black);
-                            }
-                            w_node.as_mut().set_color(Color::Red);
-                            self.rotate_right(w_node);
-                            w = p_node.as_ref().right;
-                            w_node = w.unwrap();
-                        }
-                        // Case 4: w is black, w.right is red.
-                        w_node.as_mut().set_color(p_node.as_ref().color());
-                        p_node.as_mut().set_color(Color::Black);
-                        if let Some(mut r) = w_node.as_ref().right {
-                            r.as_mut().set_color(Color::Black);
-                        }
-                        self.rotate_left(p_node);
-                        x = self.root;
-                    } else {
-                        // Mirror Case 3
-                        if left_black {
-                            if let Some(mut r) = right_child {
-                                r.as_mut().set_color(Color::Black);
-                            }
-                            w_node.as_mut().set_color(Color::Red);
-                            self.rotate_left(w_node);
-                            w = p_node.as_ref().left;
-                            w_node = w.unwrap();
-                        }
-                        // Mirror Case 4
-                        w_node.as_mut().set_color(p_node.as_ref().color());
-                        p_node.as_mut().set_color(Color::Black);
-                        if let Some(mut l) = w_node.as_ref().left {
+                } else if is_x_left {
+                    // Case 3: w is black, w.left is red, w.right is black.
+                    if right_black {
+                        if let Some(mut l) = left_child {
                             l.as_mut().set_color(Color::Black);
                         }
-                        self.rotate_right(p_node);
-                        x = self.root;
+                        w_node.as_mut().set_color(Color::Red);
+                        self.rotate_right(w_node);
+                        w = p_node.as_ref().right;
+                        w_node = w.unwrap();
                     }
+                    // Case 4: w is black, w.right is red.
+                    w_node.as_mut().set_color(p_node.as_ref().color());
+                    p_node.as_mut().set_color(Color::Black);
+                    if let Some(mut r) = w_node.as_ref().right {
+                        r.as_mut().set_color(Color::Black);
+                    }
+                    self.rotate_left(p_node);
+                    x = self.root;
+                } else {
+                    // Mirror Case 3
+                    if left_black {
+                        if let Some(mut r) = right_child {
+                            r.as_mut().set_color(Color::Black);
+                        }
+                        w_node.as_mut().set_color(Color::Red);
+                        self.rotate_left(w_node);
+                        w = p_node.as_ref().left;
+                        w_node = w.unwrap();
+                    }
+                    // Mirror Case 4
+                    w_node.as_mut().set_color(p_node.as_ref().color());
+                    p_node.as_mut().set_color(Color::Black);
+                    if let Some(mut l) = w_node.as_ref().left {
+                        l.as_mut().set_color(Color::Black);
+                    }
+                    self.rotate_right(p_node);
+                    x = self.root;
                 }
             }
-            if let Some(mut x_node) = x {
-                x_node.as_mut().set_color(Color::Black);
-            }
+        }
+        if let Some(mut x_node) = x {
+            x_node.as_mut().set_color(Color::Black);
         }
     }
 
@@ -485,31 +485,6 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
 
     pub fn iter(&self) -> RBIterator<'_, T, A> {
         RBIterator::new(self)
-    }
-
-    pub fn print_structure(&self)
-    where
-        T: std::fmt::Debug,
-    {
-        unsafe {
-            self.print_node(self.root, 0);
-        }
-    }
-
-    unsafe fn print_node(&self, node: Option<NonNull<RBLink>>, depth: usize)
-    where
-        T: std::fmt::Debug,
-    {
-        unsafe {
-            if let Some(n) = node {
-                self.print_node(n.as_ref().right, depth + 1);
-                let indent = "    ".repeat(depth);
-                let obj = self.get_obj(n);
-                let color = if n.as_ref().is_red() { "RED" } else { "BLK" };
-                println!("{}Node ({})", indent, color);
-                self.print_node(n.as_ref().left, depth + 1);
-            }
-        }
     }
 }
 
@@ -604,7 +579,7 @@ mod tests {
         }
     }
     unsafe fn check_node_properties(
-        tree: &RBTree<MyNode, MyNodeAdapter>,
+        _tree: &RBTree<MyNode, MyNodeAdapter>,
         node: Option<NonNull<RBLink>>,
     ) -> usize {
         unsafe {
@@ -622,8 +597,8 @@ mod tests {
                             assert!(r.as_ref().is_black(), "Red node has red right child");
                         }
                     }
-                    let left_bh = check_node_properties(tree, left);
-                    let right_bh = check_node_properties(tree, right);
+                    let left_bh = check_node_properties(_tree, left);
+                    let right_bh = check_node_properties(_tree, right);
                     assert_eq!(left_bh, right_bh, "Black height mismatch at node");
                     if n_ref.is_black() {
                         left_bh + 1
@@ -801,7 +776,8 @@ mod tests {
                 for i in 0..n {
                     let node = TinyArc::new(MyNode::new(i as i32, "bench"));
                     let cmp = |a: &MyNode, b: &MyNode| a.key.cmp(&b.key);
-                    black_box(tree.insert(node, cmp));
+                    tree.insert(node, cmp);
+                    black_box(());
                 }
                 insert_times.push(start.elapsed());
                 // 2. Get Test (key=20)
