@@ -335,6 +335,7 @@ impl<T, A: Adapter<T>> List<T, A> {
         last
     }
 
+    #[must_use]
     pub fn push_by<'b, Compare>(
         &mut self,
         compare: Compare,
@@ -356,15 +357,19 @@ impl<T, A: Adapter<T>> List<T, A> {
         })
     }
 
+    #[must_use]
     pub fn push<'b>(&mut self, val: &'b mut T) -> Option<IouListHeadMut<'b, T, A>> {
         let node = Self::list_head_of_mut(val);
-        let _ = ListHead::safer_insert_before(&mut self.tail, node)?;
+        if !ListHead::insert_before(&mut self.tail, node) {
+            return None;
+        }
         Some(IouListHeadMut {
             node: Some(NonNull::from_mut(node)),
             _lt: PhantomData,
         })
     }
 
+    #[must_use]
     pub fn pop<'b>(
         &mut self,
         mut borrow: IouListHeadMut<'_, T, A>,
@@ -372,10 +377,9 @@ impl<T, A: Adapter<T>> List<T, A> {
         let Some(node) = &mut borrow.node else {
             panic!("Detaching a nil node");
         };
-        let mut sub_borrow = IouMut {
-            val: Some(unsafe { node.as_mut() }),
-        };
-        let _ = ListHead::safer_detach(sub_borrow)?;
+        if !ListHead::detach(unsafe { node.as_mut() }) {
+            return None;
+        }
         Some(IouListHeadMut {
             node: None,
             _lt: PhantomData,
