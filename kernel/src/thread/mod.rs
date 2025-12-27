@@ -327,11 +327,6 @@ impl Thread {
     }
 
     #[inline]
-    pub fn saved_sp_ptr(&self) -> *const usize {
-        &self.saved_sp as *const AtomicUsize as *const usize
-    }
-
-    #[inline]
     pub fn saved_sp(&self) -> usize {
         self.saved_sp.load(Ordering::Acquire)
     }
