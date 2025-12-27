@@ -24,9 +24,8 @@ impl LiveFor<'_> {
     }
 }
 
-// Similar to LiveFor, additionally contains a reference to a value.
 // Borrow and BorrowMut have been used in [rust-std](https://doc.rust-lang.org/std/borrow/trait.BorrowMut.html),
-// so we use Iou (I Owe U, aka, 借据) to name this struct.
+// so we use Iou (I Owe You, aka, 借据) to name this struct.
 #[derive(Default)]
 #[repr(transparent)]
 pub struct Iou<'a, T> {

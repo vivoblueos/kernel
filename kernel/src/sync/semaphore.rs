@@ -15,7 +15,7 @@
 use super::SpinLock;
 use crate::{
     irq, scheduler,
-    scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitQueue},
+    scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitEntry, WaitQueue},
     thread,
     thread::Thread,
     time::WAITING_FOREVER,
@@ -93,12 +93,17 @@ impl Semaphore {
                 self.counter.set(old - 1);
                 return true;
             }
-            let Some(we) = wait_queue::insert(w.deref_mut(), this_thread.clone(), M::MODE) else {
-                panic!("This insertion should never fail");
-            };
-            let timeout = scheduler::suspend_me_with_timeout(w, WAITING_FOREVER);
-            debug_assert!(!timeout);
-            w = self.pending.irqsave_lock();
+            let mut borrowed_wait_entry;
+            {
+                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                borrowed_wait_entry =
+                    wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                let timeout = scheduler::suspend_me_with_timeout(w, WAITING_FOREVER);
+                debug_assert!(!timeout);
+                w = self.pending.irqsave_lock();
+                borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+            }
+            drop(borrowed_wait_entry);
         }
     }
 
@@ -129,17 +134,19 @@ impl Semaphore {
             if ticks == 0 {
                 return false;
             }
-            let Some(mut wait_entry) =
-                wait_queue::insert(w.deref_mut(), this_thread.clone(), M::MODE)
-            else {
-                panic!("This insertion should never fail");
-            };
-            let timeout = scheduler::suspend_me_with_timeout(w, ticks);
-            if timeout {
-                let _guard = self.pending.irqsave_lock();
-                WaitQueue::detach(&mut wait_entry);
-                return false;
+            let mut borrowed_wait_entry;
+            {
+                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                borrowed_wait_entry =
+                    wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                let timeout = scheduler::suspend_me_with_timeout(w, ticks);
+                w = self.pending.irqsave_lock();
+                borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                if timeout {
+                    return false;
+                }
             }
+            drop(borrowed_wait_entry);
             let now = crate::time::TickTime::now().as_ticks();
             let elapsed_ticks = now - last_sys_ticks;
             if elapsed_ticks >= ticks {
@@ -148,7 +155,6 @@ impl Semaphore {
                 ticks -= elapsed_ticks;
             }
             last_sys_ticks = now;
-            w = self.pending.irqsave_lock();
         }
     }
 
@@ -179,26 +185,7 @@ impl Semaphore {
         if old > 0 {
             return;
         }
-        while let Some(next) = w.pop_front() {
-            let t = next.thread.clone();
-            if let Some(timer) = &t.timer {
-                timer.stop();
-            }
-            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
-            if ok {
-                break;
-            }
-            #[cfg(debugging_scheduler)]
-            {
-                use crate::arch;
-                crate::trace!(
-                    "[TH:0x{:x}] Failed to enqueue 0x{:x}, state: {}",
-                    scheduler::current_thread_id(),
-                    Thread::id(&next.thread),
-                    next.thread.state()
-                );
-            }
-        }
+        wait_queue::wake_up(&mut w, 1);
         drop(w);
         scheduler::yield_me_now_or_later();
     }
@@ -207,7 +194,7 @@ impl Semaphore {
     pub fn reset(&self) -> usize {
         let mut w = self.pending.irqsave_lock();
         self.counter.set(0);
-        // wakeup all threads
+        // Wakeup all threads.
         scheduler::wake_up_all(w)
     }
 }

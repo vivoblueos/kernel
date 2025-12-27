@@ -16,6 +16,7 @@
 #![allow(internal_features)]
 #![allow(incomplete_features)]
 #![allow(clippy::crate_in_macro_def)]
+#![allow(clippy::drop_non_drop)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
@@ -47,8 +48,10 @@
 #![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
 
-extern crate alloc;
+//#[cfg(test)]
+//blueos_test_macro::test_only!();
 
+extern crate alloc;
 pub mod allocator;
 pub mod arch;
 #[cfg(kernel_async)]
@@ -547,6 +550,7 @@ mod tests {
         .unwrap();
         // Send SIGTERM after t enters its entry function.
         a_cloned.wait();
+        // FIXME: Memory leaks since we are using a boxed closure as t's entry.
         t.lock().kill(libc::SIGTERM as i32);
         // At this point, t is either
         // 0: waking up from a or

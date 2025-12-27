@@ -74,14 +74,14 @@ pub(super) fn init_idle_threads() {
 }
 
 #[inline]
-pub(super) fn current_idle_thread_ref() -> &'static Thread {
+pub fn current_idle_thread_ref() -> &'static Thread {
     let _dig = support::DisableInterruptGuard::new();
     let id = arch::current_cpu_id();
     unsafe { IDLE_THREADS[id].assume_init_ref() }
 }
 
 #[inline]
-pub(super) fn current_idle_thread() -> ThreadNode {
+pub fn current_idle_thread() -> ThreadNode {
     let _dig = support::DisableInterruptGuard::new();
     let id = arch::current_cpu_id();
     unsafe { IDLE_THREADS[id].assume_init_ref() }.clone()

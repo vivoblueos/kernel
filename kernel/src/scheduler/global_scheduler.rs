@@ -76,7 +76,6 @@ fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Op
     if q.is_empty() {
         tbl.clear_active_queue(index as u32);
     }
-    debug_assert!(next.as_ref().unwrap().validate_saved_sp());
     next
 }
 
@@ -116,7 +115,6 @@ where
     if !t.transfer_state(old_state, thread::READY) {
         return None;
     }
-    debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     if !queue_ready_thread_inner(&mut tbl, t) {
         return None;
@@ -151,7 +149,6 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
     if !t.transfer_state(old_state, thread::READY) {
         return false;
     }
-    debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     queue_ready_thread_inner(&mut tbl, t)
 }
@@ -162,7 +159,7 @@ fn remove_from_ready_queue_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &Th
     debug_assert_eq!(t.state(), thread::READY);
     let q = &mut tbl.tables[priority as usize];
     // Conservatively search the whole queue.
-    let removed = q.remove_if(|e| ThreadNode::is(e, t));
+    let removed = q.remove_if(|e| Thread::id(e) == Thread::id(t));
     let Some(removed) = removed else {
         return false;
     };
