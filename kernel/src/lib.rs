@@ -16,6 +16,7 @@
 #![allow(internal_features)]
 #![allow(incomplete_features)]
 #![allow(clippy::crate_in_macro_def)]
+#![allow(clippy::drop_non_drop)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
