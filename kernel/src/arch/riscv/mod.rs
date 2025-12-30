@@ -17,8 +17,9 @@ mod trap;
 
 use crate::{irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
 use core::{
+    cell::Cell,
     mem::offset_of,
-    sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{compiler_fence, Ordering},
 };
 pub use trap::*;
 
@@ -40,8 +41,8 @@ pub(crate) const MIE_MEIE: usize = 1 << 11;
 // We haven't supported supervisor mode and user mode yet.
 
 // FIXME: We don't need atomic here.
-static PENDING_SWITCH_CONTEXT: [AtomicBool; NUM_CORES] =
-    [const { AtomicBool::new(false) }; NUM_CORES];
+static mut PENDING_SWITCH_CONTEXT: [Cell<bool>; NUM_CORES] =
+    [const { Cell::new(false) }; NUM_CORES];
 
 #[inline]
 pub(crate) extern "C" fn pend_switch_context() {
@@ -51,7 +52,7 @@ pub(crate) extern "C" fn pend_switch_context() {
     }
     let level = disable_local_irq_save();
     let id = current_cpu_id();
-    PENDING_SWITCH_CONTEXT[id].store(true, Ordering::Release);
+    unsafe { PENDING_SWITCH_CONTEXT[id].set(true) };
     enable_local_irq_restore(level);
 }
 
@@ -59,9 +60,8 @@ pub(crate) extern "C" fn pend_switch_context() {
 pub(crate) extern "C" fn claim_switch_context() -> bool {
     let level = disable_local_irq_save();
     let id = current_cpu_id();
-    let ok = PENDING_SWITCH_CONTEXT[id]
-        .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
-        .is_ok();
+    let ok = unsafe { PENDING_SWITCH_CONTEXT[id].get() };
+    unsafe { PENDING_SWITCH_CONTEXT[id].set(false) };
     enable_local_irq_restore(level);
     ok
 }
@@ -365,45 +365,26 @@ pub extern "C" fn current_sp() -> usize {
     x
 }
 
-#[inline(always)]
-pub(crate) extern "C" fn switch_context(saved_sp_mut: *mut u8, to_sp: usize) {
-    switch_context_with_hook(saved_sp_mut, to_sp, core::ptr::null_mut());
-}
-
-#[inline(never)]
-pub(crate) extern "C" fn ecall_switch_context_with_hook(
-    saved_sp_mut: *mut u8,
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) {
+pub(crate) extern "C" fn ecall_switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
     unsafe {
         core::arch::asm!(
             "ecall",
-            inlateout("a0") saved_sp_mut as usize => _,
-            inlateout("a1") to_sp => _,
-            in("a2") hook as usize,
+            in("a0") hook as usize,
             in("a7") NR_SWITCH,
             options(nostack),
         )
     }
 }
 
-#[inline]
-pub(crate) extern "C" fn switch_context_with_hook(
-    saved_sp_mut: *mut u8,
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) {
-    ecall_switch_context_with_hook(saved_sp_mut, to_sp, hook)
+#[inline(always)]
+pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    ecall_switch_context_with_hook(hook)
 }
 
 #[inline(always)]
 #[allow(clippy::empty_loop)]
-pub(crate) extern "C" fn restore_context_with_hook(
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) -> ! {
-    switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
+pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
+    switch_context_with_hook(hook);
     unreachable!("Should have switched to another thread");
 }
 
@@ -501,10 +482,9 @@ pub(crate) extern "C" fn bootstrap() {
 }
 
 pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
-    let current = crate::scheduler::current_thread();
+    let current = crate::scheduler::current_thread_ref();
     current.lock().reset_saved_sp();
     let sp = current.saved_sp();
-    drop(current);
     unsafe {
         core::arch::asm!(
             "li ra, 0",

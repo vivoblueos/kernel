@@ -76,7 +76,6 @@ fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Op
     if q.is_empty() {
         tbl.clear_active_queue(index as u32);
     }
-    debug_assert!(next.as_ref().unwrap().validate_saved_sp());
     next
 }
 
@@ -116,7 +115,6 @@ where
     if !t.transfer_state(old_state, thread::READY) {
         return None;
     }
-    debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     if !queue_ready_thread_inner(&mut tbl, t) {
         return None;
@@ -151,7 +149,6 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
     if !t.transfer_state(old_state, thread::READY) {
         return false;
     }
-    debug_assert!(t.validate_saved_sp());
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     queue_ready_thread_inner(&mut tbl, t)
 }
