@@ -162,10 +162,10 @@ impl EventFlags {
             locked_thread.set_event_flags_mask(flags);
             locked_thread.set_event_flags_mode(mode);
         }
-        let mut wait_entry = WaitEntry::new(current_thread.clone());
         let mut borrowed_wait_entry;
         let reached_deadline;
         {
+            let mut wait_entry = WaitEntry::new(current_thread.clone());
             borrowed_wait_entry =
                 wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
             reached_deadline = scheduler::suspend_me_with_timeout(w, timeout);
