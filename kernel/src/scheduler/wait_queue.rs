@@ -73,39 +73,3 @@ pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
 pub(crate) fn compare_priority(lhs: &WaitEntry, rhs: &WaitEntry) -> core::cmp::Ordering {
     lhs.thread.priority().cmp(&rhs.thread.priority())
 }
-
-pub(crate) struct WaitQueueGuardDropper<'a, const N: usize> {
-    guards: [Option<SpinLockGuard<'a, WaitQueue>>; N],
-    num_active_guards: usize,
-}
-
-impl<'a, const N: usize> WaitQueueGuardDropper<'a, N> {
-    pub const fn new() -> Self {
-        Self {
-            guards: [const { None }; N],
-            num_active_guards: 0,
-        }
-    }
-
-    #[inline]
-    pub fn add(&mut self, w: SpinLockGuard<'a, WaitQueue>) -> bool {
-        if self.num_active_guards == N {
-            return false;
-        }
-        debug_assert!(self.guards[self.num_active_guards].is_none());
-        self.guards[self.num_active_guards] = Some(w);
-        self.num_active_guards += 1;
-        true
-    }
-
-    #[inline]
-    pub fn forget_irq(&mut self) {
-        for i in 0..self.num_active_guards {
-            if let Some(v) = self.guards[i].as_mut() {
-                v.forget_irq()
-            }
-        }
-    }
-}
-
-pub(crate) type DefaultWaitQueueGuardDropper<'a> = WaitQueueGuardDropper<'a, 2>;

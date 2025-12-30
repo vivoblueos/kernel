@@ -399,32 +399,18 @@ pub(crate) extern "C" fn is_in_interrupt() -> bool {
 }
 
 #[inline(always)]
-pub(crate) extern "C" fn switch_context(saved_sp_mut: *mut u8, to_sp: usize) {
-    switch_context_with_hook(saved_sp_mut, to_sp, core::ptr::null_mut());
-}
-
-#[inline(always)]
 #[allow(clippy::empty_loop)]
-pub(crate) extern "C" fn restore_context_with_hook(
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) -> ! {
-    switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
+pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
+    switch_context_with_hook(hook);
     loop {}
 }
 
 #[inline(never)]
-pub(crate) extern "C" fn svc_switch_context_with_hook(
-    saved_sp_mut: *mut u8,
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) {
+pub(crate) extern "C" fn svc_switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
     unsafe {
         core::arch::asm!(
             "svc #0",
-            inlateout("x0") saved_sp_mut as usize => _,
-            inlateout("x1") to_sp => _,
-            in("x2") hook as usize,
+            in("x0") hook as usize,
             in("x8") NR_SWITCH,
             options(nostack),
         )
@@ -432,12 +418,8 @@ pub(crate) extern "C" fn svc_switch_context_with_hook(
 }
 
 #[inline]
-pub(crate) extern "C" fn switch_context_with_hook(
-    saved_sp_mut: *mut u8,
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) {
-    svc_switch_context_with_hook(saved_sp_mut, to_sp, hook)
+pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    svc_switch_context_with_hook(hook)
 }
 
 #[naked]
