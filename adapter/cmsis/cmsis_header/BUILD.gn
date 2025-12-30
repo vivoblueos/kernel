@@ -26,6 +26,7 @@ bindgen("cmsis_os2_header") {
     "RTOS2/os_tick.h",
   ]
   configs += [ "//build/boards/${board}:kernel_config" ]
+  deps = board_deps
 }
 
 bindgen("cmsis_os_header") {
@@ -36,6 +37,7 @@ bindgen("cmsis_os_header") {
   ]
   sources = [ "RTOS1/cmsis_os.h" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
+  deps = board_deps
 }
 
 build_rust("cmsis_os") {
