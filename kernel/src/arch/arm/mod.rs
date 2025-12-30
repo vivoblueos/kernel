@@ -54,8 +54,8 @@ macro_rules! arch_bootstrap {
 }
 
 extern "C" fn prepare_schedule() -> usize {
-    let current = scheduler::current_thread();
-    current.lock().reset_saved_sp();
+    let current = scheduler::current_thread_ref();
+    current.reset_saved_sp();
     current.saved_sp()
 }
 

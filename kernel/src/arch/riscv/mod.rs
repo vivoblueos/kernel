@@ -483,7 +483,7 @@ pub(crate) extern "C" fn bootstrap() {
 
 pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     let current = crate::scheduler::current_thread_ref();
-    current.lock().reset_saved_sp();
+    current.reset_saved_sp();
     let sp = current.saved_sp();
     unsafe {
         core::arch::asm!(
