@@ -196,8 +196,6 @@ pub struct Thread {
     priority: ThreadPriority,
     // This is the static priority of this thread.
     origin_priority: ThreadPriority,
-    // When the MSB is 1, the thread is perform context switch, the remaining
-    // bits represent the target state after the context is saved.
     state: AtomicUint,
     preempt_count: AtomicUint,
     #[cfg(robin_scheduler)]
