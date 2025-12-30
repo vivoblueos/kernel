@@ -439,10 +439,9 @@ pub(crate) extern "C" fn init() -> ! {
 
 #[no_mangle]
 pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
-    let current = crate::scheduler::current_thread();
-    current.lock().reset_saved_sp();
+    let current = crate::scheduler::current_thread_ref();
+    current.reset_saved_sp();
     let sp = current.saved_sp();
-    drop(current);
     unsafe {
         core::arch::asm!(
             "mov lr, #0",
