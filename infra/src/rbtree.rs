@@ -233,7 +233,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
             root.as_mut().set_color(Color::Black);
         }
     }
-    
+
     unsafe fn rotate_left(&mut self, mut x: NonNull<RBLink>) {
         let mut y = x.as_ref().right.expect("Rotate left expects right child");
 
