@@ -12,22 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// SPDX-License-Identifier: MIT OR Apache-2.0
-
-use crate::devices::bus::{Bus, BusInterface};
-
-pub(crate) mod ic;
-pub(crate) mod sensor;
-
-/// use c-compatible error type
-pub type Result<T> = core::result::Result<T, crate::error::Error>;
-
-pub trait InitDriver<B: BusInterface>: Sized + Default {
-    type Data;
-    fn init(self, bus: &Bus<B>) -> Result<Self::Data>;
-}
-
-pub trait DriverModule<B: BusInterface> {
-    type Data: InitDriver<B>;
-    fn probe(dev: &super::devices::DeviceData) -> Result<Self::Data>;
+pub trait I2c<P, T>:
+    super::PlatPeri
+    + super::Configuration<P, Target = T>
+    + super::Has8bitDataReg
+    + super::HasFifo
+    + super::HasErrorStatusReg<ErrorStatusType = u32>
+{
+    fn set_address(&self, address: u16) -> super::err::Result<()>;
+    fn send_byte_with_stop(&self, byte: u8) -> super::err::Result<()>;
+    fn read_byte_with_stop(&self) -> super::err::Result<u8>;
+    fn release_bus(&self) -> super::err::Result<()>;
 }

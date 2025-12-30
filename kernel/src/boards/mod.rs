@@ -22,6 +22,7 @@ macro_rules! define_peripheral {
         paste::paste! {
             $(
                 pub static [<$field_name:upper>]: $device_ty = $v;
+                pub static [<$field_name:upper _DEVICE_DATA>]: crate::devices::DeviceData = crate::devices::new_native_device_data(&[<$field_name:upper>]);
             )*
         }
 
@@ -34,8 +35,17 @@ macro_rules! define_peripheral {
             )*
         }
 
-        #[allow(unused_imports)]
+        #[macro_export]
+        macro_rules! get_device_data {
+            $(
+                ($field_name) => {
+                    paste::paste! { &crate::boards::[<$field_name:upper _DEVICE_DATA>] }
+                };
+            )*
+        }
+
         pub use get_device;
+        pub use get_device_data;
     };
 }
 
@@ -49,4 +59,47 @@ macro_rules! define_pin_states {
     (None) => {
         pub(crate) const PIN_STATES: &[&()] = &[];
     }
+}
+
+#[macro_export]
+macro_rules! define_bus {
+    ($( ($bus_name:ident, $bus_ty:ty, $( ($device_name:ident, $device_ty:ty, $device:expr) ),* $(,)?  ) ),* $(,)?) => {
+        $(
+            paste::paste! {
+                $(
+                    pub static [<$device_name:upper>]: $device_ty = $device;
+                    pub static [<$device_name:upper _DEVICE_DATA>]: crate::devices::DeviceData = crate::devices::new_native_device_data(&[<$device_name:upper>]);
+                )*
+            }
+
+            paste::paste! {
+                pub static [<$bus_name:upper _DATA>]: &[&crate::devices::DeviceData] = &[
+                    $(
+                        &[<$device_name:upper _DEVICE_DATA>],
+                    )*
+                ];
+            }
+        )*
+
+        #[macro_export]
+        macro_rules! get_bus_devices {
+            $(
+                ($bus_name) => {
+                    paste::paste! { crate::boards::[<$bus_name:upper _DATA>] }
+                };
+            )*
+        }
+
+        #[macro_export]
+        macro_rules! get_bus_ty {
+            $(
+                ($bus_name) => {
+                    $bus_ty
+                };
+            )*
+        }
+
+        pub use get_bus_ty;
+        pub use get_bus_devices;
+    };
 }

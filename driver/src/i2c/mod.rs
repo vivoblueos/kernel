@@ -12,22 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// SPDX-License-Identifier: MIT OR Apache-2.0
+pub mod i2c_dw;
 
-use crate::devices::bus::{Bus, BusInterface};
-
-pub(crate) mod ic;
-pub(crate) mod sensor;
-
-/// use c-compatible error type
-pub type Result<T> = core::result::Result<T, crate::error::Error>;
-
-pub trait InitDriver<B: BusInterface>: Sized + Default {
-    type Data;
-    fn init(self, bus: &Bus<B>) -> Result<Self::Data>;
-}
-
-pub trait DriverModule<B: BusInterface> {
-    type Data: InitDriver<B>;
-    fn probe(dev: &super::devices::DeviceData) -> Result<Self::Data>;
+pub struct I2cConfig {
+    pub baudrate: u32,
 }

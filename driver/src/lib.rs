@@ -16,6 +16,7 @@
 #![feature(const_nonnull_new)]
 
 pub mod clock_control;
+pub mod i2c;
 pub mod pinctrl;
 pub mod reset;
 pub mod static_ref;
