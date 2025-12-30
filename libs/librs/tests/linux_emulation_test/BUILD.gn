@@ -22,10 +22,11 @@ build_rust("librs_linux_emulation") {
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal",
-    "//libc:libc",
+    "//libc",
   ]
   features = [ "linux_emulation" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
+  public_deps = board_deps
 }
 
 build_rust("librs_linux_emulation_shell_example") {
