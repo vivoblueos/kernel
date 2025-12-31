@@ -17,7 +17,7 @@ use crate::{
     arch, debug,
     error::{code, Error},
     scheduler,
-    scheduler::wait_queue,
+    scheduler::{wait_queue, InsertMode, WaitEntry, WaitQueue},
     static_arc, support,
     sync::SpinLock,
     thread,
@@ -33,12 +33,11 @@ use core::{
     ops::DerefMut,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use scheduler::{InsertMode, WaitQueue};
-use support::PerCpu;
 
 impl_simple_intrusive_adapter!(Sync, AtomicWaitEntry, sync_node);
 
 type Head = ListHead<AtomicWaitEntry, Sync>;
+// An AtomicWaitEntry might be accessed by multiple threads, so we use Arc here.
 type EntryNode = Arc<AtomicWaitEntry>;
 type EntryListHead = UniqueListHead<AtomicWaitEntry, Sync, SyncEntry>;
 
@@ -119,20 +118,27 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         scheduler::current_thread_id(),
         addr
     );
-    let Some(mut wait_entry) = wait_queue::insert(we.deref_mut(), t, InsertMode::InsertToEnd)
-    else {
-        panic!("This insertion should never fail");
-    };
-    if let Some(timeout) = timeout {
-        let reached_deadline = scheduler::suspend_me_with_timeout(we, timeout);
-        if reached_deadline {
-            let _guard = entry.pending.irqsave_lock();
-            WaitQueue::detach(&mut wait_entry);
-            return Err(code::ETIMEDOUT);
-        }
-    } else {
-        let reached_deadline = scheduler::suspend_me_with_timeout(we, WAITING_FOREVER);
-        debug_assert!(!reached_deadline);
+    let mut borrowed_wait_entry;
+    let reached_deadline;
+    {
+        let mut wait_entry = WaitEntry::new(t);
+        borrowed_wait_entry =
+            wait_queue::insert(we.deref_mut(), &mut wait_entry, InsertMode::InsertToEnd).unwrap();
+        let mut ticks = WAITING_FOREVER;
+        if let Some(timeout) = timeout {
+            ticks = timeout;
+        };
+        reached_deadline = scheduler::suspend_me_with_timeout(we, ticks);
+        w = EntryListHead::lock();
+        we = entry.pending.irqsave_lock();
+        borrowed_wait_entry = we.pop(borrowed_wait_entry).unwrap();
+    }
+    drop(borrowed_wait_entry);
+    if we.is_empty() {
+        w.detach(&mut entry.clone());
+    }
+    if reached_deadline {
+        return Err(code::ETIMEDOUT);
     }
     Ok(())
 }
@@ -155,7 +161,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
             continue;
         }
         let mut we = e.pending.irqsave_lock();
-        while let Some(next) = we.pop_front() {
+        for next in we.iter() {
             if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()) {
                 woken += 1;
                 #[cfg(debugging_scheduler)]
@@ -168,9 +174,6 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
             if woken == how_many {
                 break;
             }
-        }
-        if we.is_empty() {
-            w.detach(&mut unsafe { Arc::clone_from(e) });
         }
         if woken == how_many {
             break;

@@ -56,6 +56,7 @@ pub struct Mutex {
     // We let the Spinlock protect the whole Mutex. Sort threads by priority.
     pending: SpinLock<WaitQueue>,
     nesting_count: Cell<Uint>,
+    // FIXME: Can we reduce atomic ops by replacing it with Option<Cell<ThreadNode>>?
     owner: ArcCas<Thread>,
     mutex_node: MutexNode,
 }
@@ -74,7 +75,7 @@ impl Mutex {
         self.pending.irqsave_lock().init()
     }
 
-    pub fn waitqueue_guard(&self) -> SpinLockGuard<'_, ArcList<WaitEntry, OffsetOfWait>> {
+    pub fn waitqueue_guard(&self) -> SpinLockGuard<'_, WaitQueue> {
         self.pending.irqsave_lock()
     }
 
@@ -179,15 +180,11 @@ impl Mutex {
                 self as *const _
             );
 
-            let (timeout, mut wait_entry) =
-                Self::inner_pend_for(ticks, &this_mutex, w, &this_thread, &owner);
+            let timeout;
+            (timeout, w) = Self::inner_pend_for(ticks, &this_mutex, w, &this_thread, &owner);
             if timeout {
                 this_thread.replace_pending_on_mutex(None);
                 Self::recover_priority(&this_thread, &this_mutex);
-                {
-                    let _guard = self.pending.irqsave_lock();
-                    WaitQueue::detach(&mut wait_entry);
-                }
                 return false;
             }
 
@@ -199,18 +196,16 @@ impl Mutex {
                 ticks -= elapsed_ticks;
             }
             last_sys_ticks = now;
-
-            w = self.pending.irqsave_lock();
         }
     }
 
-    fn inner_pend_for(
+    fn inner_pend_for<'a>(
         ticks: usize,
-        this_mutex: &Arc<Self>,
-        mut this_lock: SpinLockGuard<'_, WaitQueue>,
-        this_thread: &ThreadNode,
+        this_mutex: &'a Arc<Self>,
+        mut this_lock: SpinLockGuard<'a, WaitQueue>,
+        this_thread: &'a ThreadNode,
         owner_thread: &ThreadNode,
-    ) -> (bool, Arc<WaitEntry>) {
+    ) -> (bool, SpinLockGuard<'a, WaitQueue>) {
         let this_priority = this_thread.priority();
         // We walk along the blocking chain to scan no more than
         // CHAIN_LENGTH_LIMIT threads.
@@ -288,18 +283,26 @@ impl Mutex {
             debug_assert!(Arc::is(check, this_mutex));
         };
         drop(old);
-        let Some(we) = wait_queue::insert(
-            this_lock.deref_mut(),
-            this_thread.clone(),
-            InsertMode::InsertByPrio,
-        ) else {
-            panic!("This insertion should never fail");
-        };
-        (scheduler::suspend_me_with_timeout(this_lock, ticks), we)
+        let mut borrowed_wait_entry;
+        let timeout;
+        {
+            let mut wait_entry = WaitEntry::new(this_thread.clone());
+            borrowed_wait_entry = wait_queue::insert(
+                this_lock.deref_mut(),
+                &mut wait_entry,
+                InsertMode::InsertByPrio,
+            )
+            .unwrap();
+            timeout = scheduler::suspend_me_with_timeout(this_lock, ticks);
+            this_lock = this_mutex.pending.irqsave_lock();
+            borrowed_wait_entry = this_lock.pop(borrowed_wait_entry).unwrap();
+        }
+        drop(borrowed_wait_entry);
+        (timeout, this_lock)
     }
 
     fn adjust_wait_queue_position_by(
-        target_prio: ThreadPriority,
+        _target_prio: ThreadPriority,
         who: &ThreadNode,
         mutex: &Arc<Self>,
         mutex_lock: &mut SpinLockGuard<'_, WaitQueue>,
@@ -310,22 +313,8 @@ impl Mutex {
         if !Arc::is(mutex, &pending_on_mutex) {
             return false;
         }
-        let mut entry = None;
-        for e in mutex_lock.iter() {
-            if Arc::is(&e.thread, who) {
-                entry = Some(unsafe { Arc::clone_from(e) });
-                break;
-            }
-        }
-        let Some(mut entry) = entry else {
-            return false;
-        };
-        // The entry only belongs to this Mutex so that we don't need to scan
-        // the whole queue.
-        if !WaitQueue::detach(&mut entry) {
-            return false;
-        }
-        mutex_lock.push_by(wait_queue::compare_priority, entry)
+        mutex_lock
+            .reorder_chosen_value_by(wait_queue::compare_priority, |e| Arc::is(&e.thread, who))
     }
 
     pub fn post(&self) {
@@ -355,12 +344,12 @@ impl Mutex {
                 return;
             }
             let mut this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
-            while let Some(next) = this_lock.pop_front() {
-                let t = next.thread.clone();
+            for we in this_lock.iter() {
+                let t = we.thread.clone();
                 if let Some(timer) = &t.timer {
                     timer.stop();
                 }
-                if scheduler::queue_ready_thread(thread::SUSPENDED, t.clone()) {
+                if scheduler::queue_ready_thread(thread::SUSPENDED, t) {
                     break;
                 }
             }
@@ -604,22 +593,23 @@ mod tests {
     #[test]
     fn test_mutex_multi_thread_timeout() {
         let mutex = Mutex::create();
-
-        let mutex_consumer = mutex.clone();
         let pend_flag = Arc::new(AtomicU32::new(0));
-        let pend_flag_clone = pend_flag.clone();
-
-        let consumer = thread::spawn(move || {
-            while pend_flag_clone.load(Ordering::SeqCst) == 0 {
-                scheduler::yield_me();
+        let closure = {
+            let pend_flag = pend_flag.clone();
+            let mutex_consumer = mutex.clone();
+            move || {
+                while pend_flag.load(Ordering::SeqCst) == 0 {
+                    scheduler::yield_me();
+                }
+                assert_eq!(mutex_consumer.nesting_count(), 1);
+                let result = mutex_consumer.pend_for(5);
+                assert!(!result);
+                pend_flag.fetch_add(1, Ordering::SeqCst);
             }
-            assert_eq!(mutex_consumer.nesting_count(), 1);
-
-            let result = mutex_consumer.pend_for(5);
-            assert!(!result);
-            pend_flag_clone.fetch_add(1, Ordering::SeqCst);
-        });
-        mutex.pend_for(10);
+        };
+        let consumer = thread::spawn(closure);
+        let succ = mutex.pend_for(10);
+        assert!(succ);
         assert_eq!(mutex.nesting_count(), 1);
         pend_flag.fetch_add(1, Ordering::SeqCst);
         scheduler::yield_me();

@@ -37,7 +37,7 @@ use alloc::boxed::Box;
 use core::{
     alloc::Layout,
     ptr::NonNull,
-    sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
 };
 
 mod builder;
@@ -160,7 +160,9 @@ pub struct Thread {
     kind: ThreadKind,
     // Thread owns Stack::Alloc. It calls dealloc when dropping its self.
     stack: Stack,
-    saved_sp: usize,
+    // If saved_sp is 0, the thread should be in RUNNING state. Otherwise, it's
+    // switching context or is in a non RUNNING state.
+    saved_sp: AtomicUsize,
     // This value may change at runtime.
     priority: ThreadPriority,
     // This is the static priority of this thread.
@@ -248,12 +250,6 @@ impl Thread {
     }
 
     #[inline(always)]
-    pub fn validate_saved_sp(&self) -> bool {
-        let sp = self.saved_sp;
-        sp >= self.stack.base() as usize && sp <= self.stack.top() as usize
-    }
-
-    #[inline(always)]
     pub fn saved_stack_usage(&self) -> usize {
         self.stack.top() as usize - self.saved_sp()
     }
@@ -328,13 +324,8 @@ impl Thread {
     }
 
     #[inline]
-    pub fn saved_sp_ptr(&self) -> *const u8 {
-        &self.saved_sp as *const _ as *const u8
-    }
-
-    #[inline]
     pub fn saved_sp(&self) -> usize {
-        self.saved_sp
+        self.saved_sp.load(Ordering::Acquire)
     }
 
     #[inline]
@@ -389,7 +380,7 @@ impl Thread {
             lock: ISpinLock::new(),
             sched_node: IlistHead::<Thread, OffsetOfSchedNode>::new(),
             global: UniqueListHead::new(),
-            saved_sp: 0,
+            saved_sp: AtomicUsize::new(0),
             priority: 0,
             origin_priority: 0,
             preempt_count: AtomicUint::new(0),
@@ -435,14 +426,20 @@ impl Thread {
     }
 
     #[inline]
-    pub(crate) fn reset_saved_sp(&mut self) -> &mut Self {
-        self.saved_sp = self.stack.top() as usize;
+    pub(crate) fn clear_saved_sp(&self) -> &Self {
+        self.set_saved_sp(0);
         self
     }
 
     #[inline]
-    pub(crate) fn set_saved_sp(&mut self, sp: usize) -> &mut Self {
-        self.saved_sp = sp;
+    pub(crate) fn reset_saved_sp(&self) -> &Self {
+        self.set_saved_sp(self.stack.top() as usize);
+        self
+    }
+
+    #[inline]
+    pub(crate) fn set_saved_sp(&self, sp: usize) -> &Self {
+        self.saved_sp.store(sp, Ordering::Release);
         self
     }
 
@@ -519,12 +516,13 @@ impl Thread {
         let ctx = saved_sp as *mut arch::Context;
         unsafe { core::ptr::copy(&sig_ctx.thread_context as *const _, ctx, 1) };
         sig_ctx.active = false;
-        self.saved_sp = saved_sp;
+        self.set_saved_sp(saved_sp);
     }
 
     pub(crate) fn signal_handler_sp(&mut self) -> usize {
-        debug_assert_eq!(self.saved_sp % core::mem::align_of::<Context>(), 0);
-        self.saved_sp - core::mem::size_of::<Context>()
+        let saved_sp = self.saved_sp();
+        debug_assert_eq!(saved_sp % core::mem::align_of::<Context>(), 0);
+        saved_sp - core::mem::size_of::<Context>()
     }
 
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
@@ -540,7 +538,7 @@ impl Thread {
         };
         let mut builder = RegionalObjectBuilder::new(region);
         let ctx = unsafe { builder.zeroed_after_start::<arch::Context>().unwrap() };
-        self.saved_sp = ctx as *const _ as usize;
+        self.set_saved_sp(ctx as *const _ as usize);
 
         ctx.init();
         // TODO: We should provide the thread a more rusty environment
@@ -573,17 +571,17 @@ impl Thread {
 
     #[inline]
     pub fn disable_preempt(&self) -> bool {
-        self.preempt_count.fetch_add(1, Ordering::Acquire) == 0
+        self.preempt_count.fetch_add(1, Ordering::Release) == 0
     }
 
     #[inline]
     pub fn enable_preempt(&self) -> bool {
-        self.preempt_count.fetch_sub(1, Ordering::Acquire) == 1
+        self.preempt_count.fetch_sub(1, Ordering::Release) == 1
     }
 
     #[inline]
     pub fn preempt_count(&self) -> Uint {
-        self.preempt_count.load(Ordering::Relaxed)
+        self.preempt_count.load(Ordering::Acquire)
     }
 
     #[cfg(robin_scheduler)]

@@ -87,7 +87,7 @@ fn create_tasklet(future: impl Future<Output = ()> + 'static) -> Arc<Tasklet> {
 pub fn block_on(future: impl Future<Output = ()> + Send + 'static) {
     let t = scheduler::current_thread();
     let mut task = create_tasklet(future);
-    task.lock().blocked = Some(t.clone());
+    task.lock().blocked = Some(t);
     scheduler::suspend_me_with_hook(move || {
         enqueue_active_tasklet(task);
         #[cfg(debugging_scheduler)]
@@ -118,8 +118,7 @@ pub fn enqueue_active_tasklet(t: Arc<Tasklet>) {
         scheduler::current_thread_id()
     );
     let mut q = ASYNC_WORK_QUEUE.get_active_queue();
-    let _guard = t.lock();
-    q.push_back(t.clone());
+    q.push_back(t);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] has enqueued tasklet",
@@ -134,7 +133,8 @@ fn poll_inner() {
         let mut l = task.lock();
         if let Poll::Ready(()) = l.future.as_mut().poll(&mut ctx) {
             if let Some(t) = l.blocked.take() {
-                scheduler::queue_ready_thread(thread::SUSPENDED, t);
+                let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
+                debug_assert!(ok);
             }
             // If we detach the task what ever it's ready or
             // pending, it would be edge-level triggered. Now

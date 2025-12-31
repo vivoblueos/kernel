@@ -26,6 +26,7 @@ use crate::{
     syscalls::{dispatch_syscall, Context as ScContext},
     thread,
     thread::Thread,
+    types::Arc,
 };
 use core::{
     mem::offset_of,
@@ -37,17 +38,17 @@ pub(crate) const TIMER_INT: usize = INTERRUPT_MASK | 0x7;
 pub(crate) const ECALL: usize = 0xB;
 pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
 
-type ContextSwitcher =
-    extern "C" fn(to_sp: usize, hook: Option<&mut ContextSwitchHookHolder>) -> usize;
+type ContextSwitcher = extern "C" fn(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize;
 
 #[naked]
 extern "C" fn switch_stack_with_hook(
+    hook: &mut ContextSwitchHookHolder,
+    old_sp: usize,
     to_sp: usize,
-    hook: Option<&mut ContextSwitchHookHolder>,
     ra: usize,
     switcher: ContextSwitcher,
 ) -> ! {
-    unsafe { core::arch::naked_asm!("mv sp, a0", "mv ra, a2", "jalr x0, a3, 0") }
+    unsafe { core::arch::naked_asm!("mv sp, a2", "mv ra, a3", "jalr x0, a4, 0") }
 }
 
 // trap_handler decides whether nested interrupt is allowed.
@@ -164,36 +165,17 @@ impl Drop for SyscallGuard {
     }
 }
 
-extern "C" fn handle_switch(to_sp: usize, hook: Option<&mut ContextSwitchHookHolder>) -> usize {
-    scheduler::save_context_finish_hook(hook);
-    // Clear MPIE, since we assumes every thread should be resumed
-    // with local irq enabled.
-    unsafe {
-        core::arch::asm!(
-            "csrs mstatus, {val}",
-            val = in(reg) super::MSTATUS_MPIE,
-            options(nostack),
-        )
-    }
-    to_sp
+extern "C" fn handle_switch(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize {
+    scheduler::save_context_finish_hook(hook, old_sp)
 }
 
 fn handle_ecall_switch(from: &Context, ra: usize) -> usize {
-    let saved_sp_ptr: *mut usize = unsafe { from.a0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
-        sideeffect();
-        unsafe { saved_sp_ptr.write_volatile(from as *const _ as usize) };
-    }
-    let to_sp = from.a1;
-    let hook_ptr = from.a2 as *mut ContextSwitchHookHolder;
-    let hook = if hook_ptr.is_null() {
-        sideeffect();
-        None
-    } else {
-        sideeffect();
-        Some(unsafe { &mut *hook_ptr })
-    };
-    switch_stack_with_hook(to_sp, hook, ra, handle_switch)
+    let hook_ptr = from.a0 as *mut ContextSwitchHookHolder;
+    debug_assert!(!hook_ptr.is_null());
+    let hook = unsafe { &mut *hook_ptr };
+    let next_saved_sp = scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() });
+    let old_sp = from as *const _ as usize;
+    switch_stack_with_hook(hook, old_sp, next_saved_sp, ra, handle_switch)
 }
 
 #[inline(never)]
@@ -216,29 +198,40 @@ extern "C" fn handle_ecall(ctx: &mut Context, cont: usize) -> usize {
     sp
 }
 
-#[inline(never)]
+// FIXME: We have added too much complexity switching the stack, we should use
+// another way to switch context on RV.
 fn might_switch_context(from: &Context, ra: usize) -> usize {
     let old_sp = from as *const _ as usize;
     if !claim_switch_context() {
         return old_sp;
     }
-    let this_thread = scheduler::current_thread_ref();
-    let Some(next) = scheduler::next_preferred_thread(this_thread.priority()) else {
+    let old = scheduler::current_thread_ref();
+    if old.preempt_count() != 0 {
+        return old_sp;
+    }
+    let Some(next) = scheduler::next_preferred_thread(old.priority()) else {
         return old_sp;
     };
-    this_thread.lock().set_saved_sp(old_sp);
-    let to_sp = next.saved_sp();
-    let mut hooks = ContextSwitchHookHolder::new(next);
-    hooks.set_prev_thread_target_state(thread::READY);
-    switch_stack_with_hook(to_sp, Some(&mut hooks), ra, handle_switch)
+    debug_assert_eq!(next.state(), thread::READY);
+    debug_assert_ne!(Thread::id(old), Thread::id(&next));
+    let mut hook = ContextSwitchHookHolder::new(next);
+    let next_saved_sp = scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() });
+    let ok = if Thread::id(old) == Thread::id(scheduler::current_idle_thread_ref()) {
+        old.transfer_state(thread::RUNNING, thread::READY)
+    } else {
+        scheduler::queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) })
+    };
+    debug_assert!(ok);
+    switch_stack_with_hook(&mut hook, old_sp, next_saved_sp, ra, handle_switch)
 }
 
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
+    debug_assert!(!super::local_irq_enabled());
     let sp = ctx as *const _ as usize;
     match mcause {
         EXTERN_INT => {
             handle_plic_irq(ctx, mcause, mtval);
-            sp
+            might_switch_context(ctx, cont)
         }
         TIMER_INT => {
             crate::time::handle_tick_increment();
@@ -246,11 +239,11 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
         }
         ECALL => handle_ecall(ctx, cont),
         _ => {
-            let t = scheduler::current_thread();
+            let t = scheduler::current_thread_ref();
             panic!(
                 "[C#{}:0x{:x}] Unexpected trap: context: {:?}, mcause: 0x{:x}, mtval: 0x{:x}",
                 super::current_cpu_id(),
-                Thread::id(&t),
+                Thread::id(t),
                 ctx,
                 mcause,
                 mtval

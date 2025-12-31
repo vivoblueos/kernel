@@ -131,29 +131,22 @@ unsafe extern "C" fn trap_sync() -> ! {
     );
 }
 
-extern "C" fn might_switch(to: &Context, from: &Context) -> usize {
-    let to_ptr = to as *const _;
-    let from_ptr = from as *const _;
+extern "C" fn might_switch(to: &mut Context, from: &mut Context) -> usize {
+    let to_ptr = to as *mut _;
+    let from_ptr = from as *mut _;
     debug_assert_eq!(to_ptr != from_ptr, from.x8 == NR_SWITCH);
     if to_ptr == from_ptr {
         return from_ptr as usize;
     }
-    let saved_sp_ptr: *mut usize = unsafe { from.x0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
-        unsafe {
-            sideeffect();
-            saved_sp_ptr.write_volatile(from_ptr as usize)
-        };
-    }
-    let hook: *mut ContextSwitchHookHolder =
-        unsafe { from.x2 as *mut scheduler::ContextSwitchHookHolder<'_> };
-    if !hook.is_null() {
-        sideeffect();
-        unsafe {
-            scheduler::save_context_finish_hook(Some(&mut *hook));
-        }
-    }
-    to as *const _ as usize
+    let hook_ptr = from.x0 as *mut scheduler::ContextSwitchHookHolder;
+    let hook = unsafe { &mut *hook_ptr };
+    scheduler::save_context_finish_hook(&mut *hook, from_ptr as usize)
+}
+
+fn prepare_for_context_switch(context: &Context) -> usize {
+    let hook_ptr = context.x0 as *const ContextSwitchHookHolder;
+    let hook = unsafe { &*hook_ptr };
+    scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() })
 }
 
 extern "C" fn handle_svc(context: &mut Context) -> usize {
@@ -165,7 +158,7 @@ extern "C" fn handle_svc(context: &mut Context) -> usize {
         return old_sp;
     }
     if context.x8 == NR_SWITCH {
-        return context.x1;
+        return prepare_for_context_switch(context);
     }
     compiler_fence(Ordering::SeqCst);
     let sc = ScContext {
