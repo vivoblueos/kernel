@@ -196,7 +196,6 @@ pub(crate) fn build_static_thread(
     let stack = &mut s.stack;
     let arc = unsafe { ThreadNode::from_static_inner_ref(inner) };
     debug_assert_eq!(ThreadNode::strong_count(&arc), 1);
-    let _id = Thread::id(&arc);
     let mut w = arc.lock();
     w.init(
         Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()),
@@ -207,6 +206,7 @@ pub(crate) fn build_static_thread(
     w.set_kind(kind);
     debug_assert!((thread::IDLE..=thread::RETIRED).contains(&init_state));
     unsafe { w.set_state(init_state) };
+    let id = Thread::id(&arc);
     debug!(
         "System thread 0x{:x} created: sp: 0x{:x}, stack base: {:?}, stack size: {}, context size: {}",
         id,

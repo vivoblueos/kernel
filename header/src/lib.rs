@@ -86,6 +86,8 @@ pub mod syscalls {
         MqTimedSend,
         MqTimedReceive,
         MqGetSetAttr,
+        GetPid,
+        PthreadToTid,
         LastNR,
     }
 }

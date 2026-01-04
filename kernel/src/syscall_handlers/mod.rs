@@ -23,8 +23,7 @@ use crate::vfs::syscalls as vfs_syscalls;
 #[cfg(enable_vfs)]
 pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
 use crate::{
-    config, 
-    scheduler, signal,
+    config, scheduler, signal,
     sync::atomic_wait as futex,
     thread::{self, Builder, Entry, Stack, Thread},
     time,
@@ -39,8 +38,7 @@ use core::{
 };
 use libc::{
     addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t,
-    sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
-    pid_t, EINVAL,
+    pid_t, sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
 };
 
 #[cfg(not(enable_vfs))]
@@ -295,6 +293,21 @@ get_tid() -> c_long {
     let t = scheduler::current_thread();
     let handle = Thread::id(&t);
     handle as c_long
+});
+
+define_syscall_handler!(
+get_pid() -> c_long {
+    let t = scheduler::current_thread();
+    Thread::tid(&t) as c_long
+});
+
+define_syscall_handler!(
+pthread_to_tid(pthread: usize) -> c_long {
+    let target = thread::GlobalQueueVisitor::find_if(|t| thread::Thread::id(t) == pthread);
+    let Some(target) = target else {
+        return -(ESRCH as c_long);
+    };
+    thread::Thread::tid(&target) as c_long
 });
 
 define_syscall_handler!(
@@ -796,6 +809,7 @@ syscall_table! {
     (Echo, echo),
     (Nop, nop),
     (GetTid, get_tid),
+    (GetPid, get_pid),
     (GetSchedParam, get_sched_param),
     (SetSchedParam, set_sched_param),
     (CreateThread, create_thread),
@@ -860,6 +874,7 @@ syscall_table! {
     (MqTimedSend, mq_timedsend),
     (MqTimedReceive, mq_timedreceive),
     (MqGetSetAttr, mq_getsetattr),
+    (PthreadToTid, pthread_to_tid),
 }
 
 #[cfg(not(enable_syscall))]

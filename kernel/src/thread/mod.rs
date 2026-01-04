@@ -40,6 +40,8 @@ use core::{
     sync::atomic::{AtomicI32, AtomicU32, Ordering},
 };
 
+static NEXT_TID: AtomicU32 = AtomicU32::new(1);
+
 mod builder;
 pub use builder::*;
 
@@ -135,8 +137,10 @@ impl ThreadStats {
 pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, GlobalQueue>;
 
 pub(crate) struct SignalContext {
-    // Pending signals bitmask (1 << signum).
-    pending_signals: u32,
+    // Pending counts per signal number.
+    // Index uses kernel numbering: slot N corresponds to signal N.
+    // Slot 0 is unused.
+    pending_counts: [u32; 32],
     // Whether this signal context is currently active (we're on signal stack).
     active: bool,
     // Will recover thread_context at recover_sp on exiting of signal handler.
@@ -162,7 +166,7 @@ impl core::fmt::Debug for SignalContext {
 impl Default for SignalContext {
     fn default() -> Self {
         Self {
-            pending_signals: 0,
+            pending_counts: [0u32; 32],
             active: false,
             recover_sp: 0,
             thread_context: arch::Context::default(),
@@ -209,6 +213,7 @@ impl Default for SigAltStack {
 
 #[derive(Debug)]
 pub struct Thread {
+    tid: u32,
     global: GlobalQueueListHead,
     sched_node: IlistHead<Thread, OffsetOfSchedNode>,
     pub timer: Option<Arc<Timer>>,
@@ -444,6 +449,7 @@ impl Thread {
 
     const fn new(kind: ThreadKind) -> Self {
         Self {
+            tid: 0,
             cleanup: None,
             stack: Stack::new(),
             state: AtomicUint::new(IDLE),
@@ -475,6 +481,11 @@ impl Thread {
     #[inline]
     pub fn id(me: &Self) -> usize {
         me as *const Self as usize
+    }
+
+    #[inline]
+    pub fn tid(me: &Self) -> u32 {
+        me.tid
     }
 
     #[inline]
@@ -529,10 +540,14 @@ impl Thread {
 
     pub fn kill(&mut self, signum: i32) -> bool {
         let sig_ctx = self.get_or_create_signal_context();
-        let old = sig_ctx.pending_signals;
-        sig_ctx.pending_signals |= 1 << signum;
-        // Return false if there is signum pending.
-        (old & 1 << signum) == 0
+        if signum <= 0 || signum >= 32 {
+            return false;
+        }
+        let idx = signum as usize;
+        let old = sig_ctx.pending_counts[idx];
+        sig_ctx.pending_counts[idx] = old.saturating_add(1);
+        // Return false if there is signum already pending.
+        old == 0
     }
 
     pub fn install_signal_handler(
@@ -565,8 +580,11 @@ impl Thread {
     // Push a siginfo for `signum` into per-thread slot and mark it pending.
     pub fn push_siginfo(&mut self, signum: i32, info: SigInfo) -> &mut Self {
         let sig_ctx = self.get_or_create_signal_context();
-        sig_ctx.pending_siginfo[signum as usize] = Some(info);
-        sig_ctx.pending_signals |= 1 << signum;
+        if signum > 0 && signum < 32 {
+            let idx = signum as usize;
+            sig_ctx.pending_siginfo[idx] = Some(info);
+            sig_ctx.pending_counts[idx] = sig_ctx.pending_counts[idx].saturating_add(1);
+        }
         self
     }
 
@@ -621,9 +639,15 @@ impl Thread {
 
     // Returns the current pending signal bitmap using *kernel numbering* (bit = 1 << signum).
     pub fn pending_signals_bitmap(&self) -> u32 {
-        self.signal_context
-            .as_ref()
-            .map_or(0, |c| c.pending_signals)
+        self.signal_context.as_ref().map_or(0, |c| {
+            let mut bits: u32 = 0;
+            for signum in 1..32 {
+                if c.pending_counts[signum] != 0 {
+                    bits |= 1u32 << (signum as u32);
+                }
+            }
+            bits
+        })
     }
 
     pub(crate) fn activate_signal_context(&mut self) -> bool {
@@ -686,6 +710,9 @@ impl Thread {
     }
 
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
+        if self.tid == 0 {
+            self.tid = NEXT_TID.fetch_add(1, Ordering::Relaxed);
+        }
         self.stack = stack;
         // TODO: Stack sanity check.
         let maybe_sp = self.stack.top() as usize
@@ -830,9 +857,15 @@ impl Thread {
 
     #[inline]
     pub fn pending_signals(&mut self) -> u32 {
-        self.signal_context
-            .as_ref()
-            .map_or_else(|| 0, |c| c.pending_signals)
+        self.signal_context.as_ref().map_or(0, |c| {
+            let mut bits: u32 = 0;
+            for signum in 1..32 {
+                if c.pending_counts[signum] != 0 {
+                    bits |= 1u32 << (signum as u32);
+                }
+            }
+            bits
+        })
     }
 
     #[inline]
@@ -859,7 +892,16 @@ impl Thread {
         let Some(c) = &mut self.signal_context else {
             return self;
         };
-        c.pending_signals &= !(1 << signum);
+        if signum <= 0 || signum >= 32 {
+            return self;
+        }
+        let idx = signum as usize;
+        if c.pending_counts[idx] != 0 {
+            c.pending_counts[idx] -= 1;
+            if c.pending_counts[idx] == 0 {
+                c.pending_siginfo[idx] = None;
+            }
+        }
         self
     }
 
@@ -868,7 +910,8 @@ impl Thread {
         let Some(c) = &mut self.signal_context else {
             return self;
         };
-        c.pending_signals = 0;
+        c.pending_counts = [0u32; 32];
+        c.pending_siginfo = core::array::from_fn(|_| None);
         self
     }
 

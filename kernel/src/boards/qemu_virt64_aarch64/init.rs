@@ -45,6 +45,10 @@ pub(crate) fn init() {
         time::systick_init(sys_clk);
     });
     STAGING.run(6, false, || {
+        if arch::current_cpu_id() == 0 {
+            let _ = irq::register_handler(arch::RESCHED_SGI, Box::new(ReschedIpiIrq {}));
+        }
+        irq::enable_irq_with_priority(arch::RESCHED_SGI, arch::current_cpu_id(), Priority::High);
         irq::enable_irq_with_priority(
             config::PL011_UART0_IRQNUM,
             arch::current_cpu_id(),
@@ -88,5 +92,13 @@ impl IrqHandler for Serial0Irq {
         } {
             handler();
         }
+    }
+}
+
+pub struct ReschedIpiIrq {}
+impl IrqHandler for ReschedIpiIrq {
+    fn handle(&mut self) {
+        // Mark that we should schedule on IRQ exit.
+        arch::pend_switch_context();
     }
 }

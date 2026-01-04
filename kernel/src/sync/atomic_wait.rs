@@ -134,6 +134,9 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         let reached_deadline = scheduler::suspend_me_with_timeout(we, WAITING_FOREVER);
         debug_assert!(!reached_deadline);
     }
+    // add for signal wake up, in that case we also need to detach from wait queue
+    let _guard = entry.pending.irqsave_lock();
+    let _ = WaitQueue::detach(&mut wait_entry);
     Ok(())
 }
 
