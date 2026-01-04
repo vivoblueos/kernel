@@ -50,7 +50,11 @@ fn copy_content_to_memory(buffer: &[u8], binary: &Elf, mapper: &mut MemoryMapper
     for ph in &binary.program_headers {
         match ph.p_type {
             goblin::elf::program_header::PT_LOAD => {
-                let src = &buffer[ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize];
+                let Some(src) =
+                    buffer.get(ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize)
+                else {
+                    return Err("Invalid indices to the buffer");
+                };
                 mapper.write_slice_at(ph.p_vaddr as usize, src)?;
             }
             _ => continue,
