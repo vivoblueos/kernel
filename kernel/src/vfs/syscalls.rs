@@ -630,6 +630,9 @@ pub fn fstat(fd: i32, buf: *mut Stat) -> c_int {
 
     let file_attr = file_ops.stat();
     let stat = Stat::from(file_attr);
+    if buf.is_null() {
+        return -1;
+    }
     unsafe {
         copy_nonoverlapping(&stat, buf, 1);
     }
