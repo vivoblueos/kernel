@@ -235,7 +235,7 @@ mod tests {
         let layout = Layout::from_size_align(SIZE, ALIGN).unwrap();
         let base = unsafe { alloc::alloc::alloc(layout) };
         assert!(!base.is_null());
-        let stack = Stack::Alloc(base, layout);
+        let stack = Stack::from_storage(Storage::Alloc(base, layout));
         let sync_me = Arc::new(ConstBarrier::<{ 2 }>::new());
         let sync_other = sync_me.clone();
         let _other = Builder::new(Entry::Closure(Box::new(move || {

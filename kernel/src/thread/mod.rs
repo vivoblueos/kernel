@@ -74,6 +74,10 @@ pub enum ThreadKind {
 pub struct Stack(Storage);
 
 impl Stack {
+    pub fn from_storage(s: Storage) -> Self {
+        Self(s)
+    }
+
     #[inline]
     pub fn top(&self) -> *mut u8 {
         unsafe { self.0.base().add(self.size()) }
