@@ -374,6 +374,9 @@ set_sched_param(tid: usize, prio: c_int) -> c_long {
 
 define_syscall_handler!(
 create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
+    if spawn_args_ptr.is_null() {
+        return -1;
+    }
     let spawn_args = unsafe {&*spawn_args_ptr};
     let t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
                 .set_stack(Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size))
@@ -393,6 +396,9 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
 
 define_syscall_handler!(
 atomic_wait(addr: usize, val: usize, timeout: *const timespec) -> c_long {
+    if addr == 0 {
+        return -1;
+    }
     let timeout = if timeout.is_null() {
         None
     } else {
@@ -406,6 +412,9 @@ atomic_wait(addr: usize, val: usize, timeout: *const timespec) -> c_long {
 
 define_syscall_handler!(
 atomic_wake(addr: usize, count: *mut usize) -> c_long {
+    if addr == 0 {
+        return -1;
+    }
     let how_many = unsafe { *count };
     let ptr = addr as *const AtomicUsize;
     let atom = unsafe { &*ptr };
@@ -418,6 +427,9 @@ atomic_wake(addr: usize, count: *mut usize) -> c_long {
 // Only for posix testsuite, we need to implement a stub for clock_gettime
 define_syscall_handler!(
     clock_gettime(_clk_id: clockid_t, tp: *mut timespec) -> c_long {
+        if tp.is_null() {
+            return -1;
+        }
         // only support CLOCK_MONOTONIC
         const TICK_TO_NANOSECOND: usize = 1_000_000_000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
         let ticks = time::TickTime::now().as_ticks();
@@ -431,6 +443,9 @@ define_syscall_handler!(
 
 define_syscall_handler!(
 alloc_mem(ptr: *mut *mut c_void, size: usize, align: usize) -> c_long {
+    if ptr.is_null() {
+        return -1;
+    }
     let addr = crate::allocator::malloc_align(size, align);
     if addr.is_null() {
         return -1;
