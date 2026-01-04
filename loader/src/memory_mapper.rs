@@ -103,12 +103,12 @@ impl MemoryMapper {
 
     fn inner_real_offset(&self, vaddr: usize) -> Result<usize> {
         if vaddr < self.virtual_start || vaddr >= self.virtual_end {
-            return Err("The address is in an illegal memory region");
+            return Err("The virtual address is in an illegal memory region");
         }
         let total_size = self.total_size()?;
         let offset = vaddr - self.virtual_start;
         if offset >= total_size {
-            return Err("The address is in an illegal memory region");
+            return Err("The offset is beyond the virtual memory region");
         }
         Ok(offset)
     }
@@ -125,15 +125,24 @@ impl MemoryMapper {
         Ok(unsafe { base.add(offset) })
     }
 
-    pub fn write_slice_at(&mut self, vaddr: usize, data: &[u8]) -> Result<usize> {
-        if vaddr < self.virtual_start || vaddr + data.len() > self.virtual_end {
-            return Err("The address is in an illegal memory region");
+    fn inner_real_begin(&mut self, vaddr: usize, size: usize) -> Result<*mut u8> {
+        if vaddr < self.virtual_start || vaddr + size > self.virtual_end {
+            return Err("The span of the data is in an illegal memory region");
         }
         let real_begin = self.inner_real_ptr(vaddr)?;
-        let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + data.len())?);
+        let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + size - 1)?);
+        Ok(real_begin)
+    }
+
+    pub fn write_slice_at(&mut self, vaddr: usize, data: &[u8]) -> Result<usize> {
+        let size = data.len();
+        if size == 0 {
+            return Ok(size);
+        }
+        let real_begin = self.inner_real_begin(vaddr, size)?;
         // FIXME: Is it safe enough to use copy_nonoverlapping?
         unsafe { core::ptr::copy(data.as_ptr(), real_begin, data.len()) };
-        Ok(data.len())
+        Ok(size)
     }
 
     pub fn write_value_at<T>(&mut self, vaddr: usize, val: T) -> Result<usize>
@@ -141,11 +150,7 @@ impl MemoryMapper {
         T: Sized,
     {
         let size = core::mem::size_of::<T>();
-        if vaddr < self.virtual_start || vaddr + size > self.virtual_end {
-            return Err("The address is in an illegal memory region");
-        }
-        let real_begin = self.inner_real_ptr(vaddr)?;
-        let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + size)?);
+        let real_begin = self.inner_real_begin(vaddr, size)?;
         let val_ptr: *mut T = unsafe { core::mem::transmute(real_begin) };
         unsafe { val_ptr.write(val) };
         Ok(size)
