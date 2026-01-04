@@ -44,22 +44,23 @@ fn handle_signal(t: &ThreadNode, signum: i32) {
 #[inline(never)]
 pub(crate) unsafe extern "C" fn handler_entry(_sp: usize, _old_sp: usize) {
     let current = scheduler::current_thread();
-    // Deliver only unblocked signals.
-    // NOTE: pending_signals uses kernel numbering (bit = 1<<signum).
-    // blocked uses POSIX numbering (bit = 1<<(signum-1)).
-    let sigset = current.lock().pending_signals();
     for signum in 1..32 {
-        if sigset & (1 << signum) == 0 {
-            continue;
-        }
-        let blocked = current.lock().is_signal_blocked(signum);
-        if blocked {
-            continue;
-        }
+        // Deliver only unblocked signals.
+        // NOTE: pending uses kernel numbering (bit = 1<<signum).
+        // blocked uses POSIX numbering (bit = 1<<(signum-1)).
+        loop {
+            let should_deliver = {
+                let mut l = current.lock();
+                (l.pending_signals() & (1 << signum)) != 0 && !l.is_signal_blocked(signum)
+            };
+            if !should_deliver {
+                break;
+            }
 
-        handle_signal(&current, signum);
-        // Clear the delivered signal from pending set.
-        current.lock().clear_signal(signum);
+            handle_signal(&current, signum);
+            // Consume one pending instance.
+            current.lock().clear_signal(signum);
+        }
     }
     {
         let mut l = current.lock();
@@ -68,9 +69,6 @@ pub(crate) unsafe extern "C" fn handler_entry(_sp: usize, _old_sp: usize) {
         // add an assert here to make sure?
     }
     let saved_sp = current.saved_sp();
-    current.transfer_state(thread::RUNNING, thread::READY);
-    let mut hook_holder = scheduler::ContextSwitchHookHolder::new(current);
-    // We are switching from current thread's signal context to its thread
-    // context.
-    arch::restore_context_with_hook(saved_sp, &mut hook_holder as *mut _);
+    // Restore the original thread context directly, return to same thread.
+    arch::restore_context_with_hook(saved_sp, core::ptr::null_mut());
 }

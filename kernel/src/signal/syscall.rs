@@ -21,7 +21,7 @@
 //   slot per signal per thread.
 
 use crate::{
-    scheduler,
+    arch, scheduler,
     thread::{self, GlobalQueueVisitor, KernelSigAction, SigAltStack, SigInfo, Thread, ThreadNode},
     time,
     time::WAITING_FOREVER,
@@ -129,11 +129,15 @@ fn validate_signum(signum: c_int) -> Result<usize, c_int> {
     Ok(signum as usize)
 }
 
+// pid_t type lookups
 fn find_thread_by_tid(tid: pid_t) -> Option<ThreadNode> {
-    let target = tid as usize;
+    if tid <= 0 {
+        return None;
+    }
+    let target = tid as u32;
     let mut it = GlobalQueueVisitor::new();
     while let Some(t) = it.next() {
-        if Thread::id(&t) == target {
+        if Thread::tid(&t) == target {
             return Some(t);
         }
     }
@@ -144,26 +148,6 @@ fn find_thread_by_tid(tid: pid_t) -> Option<ThreadNode> {
 fn sigset_bit_for(signum: usize) -> sigset_t {
     // POSIX numbering: signal N is bit (N-1).
     mask_to_sigset(1u32 << ((signum - 1) as u32))
-}
-
-#[inline]
-fn has_pending_in_set_deliverable(t: &Thread, set: sigset_t) -> bool {
-    let pending = t.pending_signals_bitmap();
-    let set_mask = sigset_to_mask(set);
-    for signum in 1..32 {
-        let bit = 1u32 << signum;
-        if pending & bit == 0 {
-            continue;
-        }
-        let mask = 1u32 << ((signum - 1) as u32);
-        if set_mask & mask == 0 {
-            continue;
-        }
-        if !t.is_signal_blocked(signum as i32) {
-            return true;
-        }
-    }
-    false
 }
 
 #[inline]
@@ -217,9 +201,23 @@ fn deliver_to_tid(tid: pid_t, sig: c_int, info: *mut siginfo_t) -> c_int {
 
     target.lock().push_siginfo(signum, sinfo);
 
+    // Fast path for self-signal: we need a guaranteed
+    // context switch so `prepare_signal_handling()` runs
+    if Thread::id(&target) == scheduler::current_thread_id() {
+        scheduler::yield_me_definitely();
+        return 0;
+    }
+
+    //FIXME: we must implement correct wakeup, should add a waitqueue for signal waiters
     let st = target.state();
     if st == thread::SUSPENDED {
         let _ = scheduler::queue_ready_thread(thread::SUSPENDED, target);
+    }
+    // UP: give scheduler a hint to reschedule soon
+    scheduler::yield_me_now_or_later();
+    // SMP: Ensure the scheduler re-checks runnable threads soon.
+    if blueos_kconfig::CONFIG_NUM_CORES > 1 {
+        arch::send_reschedule_ipi_all();
     }
     0
 }
@@ -313,21 +311,29 @@ pub fn sigprocmask(how: c_int, set: *const sigset_t, oldset: *mut sigset_t) -> c
     if set.is_null() {
         return 0;
     }
-    let new_set = sigset_to_mask(unsafe { *set });
-
+    let mut new_mask = sigset_to_mask(unsafe { *set });
+    // SIGKILL and SIGSTOP aren't able to block
+    new_mask &= !(1u32 << ((libc::SIGKILL - 1) as u32));
+    new_mask &= !(1u32 << ((libc::SIGSTOP - 1) as u32));
     match how {
         libc::SIG_BLOCK => {
             let cur = l.signal_mask();
-            l.set_signal_mask(cur | new_set);
+            l.set_signal_mask(cur | new_mask);
         }
         libc::SIG_UNBLOCK => {
             let cur = l.signal_mask();
-            l.set_signal_mask(cur & !new_set);
+            l.set_signal_mask(cur & !new_mask);
         }
         libc::SIG_SETMASK => {
-            l.set_signal_mask(new_set);
+            l.set_signal_mask(new_mask);
         }
         _ => return -libc::EINVAL,
+    }
+
+    // If unblocking made some pending signals deliverable, ensure they are
+    if l.has_pending_signals() {
+        drop(l);
+        scheduler::yield_me_definitely();
     }
 
     0
@@ -352,16 +358,9 @@ pub fn sigsuspend(set: *const sigset_t) -> c_int {
         l.set_signal_mask(new_mask);
     }
 
-    // Wait until *any* deliverable signal is pending.
-    loop {
-        // If something is already deliverable, stop sleeping.
-        if has_pending_in_set_deliverable(&t.lock(), mask_to_sigset(!new_mask)) {
-            break;
-        }
-        // Sleep until woken by a signal delivery (or some other event). A signal
-        // delivery will queue this thread back to READY via queue_ready_thread.
-        scheduler::suspend_me_for(WAITING_FOREVER);
-    }
+    // Sleep until woken by a signal delivery (or some other event).
+    // POSIX behavior: sigsuspend returns -1/EINTR after a signal handler runs.
+    scheduler::suspend_me_for(WAITING_FOREVER);
 
     // Restore mask and return EINTR (POSIX behavior).
     {
@@ -461,9 +460,8 @@ pub fn sigtimedwait(set: *const sigset_t, info: *mut c_void, timeout: *const tim
     }
 }
 
+// all use *deliver_to_tid*, when implement multi-threaded process support, need change here.
 pub fn kill(pid: pid_t, sig: c_int) -> c_int {
-    // - we treat `pid` as a TID (thread-directed), matching current kernel model.
-    // - pid==0 / pid<0 process-group semantics are not implemented.
     if pid <= 0 {
         return -libc::ESRCH;
     }
@@ -471,8 +469,6 @@ pub fn kill(pid: pid_t, sig: c_int) -> c_int {
 }
 
 pub fn tgkill(_tgid: pid_t, pid: pid_t, sig: c_int) -> c_int {
-    // tgkill targets a specific thread in a specific thread group.
-    // we accept it as a thread-directed signal to `pid`.
     if pid <= 0 {
         return -libc::ESRCH;
     }
@@ -480,7 +476,6 @@ pub fn tgkill(_tgid: pid_t, pid: pid_t, sig: c_int) -> c_int {
 }
 
 pub fn tkill(pid: pid_t, sig: c_int) -> c_int {
-    // Thread-directed signal.
     if pid <= 0 {
         return -libc::ESRCH;
     }

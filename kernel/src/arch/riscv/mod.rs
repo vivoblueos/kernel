@@ -43,6 +43,48 @@ pub(crate) const MIE_MEIE: usize = 1 << 11;
 static PENDING_SWITCH_CONTEXT: [AtomicBool; NUM_CORES] =
     [const { AtomicBool::new(false) }; NUM_CORES];
 
+// QEMU virt uses CLINT at 0x0200_0000 for MSIP (software interrupts).
+#[cfg(any(target_board = "qemu_riscv64", target_board = "qemu_riscv32"))]
+const CLINT_BASE: usize = 0x0200_0000;
+
+#[cfg(any(target_board = "qemu_riscv64", target_board = "qemu_riscv32"))]
+#[inline]
+fn msip_ptr(hart: usize) -> *mut u32 {
+    (CLINT_BASE + hart * core::mem::size_of::<u32>()) as *mut u32
+}
+
+#[cfg(not(any(target_board = "qemu_riscv64", target_board = "qemu_riscv32")))]
+#[inline]
+fn msip_ptr(_hart: usize) -> *mut u32 {
+    core::ptr::null_mut()
+}
+
+pub fn send_reschedule_ipi_all() {
+    if NUM_CORES <= 1 {
+        return;
+    }
+    let this = current_cpu_id();
+    for hart in 0..NUM_CORES {
+        if hart == this {
+            continue;
+        }
+        let p = msip_ptr(hart);
+        if p.is_null() {
+            continue;
+        }
+        unsafe { p.write_volatile(1) };
+    }
+}
+
+pub(crate) fn clear_reschedule_ipi() {
+    let hart = current_cpu_id();
+    let p = msip_ptr(hart);
+    if p.is_null() {
+        return;
+    }
+    unsafe { p.write_volatile(0) };
+}
+
 #[inline]
 pub(crate) extern "C" fn pend_switch_context() {
     if !sysirq::is_in_irq() {

@@ -536,6 +536,10 @@ mod tests {
 
     // Should not hang.
     #[test]
+    #[cfg_attr(
+        any(target_board = "qemu_virt64_aarch64"),
+        ignore = "IPI hasn't been implemented yet"
+    )]
     fn test_simple_signal() {
         let a = Arc::new(ConstBarrier::<{ 2 }>::new());
         let a_cloned = a.clone();
