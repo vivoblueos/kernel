@@ -34,8 +34,10 @@ impl Storage {
         Storage::Alloc(base, layout)
     }
 
+    // This API is designed to be used by memory allocated by FFI, so
+    // invoker of this API is responsible to guarantee the safety.
     #[inline]
-    pub fn from_raw(base: *mut u8, size: usize) -> Self {
+    pub unsafe fn from_raw(base: *mut u8, size: usize) -> Self {
         Storage::Raw(base, size)
     }
 

@@ -92,5 +92,7 @@ pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
     build_memory_layout(&binary, mapper)?;
     allocate_memory_for_segments(&binary, mapper)?;
     copy_content_to_memory(buffer, &binary, mapper)?;
-    relocate(&binary, mapper)
+    relocate(&binary, mapper)?;
+    mapper.real_entry()?;
+    Ok(())
 }

@@ -76,9 +76,11 @@ impl MemoryMapper {
     pub fn allocate_memory(&mut self) -> Result<usize> {
         // FIXME: We are not using paging yet, so alignment(usually
         // 4096) specified in program header is not applied here.
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        // BlueKernel on AArch64 uses MMU by default, which requires aligning to
+        // a page boundary.
+        #[cfg(any(target_arch = "aarch64"))]
         const ALIGN: usize = 4096;
-        #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+        #[cfg(not(any(target_arch = "aarch64")))]
         const ALIGN: usize = 2 * core::mem::size_of::<usize>();
         let Ok(layout) = Layout::from_size_align(self.total_size()?, ALIGN) else {
             return Err("Illegal memory layout");
