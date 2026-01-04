@@ -165,7 +165,10 @@ mod tests {
             let t = TEST_THREADS[i].assume_init_ref();
             let mut w = t.lock();
             let stack = &mut TEST_THREAD_STORAGES[i].stack;
-            let stack = thread::Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len());
+            let Some(stack) = thread::Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len())
+            else {
+                panic!("Invalid stack");
+            };
             w.init(stack, thread::Entry::C(entry));
             if let Some(cleanup) = cleanup {
                 w.set_cleanup(Entry::C(cleanup));

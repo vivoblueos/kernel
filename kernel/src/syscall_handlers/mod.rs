@@ -375,8 +375,11 @@ set_sched_param(tid: usize, prio: c_int) -> c_long {
 define_syscall_handler!(
 create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     let spawn_args = unsafe {&*spawn_args_ptr};
+    let Some(stack) = Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size) else {
+        return -1;
+    };
     let t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
-                .set_stack(Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size))
+                .set_stack(stack)
                 .build();
     if let Some(cleanup) = spawn_args.cleanup {
         t.lock().set_cleanup(Entry::Posix(cleanup, spawn_args.arg));

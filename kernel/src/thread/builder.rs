@@ -134,7 +134,7 @@ impl Builder {
         let stack = self
             .stack
             .take()
-            .map_or_else(|| Stack::from_size(DEFAULT_STACK_SIZE), |v| v);
+            .map_or_else(|| Stack::from_size(DEFAULT_STACK_SIZE).unwrap(), |v| v);
         w.init(stack, self.entry);
         w.set_origin_priority(self.priority);
         w.set_priority(self.priority);
@@ -198,10 +198,10 @@ pub(crate) fn build_static_thread(
     debug_assert_eq!(ThreadNode::strong_count(&arc), 1);
     let _id = Thread::id(&arc);
     let mut w = arc.lock();
-    w.init(
-        Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()),
-        entry,
-    );
+    let Some(stack) = Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()) else {
+        panic!("Invalid stack");
+    };
+    w.init(stack, entry);
     w.set_origin_priority(p);
     w.set_priority(p);
     w.set_kind(kind);
@@ -231,11 +231,7 @@ mod tests {
     #[test]
     fn test_use_alloc_stack() {
         const SIZE: usize = 1600;
-        const ALIGN: usize = 8;
-        let layout = Layout::from_size_align(SIZE, ALIGN).unwrap();
-        let base = unsafe { alloc::alloc::alloc(layout) };
-        assert!(!base.is_null());
-        let stack = Stack::from_storage(Storage::Alloc(base, layout));
+        let stack = Stack::from_size(SIZE).unwrap();
         let sync_me = Arc::new(ConstBarrier::<{ 2 }>::new());
         let sync_other = sync_me.clone();
         let _other = Builder::new(Entry::Closure(Box::new(move || {

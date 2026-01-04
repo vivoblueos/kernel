@@ -74,10 +74,6 @@ pub enum ThreadKind {
 pub struct Stack(Storage);
 
 impl Stack {
-    pub fn from_storage(s: Storage) -> Self {
-        Self(s)
-    }
-
     #[inline]
     pub fn top(&self) -> *mut u8 {
         unsafe { self.0.base().add(self.size()) }
@@ -89,9 +85,9 @@ impl Stack {
     }
 
     #[inline]
-    pub fn from_size(size: usize) -> Self {
-        let layout = Layout::from_size_align(size, core::mem::align_of::<Context>()).unwrap();
-        Self(Storage::from_layout(layout))
+    pub fn from_size(size: usize) -> Option<Self> {
+        let layout = Layout::from_size_align(size, core::mem::align_of::<Context>()).ok()?;
+        Some(Self(Storage::from_layout(layout)))
     }
 
     pub const fn new() -> Self {
@@ -99,8 +95,18 @@ impl Stack {
     }
 
     #[inline]
-    pub fn from_raw(base: *mut u8, size: usize) -> Self {
-        Self(Storage::Raw(base, size))
+    pub fn from_raw(base: *mut u8, size: usize) -> Option<Self> {
+        const ALIGN: usize = core::mem::align_of::<Context>();
+        if size < ALIGN {
+            return None;
+        }
+        if base.is_null() {
+            return None;
+        }
+        if base as usize % ALIGN != 0 {
+            return None;
+        }
+        Some(Self(unsafe { Storage::from_raw(base, size) }))
     }
 
     pub fn size(&self) -> usize {
