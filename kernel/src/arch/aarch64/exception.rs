@@ -191,20 +191,76 @@ extern "C" fn trap_exception(context: &mut Context) -> usize {
 
 extern "C" fn trap_irq(context: &mut Context) -> usize {
     let sp = context as *const _ as usize;
+    // every arch should ensure this?
+    crate::irq::enter_irq();
     let irq = irq::get_interrupt();
     irq::trigger_irq(irq);
     irq::end_interrupt(irq);
-    sp
+    // refer to riscv's implementation, we do the scheduling check here too
+    let new_sp = if super::claim_switch_context() {
+        let this_thread = scheduler::current_thread_ref();
+        if let Some(next) = scheduler::next_preferred_thread(this_thread.priority()) {
+            scheduler::switch_current_thread(sp, next)
+        } else {
+            let current = scheduler::current_thread();
+            // If we have pending signals but nothing else to run, briefly switch to the
+            // per-CPU idle thread so that switching back will inject signal handling.
+            if current.lock().has_pending_signals()
+                && current.state() == crate::thread::RUNNING
+                && crate::thread::Thread::id(&current)
+                    != crate::thread::Thread::id(&scheduler::get_idle_thread(
+                        super::current_cpu_id(),
+                    ))
+            {
+                scheduler::switch_current_thread(
+                    sp,
+                    scheduler::get_idle_thread(super::current_cpu_id()),
+                )
+            } else {
+                sp
+            }
+        }
+    } else {
+        sp
+    };
+    crate::irq::leave_irq();
+    new_sp
 }
 
 extern "C" fn trap_fiq(context: &mut Context) -> usize {
     let sp = context as *const _ as usize;
+    crate::irq::enter_irq();
     let fiq = irq::get_interrupt();
     if u32::from(fiq) != 1023 {
         irq::trigger_irq(fiq);
     }
     irq::end_interrupt(fiq);
-    sp
+    let new_sp = if super::claim_switch_context() {
+        let this_thread = scheduler::current_thread_ref();
+        if let Some(next) = scheduler::next_preferred_thread(this_thread.priority()) {
+            scheduler::switch_current_thread(sp, next)
+        } else {
+            let current = scheduler::current_thread();
+            if current.lock().has_pending_signals()
+                && current.state() == crate::thread::RUNNING
+                && crate::thread::Thread::id(&current)
+                    != crate::thread::Thread::id(&scheduler::get_idle_thread(
+                        super::current_cpu_id(),
+                    ))
+            {
+                scheduler::switch_current_thread(
+                    sp,
+                    scheduler::get_idle_thread(super::current_cpu_id()),
+                )
+            } else {
+                sp
+            }
+        }
+    } else {
+        sp
+    };
+    crate::irq::leave_irq();
+    new_sp
 }
 
 fn show_exception(ec: u64, context: &mut Context) {

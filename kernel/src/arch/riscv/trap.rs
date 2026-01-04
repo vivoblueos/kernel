@@ -13,7 +13,8 @@
 // limitations under the License.
 
 use super::{
-    claim_switch_context, disable_local_irq, enable_local_irq, Context, IsrContext, NR_SWITCH,
+    claim_switch_context, clear_reschedule_ipi, disable_local_irq, enable_local_irq,
+    pend_switch_context, Context, IsrContext, NR_SWITCH,
 };
 use crate::{
     boards::handle_plic_irq,
@@ -34,6 +35,7 @@ use core::{
 
 pub(crate) const INTERRUPT_MASK: usize = 1usize << (usize::BITS - 1);
 pub(crate) const TIMER_INT: usize = INTERRUPT_MASK | 0x7;
+pub(crate) const SOFT_INT: usize = INTERRUPT_MASK | 0x3;
 pub(crate) const ECALL: usize = 0xB;
 pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
 
@@ -224,6 +226,17 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
     }
     let this_thread = scheduler::current_thread_ref();
     let Some(next) = scheduler::next_preferred_thread(this_thread.priority()) else {
+        let current = scheduler::current_thread();
+        if current.lock().has_pending_signals()
+            && current.state() == thread::RUNNING
+            && Thread::id(&current)
+                != Thread::id(&scheduler::get_idle_thread(super::current_cpu_id()))
+        {
+            return scheduler::switch_current_thread(
+                old_sp,
+                scheduler::get_idle_thread(super::current_cpu_id()),
+            );
+        }
         return old_sp;
     };
     this_thread.lock().set_saved_sp(old_sp);
@@ -236,6 +249,12 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     let sp = ctx as *const _ as usize;
     match mcause {
+        SOFT_INT => {
+            clear_reschedule_ipi();
+            // Ensure we attempt a context switch when leaving the interrupt.
+            pend_switch_context();
+            might_switch_context(ctx, cont)
+        }
         EXTERN_INT => {
             handle_plic_irq(ctx, mcause, mtval);
             sp

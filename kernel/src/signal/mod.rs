@@ -14,6 +14,8 @@
 
 use crate::{arch, scheduler, thread, thread::ThreadNode};
 
+pub mod syscall;
+
 fn handle_signal_fallback(signum: i32) {
     if signum != libc::SIGTERM {
         return;
@@ -22,35 +24,51 @@ fn handle_signal_fallback(signum: i32) {
 }
 
 fn handle_signal(t: &ThreadNode, signum: i32) {
-    let mut l = t.lock();
-    let Some(handler) = l.take_signal_handler(signum) else {
-        drop(l);
+    // Don't use once handler now
+    // POSIX-ish: consult installed sigaction.
+    let sa = {
+        let l = t.lock();
+        l.get_sigaction(signum)
+    };
+
+    // None => SIG_DFL in our kernel representation.
+    let Some(handler) = sa.sa_handler else {
+        // almost all non realtime signals' default action is terminate the process
         return handle_signal_fallback(signum);
     };
-    drop(l);
-    handler();
+
+    handler(signum);
 }
 
 // This routine is supposed to be executed in THREAD mode.
 #[inline(never)]
 pub(crate) unsafe extern "C" fn handler_entry(_sp: usize, _old_sp: usize) {
     let current = scheduler::current_thread();
-    let sigset = current.lock().pending_signals();
-    for i in 0..32 {
-        if sigset & (1 << i) == 0 {
-            continue;
+    for signum in 1..32 {
+        // Deliver only unblocked signals.
+        // NOTE: pending uses kernel numbering (bit = 1<<signum).
+        // blocked uses POSIX numbering (bit = 1<<(signum-1)).
+        loop {
+            let should_deliver = {
+                let mut l = current.lock();
+                (l.pending_signals() & (1 << signum)) != 0 && !l.is_signal_blocked(signum)
+            };
+            if !should_deliver {
+                break;
+            }
+
+            handle_signal(&current, signum);
+            // Consume one pending instance.
+            current.lock().clear_signal(signum);
         }
-        handle_signal(&current, i);
-        current.lock().clear_signal(i);
     }
     {
         let mut l = current.lock();
         l.deactivate_signal_context();
+        // after handling signals, the saved_sp should be restored to thread context,
+        // add an assert here to make sure?
     }
     let saved_sp = current.saved_sp();
-    current.transfer_state(thread::RUNNING, thread::READY);
-    let mut hook_holder = scheduler::ContextSwitchHookHolder::new(current);
-    // We are switching from current thread's signal context to its thread
-    // context.
-    arch::restore_context_with_hook(saved_sp, &mut hook_holder as *mut _);
+    // Restore the original thread context directly, return to same thread.
+    arch::restore_context_with_hook(saved_sp, core::ptr::null_mut());
 }

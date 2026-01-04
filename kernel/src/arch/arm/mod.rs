@@ -619,6 +619,9 @@ pub extern "C" fn pend_switch_context() {
     post_pendsv();
 }
 
+// stub: now it's UP case.
+pub fn send_reschedule_ipi_all() {}
+
 #[inline(always)]
 pub extern "C" fn switch_context(saved_sp_mut: *mut u8, to_sp: usize) {
     switch_context_with_hook(saved_sp_mut, to_sp, core::ptr::null_mut());

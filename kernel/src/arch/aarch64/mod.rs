@@ -26,13 +26,21 @@ use core::{
     mem::offset_of,
     sync::{
         atomic,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 use scheduler::ContextSwitchHookHolder;
 use tock_registers::interfaces::Readable;
 
 pub(crate) const NR_SWITCH: usize = !0;
+const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
+
+// SGI used to request a remote CPU to re-check scheduling.
+// Keep within 0..15 (SGI range).
+pub const RESCHED_SGI: irq::IrqNumber = irq::IrqNumber::new(1);
+
+static PENDING_SWITCH_CONTEXT: [AtomicBool; NUM_CORES] =
+    [const { AtomicBool::new(false) }; NUM_CORES];
 
 macro_rules! disable_interrupt {
     () => {
@@ -535,7 +543,48 @@ pub extern "C" fn local_irq_enabled() -> bool {
 }
 
 #[inline]
-pub extern "C" fn pend_switch_context() {}
+pub extern "C" fn pend_switch_context() {
+    if !crate::irq::is_in_irq() {
+        scheduler::relinquish_me();
+        return;
+    }
+    let level = disable_local_irq_save();
+    let id = current_cpu_id();
+    PENDING_SWITCH_CONTEXT[id].store(true, Ordering::Release);
+    enable_local_irq_restore(level);
+}
+
+#[inline]
+pub(crate) extern "C" fn claim_switch_context() -> bool {
+    let level = disable_local_irq_save();
+    let id = current_cpu_id();
+    let ok = PENDING_SWITCH_CONTEXT[id]
+        .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok();
+    enable_local_irq_restore(level);
+    ok
+}
+
+// rq is global, just send SGI to all other CPUs.
+pub fn send_reschedule_ipi_all() {
+    // Use an SGI to kick other CPUs out of `eret` and re-check scheduling.
+    let my_id = current_cpu_id();
+    if NUM_CORES <= 1 {
+        return;
+    }
+    let mut mask: u16 = 0;
+    for i in 0..NUM_CORES {
+        if i == my_id {
+            continue;
+        }
+        if i < 16 {
+            mask |= 1u16 << (i as u16);
+        }
+    }
+    if mask != 0 {
+        irq::send_sgi(RESCHED_SGI, mask);
+    }
+}
 
 pub fn secondary_cpu_setup(psci_base: u32) {
     atomic::fence(Ordering::SeqCst);

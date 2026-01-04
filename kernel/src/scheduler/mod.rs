@@ -143,11 +143,33 @@ fn prepare_signal_handling(t: &ThreadNode) {
     if !l.activate_signal_context() {
         return;
     };
+
+    // Pick one deliverable signal so we can choose the correct stack for this delivery
+    let pending = l.pending_signals();
+    let mut deliverable: i32 = 0;
+    for signum in 1..32 {
+        if pending & (1 << signum) == 0 {
+            continue;
+        }
+        if l.is_signal_blocked(signum) {
+            continue;
+        }
+        deliverable = signum;
+        break;
+    }
+
     let ctx = l.saved_sp() as *mut arch::Context;
     let ctx = unsafe { &mut *ctx };
     // Update ctx so that signal context will be restored.
     ctx.set_return_address(arch::switch_stack as usize)
-        .set_arg(0, l.signal_handler_sp())
+        .set_arg(
+            0,
+            if deliverable != 0 {
+                l.signal_delivery_sp(deliverable)
+            } else {
+                l.signal_handler_sp()
+            },
+        )
         .set_arg(1, signal::handler_entry as usize);
 }
 
@@ -247,7 +269,7 @@ pub(crate) extern "C" fn save_context_finish_hook(hook: Option<&mut ContextSwitc
     }
 }
 
-fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
+pub(crate) fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
     let to_sp = next.saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert!(ok);
@@ -258,6 +280,11 @@ fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
     let cycles = time::get_sys_cycles();
     {
         next.lock().set_start_cycles(cycles);
+    }
+    // Prepare signal handling before switching into the next thread.
+    // This keeps behavior consistent across switch paths (with/without hooks).
+    if next.lock().has_pending_signals() {
+        prepare_signal_handling(&next);
     }
     let old = set_current_thread(next);
     #[cfg(debugging_scheduler)]
@@ -287,6 +314,36 @@ fn switch_current_thread(old_sp: usize, next: ThreadNode) -> usize {
         debug_assert!(ok);
     }
     to_sp
+}
+
+// add this for signal process,  there is *no* code point return to "user space",
+// because we need support both dsc(direct syscall) and swi (svc syscall)
+// This is an workaround when we need a guaranteed context switch to process
+// per-thread work such as pending signals.
+pub fn yield_me_definitely() {
+    if unlikely(!is_schedule_ready()) {
+        return;
+    }
+    debug_assert!(arch::local_irq_enabled());
+    let pg = thread::Thread::try_preempt_me();
+    if !pg.preemptable() {
+        arch::idle();
+        return;
+    }
+    drop(pg);
+    yield_to_next_unconditionally();
+}
+
+fn yield_to_next_unconditionally() {
+    debug_assert!(arch::local_irq_enabled());
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
+    let to_sp = next.saved_sp();
+    let old = current_thread_ref();
+    let from_sp_ptr = old.saved_sp_ptr();
+    let mut hook_holder = ContextSwitchHookHolder::new(next);
+    hook_holder.set_prev_thread_target_state(thread::READY);
+    arch::switch_context_with_hook(from_sp_ptr as *mut u8, to_sp, &mut hook_holder as *mut _);
+    debug_assert!(arch::local_irq_enabled());
 }
 
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
