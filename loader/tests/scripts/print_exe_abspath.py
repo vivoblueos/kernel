@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,17 +24,11 @@ import tempfile
 import logging
 
 
-def gen_file(out, sym, path):
-    with open(out, 'w') as f:
-        f.write(f'const char *{sym}="{path}";')
-    return 0
-
-
 def main():
-    exe = os.path.abspath(sys.argv[1])
-    sym = sys.argv[2]
-    out = os.path.abspath(sys.argv[3])
-    return gen_file(out, sym, exe)
+    outfile = sys.argv[2]
+    infile = sys.argv[1]
+    with open(outfile, 'w') as f:
+        f.write(infile)
 
 
 if __name__ == '__main__':

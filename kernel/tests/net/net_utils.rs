@@ -97,9 +97,11 @@ pub fn start_test_thread_with_cleanup(
         "start_test_thread [{}] at base {:?}",
         thread_name, thread_stack_base
     );
-
+    let Some(stack) = Stack::from_raw(thread_stack_base, stack_size) else {
+        panic!("Invalid stack");
+    };
     let t = ThreadBuilder::new(Entry::Closure(worker))
-        .set_stack(Stack::from_raw(thread_stack_base, stack_size))
+        .set_stack(stack)
         .build();
     t.lock()
         .set_cleanup(Entry::Closure(Box::new(move || unsafe {

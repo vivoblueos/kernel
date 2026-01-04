@@ -302,10 +302,12 @@ static mut NETWORK_STACK: NetworkStack = NetworkStack {
 };
 
 pub(crate) fn init() {
+    let Some(stack) = Stack::from_raw(unsafe { NETWORK_STACK.rep.as_mut_ptr() }, unsafe {
+        NETWORK_STACK.rep.len()
+    }) else {
+        panic!("Invalid stack");
+    };
     let t = ThreadBuilder::new(Entry::C(net_stack_main_loop))
-        .set_stack(Stack::from_raw(
-            unsafe { NETWORK_STACK.rep.as_mut_ptr() },
-            unsafe { NETWORK_STACK.rep.len() },
-        ))
+        .set_stack(stack)
         .start();
 }

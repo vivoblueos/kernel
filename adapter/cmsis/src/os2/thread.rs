@@ -234,6 +234,10 @@ pub extern "C" fn osThreadNew(
         }
         stack = thread::Stack::from_raw(stack_memory as *mut u8, stack_size as usize);
     }
+    let Some(stack) = stack else {
+        log::error!("osThreadNew: Invalid stack");
+        return ptr::null_mut();
+    };
     let entry = unsafe {
         Box::into_raw(Box::new(CmsisEntry {
             func: Some(func),

@@ -37,6 +37,7 @@ pub mod list;
 pub mod rbtree;
 pub mod ringbuffer;
 pub mod spinarc;
+pub mod storage;
 pub mod string;
 pub mod tinyarc;
 pub mod tinyrwlock;

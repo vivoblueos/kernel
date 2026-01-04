@@ -18,6 +18,7 @@ use crate::{
     thread::ThreadNode,
     types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, Uint},
 };
+pub use blueos_infra::storage::Storage;
 use core::{
     alloc::Layout,
     mem::MaybeUninit,
@@ -408,69 +409,4 @@ macro_rules! static_assert {
 
 pub(crate) fn show_current_heap_usage() {
     log::info!("Current heap: {:?}", crate::allocator::memory_info());
-}
-
-#[derive(Debug)]
-pub enum Storage {
-    Alloc(*mut u8, Layout),
-    Raw(*mut u8, usize),
-}
-
-impl Default for Storage {
-    fn default() -> Self {
-        Self::Raw(core::ptr::null_mut(), 0)
-    }
-}
-
-impl Storage {
-    #[inline]
-    pub fn from_layout(layout: Layout) -> Self {
-        let base = unsafe { alloc::alloc::alloc(layout) };
-        Storage::Alloc(base, layout)
-    }
-
-    #[inline]
-    pub fn from_raw(base: *mut u8, size: usize) -> Self {
-        Storage::Raw(base, size)
-    }
-
-    #[inline]
-    pub const fn new() -> Self {
-        Storage::Raw(core::ptr::null_mut(), 0)
-    }
-
-    #[inline]
-    pub fn base(&self) -> *mut u8 {
-        match self {
-            Storage::Alloc(base, _) => *base,
-            Storage::Raw(base, _) => *base,
-        }
-    }
-
-    #[inline]
-    pub fn size(&self) -> usize {
-        match self {
-            Storage::Alloc(_, layout) => layout.size(),
-            Storage::Raw(_, size) => *size,
-        }
-    }
-
-    #[inline]
-    pub fn as_slice(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self.base(), self.size()) }
-    }
-
-    #[inline]
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { core::slice::from_raw_parts_mut(self.base(), self.size()) }
-    }
-}
-
-impl Drop for Storage {
-    #[inline]
-    fn drop(&mut self) {
-        if let Storage::Alloc(base, layout) = self {
-            unsafe { alloc::alloc::dealloc(*base, *layout) }
-        }
-    }
 }
