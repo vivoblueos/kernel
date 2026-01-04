@@ -70,18 +70,37 @@ pub enum ThreadKind {
     SoftTimer,
 }
 
-pub type Stack = Storage;
+#[derive(Debug)]
+pub struct Stack(Storage);
 
 impl Stack {
     #[inline]
     pub fn top(&self) -> *mut u8 {
-        unsafe { self.base().add(self.size()) }
+        unsafe { self.0.base().add(self.size()) }
     }
 
     #[inline]
-    pub fn create(size: usize) -> Self {
+    pub fn base(&self) -> *mut u8 {
+        self.0.base()
+    }
+
+    #[inline]
+    pub fn from_size(size: usize) -> Self {
         let layout = Layout::from_size_align(size, core::mem::align_of::<Context>()).unwrap();
-        Self::from_layout(layout)
+        Self(Storage::from_layout(layout))
+    }
+
+    pub const fn new() -> Self {
+        Self(Storage::new())
+    }
+
+    #[inline]
+    pub fn from_raw(base: *mut u8, size: usize) -> Self {
+        Self(Storage::Raw(base, size))
+    }
+
+    pub fn size(&self) -> usize {
+        self.0.size()
     }
 }
 

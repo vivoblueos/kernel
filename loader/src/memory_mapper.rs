@@ -12,105 +12,142 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate alloc;
-use alloc::{sync::Arc, vec};
+use blueos_infra::storage::Storage;
+use core::alloc::Layout;
+
+pub type Result<T> = core::result::Result<T, &'static str>;
 
 #[derive(Debug)]
 pub struct MemoryMapper {
-    entry: usize,
-    start: usize,
-    end: usize,
-    mem: Option<Arc<[u8]>>,
-    align: usize,
+    virtual_entry: usize,
+    virtual_start: usize,
+    virtual_end: usize,
+    mem: Storage,
 }
 
 impl MemoryMapper {
     #[inline]
     pub fn new() -> Self {
         Self {
-            entry: 0,
-            start: usize::MAX,
-            end: 0,
-            mem: None,
-            #[cfg(target_arch = "aarch64")]
-            align: 4096,
-            #[cfg(not(target_arch = "aarch64"))]
-            align: core::mem::size_of::<usize>(),
+            virtual_entry: 0,
+            virtual_start: usize::MAX,
+            virtual_end: 0,
+            mem: Storage::default(),
         }
     }
 
     #[inline]
     pub fn entry(&self) -> usize {
-        self.entry
+        self.virtual_entry
     }
 
     #[inline]
     pub fn set_entry(&mut self, entry: usize) -> &mut Self {
-        self.entry = entry;
+        self.virtual_entry = entry;
         self
     }
 
     #[inline]
     pub fn start(&self) -> usize {
-        self.start
+        self.virtual_start
     }
 
     #[inline]
     pub fn update_start(&mut self, val: usize) -> &mut Self {
-        if val < self.start {
-            self.start = val;
-        }
+        self.virtual_start = core::cmp::min(self.virtual_start, val);
         self
     }
 
     #[inline]
     pub fn update_end(&mut self, val: usize) -> &mut Self {
-        if val > self.end {
-            self.end = val;
-        }
+        self.virtual_end = core::cmp::max(self.virtual_end, val);
         self
     }
 
     #[inline]
-    pub fn total_size(&self) -> usize {
-        self.end - self.start
+    pub fn total_size(&self) -> Result<usize> {
+        if self.virtual_end < self.virtual_start {
+            return Err("Illegal memory size");
+        }
+        Ok(self.virtual_end - self.virtual_start)
     }
 
     #[inline]
-    pub fn allocate_memory(&mut self) -> Arc<[u8]> {
+    pub fn allocate_memory(&mut self) -> Result<usize> {
         // FIXME: We are not using paging yet, so alignment(usually
         // 4096) specified in program header is not applied here.
-        let mem: Arc<[u8]> = Arc::from(vec![0u8; self.total_size() + self.align]);
-        self.mem = Some(mem.clone());
-        mem
+        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        const ALIGN: usize = 4096;
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+        const ALIGN: usize = 2 * core::mem::size_of::<usize>();
+        let Ok(layout) = Layout::from_size_align(self.total_size()?, ALIGN) else {
+            return Err("Illegal memory layout");
+        };
+        self.mem = Storage::from_layout(layout);
+        Ok(self.mem.size())
     }
 
     #[inline]
-    pub fn real_start(&self) -> Option<*const u8> {
-        self.mem.as_ref().map(|mem| {
-            let p = mem.as_ptr();
-            unsafe { p.add(p.align_offset(self.align)) }
-        })
+    pub fn real_start(&self) -> Result<usize> {
+        let base = self.mem.base();
+        if base.is_null() {
+            return Err("Memory not allocated yet");
+        }
+        Ok(base as usize)
     }
 
     #[inline]
-    pub fn real_start_mut(&self) -> Option<*mut u8> {
-        self.mem.as_ref().map(|mem| {
-            let p = mem.as_ptr() as *mut u8;
-            unsafe { p.add(p.align_offset(self.align)) }
-        })
+    pub fn real_entry(&self) -> Result<usize> {
+        Ok(self.inner_real_ptr(self.virtual_entry)? as usize)
     }
 
-    #[inline]
-    pub fn real_entry(&self) -> Option<*const u8> {
-        self.mem.as_ref().map(|_| {
-            let offset = (self.entry - self.start) as isize;
-            unsafe { self.real_start().unwrap().offset(offset) }
-        })
+    fn inner_real_offset(&self, vaddr: usize) -> Result<usize> {
+        if vaddr < self.virtual_start || vaddr >= self.virtual_end {
+            return Err("The address is in an illegal memory region");
+        }
+        let total_size = self.total_size()?;
+        let offset = vaddr - self.virtual_start;
+        if offset >= total_size {
+            return Err("The address is in an illegal memory region");
+        }
+        Ok(offset)
     }
 
-    #[inline]
-    pub fn memory(&self) -> Option<Arc<[u8]>> {
-        self.mem.clone()
+    fn inner_real_ptr(&self, vaddr: usize) -> Result<*mut u8> {
+        let offset = self.inner_real_offset(vaddr)?;
+        if offset >= self.mem.size() {
+            return Err("The offset is beyond the allocated memory region");
+        }
+        let base = self.mem.base();
+        if base.is_null() {
+            return Err("Memory not allocated yet");
+        }
+        Ok(unsafe { base.add(offset) })
+    }
+
+    pub fn write_slice_at(&mut self, vaddr: usize, data: &[u8]) -> Result<usize> {
+        if vaddr < self.virtual_start || vaddr + data.len() > self.virtual_end {
+            return Err("The address is in an illegal memory region");
+        }
+        let real_begin = self.inner_real_ptr(vaddr)?;
+        let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + data.len())?);
+        // FIXME: Is it safe enough to use copy_nonoverlapping?
+        unsafe { core::ptr::copy(data.as_ptr(), real_begin, data.len()) };
+        Ok(data.len())
+    }
+
+    pub fn write_value_at<T>(&mut self, vaddr: usize, val: T) -> Result<usize>
+    where
+        T: Sized,
+    {
+        let size = core::mem::size_of::<T>();
+        if vaddr < self.virtual_start || vaddr + size > self.virtual_end {
+            return Err("The address is in an illegal memory region");
+        }
+        let real_begin = self.inner_real_ptr(vaddr)?;
+        let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + size)?);
+        let val_ptr: *mut T = unsafe { core::mem::transmute(real_begin) };
+        unsafe { val_ptr.write(val) };
+        Ok(size)
     }
 }

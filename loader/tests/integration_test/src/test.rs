@@ -46,8 +46,7 @@ mod test_everyting {
         }
         let mut mapper = loader::MemoryMapper::new();
         loader::load_elf(buf.as_slice(), &mut mapper).unwrap();
-        let f =
-            unsafe { core::mem::transmute::<*const u8, fn() -> ()>(mapper.real_entry().unwrap()) };
+        let f = unsafe { core::mem::transmute::<usize, fn() -> ()>(mapper.real_entry().unwrap()) };
         f();
     }
 

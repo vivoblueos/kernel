@@ -41,6 +41,7 @@ build_rust("blueos_loader") {
   sources = [ "src/lib.rs" ]
   deps = [
     "//external/vendor/goblin-0.9.3:goblin",
+    "//kernel/infra:blueos_infra",
     "//librs",
   ]
 }
