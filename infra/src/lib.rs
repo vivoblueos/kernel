@@ -39,5 +39,5 @@ pub mod ringbuffer;
 pub mod spinarc;
 pub mod string;
 pub mod tinyarc;
-pub mod tinyarc_sorted_list;
+pub use tinyarc::sorted_list;
 pub mod tinyrwlock;

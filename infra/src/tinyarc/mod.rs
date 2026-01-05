@@ -13,6 +13,8 @@
 // limitations under the License.
 
 extern crate alloc;
+
+pub mod sorted_list;
 use crate::{
     intrusive::Adapter,
     list::{

@@ -83,7 +83,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init(); // Requires manual initialization
@@ -105,7 +105,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// assert!(list.init());
@@ -123,7 +123,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -140,7 +140,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -168,7 +168,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -185,31 +185,6 @@ where
         self.list.push_by(|a, b| compare_ref(a, b), item)
     }
 
-    /// Add Arc pointer to list end (without sorting)
-    /// 
-    /// # Parameters
-    /// * `item` - TinyArc<T> pointer to add
-    /// 
-    /// # Returns
-    /// - `true`: Addition successful
-    /// - `false`: Addition failed
-    /// 
-    /// # Complexity
-    /// O(1)
-    /// 
-    /// # Example
-    /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
-    /// 
-    /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
-    /// list.init();
-    /// assert!(list.push_back(TinyArc::new(1)));
-    /// assert!(list.push_back(TinyArc::new(2)));
-    /// ```
-    pub fn push_back(&mut self, item: TinyArc<T>) -> bool {
-        self.list.push_back(item)
-    }
-
     /// Remove and return Arc pointer from list front
     /// 
     /// # Returns
@@ -221,7 +196,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -235,63 +210,13 @@ where
         self.list.pop_front()
     }
 
-    /// Get Arc pointer from list front (without removal)
-    /// 
-    /// # Returns
-    /// - `Some(item)`: Front element
-    /// - `None`: List is empty
-    /// 
-    /// # Complexity
-    /// O(1)
-    /// 
-    /// # Example
-    /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
-    /// 
-    /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
-    /// list.init();
-    /// list.insert(TinyArc::new(42));
-    /// 
-    /// if let Some(front) = list.front() {
-    ///     assert_eq!(*front, 42);
-    /// }
-    /// ```
-    pub fn front(&self) -> Option<TinyArc<T>> {
-        self.list.front()
-    }
-
-    /// Get Arc pointer from list back (without removal)
-    /// 
-    /// # Returns
-    /// - `Some(item)`: Back element
-    /// - `None`: List is empty
-    /// 
-    /// # Complexity
-    /// O(1)
-    /// 
-    /// # Example
-    /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
-    /// 
-    /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
-    /// list.init();
-    /// list.insert(TinyArc::new(42));
-    /// 
-    /// if let Some(back) = list.back() {
-    ///     assert_eq!(*back, 42);
-    /// }
-    /// ```
-    pub fn back(&self) -> Option<TinyArc<T>> {
-        self.list.back()
-    }
-
-    /// Get Arc pointer by index (0 is front)
+    /// Get reference to element by index (0 is front)
     /// 
     /// # Parameters
     /// * `index` - Element index (0 <= index < len())
     /// 
     /// # Returns
-    /// - `Some(item)`: Element at specified position
+    /// - `Some(&T)`: Reference to element at specified position
     /// - `None`: Index out of bounds
     /// 
     /// # Complexity
@@ -299,7 +224,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -311,10 +236,11 @@ where
     ///     assert_eq!(*item, 2);
     /// }
     /// ```
-    pub fn get(&self, index: usize) -> Option<TinyArc<T>> {
+    pub fn get(&self, index: usize) -> Option<&T> {
         // Use enumerate() to avoid manual counter
         for (current_index, item) in self.list.iter().enumerate() {
             if current_index == index {
+                // Return reference to data, avoiding clone
                 return Some(item);
             }
         }
@@ -331,7 +257,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -345,7 +271,7 @@ where
     /// }
     /// assert_eq!(values, vec![1, 2, 3]);
     /// ```
-    pub fn iter(&self) -> TinyArcSortedListIterator<T, A> {
+    pub fn iter(&self) -> TinyArcSortedListIterator<'_, T, A> {
         TinyArcSortedListIterator {
             inner: self.list.iter(),
         }
@@ -361,7 +287,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -382,7 +308,7 @@ where
     /// * `predicate` - Search condition function
     /// 
     /// # Returns
-    /// - `Some(item)`: Found element
+    /// - `Some(&T)`: Reference to found element
     /// - `None`: No matching element found
     /// 
     /// # Complexity
@@ -393,7 +319,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -401,51 +327,16 @@ where
     /// list.insert(TinyArc::new(42));
     /// list.insert(TinyArc::new(3));
     /// 
-    /// if let Some(item) = list.find(|x| **x == 42) {
+    /// if let Some(item) = list.find(|x| *x == 42) {
     ///     assert_eq!(*item, 42);
     /// }
     /// ```
-    pub fn find<F>(&self, predicate: F) -> Option<TinyArc<T>>
+    pub fn find<F>(&self, predicate: F) -> Option<&T>
     where
-        F: Fn(&TinyArc<T>) -> bool,
+        F: Fn(&T) -> bool,
     {
-        self.iter().find(predicate)
-    }
-
-    /// Check if list contains specified Arc pointer
-    /// 
-    /// # Parameters
-    /// * `item` - Arc pointer to search for
-    /// 
-    /// # Returns
-    /// - `true`: List contains the element
-    /// - `false`: List does not contain the element
-    /// 
-    /// # Complexity
-    /// O(n)
-    /// 
-    /// # Thread Safety
-    /// Read operation safe
-    /// 
-    /// # Example
-    /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
-    /// 
-    /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
-    /// list.init();
-    /// let item = TinyArc::new(42);
-    /// 
-    /// list.insert(item.clone());
-    /// assert!(list.contains(&item));
-    /// ```
-    pub fn contains(&self, item: &TinyArc<T>) -> bool {
-        // Use value comparison instead of pointer comparison to avoid memory address issues
-        for existing_item in self.iter() {
-            if ptr::eq(TinyArc::<T>::as_ptr(&existing_item), TinyArc::<T>::as_ptr(item)) {
-                return true;
-            }
-        }
-        false
+        // Iterator yields &&T, need to dereference once
+        self.iter().find(|item| predicate(item))
     }
 
     /// Remove first element satisfying condition
@@ -465,7 +356,7 @@ where
     /// 
     /// # Example
     /// ```
-    /// use tinyarc_sortlist::TinyArcSortedList;
+    /// use tinyarc_sorted_list::TinyArcSortedList;
     /// 
     /// let mut list = TinyArcSortedList::new(|a: &i32, b: &i32| a.cmp(b));
     /// list.init();
@@ -473,33 +364,42 @@ where
     /// list.insert(TinyArc::new(42));
     /// list.insert(TinyArc::new(3));
     /// 
-    /// if let Some(removed) = list.remove_if(|x| **x == 42) {
+    /// if let Some(removed) = list.remove_if(|x| *x == 42) {
     ///     assert_eq!(*removed, 42);
     /// }
     /// ```
     pub fn remove_if<F>(&mut self, predicate: F) -> Option<TinyArc<T>>
     where
-        F: Fn(&TinyArc<T>) -> bool,
+        F: Fn(&T) -> bool,
     {
-        self.list.remove_if(predicate)
+        for val in self.list.iter() {
+            if predicate(val) {
+                // Clone the Arc before detaching
+                let mut found = unsafe { TinyArc::clone_from(val) };
+                // Detach from list
+                let _ = TinyArcList::<T, A>::detach(&mut found);
+                return Some(found);
+            }
+        }
+        None
     }
 }
 
 /// TinyArcSortedList immutable iterator
-pub struct TinyArcSortedListIterator<T, A>
+pub struct TinyArcSortedListIterator<'a, T, A>
 where
     T: Sized,
     A: Adapter<T>,
 {
-    inner: crate::tinyarc::TinyArcListIterator<T, A>,
+    inner: crate::tinyarc::TinyArcListIterator<'a, T, A>,
 }
 
-impl<T, A> Iterator for TinyArcSortedListIterator<T, A>
+impl<'a, T, A> Iterator for TinyArcSortedListIterator<'a, T, A>
 where
     T: Sized,
-    A: Adapter<T>,
+    A: Adapter<T> + 'a,
 {
-    type Item = TinyArc<T>;
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next()
@@ -554,9 +454,6 @@ mod tests {
         assert!(list.init());
         
         // Empty list operations should return None or empty
-        assert!(list.front().is_none());
-        assert!(list.back().is_none());
-        assert!(list.get(0).is_none());
         assert!(list.pop_front().is_none());
         assert_eq!(list.clear(), 0);
     }
@@ -587,10 +484,6 @@ mod tests {
             priorities.push(task.priority);
         }
         assert_eq!(priorities, vec![3, 5, 8]);
-        
-        // Verify front and back
-        assert_eq!(list.front().map(|t| t.priority), Some(3));
-        assert_eq!(list.back().map(|t| t.priority), Some(8));
     }
 
     #[test]
@@ -628,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_and_contains() {
+    fn test_find_and_remove() {
         // Test find functionality
         let mut list = TaskSortedList::new(|a: &Task, b: &Task| a.priority.cmp(&b.priority));
         assert!(list.init());
@@ -641,11 +534,6 @@ mod tests {
         list.insert(task2.clone());
         list.insert(task3.clone());
         
-        // Test contains
-        assert!(list.contains(&task1));
-        assert!(list.contains(&task2));
-        assert!(list.contains(&task3));
-        
         // Test find
         if let Some(task) = list.find(|t| t.id == 2) {
             assert_eq!(task.priority, 10);
@@ -655,5 +543,16 @@ mod tests {
         
         // Test non-existent task
         assert!(list.find(|t| t.id == 99).is_none());
+        
+        // Test remove_if
+        if let Some(removed) = list.remove_if(|t| t.id == 2) {
+            assert_eq!(removed.priority, 10);
+        } else {
+            panic!("Should remove task with id 2");
+        }
+        
+        // Verify removal
+        assert_eq!(list.len(), 2);
+        assert!(list.find(|t| t.id == 2).is_none());
     }
 }
