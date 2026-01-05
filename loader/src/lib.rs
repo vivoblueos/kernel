@@ -39,7 +39,7 @@ fn build_memory_layout(binary: &Elf, mapper: &mut MemoryMapper) -> Result {
 }
 
 fn allocate_memory_for_segments(_binary: &Elf, mapper: &mut MemoryMapper) -> Result {
-    mapper.allocate_memory();
+    mapper.allocate_memory()?;
     Ok(())
 }
 
@@ -47,20 +47,15 @@ fn copy_content_to_memory(buffer: &[u8], binary: &Elf, mapper: &mut MemoryMapper
     // FIXME: We are assuming if filesize < memsize, (memsize -
     // filesize) bits are .bss. I need to read more about ELF spec to
     // find out exceptions. Currently, it just works.
-    let base = mapper.real_start_mut().unwrap();
     for ph in &binary.program_headers {
         match ph.p_type {
             goblin::elf::program_header::PT_LOAD => {
-                let src =
-                    buffer[ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize].as_ptr();
-                let dst = unsafe { base.add(ph.p_vaddr as usize - mapper.start()) };
-                unsafe {
-                    memcpy(
-                        dst as *mut core::ffi::c_void,
-                        src as *const core::ffi::c_void,
-                        ph.p_filesz as core::ffi::c_size_t,
-                    )
+                let Some(src) =
+                    buffer.get(ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize)
+                else {
+                    return Err("Invalid indices to the buffer");
                 };
+                mapper.write_slice_at(ph.p_vaddr as usize, src)?;
             }
             _ => continue,
         }
@@ -68,21 +63,20 @@ fn copy_content_to_memory(buffer: &[u8], binary: &Elf, mapper: &mut MemoryMapper
     Ok(())
 }
 
-fn handle_riscv_relative_reloc(base: *mut u8, reloc: &Reloc) -> Result {
-    let target_address = unsafe { base.add(reloc.r_offset as usize) as *mut usize };
-    let content = unsafe { base.offset(reloc.r_addend.unwrap_or(0) as isize) as usize };
-    unsafe { target_address.write(content) };
+fn handle_riscv_relative_reloc(mapper: &mut MemoryMapper, reloc: &Reloc) -> Result {
+    let vaddr = reloc.r_offset as usize;
+    let val = mapper.real_start()? + reloc.r_addend.unwrap_or(0) as usize;
+    mapper.write_value_at(vaddr, val)?;
     Ok(())
 }
 
 #[allow(clippy::single_match)]
 fn relocate(binary: &Elf, mapper: &mut MemoryMapper) -> Result {
     let reloc_section = &binary.dynrelas;
-    let base = mapper.real_start_mut().unwrap();
     for reloc in reloc_section.iter() {
         match reloc.r_type {
             R_RISCV_RELATIVE => {
-                handle_riscv_relative_reloc(base, &reloc)?;
+                handle_riscv_relative_reloc(mapper, &reloc)?;
             }
             _ => {}
         }
@@ -98,5 +92,7 @@ pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
     build_memory_layout(&binary, mapper)?;
     allocate_memory_for_segments(&binary, mapper)?;
     copy_content_to_memory(buffer, &binary, mapper)?;
-    relocate(&binary, mapper)
+    relocate(&binary, mapper)?;
+    mapper.real_entry()?;
+    Ok(())
 }
