@@ -560,3 +560,6 @@ pub(crate) extern "C" fn switch_stack(
         )
     }
 }
+
+// add stub functions for IPI
+pub fn send_reschedule_ipi_all() {}

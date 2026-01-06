@@ -23,7 +23,7 @@ use crate::vfs::syscalls as vfs_syscalls;
 #[cfg(enable_vfs)]
 pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
 use crate::{
-    config, scheduler,
+    config, scheduler, signal,
     sync::atomic_wait as futex,
     thread::{self, Builder, Entry, Stack, Thread},
     time,
@@ -38,7 +38,7 @@ use core::{
 };
 use libc::{
     addrinfo, c_char, c_int, c_long, c_uint, c_ulong, c_void, clockid_t, mode_t, msghdr, off_t,
-    sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
+    pid_t, sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
 };
 
 #[cfg(not(enable_vfs))]
@@ -217,37 +217,10 @@ pub struct Context {
     pub args: [usize; 6],
 }
 
-/// this signal data structure will be used in signal handling
-/// now add attributes to disable warnings
-/// copy from librs/signal/mod.rs
-#[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Clone)]
-pub struct sigaltstack {
-    pub ss_sp: *mut c_void,
-    pub ss_flags: c_int,
-    pub ss_size: size_t,
-}
-
-/// copy from librs/signal/mod.rs
-#[allow(non_camel_case_types)]
-#[repr(align(8))]
-pub struct siginfo_t {
-    pub si_signo: c_int,
-    pub si_errno: c_int,
-    pub si_code: c_int,
-    _pad: [c_int; 29],
-    _align: [usize; 0],
-}
-
-/// copy from librs/signal/mod.rs
-#[allow(non_camel_case_types)]
-pub struct sigaction {
-    pub sa_handler: Option<extern "C" fn(c_int)>,
-    pub sa_flags: c_ulong,
-    pub sa_restorer: Option<unsafe extern "C" fn()>,
-    pub sa_mask: sigset_t,
-}
+// NOTE: signal-related user ABI structs are defined in `signal::syscall`.
+// Keep `syscall_handlers` free of conflicting type-level names (like
+// `sigaction`) since `define_syscall_handler!` generates a module with
+// the same identifier.
 
 #[repr(C)]
 pub struct mq_attr {
@@ -320,6 +293,21 @@ get_tid() -> c_long {
     let t = scheduler::current_thread();
     let handle = Thread::id(&t);
     handle as c_long
+});
+
+define_syscall_handler!(
+get_pid() -> c_long {
+    let t = scheduler::current_thread();
+    Thread::tid(&t) as c_long
+});
+
+define_syscall_handler!(
+pthread_to_tid(pthread: usize) -> c_long {
+    let target = thread::GlobalQueueVisitor::find_if(|t| thread::Thread::id(t) == pthread);
+    let Some(target) = target else {
+        return -(ESRCH as c_long);
+    };
+    thread::Thread::tid(&target) as c_long
 });
 
 define_syscall_handler!(
@@ -593,39 +581,53 @@ define_syscall_handler!(
     }
 );
 define_syscall_handler!(
-    signalaction(_signum: c_int, _act: *const c_void, _oact: *mut c_void) -> c_int {
-        // TODO: implement signalaction
-        0
+    signalaction(signum: c_int, act: *const c_void, oact: *mut c_void) -> c_int {
+    crate::signal::syscall::sigaction(signum, act as *const libc::c_void, oact as *mut libc::c_void)
     }
 );
 define_syscall_handler!(
-    signaltstack(_ss: *const c_void, _old_ss: *mut c_void) -> c_int {
-        0
+    signaltstack(ss: *const c_void, old_ss: *mut c_void) -> c_int {
+    crate::signal::syscall::sigaltstack(ss as *const libc::c_void, old_ss as *mut libc::c_void)
     }
 );
 define_syscall_handler!(
-    sigpending(_set: *mut libc::sigset_t) -> c_int {
-        0
+    sigpending(set: *mut libc::sigset_t) -> c_int {
+        crate::signal::syscall::sigpending(set)
     }
 );
 define_syscall_handler!(
-    sigprocmask(_how: c_int, _set: *const libc::sigset_t, _oldset: *mut libc::sigset_t) -> c_int {
-        0
+    sigprocmask(how: c_int, set: *const libc::sigset_t, oldset: *mut libc::sigset_t) -> c_int {
+        crate::signal::syscall::sigprocmask(how, set, oldset)
     }
 );
 define_syscall_handler!(
-    sigqueueinfo(_pid: c_int, _sig: c_int, _info: *const c_void) -> c_int {
-        0
+    sigqueueinfo(pid: pid_t, sig: c_int, info: *mut c_void) -> c_int {
+        crate::signal::syscall::sigqueueinfo(pid, sig, info as *mut crate::signal::syscall::siginfo_t)
     }
 );
 define_syscall_handler!(
-    sigsuspend(_set: *const libc::sigset_t) -> c_int {
-        0
+    sigsuspend(set: *const libc::sigset_t) -> c_int {
+        crate::signal::syscall::sigsuspend(set)
     }
 );
 define_syscall_handler!(
-    sigtimedwait(_set: *const sigset_t, _info: *mut c_void, _timeout: *const timespec) -> c_int {
-        0
+    sigtimedwait(set: *const sigset_t, info: *mut c_void, timeout: *const timespec) -> c_int {
+        crate::signal::syscall::sigtimedwait(set, info, timeout)
+    }
+);
+define_syscall_handler!(
+    kill(pid: pid_t, sig: c_int) -> c_int {
+        crate::signal::syscall::kill(pid, sig)
+    }
+);
+define_syscall_handler!(
+    tgkill(tgid: pid_t, pid: pid_t, sig: c_int) -> c_int {
+        crate::signal::syscall::tgkill(tgid, pid, sig)
+    }
+);
+define_syscall_handler!(
+    tkill(pid: pid_t, sig: c_int) -> c_int {
+        crate::signal::syscall::tkill(pid, sig)
     }
 );
 
@@ -825,6 +827,7 @@ syscall_table! {
     (Echo, echo),
     (Nop, nop),
     (GetTid, get_tid),
+    (GetPid, get_pid),
     (GetSchedParam, get_sched_param),
     (SetSchedParam, set_sched_param),
     (CreateThread, create_thread),
@@ -863,6 +866,9 @@ syscall_table! {
     (RtSigQueueInfo, sigqueueinfo),
     (RtSigSuspend, sigsuspend),
     (RtSigTimedWait, sigtimedwait),
+    (Kill, kill),
+    (Tgkill, tgkill),
+    (Tkill, tkill),
     (Socket, socket),
     (Bind, bind),
     (Connect, connect),
@@ -886,6 +892,7 @@ syscall_table! {
     (MqTimedSend, mq_timedsend),
     (MqTimedReceive, mq_timedreceive),
     (MqGetSetAttr, mq_getsetattr),
+    (PthreadToTid, pthread_to_tid),
 }
 
 #[cfg(not(enable_syscall))]

@@ -60,6 +60,9 @@ pub mod syscalls {
         RtSigQueueInfo,
         RtSigSuspend,
         RtSigTimedWait,
+        Kill,
+        Tgkill,
+        Tkill,
         Socket,
         Bind,
         Connect,
@@ -83,6 +86,8 @@ pub mod syscalls {
         MqTimedSend,
         MqTimedReceive,
         MqGetSetAttr,
+        GetPid,
+        PthreadToTid,
         LastNR,
     }
 }
