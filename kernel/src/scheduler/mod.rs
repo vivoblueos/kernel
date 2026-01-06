@@ -259,25 +259,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
+    debug_assert_eq!(current_thread_ref().preempt_count(), 0);
     let Some(next) = next_preferred_thread(current_thread_ref().priority()) else {
         #[cfg(debugging_scheduler)]
         crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
         return old_sp;
     };
     debug_assert_eq!(next.state(), thread::READY);
-    switch_current_thread(next, old_sp)
-}
-
-// It's usually used in cortex-m's pendsv handler. It assumes current
-// thread's context is already saved.
-pub(crate) extern "C" fn yield_me_and_return_next_sp(old_sp: usize) -> usize {
-    debug_assert!(!arch::local_irq_enabled());
-    debug_assert!(!crate::irq::is_in_irq());
-    let Some(next) = next_ready_thread() else {
-        #[cfg(debugging_scheduler)]
-        crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
-        return old_sp;
-    };
     switch_current_thread(next, old_sp)
 }
 
