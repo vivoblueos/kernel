@@ -161,12 +161,11 @@ pub(crate) extern "C" fn save_context_finish_hook(
     hook: &mut ContextSwitchHookHolder,
     old_sp: usize,
 ) -> usize {
-    // We must be careful that the last use of the `hook` must
-    // happen-before enqueueing the ready thread to the ready queue,
-    // since the `hook` is still on the stack of the ready thread. To
-    // resolve race condition of the stack, we first take the
-    // ownership of all pending actions in the `hook`, so that these
-    // actions are on current stack.
+    // We must be careful that the last use of the `hook` must happen-before
+    // setting the prev thread's saved_sp since the `hook` is still on the stack
+    // of the prev thread. To resolve race condition of the stack, we first take
+    // the ownership of all pending actions in the `hook`, so that these actions
+    // are on current stack.
     // FIXME: We must be careful about performance issue of Option::take, since besides
     // loading content from the Option, storing None into the Option also happens.
     let next = unsafe { Arc::from_raw(hook.next_thread) };
