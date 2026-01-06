@@ -14,7 +14,7 @@
 
 extern crate alloc;
 use crate::{
-    arch, irq, signal,
+    arch, signal,
     support::DisableInterruptGuard,
     sync::SpinLockGuard,
     thread,
