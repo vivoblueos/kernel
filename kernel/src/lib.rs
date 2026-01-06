@@ -49,9 +49,6 @@
 #![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
 
-//#[cfg(test)]
-//blueos_test_macro::test_only!();
-
 extern crate alloc;
 pub mod allocator;
 pub mod arch;
