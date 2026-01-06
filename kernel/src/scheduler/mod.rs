@@ -250,7 +250,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         let ok = queue_ready_thread(thread::RUNNING, old.clone());
         debug_assert!(ok);
     }
-    debug_assert!(ok);
     old.set_saved_sp(old_sp);
     current_thread_ref().clear_saved_sp();
     next_saved_sp
