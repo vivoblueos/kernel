@@ -41,4 +41,5 @@ pub mod storage;
 pub mod string;
 pub mod tinyarc;
 pub use tinyarc::sorted_list;
+pub mod iheap;
 pub mod tinyrwlock;

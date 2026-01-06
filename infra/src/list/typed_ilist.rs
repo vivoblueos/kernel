@@ -23,26 +23,26 @@ use core::{marker::PhantomData, ptr::NonNull};
 
 #[derive(Default)]
 #[repr(transparent)]
-pub struct IouListHeadMut<'a, T, A: Adapter<T>> {
+pub struct IouListHeadMut<'a, T, A: const Adapter<T>> {
     // We don't want to have to &mut T simultaneously during iterating over the list.
     node: Option<NonNull<ListHead<T, A>>>,
     _lt: PhantomData<&'a mut T>,
 }
 
 #[derive(Default, Debug)]
-pub struct ListHead<T, A: Adapter<T>> {
+pub struct ListHead<T, A: const Adapter<T>> {
     pub prev: Option<NonNull<ListHead<T, A>>>,
     pub next: Option<NonNull<ListHead<T, A>>>,
     _t: PhantomData<T>,
     _a: PhantomData<A>,
 }
 
-pub struct ListHeadIterator<T, A: Adapter<T>> {
+pub struct ListHeadIterator<T, A: const Adapter<T>> {
     next: Option<NonNull<ListHead<T, A>>>,
     tail: Option<NonNull<ListHead<T, A>>>,
 }
 
-impl<T, A: Adapter<T>> ListHeadIterator<T, A> {
+impl<T, A: const Adapter<T>> ListHeadIterator<T, A> {
     pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             next: head.next,
@@ -51,7 +51,7 @@ impl<T, A: Adapter<T>> ListHeadIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter<T>> Iterator for ListHeadIterator<T, A> {
+impl<T, A: const Adapter<T>> Iterator for ListHeadIterator<T, A> {
     type Item = NonNull<ListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -67,12 +67,12 @@ impl<T, A: Adapter<T>> Iterator for ListHeadIterator<T, A> {
     }
 }
 
-pub struct ListHeadReverseIterator<T, A: Adapter<T>> {
+pub struct ListHeadReverseIterator<T, A: const Adapter<T>> {
     prev: Option<NonNull<ListHead<T, A>>>,
     head: Option<NonNull<ListHead<T, A>>>,
 }
 
-impl<T, A: Adapter<T>> ListHeadReverseIterator<T, A> {
+impl<T, A: const Adapter<T>> ListHeadReverseIterator<T, A> {
     pub fn new(tail: &ListHead<T, A>, head: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             prev: tail.prev,
@@ -81,7 +81,7 @@ impl<T, A: Adapter<T>> ListHeadReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter<T>> Iterator for ListHeadReverseIterator<T, A> {
+impl<T, A: const Adapter<T>> Iterator for ListHeadReverseIterator<T, A> {
     type Item = NonNull<ListHead<T, A>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -97,7 +97,7 @@ impl<T, A: Adapter<T>> Iterator for ListHeadReverseIterator<T, A> {
     }
 }
 
-impl<T, A: Adapter<T>> ListHead<T, A> {
+impl<T, A: const Adapter<T>> ListHead<T, A> {
     pub const fn new() -> Self {
         Self {
             prev: None,
@@ -105,6 +105,25 @@ impl<T, A: Adapter<T>> ListHead<T, A> {
             _t: PhantomData,
             _a: PhantomData,
         }
+    }
+
+    // Sometimes, we use it in a Binary Search Tree.
+    pub fn left(&self) -> Option<NonNull<Self>> {
+        self.prev
+    }
+
+    pub fn right(&self) -> Option<NonNull<Self>> {
+        self.next
+    }
+
+    pub fn set_left(&mut self, val: Option<NonNull<Self>>) -> &mut Self {
+        self.prev = val;
+        self
+    }
+
+    pub fn set_right(&mut self, val: Option<NonNull<Self>>) -> &mut Self {
+        self.next = val;
+        self
     }
 
     pub fn owner(&self) -> &T {
@@ -229,12 +248,12 @@ impl<T, A: Adapter<T>> ListHead<T, A> {
 impl<T, A> !Send for ListHead<T, A> {}
 impl<T, A> !Sync for ListHead<T, A> {}
 
-pub struct ListIterator<'a, T, A: Adapter<T>> {
+pub struct ListIterator<'a, T, A: const Adapter<T>> {
     it: ListHeadIterator<T, A>,
     _lt: PhantomData<&'a List<T, A>>,
 }
 
-impl<'a, T, A: Adapter<T>> Iterator for ListIterator<'a, T, A> {
+impl<'a, T, A: const Adapter<T>> Iterator for ListIterator<'a, T, A> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -243,12 +262,12 @@ impl<'a, T, A: Adapter<T>> Iterator for ListIterator<'a, T, A> {
     }
 }
 
-pub struct ListIteratorMut<'a, T, A: Adapter<T>> {
+pub struct ListIteratorMut<'a, T, A: const Adapter<T>> {
     it: ListHeadIterator<T, A>,
     _lt: PhantomData<&'a List<T, A>>,
 }
 
-impl<'a, T, A: Adapter<T>> Iterator for ListIteratorMut<'a, T, A> {
+impl<'a, T, A: const Adapter<T>> Iterator for ListIteratorMut<'a, T, A> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -260,12 +279,12 @@ impl<'a, T, A: Adapter<T>> Iterator for ListIteratorMut<'a, T, A> {
 // No pop_front or pop_back is provided, since the List relies on context to
 // manage lifetime.
 #[derive(Debug)]
-pub struct List<T, A: Adapter<T>> {
+pub struct List<T, A: const Adapter<T>> {
     head: ListHead<T, A>,
     tail: ListHead<T, A>,
 }
 
-impl<T, A: Adapter<T>> List<T, A> {
+impl<T, A: const Adapter<T>> List<T, A> {
     pub const fn new() -> Self {
         Self {
             head: ListHead::new(),
