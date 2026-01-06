@@ -243,11 +243,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     );
     // FIXME: Statistics of cycles should be optional.
     old.lock().increment_cycles(cycles);
-    let ok = if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
-        old.transfer_state(thread::RUNNING, thread::READY)
+    if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
+        let ok = old.transfer_state(thread::RUNNING, thread::READY);
+        debug_assert!(ok);
     } else {
-        queue_ready_thread(thread::RUNNING, old.clone())
-    };
+        let ok = queue_ready_thread(thread::RUNNING, old.clone());
+        debug_assert!(ok);
+    }
     debug_assert!(ok);
     old.set_saved_sp(old_sp);
     current_thread_ref().clear_saved_sp();
