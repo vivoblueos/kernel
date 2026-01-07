@@ -112,6 +112,9 @@ mod vfs_syscalls {
     pub fn umount(_target: *const c_char) -> i32 {
         -libc::ENOTSUP
     }
+    pub fn ioctl(_fd: c_int, _request: c_ulong, _arg: *mut core::ffi::c_void) -> c_int {
+        -libc::ENOTSUP
+    }
 }
 #[cfg(not(enable_vfs))]
 use vfs_syscalls::{Stat, StatFs};
@@ -820,6 +823,12 @@ define_syscall_handler!(
     }
 );
 
+define_syscall_handler!(
+    ioctl(fd: c_int, request: c_ulong, out: *mut core::ffi::c_void) -> c_int {
+        vfs_syscalls::ioctl(fd, request as core::ffi::c_ulong, out)
+    }
+);
+
 #[cfg(enable_syscall)]
 syscall_table! {
     (Echo, echo),
@@ -886,6 +895,7 @@ syscall_table! {
     (MqTimedSend, mq_timedsend),
     (MqTimedReceive, mq_timedreceive),
     (MqGetSetAttr, mq_getsetattr),
+    (Ioctl, ioctl),
 }
 
 #[cfg(not(enable_syscall))]

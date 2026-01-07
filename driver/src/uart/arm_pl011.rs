@@ -353,6 +353,17 @@ impl Configuration<super::UartConfig> for ArmPl011<'static> {
 impl Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus>
     for ArmPl011<'static>
 {
+    fn set_break_signal(&self, enable: bool) -> Result<()> {
+        let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
+        let mut lcr_h = field_used_by_inner!(unsafe_mut_ref, uartlcr_h).read();
+        if enable {
+            lcr_h |= LineControlRegister::BRK;
+        } else {
+            lcr_h &= !LineControlRegister::BRK;
+        }
+        field_used_by_inner!(unsafe_mut_ref, uartlcr_h).write(lcr_h);
+        Ok(())
+    }
 }
 
 impl Has8bitDataReg for ArmPl011<'static> {

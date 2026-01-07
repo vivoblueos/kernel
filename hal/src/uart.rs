@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{uart, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, HasRestReg};
+use crate::{
+    err::{HalError, Result as HalResult},
+    uart, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, HasRestReg,
+};
 
 pub trait Uart<P, T, I, S>:
     super::PlatPeri
@@ -22,4 +25,19 @@ pub trait Uart<P, T, I, S>:
     + Has8bitDataReg
     + HasLineStatusReg
 {
+    fn set_break_signal(&self, _enable: bool) -> HalResult<()> {
+        Err(HalError::NotSupport)
+    }
+}
+
+pub trait UartWithReset<P, T, I, S>:
+    super::PlatPeri
+    + super::Configuration<P, Target = T>
+    + HasInterruptReg<InterruptType = I>
+    + Has8bitDataReg
+    + HasRestReg
+{
+    fn set_break_signal(&self, _enable: bool) -> HalResult<()> {
+        Err(HalError::NotSupport)
+    }
 }

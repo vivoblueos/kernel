@@ -33,7 +33,6 @@ use core::{
     ptr::copy_nonoverlapping,
     time::Duration,
 };
-use libc;
 use log::{debug, error, warn};
 
 pub fn mount(
@@ -227,6 +226,22 @@ pub fn write(fd: i32, buf: *const u8, count: usize) -> isize {
     match file_ops.write(slice) {
         Ok(n) => n as isize,
         Err(e) => e.to_errno() as isize,
+    }
+}
+
+pub fn ioctl(fd: c_int, request: c_ulong, arg: *mut c_void) -> c_int {
+    let file_ops = {
+        let fd_manager = get_fd_manager().lock();
+        match fd_manager.get_file_ops(fd) {
+            Some(ops) => ops,
+            None => return -libc::EBADF,
+        }
+    };
+
+    let cmd = request as u32;
+    match file_ops.ioctl(cmd, arg as usize) {
+        Ok(ret) => ret,
+        Err(e) => e.to_errno(),
     }
 }
 

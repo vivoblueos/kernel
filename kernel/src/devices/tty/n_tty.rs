@@ -15,13 +15,14 @@
 use crate::devices::{
     tty::{
         serial,
-        termios::{CcIndex, Iflags, Oflags},
+        termios::{CcIndex, Iflags, Oflags, Termios},
     },
     Device, DeviceClass, DeviceId,
 };
 use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use embedded_io::ErrorKind;
+use libc::{c_int, TCFLSH, TCGETS, TCIFLUSH, TCSBRK, TCSETS, TCSETSF, TCSETSW, TCXONC};
 use serial::Serial;
 use spin::{Mutex, Once};
 
@@ -100,6 +101,10 @@ impl Device for Tty {
 
     fn read(&self, _pos: u64, buf: &mut [u8], is_blocking: bool) -> Result<usize, ErrorKind> {
         let mut line_buf = self.line_buf.lock();
+        let termios = self.serial.termios_snapshot();
+        let map_crlf = termios.iflag.contains(Iflags::ICRNL);
+        let erase_char = termios.cc[CcIndex::Verase as usize];
+        let kill_char = termios.cc[CcIndex::Vkill as usize];
         // handle special characters
         if let Some(key) = &*self.spec_key.lock() {
             let history_cursor = self.history_cursor.load(Ordering::Relaxed);
@@ -141,7 +146,7 @@ impl Device for Tty {
             while i < nbytes {
                 let ch = temp_buf[i];
                 let cursor = self.cursor.load(Ordering::Relaxed);
-                if self.serial.termios.iflag.contains(Iflags::ICRNL) && ch == b'\r' {
+                if map_crlf && ch == b'\r' {
                     let _ = self.serial.write(_pos, b"\r\n", false);
                     line_buf[cursor] = b'\n';
                     buf[..cursor + 1].copy_from_slice(&line_buf[..cursor + 1]);
@@ -153,7 +158,7 @@ impl Device for Tty {
                     self.cursor.store(0, Ordering::Relaxed);
                     return Ok(cursor + 1);
                 }
-                if self.serial.termios.cc[CcIndex::Verase as usize] == ch {
+                if erase_char == ch {
                     if cursor > 0 {
                         let backspace_seq = [8u8, b' ', 8u8];
                         let _ = self.serial.write(_pos, &backspace_seq, false);
@@ -164,7 +169,7 @@ impl Device for Tty {
                     continue;
                 }
 
-                if self.serial.termios.cc[CcIndex::Vkill as usize] == ch {
+                if kill_char == ch {
                     line_buf.fill(0);
                     self.cursor.store(0, Ordering::Relaxed);
                     i += 1;
@@ -203,15 +208,16 @@ impl Device for Tty {
     }
 
     fn write(&self, _pos: u64, buf: &[u8], is_blocking: bool) -> Result<usize, ErrorKind> {
-        if self.serial.termios.oflag.contains(Oflags::OPOST) {
+        let termios = self.serial.termios_snapshot();
+        if termios.oflag.contains(Oflags::OPOST) {
             let mut processed_buf = Vec::new();
 
             for &byte in buf {
-                if byte == b'\n' && self.serial.termios.oflag.contains(Oflags::ONLCR) {
+                if byte == b'\n' && termios.oflag.contains(Oflags::ONLCR) {
                     // Convert LF to CRLF
                     processed_buf.push(b'\r');
                     processed_buf.push(b'\n');
-                } else if byte == b'\r' && self.serial.termios.oflag.contains(Oflags::OCRNL) {
+                } else if byte == b'\r' && termios.oflag.contains(Oflags::OCRNL) {
                     // Convert CR to LF
                     processed_buf.push(b'\n');
                 } else {
@@ -227,6 +233,30 @@ impl Device for Tty {
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
-        self.serial.ioctl(request, arg)
+        match request {
+            TCGETS => {
+                let termios = self.serial.termios_snapshot();
+                unsafe { Serial::store_user_termios(arg as *mut Termios, &termios) }
+            }
+            TCSETS => {
+                let termios = unsafe { Serial::load_user_termios(arg as *const Termios)? };
+                self.serial.apply_termios(termios)
+            }
+            TCSETSW => {
+                let termios = unsafe { Serial::load_user_termios(arg as *const Termios)? };
+                self.serial.wait_for_tx_empty()?;
+                self.serial.apply_termios(termios)
+            }
+            TCSETSF => {
+                let termios = unsafe { Serial::load_user_termios(arg as *const Termios)? };
+                self.serial.wait_for_tx_empty()?;
+                self.serial.handle_tcflsh(TCIFLUSH)?;
+                self.serial.apply_termios(termios)
+            }
+            TCFLSH => self.serial.handle_tcflsh(arg as c_int),
+            TCXONC => self.serial.handle_tcxonc(arg as c_int),
+            TCSBRK => self.serial.handle_tcsbrk(arg as c_int),
+            _ => self.serial.ioctl(request, arg),
+        }
     }
 }

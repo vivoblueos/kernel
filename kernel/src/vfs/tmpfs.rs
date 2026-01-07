@@ -385,6 +385,16 @@ impl InodeOps for TmpInode {
         Ok(inode)
     }
 
+    fn ioctl(&self, cmd: u32, arg: usize) -> Result<i32, Error> {
+        let inner = self.inner.read();
+        // when operate an socket, this line should change
+        let Some(device) = inner.as_device() else {
+            return Err(code::ENOTTY);
+        };
+        device.ioctl(cmd, arg).map_err(Error::from)?;
+        Ok(0)
+    }
+
     fn close(&self) -> Result<(), Error> {
         let inner = self.inner.read();
         if let Some(device) = inner.as_device() {
