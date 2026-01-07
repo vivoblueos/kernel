@@ -50,7 +50,6 @@
 #![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
 
 extern crate alloc;
-
 pub mod allocator;
 pub mod arch;
 #[cfg(kernel_async)]
@@ -552,6 +551,7 @@ mod tests {
         .unwrap();
         // Send SIGTERM after t enters its entry function.
         a_cloned.wait();
+        // FIXME: Memory leaks since we are using a boxed closure as t's entry.
         t.lock().kill(libc::SIGTERM as i32);
         // At this point, t is either
         // 0: waking up from a or

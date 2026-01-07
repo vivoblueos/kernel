@@ -54,8 +54,8 @@ macro_rules! arch_bootstrap {
 }
 
 extern "C" fn prepare_schedule() -> usize {
-    let current = scheduler::current_thread();
-    current.lock().reset_saved_sp();
+    let current = scheduler::current_thread_ref();
+    current.reset_saved_sp();
     current.saved_sp()
 }
 
@@ -381,24 +381,11 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     // r1 contains the saved_sp of the `to` thread;
     // r2 contains the pointer to the switch hook holder, null if
     // there is no switch hook holder.
-    assert_eq!(ctx.r7, NR_SWITCH);
-    let sp = ctx as *const _ as usize;
-    let saved_sp_ptr: *mut usize = unsafe { ctx.r0 as *mut usize };
-    if !saved_sp_ptr.is_null() {
-        // FIXME: rustc opt the write out if not setting it volatile.
-        unsafe {
-            sideeffect();
-            saved_sp_ptr.write_volatile(sp)
-        };
-    }
-    let hook: *mut ContextSwitchHookHolder = unsafe { ctx.r2 as *mut ContextSwitchHookHolder<'_> };
-    if !hook.is_null() {
-        unsafe {
-            sideeffect();
-            scheduler::save_context_finish_hook(Some(&mut *hook));
-        }
-    }
-    ctx.r1
+    debug_assert_eq!(ctx.r7, NR_SWITCH);
+    let hook_ptr: *mut ContextSwitchHookHolder = unsafe { ctx.r0 as *mut ContextSwitchHookHolder };
+    debug_assert!(!hook_ptr.is_null());
+    let hook = unsafe { &mut *hook_ptr };
+    scheduler::save_context_finish_hook(&mut *hook, ctx as *const _ as usize)
 }
 
 extern "C" fn handle_syscall(ctx: &Context) -> usize {
@@ -593,20 +580,14 @@ pub extern "C" fn current_psp() -> usize {
 }
 
 #[inline(never)]
-pub(crate) extern "C" fn switch_context_with_hook(
-    saved_sp_mut: *mut u8,
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) {
+pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
     unsafe {
         core::arch::asm!(
             "movs {tmp}, r7",
             "ldr r7, ={nr}",
             "svc 0",
             "mov r7, {tmp}",
-            inlateout("r0") saved_sp_mut as usize => _,
-            inlateout("r1") to_sp => _,
-            in("r2") hook as usize,
+            in("r0") hook as usize,
             tmp = out(reg) _,
             nr = const NR_SWITCH,
             options(nostack),
@@ -620,22 +601,8 @@ pub extern "C" fn pend_switch_context() {
 }
 
 #[inline(always)]
-pub extern "C" fn switch_context(saved_sp_mut: *mut u8, to_sp: usize) {
-    switch_context_with_hook(saved_sp_mut, to_sp, core::ptr::null_mut());
-}
-
-#[inline(always)]
-pub extern "C" fn restore_context(to_sp: usize) -> ! {
-    switch_context_with_hook(core::ptr::null_mut(), to_sp, core::ptr::null_mut());
-    unreachable!("Should have switched to another thread");
-}
-
-#[inline(always)]
-pub(crate) extern "C" fn restore_context_with_hook(
-    to_sp: usize,
-    hook: *mut ContextSwitchHookHolder,
-) -> ! {
-    switch_context_with_hook(core::ptr::null_mut(), to_sp, hook);
+pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
+    switch_context_with_hook(hook);
     unreachable!("Should have switched to another thread");
 }
 
