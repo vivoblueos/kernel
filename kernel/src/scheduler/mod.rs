@@ -34,9 +34,6 @@ use core::{
     sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
 };
 
-#[cfg(scheduler = "fifo")]
-mod fifo;
-#[cfg(scheduler = "global")]
 mod global_scheduler;
 mod idle;
 pub use idle::{
@@ -44,9 +41,6 @@ pub use idle::{
 };
 pub(crate) mod wait_queue;
 
-#[cfg(scheduler = "fifo")]
-pub use fifo::*;
-#[cfg(scheduler = "global")]
 pub use global_scheduler::*;
 pub(crate) use wait_queue::*;
 static READY_CORES: AtomicU8 = AtomicU8::new(0);
@@ -99,10 +93,7 @@ pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES as us
 
 pub(crate) fn init() {
     idle::init_idle_threads();
-    #[cfg(scheduler = "global")]
     global_scheduler::init();
-    #[cfg(scheduler = "fifo")]
-    fifo::init();
 }
 
 pub(crate) struct ContextSwitchHookHolder {
