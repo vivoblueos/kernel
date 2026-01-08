@@ -171,8 +171,8 @@ pub extern "C" fn osThreadNew(
     let Some(func) = func else {
         return ptr::null_mut();
     };
-    // cmsis thread default to detached
-    // if attr is provided and osThreadJoinable is set, then it's joinable
+    // Cmsis thread defaults to be detached.
+    // If attr is provided and osThreadJoinable is set, then it's joinable
     let mut detached = true;
     let mut merge_attr = osThreadAttr_t {
         name: ptr::null(),
@@ -326,7 +326,7 @@ pub extern "C" fn osThreadSetPriority(
     osStatus_t_osOK
 }
 
-// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gad01c7ec26535b1de6b018bb9466720e2
+// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gad01c7ec26535b1de6b018bb9466720e2.
 #[no_mangle]
 pub extern "C" fn osThreadYield() -> osStatus_t {
     if irq::is_in_irq() {
@@ -336,7 +336,7 @@ pub extern "C" fn osThreadYield() -> osStatus_t {
     osStatus_t_osOK
 }
 
-// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gac3230f3a55a297514b013ebf38f27e0a
+// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gac3230f3a55a297514b013ebf38f27e0a.
 #[no_mangle]
 pub extern "C" fn osThreadGetName(thread_id: osThreadId_t) -> *const core::ffi::c_char {
     if irq::is_in_irq() || thread_id.is_null() {
@@ -346,7 +346,7 @@ pub extern "C" fn osThreadGetName(thread_id: osThreadId_t) -> *const core::ffi::
     t.name_bytes().as_ptr() as *const core::ffi::c_char
 }
 
-// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gacc0a98b42f0a5928e12dc91dc76866b9
+// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gacc0a98b42f0a5928e12dc91dc76866b9.
 #[no_mangle]
 pub extern "C" fn osThreadGetState(thread_id: osThreadId_t) -> osThreadState_t {
     if irq::is_in_irq() || thread_id.is_null() {
@@ -366,7 +366,7 @@ pub extern "C" fn osThreadGetStackSize(thread_id: osThreadId_t) -> usize {
     t.stack_size()
 }
 
-// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga9c83bd5dd8de329701775d6ef7012720
+// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga9c83bd5dd8de329701775d6ef7012720.
 // Returns the remaining stack space for the specified thread.
 // use previously saved stack usage for indication, not accurate in SMP
 #[no_mangle]
@@ -385,11 +385,13 @@ fn exit_os2_thread(t: &mut Os2Thread) {
     } else if detached == 1 {
         drop_os2_thread(t);
     }
-    // reserved alien pointer for debugging
-    // scheduler::current_thread().lock().reset_alien_ptr();
+    // Reserved alien pointer for debugging.
+    // FIXME: Might lead to UAF. See https://github.com/vivoblueos/kernel/issues/271.
+    #[cfg(not(debug_assertions))]
+    scheduler::current_thread().lock().reset_alien_ptr();
 }
 
-// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gaddaa452dd7610e4096647a566d3556fc
+// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gaddaa452dd7610e4096647a566d3556fc.
 #[no_mangle]
 pub extern "C" fn osThreadExit() {
     if irq::is_in_irq() {
@@ -402,7 +404,7 @@ pub extern "C" fn osThreadExit() {
     exit_os2_thread(t)
 }
 
-// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga495b3f812224e7301f23a691793765db
+// See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga495b3f812224e7301f23a691793765db.
 #[no_mangle]
 #[allow(non_upper_case_globals)]
 pub extern "C" fn osThreadGetCount() -> usize {
