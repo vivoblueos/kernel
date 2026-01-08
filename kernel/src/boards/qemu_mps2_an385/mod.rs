@@ -22,6 +22,7 @@ use crate::{
     boot,
     devices::clock::{systick, Clock},
     error::Error,
+    irq::IrqTrace,
     time,
 };
 use blueos_hal::HasInterruptReg;
@@ -102,6 +103,7 @@ crate::define_peripheral! {
 
 #[no_mangle]
 pub unsafe extern "C" fn uart0rx_handler() {
+    let _trace = IrqTrace::new(UART0RX_IRQn);
     let uart = get_device!(console_uart);
     if let Some(handler) = unsafe {
         let intr_handler_cell = &*uart.intr_handler.get();
@@ -115,6 +117,7 @@ pub unsafe extern "C" fn uart0rx_handler() {
 
 #[no_mangle]
 pub unsafe extern "C" fn uart0tx_handler() {
+    let _trace = IrqTrace::new(UART0TX_IRQn);
     let uart = get_device!(console_uart);
     if let Some(handler) = unsafe {
         let intr_handler_cell = &*uart.intr_handler.get();

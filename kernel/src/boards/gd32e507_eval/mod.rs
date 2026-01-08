@@ -16,13 +16,8 @@ mod config;
 mod handler;
 
 use crate::{
-    arch,
-    arch::irq::IrqNumber,
-    boot,
-    boot::INIT_BSS_DONE,
-    devices::clock::{systick, Clock},
-    sync::SpinLock,
-    time,
+    arch, arch::irq::IrqNumber, boot, boot::INIT_BSS_DONE, devices::clock::systick, irq::IrqTrace,
+    sync::SpinLock, time,
 };
 use alloc::sync::Arc;
 use blueos_driver::pinctrl::gd32_afio::*;
@@ -129,6 +124,7 @@ crate::define_pin_states! {
 
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
+    let _trace = IrqTrace::new(config::USBFS_IRQn);
     use blueos_hal::HasInterruptReg;
     let uart = get_device!(console_uart);
     if let Some(handler) = unsafe {
