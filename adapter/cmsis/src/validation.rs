@@ -22,6 +22,7 @@
 #![feature(const_trait_impl)]
 #![feature(negative_impls)]
 #![feature(linkage)]
+#![feature(pointer_is_aligned_to)]
 
 extern crate alloc;
 

@@ -56,8 +56,7 @@ os_adapter! {
     "th" => Os2Thread: blueos::thread::Thread {
         joint: Joint,
         detached: AtomicI8,
-        // use event flags to implement thread flags
-        // as CMSIS-API description: "Thread Flags are a more specialized version of the Event Flags"
+        // Use event flags to implement thread flags.
         thread_flags: EventFlags,
     }
 }
@@ -131,7 +130,7 @@ pub fn to_thread_priority(prio: osPriority_t) -> ThreadPriority {
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga8df03548e89fbc56402a5cd584a505da
 #[no_mangle]
 pub extern "C" fn osThreadGetId() -> osThreadId_t {
-    if let Some(alien_ptr) = scheduler::current_thread().get_alien_ptr() {
+    if let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() {
         alien_ptr.as_ptr() as osThreadId_t
     } else {
         log::warn!("not a cmsis thread");
@@ -174,7 +173,7 @@ pub extern "C" fn osThreadNew(
     // Cmsis thread defaults to be detached.
     // If attr is provided and osThreadJoinable is set, then it's joinable
     let mut detached = true;
-    let mut merge_attr = osThreadAttr_t {
+    let mut inner_attr = osThreadAttr_t {
         name: ptr::null(),
         attr_bits: 0,
         cb_size: 0,
@@ -187,42 +186,47 @@ pub extern "C" fn osThreadNew(
         reserved: 0,
     };
     if !attr.is_null() {
-        merge_attr = unsafe { *attr };
-        if !merge_attr.cb_mem.is_null() {
-            if merge_attr.cb_size < mem::size_of::<Os2Thread>() as u32 {
-                log::error!("osThreadNew: cb_size is too small");
-                return ptr::null_mut();
-            }
-        } else if merge_attr.cb_size != 0 {
-            log::error!("osThreadNew: cb_size must be 0 when cb_mem isn't provided");
-            return ptr::null_mut();
-        }
-        // Check stack param.
-        if !merge_attr.stack_mem.is_null()
-            && (merge_attr.stack_mem as u32 & 0xef != 0
-                || merge_attr.stack_size < 128
-                || merge_attr.stack_size > 0x7fff_ffff)
-        {
-            log::error!("osThreadNew: stack_mem must be aligned to 128 bytes, not greater than 0x7fff_ffff, and stack_size must be at least 128 bytes");
-            return ptr::null_mut();
-        }
-        if merge_attr.priority == osPriority_t_osPriorityError {
-            merge_attr.priority = osPriority_t_osPriorityNormal;
-        } else if merge_attr.priority < osPriority_t_osPriorityIdle
-            || merge_attr.priority > osPriority_t_osPriorityISR
-        {
-            log::error!("osThreadNew: invalid priority");
-            return ptr::null_mut();
-        }
+        unsafe { core::ptr::copy_nonoverlapping(attr, &mut inner_attr as *mut _, 1) };
+    }
+    if !inner_attr.cb_mem.is_null() && inner_attr.cb_size < mem::size_of::<Os2Thread>() as u32 {
+        log::error!("osThreadNew: cb_size is too small");
+        return ptr::null_mut();
+    }
+    if inner_attr.cb_mem.is_null() && inner_attr.cb_size != 0 {
+        log::error!("osThreadNew: cb_size must be 0 when cb_mem isn't provided");
+        return ptr::null_mut();
+    }
+    // Check stack param.
+    const MIN_STACK_SIZE: usize = 128;
+    const MAX_STACK_SIZE: usize = 1 << 30;
+    if !inner_attr.stack_mem.is_null()
+        && (!inner_attr.stack_mem.is_aligned_to(STACK_ALIGN)
+            || (inner_attr.stack_size as usize) < MIN_STACK_SIZE
+            || (inner_attr.stack_size as usize) > MAX_STACK_SIZE)
+    {
+        log::error!(
+            "osThreadNew: Illegal stack memory given: {:p}, size: {}",
+            inner_attr.stack_mem,
+            inner_attr.stack_size
+        );
+        return ptr::null_mut();
+    }
+    if inner_attr.priority == osPriority_t_osPriorityError {
+        inner_attr.priority = osPriority_t_osPriorityNormal;
+    } else if inner_attr.priority < osPriority_t_osPriorityIdle
+        || inner_attr.priority > osPriority_t_osPriorityISR
+    {
+        log::error!("osThreadNew: invalid priority");
+        return ptr::null_mut();
     }
     let mut stack = thread::Stack::from_raw(
-        merge_attr.stack_mem as *mut u8,
-        merge_attr.stack_size as usize,
+        inner_attr.stack_mem as *mut u8,
+        inner_attr.stack_size as usize,
     );
     // All checks passed, create stack first.
     let mut layout = Layout::from_size_align(DEFAULT_STACK_SIZE as usize, STACK_ALIGN).unwrap();
-    if merge_attr.stack_mem.is_null() {
-        let mut stack_size = merge_attr.stack_size;
+    if inner_attr.stack_mem.is_null() {
+        let mut stack_size = inner_attr.stack_size;
         if stack_size == 0 {
             stack_size = (DEFAULT_STACK_SIZE as u32) * 2;
         }
@@ -248,13 +252,13 @@ pub extern "C" fn osThreadNew(
         enter_cmsis,
         entry as *mut core::ffi::c_void,
     ))
-    .set_priority(to_thread_priority(merge_attr.priority))
+    .set_priority(to_thread_priority(inner_attr.priority))
     .set_stack(stack)
     .build();
     {
         let mut l = t.lock();
         l.register_once_signal_handler(libc::SIGTERM, move || {
-            let current = scheduler::current_thread();
+            let current = scheduler::current_thread_ref();
             let Some(alien_ptr) = current.get_alien_ptr() else {
                 return;
             };
@@ -262,19 +266,19 @@ pub extern "C" fn osThreadNew(
             exit_os2_thread(t);
             scheduler::retire_me();
         });
-        if merge_attr.stack_mem.is_null() {
+        if inner_attr.stack_mem.is_null() {
             let stack_base = t.stack_base();
             l.set_cleanup(Entry::Closure(Box::new(move || {
                 let stack_base = stack_base as *mut u8;
                 unsafe { system_dealloc(stack_base, layout) };
             })));
         }
-        if merge_attr.attr_bits & osThreadJoinable != 0 {
+        if inner_attr.attr_bits & osThreadJoinable != 0 {
             detached = false;
         }
     }
 
-    let os_thread = Box::new(Os2Thread::with_name(t.clone(), merge_attr.name));
+    let os_thread = Box::new(Os2Thread::with_name(t.clone(), inner_attr.name));
     let ptr: *mut Os2Thread = Box::into_raw(os_thread);
     if !detached {
         unsafe { (*ptr).detached.store(0, Ordering::SeqCst) };
@@ -385,10 +389,7 @@ fn exit_os2_thread(t: &mut Os2Thread) {
     } else if detached == 1 {
         drop_os2_thread(t);
     }
-    // Reserved alien pointer for debugging.
-    // FIXME: Might lead to UAF. See https://github.com/vivoblueos/kernel/issues/271.
-    #[cfg(not(debug_assertions))]
-    scheduler::current_thread().lock().reset_alien_ptr();
+    scheduler::current_thread_ref().lock().reset_alien_ptr();
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gaddaa452dd7610e4096647a566d3556fc.
@@ -397,7 +398,7 @@ pub extern "C" fn osThreadExit() {
     if irq::is_in_irq() {
         panic!("osThreadExit called in IRQ context");
     }
-    let Some(alien_ptr) = scheduler::current_thread().get_alien_ptr() else {
+    let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() else {
         panic!("osThreadExit called in an invalid state");
     };
     let t = unsafe { &mut *(alien_ptr.as_ptr() as *mut Os2Thread) };
@@ -458,7 +459,7 @@ pub extern "C" fn osThreadSuspend(thread_id: osThreadId_t) -> osStatus_t {
     if thread_id.is_null() {
         return osStatus_t_osErrorParameter;
     }
-    let current = scheduler::current_thread();
+    let current = scheduler::current_thread_ref();
     let Some(alien_ptr) = current.get_alien_ptr() else {
         return osStatus_t_osErrorParameter;
     };
@@ -475,6 +476,18 @@ pub extern "C" fn osThreadSuspend(thread_id: osThreadId_t) -> osStatus_t {
     {
         return osStatus_t_osErrorResource;
     }
+    // Try our best make the thread run again.
+    let ok = scheduler::queue_ready_thread(thread::IDLE, t.inner().clone());
+    if ok {
+        return osStatus_t_osOK;
+    }
+    let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone());
+    if ok {
+        return osStatus_t_osOK;
+    }
+    // TODO: For smp system, the thread might be running on another CPU core, we have to
+    // send interrupt event to that core.
+    scheduler::yield_me();
     osStatus_t_osOK
 }
 
@@ -490,8 +503,8 @@ pub extern "C" fn osThreadResume(thread_id: osThreadId_t) -> osStatus_t {
     let t = unsafe { &mut *(thread_id as *const _ as *mut Os2Thread) };
     let thread = t.inner();
     let mut th = thread.lock();
-    // Can't resume current thread from itself
-    if let Some(alien_ptr) = scheduler::current_thread().get_alien_ptr() {
+    // Can't resume current thread from itself.
+    if let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() {
         if core::ptr::eq(t, alien_ptr.as_ptr() as *mut Os2Thread) {
             return osStatus_t_osErrorResource;
         }
@@ -557,13 +570,12 @@ pub extern "C" fn osThreadTerminate(thread_id: osThreadId_t) -> osStatus_t {
     }
 
     let t = unsafe { &mut *(thread_id as *const _ as *mut Os2Thread) };
-    // in rust , when use if let Some(..) = .. else {..},
+    // In rust , when use if let Some(..) = .. else {..},
     // the temporary lives until the end of else block
-    let current = scheduler::current_thread();
+    let current = scheduler::current_thread_ref();
     if let Some(alien_ptr) = current.get_alien_ptr() {
         // If this thread is terminating its self. It's supposed to be detached.
         if ptr::eq(t, alien_ptr.as_ptr() as *mut Os2Thread) {
-            drop(current);
             exit_os2_thread(t);
             scheduler::retire_me();
             return osStatus_t_osErrorResource;
@@ -573,13 +585,18 @@ pub extern "C" fn osThreadTerminate(thread_id: osThreadId_t) -> osStatus_t {
     if !t.lock().kill(libc::SIGTERM) {
         return osStatus_t_osErrorResource;
     }
-    // what is the time window signal processed ?
-    scheduler::remove_from_ready_queue(t.inner());
-
-    // No matter what happens, push the thread into ready queue.
-    // FIXME: There is still a little time window between invoking t.state() and
-    // t's state got updated. We might provide an enforced queuing API.
-    scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone());
+    // Try our best make the thread run again.
+    let ok = scheduler::queue_ready_thread(thread::IDLE, t.inner().clone());
+    if ok {
+        return osStatus_t_osOK;
+    }
+    let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone());
+    if ok {
+        return osStatus_t_osOK;
+    }
+    // TODO: For smp system, the thread might be running on another CPU core, we have to
+    // send interrupt event to that core.
+    scheduler::yield_me();
     osStatus_t_osOK
 }
 
@@ -591,7 +608,7 @@ pub extern "C" fn osThreadFlagsGet() -> u32 {
     if irq::is_in_irq() {
         return 0;
     }
-    let Some(alien_ptr) = scheduler::current_thread().get_alien_ptr() else {
+    let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() else {
         panic!("osThreadFlagsGet  called not in a cmsis thread");
     };
     let t = unsafe { &*(alien_ptr.as_ptr() as *mut Os2Thread) };
@@ -619,7 +636,7 @@ pub extern "C" fn osThreadFlagsClear(flags: u32) -> u32 {
     if irq::is_in_irq() {
         return 0;
     }
-    let Some(alien_ptr) = scheduler::current_thread().get_alien_ptr() else {
+    let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() else {
         panic!("osThreadFlagsClear  called not in a cmsis thread");
     };
     let t = unsafe { &mut *(alien_ptr.as_ptr() as *mut Os2Thread) };
@@ -639,7 +656,7 @@ pub extern "C" fn osThreadFlagsWait(flags: u32, options: u32, timeout: u32) -> u
     if options & osFlagsNoClear == 0 {
         mode |= EventFlagsMode::NO_CLEAR;
     }
-    let Some(alien_ptr) = scheduler::current_thread().get_alien_ptr() else {
+    let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() else {
         panic!("osThreadFlagsWait called not in a cmsis thread");
     };
     let t = unsafe { &mut *(alien_ptr.as_ptr() as *mut Os2Thread) };
@@ -938,5 +955,69 @@ mod tests {
                 "Counter should be 1 before threads are suspended"
             );
         }
+    }
+
+    extern "C" fn Th_Suicide(arg: *mut core::ffi::c_void) {
+        let _ = arg;
+        // Thread exits immediately
+    }
+
+    // Regression test for https://github.com/vivoblueos/kernel/issues/271.
+    #[test]
+    fn TC_osThreadGetCount_UAF() {
+        println!("TC_osThreadGetCount_UAF: Start...");
+
+        // 1. Create a detached thread
+        let thread_id = osThreadNew(Some(Th_Suicide), ptr::null_mut(), ptr::null());
+        assert!(!thread_id.is_null(), "Thread creation failed");
+
+        // 2. Yield CPU to allow the detached thread to run and exit.
+        // This triggers exit_os2_thread -> drop_os2_thread.
+        for _ in 0..10 {
+            osThreadYield();
+        }
+
+        println!("TC_osThreadGetCount_UAF: Thread should be dead now. Starting Heap Spray...");
+
+        // 3. Improved Heap Spray (Smart Spray)
+        // We don't know the exact size of Os2Thread aligned to allocator buckets.
+        // So we spray a range of sizes.
+        // Os2Thread contains: Arc (8/4 bytes), Barrier (small), AtomicI8 (1), EventFlags (~40-60 bytes).
+        // It is likely between 48 and 128 bytes.
+        let mut spray_vecs = alloc::vec::Vec::new();
+
+        // Try sizes from 32 bytes up to 256 bytes (step by 8 or 16)
+        // This maximizes the chance of hitting the exact slab bucket used by Os2Thread.
+        for size in (32..256).step_by(8) {
+            for _ in 0..20 {
+                // Create a vector of 'size' bytes
+                let num_usizes = size / core::mem::size_of::<usize>();
+                let mut spray = alloc::vec![0usize; num_usizes];
+                // Fill with 0xFFFF_FFFF.
+                // If the kernel tries to use this as a pointer (Arc<Thread>), it will crash.
+                for val in spray.iter_mut().take(num_usizes) {
+                    *val = 0xFFFF_FFFF;
+                }
+                spray_vecs.push(spray);
+            }
+        }
+
+        println!("TC_osThreadGetCount_UAF: Heap Sprayed. Calling vulnerable function...");
+
+        // 4. Call osThreadGetCount
+        // If the spray worked, 't' points to our 0xFFFF_FFFF data.
+        // 't.state()' calls 't.inner()', which reads the first field of Os2Thread.
+        // That field is now 0xFFFF_FFFF. Treating 0xFFFF_FFFF as a pointer to Thread and dereferencing it
+        // causes a crash.
+        let count = osThreadGetCount();
+
+        // If we see this log, the exploit failed (memory wasn't overwritten, or allocator protected it).
+        println!(
+            "TC_osThreadGetCount_UAF: Count = {}, System survived (Exploit failed).",
+            count
+        );
+
+        // Clean up spray to avoid running out of memory in other tests
+        drop(spray_vecs);
     }
 }
