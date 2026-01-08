@@ -43,6 +43,12 @@ jobs:
               let prNum = match[3];
               prs.push({owner: owner, repo: repo, pr_num: prNum});
             }
+            if (prs.length === 0) {
+              const currentPR = context.payload.issue.number;
+              const currentOwner = context.repo.owner;
+              const currentRepo = context.repo.repo;
+              prs.push({owner: currentOwner, repo: currentRepo, pr_num: currentPR});
+            }
             // Get metadata of the PR.
             await Promise.all(prs.map(async({ owner, repo, pr_num }) => {
               const { data: pullRequest } = await github.rest.pulls.get({
