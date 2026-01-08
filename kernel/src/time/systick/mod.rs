@@ -30,7 +30,6 @@ include!("aarch64.rs");
 include!("riscv.rs");
 
 pub(crate) static SYSTICK: Systick = Systick::new(SYSTICK_IRQ_NUM);
-
 pub struct Systick {
     tick: AtomicUsize,
     irq_num: IrqNumber,

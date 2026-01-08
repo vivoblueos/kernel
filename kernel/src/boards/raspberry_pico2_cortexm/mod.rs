@@ -136,6 +136,7 @@ crate::define_bus! {
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;
+    let _trace = IrqTrace::new(33);
     let uart = get_device!(console_uart);
     let intr = uart.get_interrupt();
     if let Some(handler) = unsafe {
