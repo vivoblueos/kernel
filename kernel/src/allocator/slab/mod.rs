@@ -25,7 +25,6 @@ use crate::{
 };
 use blueos_infra::list::singly_linked_list::SinglyLinkedList;
 use core::{alloc::Layout, mem, ptr, ptr::NonNull};
-use log::{debug, warn};
 
 pub mod heap;
 
@@ -87,9 +86,7 @@ impl Slab {
                 #[cfg(debug_slab)]
                 {
                     if (block as usize) < self.start_addr || (block as usize) >= self.end_addr {
-                        log::error!("ptr = 0x{:p} is not in the heap", block);
-                        log::error!("size = {}", self.block_size);
-                        panic!("alloc ptr is not in the heap\n");
+                        panic!("alloc ptr is not in the heap\n")
                     }
                 }
                 let ptr = block.as_ptr();
@@ -114,16 +111,13 @@ impl Slab {
         #[cfg(debug_slab)]
         {
             if (ptr as usize) < self.start_addr || (ptr as usize) >= self.end_addr {
-                log::error!("ptr = 0x{:p} is not in the heap", ptr);
-                log::error!("size = {}", self.block_size);
-                panic!("dealloc ptr is not in the heap\n");
+                panic!("dealloc ptr is not in the heap\n")
             }
         }
 
         let magic_ptr = ptr.wrapping_add(1);
         if *magic_ptr == 0xdeadbeef {
-            log::warn!("0x{:p} is already freed", ptr);
-            return;
+            panic!("Double free detected")
         }
         self.free_block_list.push(NonNull::new_unchecked(ptr));
         ptr::write(magic_ptr, 0xdeadbeef);
@@ -250,14 +244,7 @@ impl<
                             & !SIZE_USED
                     };
                 } else {
-                    // Log allocation failure for debugging
-                    warn!(
-                        "Allocation failed - size: {}, align: {}, total: {}, used: {}",
-                        layout.size(),
-                        layout.align(),
-                        self.total,
-                        self.allocated()
-                    );
+                    // Log allocation failure for debugging.
                     break;
                 }
             }
