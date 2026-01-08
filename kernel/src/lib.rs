@@ -779,4 +779,20 @@ mod tests {
             test_size
         );
     }
+
+    // The test always panicks since we are using 0xdeadbeef as magic number.
+    #[blueos_test_macro::ignore]
+    fn test_always_double_free() {
+        let mut spray_vecs = alloc::vec::Vec::new();
+        for size in (32..256).step_by(8) {
+            for _ in 0..20 {
+                let num_usizes = size / core::mem::size_of::<usize>();
+                let mut spray = alloc::vec![0usize; num_usizes];
+                for i in 0..num_usizes {
+                    spray[i] = 0xDEAD_BEEF;
+                }
+                spray_vecs.push(spray);
+            }
+        }
+    }
 }

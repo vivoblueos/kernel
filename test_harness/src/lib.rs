@@ -57,6 +57,12 @@ pub fn only_test(attr: TokenStream, item: TokenStream) -> TokenStream {
     generate_test_case(attr, item)
 }
 
+#[proc_macro_attribute]
+pub fn ignore(_attr: TokenStream, _item: TokenStream) -> TokenStream {
+    let expanded = quote! {};
+    return TokenStream::from(expanded);
+}
+
 fn generate_test_case(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
     let test_name = &input.sig.ident;
