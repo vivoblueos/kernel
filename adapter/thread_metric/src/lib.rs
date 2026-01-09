@@ -45,7 +45,7 @@ pub extern "C" fn tm_initialize(test_initialization_function: extern "C" fn()) {
 }
 
 extern "C" fn tm_thread_start(arg: *mut core::ffi::c_void) {
-    librs::pthread::register_my_tcb();
+    librs::pthread::register_my_posix_tcb();
     let entry: extern "C" fn() = unsafe { core::mem::transmute(arg) };
     entry();
 }

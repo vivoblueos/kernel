@@ -113,7 +113,7 @@ pub fn loader_test_runner(tests: &[&dyn Fn()]) {
 
 #[no_mangle]
 pub extern "C" fn main() -> i32 {
-    pthread::register_my_tcb();
+    pthread::register_my_posix_tcb();
     loader_test_main();
     #[cfg(coverage)]
     common_cov::write_coverage_data();
