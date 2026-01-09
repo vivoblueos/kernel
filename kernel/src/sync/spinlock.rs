@@ -100,11 +100,14 @@ impl<T: ?Sized> SpinLock<T> {
     }
 
     pub fn irqsave_lock(&self) -> SpinLockGuard<'_, T> {
+        let irq_guard = DisableInterruptGuard::new();
         loop {
-            let Some(l) = self.try_irqsave_lock() else {
+            let Some(mut l) = self.try_lock() else {
                 core::hint::spin_loop();
                 continue;
             };
+            debug_assert!(l.irq_guard.is_none());
+            l.irq_guard = Some(irq_guard);
             return l;
         }
     }
