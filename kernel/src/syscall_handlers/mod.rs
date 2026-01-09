@@ -41,6 +41,7 @@ use libc::{
     sigset_t, size_t, sockaddr, socklen_t, timespec, EBUSY, EINVAL, ESRCH,
 };
 
+pub const SCHED_RR: c_int = 1;
 #[cfg(not(enable_vfs))]
 mod vfs_syscalls {
     use super::*;
@@ -334,7 +335,7 @@ get_sched_param(tid: usize) -> c_long {
     let Some(target) = target else {
         return -(ESRCH as c_long);
     };
-    target.priority() as c_long
+    (config::MAX_THREAD_PRIORITY - (target.priority() as crate::types::ThreadPriority)) as c_long
 });
 
 define_syscall_handler!(
@@ -342,37 +343,21 @@ set_sched_param(tid: usize, prio: c_int) -> c_long {
     if prio < 0 || (prio as u32) > (config::MAX_THREAD_PRIORITY as u32) {
         return -(EINVAL as c_long);
     }
-    let p = prio as crate::types::ThreadPriority;
-    let mut was_ready = false;
-    let target = thread::GlobalQueueVisitor::find_if(|t| {
-        if thread::Thread::id(t) == tid {
-            was_ready = t.state() == thread::READY;
-            if !was_ready {
-                let mut w = t.lock();
-                w.set_origin_priority(p);
-                w.set_priority(p);
-            }
-            true
-        } else {
-            false
-        }
-    });
+    // convert posix priority to kernel priority
+    let p = config::MAX_THREAD_PRIORITY - (prio as crate::types::ThreadPriority);
+    let target = thread::GlobalQueueVisitor::find_if(|t| thread::Thread::id(t) == tid);
 
     let Some(target) = target else {
         return -(ESRCH as c_long);
     };
-
+    if target.lock().priority() == p {
+        return 0;
+    }
     let preempt_guard = thread::Thread::try_preempt_me();
-    let ret = if was_ready {
-        match scheduler::update_ready_thread_priority(&target, p) {
-            Ok(()) => 0,
-            Err(_) => -(EBUSY as c_long),
-        }
-    } else {
-        0
-    };
+
+    scheduler::update_thread_priority_safe(&target, p);
     drop(preempt_guard);
-    ret
+    0
 });
 
 define_syscall_handler!(
@@ -503,6 +488,39 @@ define_syscall_handler!(exit_thread() -> c_long {
 
 define_syscall_handler!(sched_yield() -> c_long {
     scheduler::yield_me();
+    0
+});
+
+define_syscall_handler!(sched_get_priority_max(policy: c_int) -> c_long {
+    // Only SCHED_RR is supported.
+    if policy != SCHED_RR {
+        return -(libc::EINVAL as c_long);
+    }
+    config::MAX_THREAD_PRIORITY as c_long
+});
+
+define_syscall_handler!(sched_get_priority_min(policy: c_int) -> c_long {
+    // Only SCHED_RR is supported.
+    if policy != SCHED_RR {
+        return -(libc::EINVAL as c_long);
+    }
+    0
+});
+
+define_syscall_handler!(sched_rr_get_interval(pid: c_int, interval: *mut timespec) -> c_long {
+    let _ = pid;
+    if interval.is_null() {
+        return -(libc::EINVAL as c_long);
+    }
+
+    unsafe {
+        (*interval).tv_sec = 0;
+        let ns: i64 = (time::tick_to_millisecond(blueos_kconfig::CONFIG_ROBIN_SLICE as usize)
+            as i64)
+            .saturating_mul(1_000_000);
+        let clamped: i64 = core::cmp::min(ns, 999_999_999);
+        (*interval).tv_nsec = clamped as c_int;
+    }
     0
 });
 define_syscall_handler!(
@@ -896,6 +914,9 @@ syscall_table! {
     (MqTimedReceive, mq_timedreceive),
     (MqGetSetAttr, mq_getsetattr),
     (Ioctl, ioctl),
+    (SchedGetPriorityMax, sched_get_priority_max),
+    (SchedGetPriorityMin, sched_get_priority_min),
+    (SchedRrGetInterval, sched_rr_get_interval),
 }
 
 #[cfg(not(enable_syscall))]

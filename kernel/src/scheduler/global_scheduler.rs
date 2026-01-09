@@ -174,23 +174,40 @@ pub fn remove_from_ready_queue(t: &ThreadNode) -> bool {
     remove_from_ready_queue_inner(&mut tbl, t)
 }
 
-pub fn update_ready_thread_priority(
-    t: &ThreadNode,
-    new_priority: ThreadPriority,
-) -> Result<(), Uint> {
+pub fn update_thread_priority_safe(t: &ThreadNode, newprio: ThreadPriority) {
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
-    if !remove_from_ready_queue_inner(&mut tbl, t) {
-        let state = t.state();
-        return Err(state);
+
+    let mut removed_from_ready = false;
+    let priority = t.priority();
+    if priority <= MAX_THREAD_PRIORITY {
+        let q = &mut tbl.tables[priority as usize];
+        let removed = q.remove_if(|e| ThreadNode::as_ptr(t) == e as *const _);
+        if removed.is_some() {
+            removed_from_ready = true;
+            if q.is_empty() {
+                tbl.clear_active_queue(priority as u32);
+            }
+        }
     }
 
-    let mut thread_guard = t.lock();
-    thread_guard.set_origin_priority(new_priority);
-    thread_guard.set_priority(new_priority);
-    drop(thread_guard);
-
-    if queue_ready_thread_inner(&mut tbl, t.clone()) {
-        return Ok(());
+    if removed_from_ready {
+        // Enqueued: update fields then requeue under the same ready-table lock.
+        {
+            let mut g = t.lock();
+            g.set_origin_priority(newprio);
+            g.set_priority(newprio);
+        }
+        let _ = queue_ready_thread_inner(&mut tbl, t.clone());
+        return;
     }
-    Err(thread::RUNNING)
+
+    // Not enqueued: drop runqueue lock and update fields only.
+    drop(tbl);
+    let mut g = t.lock();
+    // if retired, do not change priority
+    if g.state() == thread::RETIRED {
+        return;
+    }
+    g.set_origin_priority(newprio);
+    g.set_priority(newprio);
 }
