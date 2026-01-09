@@ -26,7 +26,7 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn main() -> i32 {
     librs::stdio::init();
-    librs::pthread::register_my_tcb();
+    librs::pthread::register_my_posix_tcb();
     unsafe { tm_main() };
     0
 }
