@@ -66,7 +66,7 @@ pub mod unistd;
 #[no_mangle]
 pub extern "C" fn __librs_start_main() {
     crate::stdio::init();
-    crate::pthread::register_my_tcb();
+    crate::pthread::register_my_posix_tcb();
     // TODO: Pass argc, argv and envp?
     // TODO: Before exit, we have to check owned threads' status and recycle them.
     extern "C" {
@@ -123,7 +123,7 @@ pub fn librs_test_runner(tests: &[&dyn Fn()]) {
 #[cfg(test)]
 #[no_mangle]
 extern "C" fn main() -> i32 {
-    pthread::register_my_tcb();
+    pthread::register_my_posix_tcb();
     librs_test_main();
     0
 }

@@ -308,7 +308,9 @@ pub extern "C" fn pthread_detach(t: pthread_t) -> c_int {
 
 // This is used in thread not created by `pthread_create`. Usually at the entry
 // of POSIX subsystem.
-pub extern "C" fn register_my_tcb() {
+/// cbindgen:ignore
+#[no_mangle]
+pub extern "C" fn register_my_posix_tcb() {
     let tid = pthread_self();
     register_posix_tcb(tid as usize, core::ptr::null_mut());
 }
