@@ -118,6 +118,7 @@ where
         unsafe { &*base }
     }
 
+    #[allow(clippy::type_complexity)]
     fn node_at(
         &self,
         mut i: usize,
@@ -137,20 +138,12 @@ where
                 current = current
                     .as_mut()
                     .and_then(|n| unsafe { n.as_mut() }.link.left())
-                    .and_then(|mut n| {
-                        Some(NonNull::from_mut(Self::node_of_link_mut(unsafe {
-                            n.as_mut()
-                        })))
-                    });
+                    .map(|mut n| NonNull::from_mut(Self::node_of_link_mut(unsafe { n.as_mut() })));
             } else {
                 current = current
                     .as_mut()
                     .and_then(|n| unsafe { n.as_mut() }.link.right())
-                    .and_then(|mut n| {
-                        Some(NonNull::from_mut(Self::node_of_link_mut(unsafe {
-                            n.as_mut()
-                        })))
-                    });
+                    .map(|mut n| NonNull::from_mut(Self::node_of_link_mut(unsafe { n.as_mut() })));
             }
             direction >>= 1;
             height -= 1;
@@ -296,7 +289,7 @@ where
         if Some(node) == self.top {
             return true;
         }
-        unsafe { !node.as_ref().parent.is_none() }
+        unsafe { node.as_ref().parent.is_some() }
     }
 
     fn is_left_node(parent: &MinHeapNode<T, A>, child: &MinHeapNode<T, A>) -> bool {
@@ -325,7 +318,7 @@ where
         }
         self.size -= 1;
         let node_mut = unsafe { node.as_mut() };
-        let parent = core::mem::replace(&mut node_mut.parent, None);
+        let parent = node_mut.parent.take();
         if node == last {
             debug_assert_eq!(node_mut.parent, None);
             return;
@@ -391,9 +384,7 @@ where
     }
 
     pub fn peek(&self) -> Option<&T> {
-        let Some(top) = self.top else {
-            return None;
-        };
+        let top = self.top?;
         Some(Self::owner(unsafe { top.as_ref() }))
     }
 }
