@@ -14,7 +14,10 @@
 
 // Similar to std::sync::Barrier.
 
-use crate::sync::{atomic_wait, atomic_wake};
+use crate::{
+    sync::{atomic_wait, atomic_wake},
+    time::Tick,
+};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 // Used when N is small and contention is low.
@@ -37,7 +40,7 @@ impl<const N: usize> ConstBarrier<N> {
             return;
         }
         loop {
-            let _ = atomic_wait(&self.state, n, None);
+            let _ = atomic_wait(&self.state, n, Tick::MAX);
             n = self.state.load(Ordering::Acquire);
             if n == N {
                 return;

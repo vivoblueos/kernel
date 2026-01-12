@@ -18,6 +18,7 @@ use blueos::{
     scheduler::InsertToEnd,
     support::Storage,
     sync::{Semaphore, SpinLock},
+    time::Tick,
     types::{Arc, Uint},
 };
 use blueos_infra::{
@@ -139,12 +140,12 @@ impl MemoryPool {
         }
     }
 
-    pub fn get_block_with_timeout(&self, ticks: usize) -> *mut core::ffi::c_void {
+    pub fn get_block_with_timeout(&self, ticks: Tick) -> *mut core::ffi::c_void {
         if irq::is_in_irq() {
             return core::ptr::null_mut();
         }
         let mut ok = false;
-        if ticks == 0 {
+        if ticks.0 == 0 {
             ok = self.sema.try_acquire::<InsertToEnd>();
         } else {
             ok = self.sema.acquire_timeout::<InsertToEnd>(ticks);
@@ -253,7 +254,7 @@ mod tests {
         assert_eq!(mp.block_size(), 512);
         assert_eq!(mp.total_blocks(), 4);
         assert_eq!(mp.free_blocks(), 4);
-        let block = mp.get_block_with_timeout(0);
+        let block = mp.get_block_with_timeout(Tick(0));
         assert!(!block.is_null());
         assert_eq!(mp.free_blocks(), 3);
         mp.put_block(block);
@@ -273,7 +274,7 @@ mod tests {
             let mp = mp.clone();
             let counter = counter.clone();
             thread::spawn(move || {
-                let block = mp.get_block_with_timeout(1024);
+                let block = mp.get_block_with_timeout(Tick(1024));
                 assert!(!block.is_null());
                 mp.put_block(block);
                 counter.fetch_add(1, Ordering::Relaxed);
@@ -300,7 +301,7 @@ mod tests {
             let mp = mp.clone();
             let counter = counter.clone();
             thread::spawn(move || {
-                let block = mp.get_block_with_timeout(1024);
+                let block = mp.get_block_with_timeout(Tick(1024));
                 assert!(!block.is_null());
                 mp.put_block(block);
                 counter.fetch_add(1, Ordering::Relaxed);
@@ -320,11 +321,11 @@ mod tests {
     fn test_try_allocate_from_mempool() {
         let mut mp = MemoryPool::new();
         mp.init(2, 64, None);
-        let p0 = mp.get_block_with_timeout(0);
+        let p0 = mp.get_block_with_timeout(Tick(0));
         assert!(!p0.is_null());
-        let p1 = mp.get_block_with_timeout(0);
+        let p1 = mp.get_block_with_timeout(Tick(0));
         assert!(!p1.is_null());
-        let p2 = mp.get_block_with_timeout(0);
+        let p2 = mp.get_block_with_timeout(Tick(0));
         assert!(p2.is_null());
         assert!(mp.put_block(p0));
         assert!(mp.put_block(p1));
@@ -341,7 +342,7 @@ mod tests {
             let mp = mp.clone();
             let counter = counter.clone();
             thread::spawn(move || {
-                let block = mp.get_block_with_timeout(0);
+                let block = mp.get_block_with_timeout(Tick(0));
                 assert!(!block.is_null());
                 assert!(mp.put_block(block));
                 counter.fetch_add(1, Ordering::Relaxed);

@@ -14,6 +14,10 @@
 
 use crate::sync::{ISpinLock, SpinLock, SpinLockGuard};
 pub use blueos_infra::{
+    iheap::{
+        IouMinHeapNodeMut as IouIntrusiveBinaryHeapNodeMut, MinHeap as IntrusiveBinaryHeap,
+        MinHeapNode as IntrusiveBinaryHeapNode,
+    },
     impl_simple_intrusive_adapter,
     intrusive::{
         Adapter as IntrusiveAdapter, Nested as NestedAdapter, Relative as RelativeAdapter,

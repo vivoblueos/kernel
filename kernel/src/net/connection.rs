@@ -26,6 +26,7 @@ use crate::{
     scheduler::{self, yield_me},
     sync::atomic_wait as futex,
     thread::Thread,
+    time::Tick,
 };
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 use core::{
@@ -777,7 +778,9 @@ impl OperationIPCReply {
         // wait for consume
         if self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
             // TODO add timeout
-            if let Err(e) = futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, None) {
+            if let Err(e) =
+                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
+            {
                 match e {
                     code::EAGAIN => {
                         // task finish before wait , don't need to wait anymore, continue

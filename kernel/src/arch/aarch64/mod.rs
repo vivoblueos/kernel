@@ -541,3 +541,21 @@ pub(crate) extern "C" fn switch_stack(
         )
     }
 }
+
+pub(crate) extern "C" fn send_ipi(target_core_id: usize) {
+    let aff1 = 0u64;
+    let aff2 = 0u64;
+    let aff3 = 0u64;
+    let target_list = 1u64 << target_core_id;
+    let int_id = 1u64;
+
+    let sgi_val: u64 = (aff3 << 48) | (aff2 << 32) | (int_id << 24) | (aff1 << 16) | (target_list);
+    unsafe {
+        core::arch::asm!(
+            "msr ICC_SGI1R_EL1, {x}",
+            "isb",
+            x = in(reg) sgi_val,
+            options(nomem, nostack)
+        );
+    }
+}

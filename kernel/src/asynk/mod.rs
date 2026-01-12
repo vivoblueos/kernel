@@ -17,10 +17,13 @@
 extern crate alloc;
 use crate::{
     config::MAX_THREAD_PRIORITY,
-    scheduler, static_arc,
+    scheduler,
+    scheduler::WaitQueue,
+    static_arc,
     support::ArcBufferingQueue,
     sync::{atomic_wait, ISpinLock, SpinLockGuard},
     thread::{self, Entry, SystemThreadStorage, ThreadKind, ThreadNode},
+    time::Tick,
     types::{impl_simple_intrusive_adapter, Arc, IlistHead},
 };
 use alloc::boxed::Box;
@@ -87,16 +90,13 @@ fn create_tasklet(future: impl Future<Output = ()> + 'static) -> Arc<Tasklet> {
 pub fn block_on(future: impl Future<Output = ()> + Send + 'static) {
     let t = scheduler::current_thread();
     let mut task = create_tasklet(future);
-    task.lock().blocked = Some(t);
-    scheduler::suspend_me_with_hook(move || {
-        enqueue_active_tasklet(task);
-        #[cfg(debugging_scheduler)]
-        crate::trace!(
-            "[TH:0x{:x}] is waking up the poller",
-            scheduler::current_thread_id()
-        );
-        wake_poller();
-    });
+    enqueue_active_tasklet(task.clone());
+    let mut w = task.lock();
+    w.blocked = Some(t.clone());
+    t.disable_preempt();
+    wake_poller();
+    scheduler::suspend_me_for::<Tasklet>(Tick::MAX, Some(w));
+    t.enable_preempt();
 }
 
 fn wake_poller() {
@@ -152,6 +152,6 @@ extern "C" fn poll() {
     loop {
         let n = POLLER_WAKER.load(Ordering::Acquire);
         poll_inner();
-        atomic_wait::atomic_wait(&POLLER_WAKER, n, None);
+        atomic_wait::atomic_wait(&POLLER_WAKER, n, Tick::MAX);
     }
 }

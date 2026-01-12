@@ -15,15 +15,17 @@
 use crate::{bridge_utils, os_adapter, MAX_NAME_LEN};
 use alloc::boxed::Box;
 use blueos::{
-    irq,
-    time::timer::{Timer, TimerEntry},
-    types::{Arc, ArcInner, Uint},
+    irq, time,
+    time::{
+        timer,
+        timer::{Repeat, Timer, TimerCallback, TimerMode},
+        timer_manager::Iou,
+        Tick,
+    },
+    types::{Arc, Uint},
 };
 use cmsis_os2::*;
-use core::{
-    mem::{self, ManuallyDrop},
-    ptr,
-};
+use core::{mem::MaybeUninit, ptr::NonNull};
 use delegate::delegate;
 
 os_adapter! {
@@ -33,11 +35,8 @@ os_adapter! {
 impl OsTimer {
     delegate! {
         to self.inner() {
-            pub fn is_activated(&self) -> bool;
-            pub fn start(&self);
-            pub fn start_new_interval(&self, interval: usize);
-            pub fn stop(&self);
-            pub fn reset(&self);
+            pub fn expired(&self) -> bool;
+            pub fn expire(&self);
         }
     }
 }
@@ -56,52 +55,51 @@ pub extern "C" fn osTimerNew(
     attr: *const osTimerAttr_t,
 ) -> osTimerId_t {
     if irq::is_in_irq() {
-        return ptr::null_mut();
+        return core::ptr::null_mut();
     }
+
     let Some(func) = func else {
-        return ptr::null_mut();
+        return core::ptr::null_mut();
     };
 
-    if ((timer_type != osTimerType_t_osTimerOnce) && (timer_type != osTimerType_t_osTimerPeriodic))
-    {
-        return ptr::null_mut();
-    }
+    let mut tm = Timer::new();
 
-    let entry = TimerEntry::C(func, argument);
-    let timer = if timer_type == osTimerType_t_osTimerOnce {
-        Timer::new_hard_oneshot(0, entry)
-    } else {
-        Timer::new_hard_periodic(0, entry)
+    #[allow(non_upper_case_globals)]
+    match timer_type {
+        osTimerType_t_osTimerOnce => tm.mode = TimerMode::Deadline(Tick::MAX),
+        osTimerType_t_osTimerPeriodic => tm.mode = TimerMode::Repeat(Repeat::default()),
+        _ => return core::ptr::null_mut(),
     };
+
+    tm.callback = TimerCallback::UnsafePosix(func, argument);
 
     if attr.is_null() {
-        // Use default values when attr is NULL
-        let os_timer = Arc::new(OsTimer::with_default_name(timer));
-        return Arc::into_raw(os_timer) as osTimerId_t;
+        // Use default values when attr is NULL.
+        let os_timer = Box::new(OsTimer::with_default_name(Arc::new(tm)));
+        return Box::into_raw(os_timer) as osTimerId_t;
     }
 
     let attr_ref = unsafe { &*attr };
-
     if attr_ref.cb_mem.is_null() {
-        // Allocate memory dynamically
-        let os_timer = Arc::new(OsTimer::with_name(timer, attr_ref.name));
-        return Arc::into_raw(os_timer) as osTimerId_t;
-    }
-    // Check if cb_size is sufficient when cb_mem is provided
-    if attr_ref.cb_size < mem::size_of::<ArcInner<OsTimer>>() as u32 {
-        return ptr::null_mut();
+        // Allocate memory dynamically.
+        let os_timer = Box::new(OsTimer::with_name(Arc::new(tm), attr_ref.name));
+        return Box::into_raw(os_timer) as osTimerId_t;
     }
 
-    // Use provided memory;
+    // Check if cb_size is sufficient when cb_mem is provided
+    if attr_ref.cb_size < core::mem::size_of::<OsTimer>() as u32 {
+        return core::ptr::null_mut();
+    }
+
+    // Use provided memory.
     unsafe {
-        ptr::write(
-            attr_ref.cb_mem as *mut ArcInner<OsTimer>,
-            ArcInner::new(OsTimer::with_name(timer, attr_ref.name)),
+        core::ptr::write(
+            attr_ref.cb_mem as *mut OsTimer,
+            OsTimer::with_name(Arc::new(tm), attr_ref.name),
         )
     };
-    let os_timer = unsafe { Arc::from_raw(attr_ref.cb_mem as *mut _ as *mut OsTimer) };
 
-    (unsafe { Arc::into_raw(os_timer) }) as osTimerId_t
+    attr_ref.cb_mem as *mut OsTimer as osTimerId_t
 }
 
 // Get name of a timer.
@@ -109,11 +107,10 @@ pub extern "C" fn osTimerNew(
 // \return name as null-terminated string.
 #[no_mangle]
 pub extern "C" fn osTimerGetName(timer_id: osTimerId_t) -> *const core::ffi::c_char {
-    if timer_id.is_null() {
-        return ptr::null();
-    }
-
-    let timer = unsafe { ManuallyDrop::new(Arc::from_raw(timer_id as *const OsTimer)) };
+    let Some(ostm) = NonNull::new(timer_id as *mut OsTimer) else {
+        return core::ptr::null();
+    };
+    let timer = unsafe { ostm.as_ref() };
     timer.name_bytes().as_ptr() as *const core::ffi::c_char
 }
 
@@ -126,13 +123,23 @@ pub extern "C" fn osTimerStart(timer_id: osTimerId_t, ticks: u32) -> osStatus_t 
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
     }
-    if timer_id.is_null() {
+
+    let Some(ostm) = NonNull::new(timer_id as *mut OsTimer) else {
         return osStatus_t_osErrorParameter;
+    };
+
+    let base = Tick::after(Tick(ticks as usize));
+    let timer = unsafe { ostm.as_ref() };
+    let mut tm = timer.clone_inner();
+    let tm_mut = unsafe { Arc::get_mut_unchecked(&mut tm) };
+    match &mut tm_mut.mode {
+        TimerMode::Deadline(d) => *d = base,
+        TimerMode::Repeat(r) => {
+            r.base_deadline = base;
+            r.period = Tick(ticks as usize);
+        }
     }
-
-    let timer = unsafe { ManuallyDrop::new(Arc::from_raw(timer_id as *const OsTimer)) };
-
-    timer.start_new_interval(ticks as usize);
+    timer::add_hard_timer(tm_mut);
     osStatus_t_osOK
 }
 
@@ -144,12 +151,16 @@ pub extern "C" fn osTimerStop(timer_id: osTimerId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
     }
-    if timer_id.is_null() {
-        return osStatus_t_osErrorParameter;
-    }
 
-    let timer = unsafe { ManuallyDrop::new(Arc::from_raw(timer_id as *const OsTimer)) };
-    timer.stop();
+    let Some(ostm) = NonNull::new(timer_id as *mut OsTimer) else {
+        return osStatus_t_osErrorParameter;
+    };
+
+    let timer = unsafe { ostm.as_ref() };
+    let mut tm = timer.clone_inner();
+    let tm_mut = unsafe { Arc::get_mut_unchecked(&mut tm) };
+    let iou = unsafe { Iou::from_mut(tm_mut) };
+    timer::remove_hard_timer(iou);
 
     osStatus_t_osOK
 }
@@ -162,12 +173,16 @@ pub extern "C" fn osTimerIsRunning(timer_id: osTimerId_t) -> u32 {
     if irq::is_in_irq() {
         return 0;
     }
-    if timer_id.is_null() {
-        return 0;
-    }
 
-    let timer = unsafe { ManuallyDrop::new(Arc::from_raw(timer_id as *const OsTimer)) };
-    if timer.is_activated() {
+    let Some(ostm) = NonNull::new(timer_id as *mut OsTimer) else {
+        return 0;
+    };
+
+    let timer = unsafe { ostm.as_ref() };
+    let mut tm = timer.clone_inner();
+    let tm_mut = unsafe { Arc::get_mut_unchecked(&mut tm) };
+    let iou = unsafe { Iou::from_mut(tm_mut) };
+    if timer::is_active_hard_timer(&iou) {
         return 1;
     }
     0
@@ -181,14 +196,12 @@ pub extern "C" fn osTimerDelete(timer_id: osTimerId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
     }
+
     if timer_id.is_null() {
         return osStatus_t_osErrorParameter;
     }
 
-    // let timer = unsafe { ManuallyDrop::new(Arc::from_raw(timer_id as *const OsTimer)) };
-    // timer.reset();
-
-    let _ = unsafe { Arc::from_raw(timer_id as *mut OsTimer) };
+    let _ = unsafe { Box::from_raw(timer_id as *mut OsTimer) };
     osStatus_t_osOK
 }
 
@@ -200,6 +213,7 @@ mod tests {
     use blueos_test_macro::test;
     use core::{
         ffi::CStr,
+        mem::ManuallyDrop,
         sync::atomic::{AtomicUsize, Ordering},
     };
 
@@ -226,7 +240,7 @@ mod tests {
         let attr = osTimerAttr_t {
             name: "timer1".as_ptr() as *const core::ffi::c_char,
             attr_bits: 0,
-            cb_mem: ptr::null_mut(),
+            cb_mem: core::ptr::null_mut(),
             cb_size: 0,
         };
 
@@ -240,10 +254,10 @@ mod tests {
         let result = osTimerDelete(timer_id);
         assert_eq!(result, osStatus_t_osOK);
 
-        let layout = Layout::from_size_align(mem::size_of::<ArcInner<OsTimer>>(), 8).unwrap();
+        let layout = Layout::from_size_align(core::mem::size_of::<OsTimer>(), 8).unwrap();
         let attr = osTimerAttr_t {
             attr_bits: 0,
-            name: ptr::null(),
+            name: core::ptr::null(),
             cb_mem: unsafe { alloc(layout) as *mut core::ffi::c_void },
             cb_size: layout.size() as u32,
         };
@@ -255,8 +269,8 @@ mod tests {
             &attr,
         );
         assert!(!timer_id.is_null());
-        let result = osTimerDelete(timer_id);
-        assert_eq!(result, osStatus_t_osOK);
+        assert_eq!(attr.cb_mem, timer_id);
+        unsafe { dealloc(attr.cb_mem as *mut u8, layout) };
     }
 
     #[test]
@@ -264,7 +278,7 @@ mod tests {
         let attr = osTimerAttr_t {
             name: "timer02".as_ptr() as *const core::ffi::c_char,
             attr_bits: 0,
-            cb_mem: ptr::null_mut(),
+            cb_mem: core::ptr::null_mut(),
             cb_size: 0,
         };
 
@@ -290,10 +304,10 @@ mod tests {
 
     #[test]
     fn test_os_timer_start_once() {
-        let layout = Layout::from_size_align(mem::size_of::<ArcInner<OsTimer>>(), 8).unwrap();
+        let layout = Layout::from_size_align(core::mem::size_of::<OsTimer>(), 8).unwrap();
         let attr = osTimerAttr_t {
             attr_bits: 0,
-            name: ptr::null(),
+            name: core::ptr::null(),
             cb_mem: unsafe { alloc(layout) as *mut core::ffi::c_void },
             cb_size: layout.size() as u32,
         };
@@ -311,24 +325,25 @@ mod tests {
         let result = osTimerStart(timer_id, 8);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 1);
-        scheduler::suspend_me_for(20);
+        scheduler::suspend_me_for::<()>(Tick(20), None);
         assert_eq!(counter.load(Ordering::Relaxed), 1);
-
-        let result = osTimerDelete(timer_id);
-        assert_eq!(result, osStatus_t_osOK);
+        unsafe { dealloc(attr.cb_mem as *mut u8, layout) };
     }
 
     #[test]
     fn test_os_timer_start_periodic() {
-        let layout = Layout::from_size_align(mem::size_of::<ArcInner<OsTimer>>(), 8).unwrap();
+        let layout = Layout::from_size_align(
+            core::mem::size_of::<OsTimer>(),
+            core::mem::align_of::<OsTimer>(),
+        )
+        .unwrap();
         let attr = osTimerAttr_t {
             attr_bits: 0,
-            name: ptr::null(),
+            name: core::ptr::null(),
             cb_mem: unsafe { alloc(layout) as *mut core::ffi::c_void },
             cb_size: layout.size() as u32,
         };
         let counter = Arc::new(AtomicUsize::new(0));
-
         let timer_id = osTimerNew(
             Some(test_timer),
             osTimerType_t_osTimerPeriodic,
@@ -340,24 +355,22 @@ mod tests {
         let result = osTimerStart(timer_id, 10);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 1);
-        scheduler::suspend_me_for(25);
+        scheduler::suspend_me_for::<()>(Tick(25), None);
 
         assert_eq!(counter.load(Ordering::Relaxed), 2);
 
         let result = osTimerStop(timer_id);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 0);
-
-        let result = osTimerDelete(timer_id);
-        assert_eq!(result, osStatus_t_osOK);
+        unsafe { dealloc(attr.cb_mem as *mut u8, layout) };
     }
 
     #[test]
     fn test_os_timer_stop() {
-        let layout = Layout::from_size_align(mem::size_of::<ArcInner<OsTimer>>(), 8).unwrap();
+        let layout = Layout::from_size_align(core::mem::size_of::<OsTimer>(), 8).unwrap();
         let attr = osTimerAttr_t {
             attr_bits: 0,
-            name: ptr::null(),
+            name: core::ptr::null(),
             cb_mem: unsafe { alloc(layout) as *mut core::ffi::c_void },
             cb_size: layout.size() as u32,
         };
@@ -374,14 +387,14 @@ mod tests {
         let result = osTimerStart(timer_id, 9);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 1);
-        scheduler::suspend_me_for(25);
+        scheduler::suspend_me_for::<()>(Tick(25), None);
         assert_eq!(counter.load(Ordering::Relaxed), 2);
         let result = osTimerStop(timer_id);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 0);
 
         // TODO: support restart
-        let layout = Layout::from_size_align(mem::size_of::<ArcInner<OsTimer>>(), 8).unwrap();
+        let layout = Layout::from_size_align(core::mem::size_of::<OsTimer>(), 8).unwrap();
         let attr = osTimerAttr_t {
             attr_bits: 0,
             name: "timer03".as_ptr() as *const core::ffi::c_char,
@@ -400,7 +413,7 @@ mod tests {
         let result = osTimerStart(timer_id, 10);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 1);
-        scheduler::suspend_me_for(25);
+        scheduler::suspend_me_for::<()>(Tick(25), None);
         assert_eq!(counter.load(Ordering::Relaxed), 4);
 
         let result = osTimerStop(timer_id);
@@ -422,23 +435,24 @@ mod tests {
 
     #[test]
     fn test_os_timer_start_callback() {
-        let layout = Layout::from_size_align(mem::size_of::<ArcInner<OsTimer>>(), 8).unwrap();
+        let layout = Layout::from_size_align(core::mem::size_of::<OsTimer>(), 8).unwrap();
         let attr = osTimerAttr_t {
             attr_bits: 0,
-            name: ptr::null(),
+            name: core::ptr::null(),
             cb_mem: unsafe { alloc(layout) as *mut core::ffi::c_void },
             cb_size: layout.size() as u32,
         };
         let mut val = 50;
         let arg = Box::into_raw(Box::new(val)) as *mut core::ffi::c_void;
         let timer_id = osTimerNew(Some(test_timer1), osTimerType_t_osTimerPeriodic, arg, &attr);
+        assert_eq!(attr.cb_mem, timer_id);
         assert!(!timer_id.is_null());
         assert_eq!(osTimerIsRunning(timer_id), 0);
 
         let result = osTimerStart(timer_id, 8);
         assert_eq!(result, osStatus_t_osOK);
         assert_eq!(osTimerIsRunning(timer_id), 1);
-        scheduler::suspend_me_for(20);
+        scheduler::suspend_me_for::<()>(Tick(20), None);
 
         let result = osTimerStop(timer_id);
         assert_eq!(result, osStatus_t_osOK);
@@ -448,7 +462,6 @@ mod tests {
         };
         assert_eq!(res, val + 20);
 
-        let result = osTimerDelete(timer_id);
-        assert_eq!(result, osStatus_t_osOK);
+        unsafe { dealloc(attr.cb_mem as *mut u8, layout) };
     }
 }

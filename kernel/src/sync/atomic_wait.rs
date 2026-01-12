@@ -22,7 +22,7 @@ use crate::{
     sync::SpinLock,
     thread,
     thread::{Thread, ThreadNode},
-    time::WAITING_FOREVER,
+    time::Tick,
     trace,
     types::{
         impl_simple_intrusive_adapter, Arc, ArcList, ArcListIterator, AtomicIlistHead as ListHead,
@@ -79,7 +79,7 @@ static_arc! {
     SYNC_ENTRIES(SpinLock<Head>, SpinLock::new(Head::new())),
 }
 
-pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Result<(), Error> {
+pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), Error> {
     let current_val = atom.load(Ordering::Acquire);
     if current_val != val {
         return Err(code::EAGAIN);
@@ -124,11 +124,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Option<usize>) -> Re
         let mut wait_entry = WaitEntry::new(t);
         borrowed_wait_entry =
             wait_queue::insert(we.deref_mut(), &mut wait_entry, InsertMode::InsertToEnd).unwrap();
-        let mut ticks = WAITING_FOREVER;
-        if let Some(timeout) = timeout {
-            ticks = timeout;
-        };
-        reached_deadline = scheduler::suspend_me_with_timeout(we, ticks);
+        reached_deadline = scheduler::suspend_me_for(timeout, Some(we));
         w = EntryListHead::lock();
         we = entry.pending.irqsave_lock();
         borrowed_wait_entry = we.pop(borrowed_wait_entry).unwrap();
@@ -204,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_atomic_wait_timeout() {
-        let result = atomic_wait(&ATOM, 0, Some(10));
+        let result = atomic_wait(&ATOM, 0, Tick(10));
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), code::ETIMEDOUT);
         atomic_wake(&ATOM, 1);

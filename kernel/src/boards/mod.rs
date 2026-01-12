@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use blueos_macro::current_board_mod;
-
 current_board_mod!();
 
 #[macro_export]

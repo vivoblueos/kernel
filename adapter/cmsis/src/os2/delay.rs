@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use blueos::{irq, scheduler, time};
+use blueos::{irq, scheduler, time, time::Tick};
 use cmsis_os2::*;
 
 #[no_mangle]
@@ -20,7 +20,7 @@ pub extern "C" fn osDelay(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
     }
-    scheduler::suspend_me_for(ticks as usize);
+    scheduler::suspend_me_for::<()>(Tick(ticks as usize), None);
     osStatus_t_osOK
 }
 
@@ -29,12 +29,7 @@ pub extern "C" fn osDelayUntil(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
     }
-    let current_tick = time::TickTime::now().as_ticks() as u32;
-    let delay = ticks - current_tick;
-    if delay == 0 || delay > 0x7fffffff {
-        return osStatus_t_osErrorParameter;
-    }
-    scheduler::suspend_me_for(delay as usize);
+    scheduler::suspend_me_until::<()>(Tick(ticks as usize), None);
     osStatus_t_osOK
 }
 
@@ -45,19 +40,19 @@ mod tests {
     #[test]
     fn test_os_delay() {
         // This test is a placeholder. Actual testing would require a proper environment setup.
-        let current_tick = time::TickTime::now().as_ticks() as u32;
+        let current_tick = Tick::now().0 as u32;
         let result = osDelay(10);
         assert_eq!(result, osStatus_t_osOK);
-        let new_tick = time::TickTime::now().as_ticks() as u32;
+        let new_tick = Tick::now().0 as u32;
         assert!(new_tick >= current_tick + 10);
     }
 
     #[test]
     fn test_os_delay_until() {
-        let current_tick = time::TickTime::now().as_ticks() as u32;
+        let current_tick = Tick::now().0 as u32;
         let result = osDelayUntil(current_tick + 20);
         assert_eq!(result, osStatus_t_osOK);
-        let new_tick = time::TickTime::now().as_ticks() as u32;
+        let new_tick = Tick::now().0 as u32;
         assert!(new_tick >= current_tick + 20);
     }
 }

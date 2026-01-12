@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use blueos::{irq, scheduler, time};
+use blueos::{irq, scheduler, time, time::Tick};
 use cmsis_os2::*;
 use core::sync::atomic::{AtomicIsize, Ordering};
 
@@ -224,14 +224,14 @@ pub extern "C" fn osKernelSuspend() -> u32 {
         return 0;
     }
 
-    let mut delay = time::WAITING_FOREVER;
+    let mut delay = Tick::MAX;
 
     // Set the kernel state to suspended
     KERNEL_STATE.store(4, Ordering::SeqCst);
     // Disable the scheduler
     disable_scheduler();
     // bypass look for timer thread get max delay
-    delay as u32
+    delay.0 as u32
 }
 
 // called in same context as osKernelSuspend
@@ -316,7 +316,7 @@ mod tests {
     fn test_os_kernel_suspend_resume() {
         let suspend = osKernelSuspend();
 
-        assert_eq!(suspend, time::WAITING_FOREVER as u32);
+        assert_eq!(suspend, Tick::MAX.0 as u32);
         assert_eq!(osKernelGetState(), osKernelState_t_osKernelSuspended);
         osKernelResume(0);
         assert_eq!(osKernelGetState(), osKernelState_t_osKernelRunning);

@@ -25,9 +25,10 @@ use crate::{
         self,
         riscv::{local_irq_enabled, trap_entry, Context},
     },
-    scheduler,
-    support::SmpStagedInit,
-    time,
+    devices::clock::{riscv_clock::RiscvClock, Clock},
+    drivers::msip::Msip,
+    scheduler, time,
+    time::Tick,
     types::Arc,
 };
 use alloc::{
@@ -36,15 +37,7 @@ use alloc::{
 };
 use blueos_driver::pinctrl::gd32_af::{AfioMode, Gd32Alterfunc, OutputSpeed, OutputType, PullMode};
 
-const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
-const CLOCK_ADDR: usize = 0xD1000000;
-const CLOCK_TIME: usize = CLOCK_ADDR;
-const CLOCK_CMP: usize = CLOCK_ADDR + core::mem::size_of::<u64>();
-const CLOCK_HZ: usize = 40_000_000;
-const NANOS_PER_CLOCK_CYCLE: usize = 1_000_000_000 / CLOCK_HZ;
-const NS_PER_TICK: usize = 1_000_000_000 / NUM_TICKS_PER_SECOND;
-const NUM_TICKS_PER_TIMER: usize = NUM_TICKS_PER_SECOND / 10;
-const NUM_TICKS_PER_SECOND: usize = 10_000_000;
+pub type ClockImpl = RiscvClock<0xD1000000, 0xD1000008, 40_000_000>;
 
 type Handler = unsafe extern "C" fn();
 
@@ -66,20 +59,6 @@ impl<const N: usize> Vector<N> {
 static mut VECTOR: Vector<{ 116usize }> = Vector::new();
 
 #[inline]
-fn clock_timecmp_ptr() -> *mut u64 {
-    unsafe { (CLOCK_CMP) as *mut u64 }
-}
-
-#[inline]
-pub fn current_clock_cycles() -> u64 {
-    unsafe { (CLOCK_TIME as *const u64).read_volatile() }
-}
-
-pub fn get_cycles_to_ms(cycles: u64) -> u64 {
-    cycles / 1_000
-}
-
-#[inline]
 pub fn current_cpu_cycles() -> u64 {
     let hi: u32;
     let lo: u32;
@@ -93,10 +72,6 @@ pub fn current_cpu_cycles() -> u64 {
         )
     }
     ((hi as u64) << 32) + lo as u64
-}
-
-fn set_timecmp(deadline: u64) {
-    unsafe { clock_timecmp_ptr().write_volatile(deadline) };
 }
 
 pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
@@ -120,17 +95,6 @@ fn init_vector_table() {
     }
 }
 
-#[inline]
-pub fn current_cycles() -> usize {
-    let x: usize;
-    unsafe {
-        core::arch::asm!("csrr {}, cycle",
-                         out(reg) x,
-                         options(nostack, nomem))
-    }
-    x
-}
-
 pub(crate) fn handle_irq(_ctx: &Context, _mcause: usize, _mtval: usize) {
     let irq_number: usize;
     unsafe {
@@ -141,29 +105,6 @@ pub(crate) fn handle_irq(_ctx: &Context, _mcause: usize, _mtval: usize) {
             options(nostack),
         )
     }
-}
-
-pub(crate) fn set_timeout_after(ns: usize) {
-    set_timecmp((current_ticks() + ns / NS_PER_TICK) as u64);
-}
-
-pub(crate) fn set_timeout_after_nanos(_nanos: u64) {}
-
-pub(crate) fn set_timeout_after_clock_cycles(cycles: u64) {
-    set_timecmp(cycles);
-}
-
-#[inline]
-pub(crate) fn clock_cycles_to_millis(cycles: u64) -> u64 {
-    cycles * 1_000 / (CLOCK_HZ as u64)
-}
-
-pub(crate) fn clock_cycles_to_duration(cycles: u64) -> core::time::Duration {
-    core::time::Duration::from_nanos(cycles * NANOS_PER_CLOCK_CYCLE as u64)
-}
-
-pub(crate) fn uptime() -> core::time::Duration {
-    clock_cycles_to_duration(current_clock_cycles())
 }
 
 unsafe fn copy_data() {
@@ -178,11 +119,6 @@ unsafe fn copy_data() {
     core::ptr::copy_nonoverlapping(src, dst, size)
 }
 
-#[inline]
-pub fn current_ticks() -> usize {
-    unsafe { (CLOCK_TIME as *const usize).read_volatile() }
-}
-
 pub(crate) fn init() {
     debug_assert!(!local_irq_enabled());
     unsafe { copy_data() };
@@ -190,10 +126,8 @@ pub(crate) fn init() {
     use blueos_hal::clock_control::ClockControl;
     blueos_driver::clock_control::gd32_clock_control::Gd32ClockControl::init();
     crate::boot::init_heap();
-
     init_vector_table();
-    time::systick_init(0);
-    time::reset_systick();
+    ClockImpl::stop();
 }
 
 crate::define_peripheral! {
@@ -226,10 +160,22 @@ crate::define_pin_states!(
 // Used by many drivers in gd32's SDK.
 #[no_mangle]
 pub extern "C" fn delay_1ms(millis: u32) {
-    let ticks = (millis as usize * TICKS_PER_SECOND) / 1000;
-    if ticks == 0 {
+    let ticks = Tick::from_millis(millis as u64);
+    if ticks == Tick(0) {
         scheduler::yield_me()
     } else {
-        scheduler::suspend_me_for(ticks);
+        scheduler::suspend_me_for::<()>(ticks, None);
     }
+}
+
+type MyMsip = Msip<0xD1000000>;
+
+#[inline(always)]
+pub(crate) fn send_ipi(hart: usize) {
+    MyMsip::send_ipi(hart)
+}
+
+#[inline(always)]
+pub(crate) fn clear_ipi(hart: usize) {
+    MyMsip::clear_ipi(hart)
 }

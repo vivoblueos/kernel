@@ -26,7 +26,8 @@ use crate::{
     scheduler,
     support::Storage,
     thread::{self, Builder as ThreadBuilder, Entry, Stack, SystemThreadStorage, ThreadNode},
-    time::{tick_from_millisecond, TickTime},
+    time as sysclk,
+    time::Tick,
 };
 use alloc::{
     boxed::Box,
@@ -188,7 +189,7 @@ where
         F: FnMut(Rc<RefCell<NetworkManager<'a>>>) -> bool,
     {
         let is_forever = timeout_millis == 0;
-        let timeout = TickTime::now().as_millis() + timeout_millis;
+        let timeout = sysclk::now().as_millis() as usize + timeout_millis;
         log::trace!(
             "[NetworkManager] start with timeout_millis={} timeout={}",
             timeout_millis,
@@ -198,15 +199,15 @@ where
         let net_manager = network_manager.clone();
 
         // Loop for request finish
-        while is_forever || TickTime::now().as_millis() < timeout {
+        while is_forever || (sysclk::now().as_millis() as usize) < timeout {
             // Step1 : poll smoltcp network stack
             {
                 let network_manager = network_manager.borrow();
 
                 if let Err(e) = network_manager.net_interfaces.iter().try_for_each(
                     |interface| -> Result<(), String> {
-                        let millis_i64 = i64::try_from(TickTime::now().as_millis())
-                            .map_err(|e| e.to_string())?;
+                        let millis_i64 =
+                            i64::try_from(sysclk::now().as_millis()).map_err(|e| e.to_string())?;
                         interface
                             .borrow_mut()
                             .poll(Instant::from_millis(millis_i64));
@@ -233,7 +234,7 @@ where
                     .net_interfaces
                     .iter()
                     .map(|interface| {
-                        let Ok(millis_i64) = i64::try_from(TickTime::now().as_millis()) else {
+                        let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) else {
                             log::error!("[NetworkManager]: Interface poll_delay get ms fail");
                             return DEFAULT_DELAY_TIME_IN_MILLIS;
                         };
@@ -264,11 +265,12 @@ where
 
                 // Warning!!! Need to yield or sleep for a while , or other threads may have no change to insert msg to NETSTACK_QUEUE
                 if sleep_time == 0 {
-                    scheduler::yield_me();
+                    scheduler::suspend_me_for::<()>(Tick(1), None);
                 } else {
-                    scheduler::suspend_me_for(tick_from_millisecond(
-                        sleep_time.min(DEFAULT_DELAY_TIME_IN_MILLIS) as usize,
-                    ));
+                    scheduler::suspend_me_for::<()>(
+                        Tick::from_millis(sleep_time.min(DEFAULT_DELAY_TIME_IN_MILLIS) as u64),
+                        None,
+                    );
                 }
             }
         }

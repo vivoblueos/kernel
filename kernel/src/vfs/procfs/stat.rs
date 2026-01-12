@@ -107,7 +107,7 @@ fn format_cpu_time() -> String {
             continue;
         }
 
-        let total_cycle: u64 = time::get_sys_cycles();
+        let total_cycle: u64 = time::current_clock_cycles();
         for cpu_id in 0..NUM_CORES {
             let idle_thread = scheduler::get_idle_thread(cpu_id);
             #[cfg(thread_stats)]
@@ -118,17 +118,19 @@ fn format_cpu_time() -> String {
             };
             #[cfg(not(thread_stats))]
             let idle_cycle = 0;
-            let system_time = time::cycles_to_millis(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
-            let idle_time = time::cycles_to_millis(idle_cycle) / 10;
+            let system_time =
+                time::from_clock_cycles(total_cycle.saturating_sub(idle_cycle)).as_millis() / 10; // 10ms
+            let idle_time = time::from_clock_cycles(idle_cycle).as_millis() / 10;
             let irq_trace: &IrqTraceInfo = unsafe { &PER_CPU_TRACE_INFO[cpu_id] };
-            let irq_time = time::cycles_to_millis(irq_trace.total_irq_process_cycles) / 10;
-            total_system_time += system_time;
-            total_idle_time += idle_time;
-            total_irq_time += irq_time;
+            let irq_time =
+                time::from_clock_cycles(irq_trace.total_irq_process_cycles).as_millis() / 10;
+            total_system_time += system_time as u64;
+            total_idle_time += idle_time as u64;
+            total_irq_time += irq_time as u64;
             cpu_stats[cpu_id + 1].cpu_id = cpu_id;
-            cpu_stats[cpu_id + 1].system = system_time;
-            cpu_stats[cpu_id + 1].idle = idle_time;
-            cpu_stats[cpu_id + 1].irq = irq_time;
+            cpu_stats[cpu_id + 1].system = system_time as u64;
+            cpu_stats[cpu_id + 1].idle = idle_time as u64;
+            cpu_stats[cpu_id + 1].irq = irq_time as u64;
         }
         cpu_stats[0].cpu_id = NUM_CORES; // total
         cpu_stats[0].system = total_system_time;

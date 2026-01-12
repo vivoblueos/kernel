@@ -645,6 +645,8 @@ pub(crate) extern "C" fn switch_stack(
     }
 }
 
+pub extern "C" fn send_ipi(_id: usize) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

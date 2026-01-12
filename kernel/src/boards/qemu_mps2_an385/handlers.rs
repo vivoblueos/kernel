@@ -79,7 +79,7 @@ const fn build_exception_handlers() -> [Vector; 15] {
         handler: arch::arm::handle_pendsv,
     };
     tbl[14] = Vector {
-        handler: time::handle_tick_increment,
+        handler: super::handle_systick,
     };
     tbl
 }

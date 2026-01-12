@@ -16,7 +16,7 @@
 // https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__PoolMgmt.html.
 
 use alloc::boxed::Box;
-use blueos::{irq, support::Storage};
+use blueos::{irq, support::Storage, time::Tick};
 use blueos_adapter::mempool::MemoryPool;
 use cmsis_os2::{
     osMemoryPoolAttr_t, osMemoryPoolId_t, osStatus_t, osStatus_t_osErrorISR,
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn osMemoryPoolAlloc(
         return core::ptr::null_mut();
     }
     let mp = &mut *(mp_id as *mut MemoryPool);
-    mp.get_block_with_timeout(timeout as usize)
+    mp.get_block_with_timeout(Tick(timeout as usize))
 }
 
 #[no_mangle]

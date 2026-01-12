@@ -272,7 +272,7 @@ impl Drop for PerCpuVarAccessGuard {
     }
 }
 
-pub(crate) struct ArcBufferingQueue<T: Sized, A: IntrusiveAdapter<T>, const N: usize> {
+pub struct ArcBufferingQueue<T: Sized, A: IntrusiveAdapter<T>, const N: usize> {
     queues: [SpinLock<ArcList<T, A>>; N],
     active: AtomicUint,
 }

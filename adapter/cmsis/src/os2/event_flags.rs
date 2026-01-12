@@ -19,6 +19,7 @@ use blueos::{
     scheduler::InsertToEnd,
     sync::event_flags::{EventFlags, EventFlagsMode},
     time,
+    time::Tick,
     types::{Arc, ArcInner},
 };
 use cmsis_os2::*;
@@ -180,9 +181,9 @@ pub extern "C" fn osEventFlagsWait(
         flags,
         mode,
         if timeout == osWaitForever {
-            time::WAITING_FOREVER as usize
+            Tick::MAX
         } else {
-            timeout as usize
+            Tick(timeout as usize)
         },
     ) {
         Ok(prev_flags) => prev_flags,

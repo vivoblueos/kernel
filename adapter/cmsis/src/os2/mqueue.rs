@@ -18,6 +18,7 @@ use blueos::{
     error::{code, Error},
     irq,
     sync::mqueue::{MessageQueue, SendMode},
+    time::Tick,
     types::{Arc, ArcInner, Int},
 };
 use cmsis_os2::*;
@@ -151,7 +152,7 @@ pub extern "C" fn osMessageQueuePut(
     let (size, _) = queue.node_info();
     let msg_size = size - core::mem::size_of::<usize>();
     let buffer = unsafe { slice::from_raw_parts(msg_ptr as *const u8, msg_size) };
-    match queue.send(buffer, msg_size, timeout as usize, SendMode::Normal) {
+    match queue.send(buffer, msg_size, Tick(timeout as usize), SendMode::Normal) {
         Ok(_) => osStatus_t_osOK,
         Err(e) => {
             if e == code::ETIMEDOUT {
@@ -184,7 +185,7 @@ pub extern "C" fn osMessageQueueGet(
     let (size, _) = queue.node_info();
     let msg_size = size - core::mem::size_of::<usize>();
     let mut buffer = unsafe { slice::from_raw_parts_mut(msg_ptr as *mut u8, msg_size) };
-    match queue.recv(buffer, msg_size, timeout as usize) {
+    match queue.recv(buffer, msg_size, Tick(timeout as usize)) {
         Ok(_) => osStatus_t_osOK,
         Err(e) => {
             if e == code::ETIMEDOUT {

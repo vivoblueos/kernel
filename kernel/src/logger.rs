@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{arch, kprintln, scheduler, sync::SpinLock, thread::Thread, time::TickTime};
+use crate::{arch, kprintln, scheduler, sync::SpinLock, thread::Thread, time};
 use log::{LevelFilter, Metadata, Record};
 
 static LOGGER_MUTEX: SpinLock<()> = SpinLock::new(());
@@ -58,7 +58,7 @@ impl log::Log for Logger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let timestamp = TickTime::now().as_millis();
+        let timestamp = time::now().as_millis();
         let tid = scheduler::current_thread_id();
         let cpu = arch::current_cpu_id();
         let _guard = LOGGER_MUTEX.irqsave_lock();

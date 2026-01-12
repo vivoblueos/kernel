@@ -24,6 +24,7 @@ use crate::{
         spinlock::SpinLock,
     },
     time,
+    time::Tick,
     types::RwLock,
 };
 use alloc::{format, string::String, sync::Arc};
@@ -245,7 +246,7 @@ impl Serial {
             uart_ops.set_break(true).map_err(ErrorKind::from)?;
         }
 
-        scheduler::suspend_me_for(time::tick_from_millisecond(interval_ms));
+        scheduler::suspend_me_for::<()>(time::Tick::from_millis(interval_ms as u64), None);
 
         let mut uart_ops = self.uart_ops.irqsave_lock();
         uart_ops.set_break(false).map_err(ErrorKind::from)
@@ -367,7 +368,8 @@ impl Serial {
             if !is_nonblocking {
                 // if the available data is less than the requested data, wait for data
                 if n == 0 {
-                    atomic_wait(&self.rx_fifo.futex, 0, None).map_err(|_| SerialError::TimedOut)?;
+                    atomic_wait(&self.rx_fifo.futex, 0, Tick::MAX)
+                        .map_err(|_| SerialError::TimedOut)?;
                 } else {
                     break;
                 }
@@ -409,7 +411,8 @@ impl Serial {
             if !is_nonblocking && !irq::is_in_irq() {
                 if !writer.is_empty() {
                     // wait for data to be written
-                    atomic_wait(&self.tx_fifo.futex, 0, None).map_err(|_| SerialError::TimedOut)?;
+                    atomic_wait(&self.tx_fifo.futex, 0, Tick::MAX)
+                        .map_err(|_| SerialError::TimedOut)?;
                     self.uart_ops.irqsave_lock().set_tx_interrupt(false);
                 } else if count >= len {
                     break;

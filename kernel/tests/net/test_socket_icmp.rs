@@ -19,6 +19,7 @@ use blueos::{
     scheduler,
     sync::atomic_wait as futex,
     thread::Builder as ThreadBuilder,
+    time::Tick,
 };
 use blueos_test_macro::test;
 use core::{
@@ -208,7 +209,7 @@ fn test_icmp_ipv4() {
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -231,7 +232,7 @@ fn test_icmp_ipv4_non_blocking() {
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -254,7 +255,7 @@ fn test_icmp_ipv6() {
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -277,5 +278,5 @@ fn test_icmp_ipv6_non_blocking() {
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
 }

@@ -21,6 +21,7 @@ use crate::{
         memory_map, UART0RX_IRQn, UART0TX_IRQn, SYSTEM_CORE_CLOCK, UART0RX_IRQ_N, UART0TX_IRQ_N,
     },
     boot,
+    devices::clock::{systick, Clock},
     error::Error,
     time,
 };
@@ -81,6 +82,10 @@ unsafe fn enable_fpu() {
     SCB_CPACR_PTR.write_volatile(temp);
 }
 
+const TICKS_PS: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
+const HZ: usize = SYSTEM_CORE_CLOCK as usize;
+pub type ClockImpl = systick::SysTickClock<TICKS_PS, HZ>;
+
 pub(crate) fn init() {
     unsafe { enable_fpu() };
 
@@ -90,7 +95,7 @@ pub(crate) fn init() {
     boot::init_runtime();
     unsafe { boot::init_heap() };
     arch::irq::init();
-    time::systick_init(config::SYSTEM_CORE_CLOCK);
+    ClockImpl::init();
     arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::Normal);
     arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
 }
@@ -130,4 +135,12 @@ pub unsafe extern "C" fn uart0tx_handler() {
         handler();
     }
     uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn handle_systick() {
+    if !ClockImpl::claim_interrupt() {
+        return;
+    }
+    crate::time::handle_clock_interrupt();
 }
