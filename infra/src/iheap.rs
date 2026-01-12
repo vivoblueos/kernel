@@ -517,7 +517,7 @@ mod tests {
     #[bench]
     fn bench_insert(b: &mut Bencher) {
         b.iter(|| {
-            let mut heap = MinHeap::<Foo, Node, _>::new(|l, r| l.val.cmp(&r.val));
+            let mut heap = MinHeap::<Foo, Node, _>::new(|l, r| l.val.cmp(&r.val).reverse());
             let mut n0 = Foo {
                 node: MinHeapNode::new(),
                 val: 0,
@@ -534,11 +534,11 @@ mod tests {
                 node: MinHeapNode::new(),
                 val: 3,
             };
-            heap.push(&mut n3);
-            heap.push(&mut n2);
-            heap.push(&mut n1);
             heap.push(&mut n0);
-            assert_eq!(heap.peek().unwrap().val, 0);
+            heap.push(&mut n1);
+            heap.push(&mut n2);
+            heap.push(&mut n3);
+            assert_eq!(heap.peek().unwrap().val, 3);
         });
     }
 
