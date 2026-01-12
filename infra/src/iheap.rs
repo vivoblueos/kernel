@@ -538,6 +538,7 @@ mod tests {
             heap.push(&mut n2);
             heap.push(&mut n1);
             heap.push(&mut n0);
+            assert_eq!(heap.peek().unwrap().val, 0);
         });
     }
 
@@ -550,10 +551,11 @@ mod tests {
         };
         b.iter(|| {
             let mut heap = BinaryHeap::new();
-            heap.push(3);
-            heap.push(2);
-            heap.push(1);
             heap.push(0);
+            heap.push(1);
+            heap.push(2);
+            heap.push(3);
+            assert_eq!(*heap.peek().unwrap(), 3);
         });
     }
 }
