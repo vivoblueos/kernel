@@ -215,6 +215,7 @@ where
         let node = Self::node_of_mut(val);
         node.parent = current_parent;
         let Some(mut parent) = node.parent else {
+            debug_assert_eq!(path.0, 0);
             self.top = Some(NonNull::from_mut(node));
             self.size += 1;
             return Some(IouMinHeapNodeMut {
@@ -222,11 +223,13 @@ where
                 _lt: PhantomData,
             });
         };
-        if (1 << path.0) & path.1 == 0 {
+        if (1 << (path.0 - 1)) & path.1 == 0 {
+            debug_assert_eq!(unsafe { parent.as_ref() }.link.left(), None);
             unsafe { parent.as_mut() }
                 .link
                 .set_left(Some(NonNull::from_mut(&mut node.link)));
         } else {
+            debug_assert_eq!(unsafe { parent.as_ref() }.link.right(), None);
             unsafe { parent.as_mut() }
                 .link
                 .set_right(Some(NonNull::from_mut(&mut node.link)));
@@ -289,13 +292,10 @@ where
         };
     }
 
-    fn is_linked_in_heap(&self, iou: &IouMinHeapNodeMut<T, A>) -> bool {
-        if iou.node == self.top {
-            return false;
+    fn is_linked_in_heap(&self, node: NonNull<MinHeapNode<T, A>>) -> bool {
+        if Some(node) == self.top {
+            return true;
         }
-        let Some(node) = &iou.node else {
-            panic!("Nil node")
-        };
         unsafe { !node.as_ref().parent.is_none() }
     }
 
@@ -318,20 +318,26 @@ where
             return;
         };
         let last_parent_mut = unsafe { last_parent.as_mut() };
-        if (1 << path.0) & path.1 == 0 {
+        if (1 << (path.0 - 1)) & path.1 == 0 {
             last_parent_mut.link.set_left(None);
         } else {
             last_parent_mut.link.set_right(None);
         }
         self.size -= 1;
+        let node_mut = unsafe { node.as_mut() };
+        let parent = core::mem::replace(&mut node_mut.parent, None);
         if node == last {
+            debug_assert_eq!(node_mut.parent, None);
             return;
         }
-        let node_mut = unsafe { node.as_mut() };
+        last_mut.parent = parent;
         // We must be careful core::mem::swap thinks &mut T should not alias each other.
-        core::mem::swap(node_mut, last_mut);
+        core::mem::swap(&mut node_mut.link, &mut last_mut.link);
+        debug_assert_eq!(node_mut.link.left(), None);
+        debug_assert_eq!(node_mut.link.right(), None);
+        debug_assert_eq!(node_mut.parent, None);
         let last_val = Self::owner(last_mut);
-        let Some(mut parent) = node_mut.parent else {
+        let Some(mut parent) = parent else {
             self.top = Some(last);
             self.top_down_adjust(last_val, last);
             return;
@@ -355,18 +361,17 @@ where
         &mut self,
         mut iou: IouMinHeapNodeMut<'_, T, A>,
     ) -> Option<IouMinHeapNodeMut<'a, T, A>> {
-        if !self.is_linked_in_heap(&iou) {
-            let Some(node) = &mut iou.node else {
-                panic!("Nil node")
-            };
-            LinkType::detach(&mut unsafe { node.as_mut() }.link);
-            return None;
-        }
         let Some(mut node) = iou.node else {
             panic!("Nil node")
         };
+        if !self.is_linked_in_heap(node) {
+            LinkType::detach(&mut unsafe { node.as_mut() }.link);
+            return Some(IouMinHeapNodeMut {
+                node: None,
+                _lt: PhantomData,
+            });
+        }
         self.inner_remove(node);
-        LinkType::insert_after(&mut self.borrowed, &mut unsafe { node.as_mut() }.link);
         Some(IouMinHeapNodeMut {
             node: None,
             _lt: PhantomData,
@@ -374,6 +379,14 @@ where
     }
 
     pub fn pop(&mut self) -> &mut Self {
+        let Some(mut node) = self.top else {
+            return self;
+        };
+        debug_assert!(self.is_linked_in_heap(node));
+        self.inner_remove(node);
+        debug_assert_eq!(unsafe { node.as_ref() }.link.left(), None);
+        debug_assert_eq!(unsafe { node.as_ref() }.link.right(), None);
+        LinkType::insert_after(&mut self.borrowed, &mut unsafe { node.as_mut() }.link);
         self
     }
 
@@ -461,6 +474,44 @@ mod tests {
         let top = heap.peek();
         assert!(top.is_some());
         assert_eq!(top.unwrap().val, 23);
+    }
+
+    #[test]
+    fn test_removal() {
+        let mut heap = MinHeap::<Foo, Node, _>::new(|l, r| l.val.cmp(&r.val));
+        let mut n0 = Box::new(Foo {
+            node: MinHeapNode::new(),
+            val: 0,
+        });
+        let mut n1 = Box::new(Foo {
+            node: MinHeapNode::new(),
+            val: 1,
+        });
+        let mut n2 = Box::new(Foo {
+            node: MinHeapNode::new(),
+            val: 2,
+        });
+        let iou2 = heap.push(&mut n2).unwrap();
+        let iou1 = heap.push(&mut n1).unwrap();
+        let iou0 = heap.push(&mut n0).unwrap();
+        assert_eq!(heap.size(), 3);
+        assert_eq!(heap.peek().unwrap().val, 0);
+        heap.remove(iou0);
+        assert_eq!(heap.size(), 2);
+        assert_eq!(heap.peek().unwrap().val, 1);
+        heap.remove(iou2);
+        assert_eq!(heap.peek().unwrap().val, 1);
+        let mut n3 = Box::new(Foo {
+            node: MinHeapNode::new(),
+            val: 3,
+        });
+        let iou3 = heap.push(&mut n3).unwrap();
+        assert_eq!(heap.size(), 2);
+        assert_eq!(heap.peek().unwrap().val, 1);
+        heap.pop().pop();
+        assert_eq!(heap.size(), 0);
+        heap.remove(iou1);
+        heap.remove(iou3);
     }
 
     #[bench]
