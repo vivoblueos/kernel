@@ -514,6 +514,56 @@ mod tests {
         heap.remove(iou3);
     }
 
+    #[test]
+    fn test_stack_removal() {
+        let mut heap = MinHeap::<Foo, Node, _>::new(|l, r| l.val.cmp(&r.val).reverse());
+        {
+            let mut n0 = Foo {
+                node: MinHeapNode::new(),
+                val: 0,
+            };
+            let b0 = heap.push(&mut n0).unwrap();
+            let mut n1 = Foo {
+                node: MinHeapNode::new(),
+                val: 1,
+            };
+            let b1 = heap.push(&mut n1).unwrap();
+            let mut n2 = Foo {
+                node: MinHeapNode::new(),
+                val: 2,
+            };
+            let b2 = heap.push(&mut n2).unwrap();
+            let mut n3 = Foo {
+                node: MinHeapNode::new(),
+                val: 3,
+            };
+            let b3 = heap.push(&mut n3).unwrap();
+            let mut n4 = Foo {
+                node: MinHeapNode::new(),
+                val: 4,
+            };
+            let b4 = heap.push(&mut n4).unwrap();
+            let mut n5 = Foo {
+                node: MinHeapNode::new(),
+                val: 5,
+            };
+            let b5 = heap.push(&mut n5).unwrap();
+            assert_eq!(heap.peek().unwrap().val, 5);
+            heap.remove(b3);
+            assert_eq!(heap.peek().unwrap().val, 5);
+            heap.remove(b5);
+            assert_eq!(heap.peek().unwrap().val, 4);
+            heap.remove(b2);
+            assert_eq!(heap.peek().unwrap().val, 4);
+            heap.remove(b4);
+            assert_eq!(heap.peek().unwrap().val, 1);
+            heap.remove(b0);
+            assert_eq!(heap.peek().unwrap().val, 1);
+            heap.remove(b1);
+            assert!(heap.peek().is_none());
+        }
+    }
+
     #[bench]
     fn bench_insert(b: &mut Bencher) {
         b.iter(|| {
