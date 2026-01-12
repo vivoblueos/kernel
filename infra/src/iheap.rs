@@ -518,22 +518,22 @@ mod tests {
     fn bench_insert(b: &mut Bencher) {
         b.iter(|| {
             let mut heap = MinHeap::<Foo, Node, _>::new(|l, r| l.val.cmp(&r.val));
-            let mut n0 = Box::new(Foo {
+            let mut n0 = Foo {
                 node: MinHeapNode::new(),
                 val: 0,
-            });
-            let mut n1 = Box::new(Foo {
+            };
+            let mut n1 = Foo {
                 node: MinHeapNode::new(),
                 val: 1,
-            });
-            let mut n2 = Box::new(Foo {
+            };
+            let mut n2 = Foo {
                 node: MinHeapNode::new(),
                 val: 2,
-            });
-            let mut n3 = Box::new(Foo {
+            };
+            let mut n3 = Foo {
                 node: MinHeapNode::new(),
                 val: 3,
-            });
+            };
             heap.push(&mut n3);
             heap.push(&mut n2);
             heap.push(&mut n1);
@@ -550,14 +550,10 @@ mod tests {
         };
         b.iter(|| {
             let mut heap = BinaryHeap::new();
-            let mut n0 = Box::new(Foo { val: 0 });
-            let mut n1 = Box::new(Foo { val: 1 });
-            let mut n2 = Box::new(Foo { val: 2 });
-            let mut n3 = Box::new(Foo { val: 3 });
-            heap.push(n3);
-            heap.push(n2);
-            heap.push(n1);
-            heap.push(n0);
+            heap.push(3);
+            heap.push(2);
+            heap.push(1);
+            heap.push(0);
         });
     }
 }
