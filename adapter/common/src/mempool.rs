@@ -166,6 +166,7 @@ impl MemoryPool {
         let ok = BlockList::insert_after(&mut inner.busy_list, &mut block.node);
         debug_assert!(ok);
         inner.free_blocks -= 1;
+        drop(inner);
         self.sema.release();
         let ptr = block.base();
         ptr as *mut core::ffi::c_void
@@ -185,6 +186,7 @@ impl MemoryPool {
             }
         }
         let Some(block_ptr) = recycled else {
+            drop(inner);
             self.sema.release();
             return false;
         };
@@ -193,6 +195,7 @@ impl MemoryPool {
         if ok {
             inner.free_blocks += 1;
         }
+        drop(inner);
         self.sema.release();
         ok
     }
@@ -304,7 +307,7 @@ mod tests {
             });
         }
         loop {
-            if counter.load(Ordering::Acquire) == n {
+            if counter.load(Ordering::Relaxed) == n {
                 break;
             }
             scheduler::yield_me();
