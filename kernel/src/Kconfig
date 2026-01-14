@@ -41,6 +41,10 @@ config SERIAL_TX_FIFO_SIZE
     default 256
     int "The serial tx fifo size"
 
+config THREAD_STATS
+    default n
+    bool "Enable statistics of thread"
+
 # os adapter configuration
 menu "os adapter configuration"
     choice

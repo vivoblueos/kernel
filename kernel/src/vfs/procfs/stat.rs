@@ -110,11 +110,14 @@ fn format_cpu_time() -> String {
         let total_cycle: u64 = time::get_sys_cycles();
         for cpu_id in 0..NUM_CORES {
             let idle_thread = scheduler::get_idle_thread(cpu_id);
+            #[cfg(thread_stats)]
             let idle_cycle = if idle_thread.state() == thread::RUNNING {
                 idle_thread.get_cycles() + total_cycle - idle_thread.start_cycles()
             } else {
                 idle_thread.get_cycles()
             };
+            #[cfg(not(thread_stats))]
+            let idle_cycle = 0;
             let system_time = time::cycles_to_millis(total_cycle.saturating_sub(idle_cycle)) / 10; // 10ms
             let idle_time = time::cycles_to_millis(idle_cycle) / 10;
             let irq_trace: &IrqTraceInfo = unsafe { &PER_CPU_TRACE_INFO[cpu_id] };

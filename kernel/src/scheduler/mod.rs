@@ -171,12 +171,15 @@ pub(crate) extern "C" fn save_context_finish_hook(
     next.clear_saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert!(ok);
-    // FIXME: Statistics of cycles should be optional.
+    #[cfg(thread_stats)]
     let cycles = time::get_sys_cycles();
+    #[cfg(thread_stats)]
     next.lock().set_start_cycles(cycles);
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     let mut old = set_current_thread(next);
+    #[cfg(thread_stats)]
+    old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -187,8 +190,6 @@ pub(crate) extern "C" fn save_context_finish_hook(
         next_saved_sp,
         next_priority,
     );
-    // FIXME: Statistics of cycles should be optional.
-    old.lock().increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         let cleanup = old.lock().take_cleanup();
         if let Some(entry) = cleanup {
@@ -219,9 +220,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     // FIXME: Statistics of cycles should be optional.
+    #[cfg(thread_stats)]
     let cycles = time::get_sys_cycles();
+    #[cfg(thread_stats)]
     next.lock().set_start_cycles(cycles);
     let old = set_current_thread(next);
+    #[cfg(thread_stats)]
+    old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[PENDSV] Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -232,8 +237,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         next_saved_sp,
         next_priority,
     );
-    // FIXME: Statistics of cycles should be optional.
-    old.lock().increment_cycles(cycles);
     if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert!(ok);
