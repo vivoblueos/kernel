@@ -228,7 +228,7 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     debug_assert!(!super::local_irq_enabled());
     let sp = ctx as *const _ as usize;
-    match mcause & 0x8000_000f {
+    match mcause & (INTERRUPT_MASK | 0x3f) {
         EXTERN_INT => {
             handle_plic_irq(ctx, mcause, mtval);
             might_switch_context(ctx, cont)
