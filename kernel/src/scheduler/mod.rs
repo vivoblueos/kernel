@@ -162,19 +162,19 @@ pub(crate) extern "C" fn save_context_finish_hook(
     let next = unsafe { Arc::from_raw(hook.next_thread) };
     let closure = hook.closure.take();
     let next_saved_sp = spin_until_ready_to_run(&next);
-    let ok = next.transfer_state(thread::READY, thread::RUNNING);
-    debug_assert!(ok);
-    // FIXME: Statistics of cycles should be optional.
-    let cycles = time::get_sys_cycles();
-    next.lock().set_start_cycles(cycles);
     // FIXME: Signal feature should be optional.
     {
         if next.lock().has_pending_signals() {
             prepare_signal_handling(&next);
         }
     }
+    next.clear_saved_sp();
+    let ok = next.transfer_state(thread::READY, thread::RUNNING);
+    debug_assert!(ok);
+    // FIXME: Statistics of cycles should be optional.
+    let cycles = time::get_sys_cycles();
+    next.lock().set_start_cycles(cycles);
     let next_id = Thread::id(&next);
-    let next_saved_sp = next.saved_sp();
     let next_priority = next.priority();
     let mut old = set_current_thread(next);
     #[cfg(debugging_scheduler)]
@@ -208,12 +208,12 @@ pub(crate) extern "C" fn save_context_finish_hook(
         f()
     }
     old.set_saved_sp(old_sp);
-    current_thread_ref().clear_saved_sp();
     next_saved_sp
 }
 
 fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let next_saved_sp = spin_until_ready_to_run(&next);
+    next.clear_saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert!(ok);
     let next_id = Thread::id(&next);
@@ -242,7 +242,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         debug_assert!(ok);
     }
     old.set_saved_sp(old_sp);
-    current_thread_ref().clear_saved_sp();
     next_saved_sp
 }
 
@@ -263,6 +262,7 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
 
 pub fn retire_me() -> ! {
     let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
+    debug_assert_eq!(next.state(), thread::READY);
     #[cfg(procfs)]
     {
         let _ = crate::vfs::trace_thread_close(current_thread());
@@ -362,6 +362,7 @@ pub(crate) fn suspend_me_with_hook(hook: impl FnOnce() + 'static) {
         return;
     }
     let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
+    debug_assert_eq!(next.state(), thread::READY);
     let old = current_thread_ref();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     let hook = Box::new(hook);
@@ -381,6 +382,7 @@ pub fn suspend_me_for(ticks: usize) {
     }
     debug_assert_ne!(ticks, 0);
     let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
+    debug_assert_eq!(next.state(), thread::READY);
     let old = current_thread_ref();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     if ticks != WAITING_FOREVER {
