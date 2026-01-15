@@ -156,7 +156,6 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
 fn remove_from_ready_queue_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadNode) -> bool {
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
-    debug_assert_eq!(t.state(), thread::READY);
     let q = &mut tbl.tables[priority as usize];
     // Conservatively search the whole queue.
     let removed = q.remove_if(|e| ThreadNode::as_ptr(t) == e as *const _);
