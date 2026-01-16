@@ -19,8 +19,10 @@
 //! SPDX-License-Identifier: MIT OR Apache-2.0
 
 extern crate alloc;
+use crate::storage::Storage;
 use alloc::boxed::Box;
 use core::{
+    alloc::Layout,
     ptr, slice,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
@@ -29,25 +31,25 @@ use core::{
 #[derive(Debug)]
 pub struct BoxedRingBuffer {
     inner: RingBuffer,
-    _box: Box<[u8]>,
+    _box: Storage,
 }
 
 impl BoxedRingBuffer {
     /// Create a new ring buffer with the given size
     pub fn new(size: usize) -> Self {
-        let buf = Box::new_uninit_slice(size);
-        let mut buf = unsafe { buf.assume_init() };
+        let layout = Layout::from_size_align(size, 1).unwrap();
+        let buf = Storage::from_layout(layout);
         Self {
-            inner: unsafe { RingBuffer::new_with_buffer(buf.as_mut_ptr(), buf.len()) },
+            inner: unsafe { RingBuffer::new_with_buffer(buf.base(), buf.size()) },
             _box: buf, // hold the buffer to prevent it from being freed
         }
     }
 
     /// Create a new ring buffer with the given size and given mem
     pub fn new_with_mem(size: usize, buf: *mut u8) -> Self {
-        let mut buf = unsafe { Box::from_raw(slice::from_raw_parts_mut(buf, size)) };
+        let mut buf = unsafe { Storage::from_raw(buf, size) };
         Self {
-            inner: unsafe { RingBuffer::new_with_buffer(buf.as_mut_ptr(), buf.len()) },
+            inner: unsafe { RingBuffer::new_with_buffer(buf.base(), buf.size()) },
             _box: buf, // hold the buffer to prevent it from being freed
         }
     }
@@ -56,7 +58,7 @@ impl BoxedRingBuffer {
     pub fn reset(&mut self) {
         unsafe { self.inner.reset() };
         let buf = &mut self._box;
-        self.inner = unsafe { RingBuffer::new_with_buffer(buf.as_mut_ptr(), buf.len()) };
+        self.inner = unsafe { RingBuffer::new_with_buffer(buf.base(), buf.size()) };
     }
 
     /// Get a reader for this ring buffer
@@ -574,7 +576,7 @@ impl Reader<'_> {
 mod tests {
     use super::*;
     #[cfg(test)]
-    use std::sync::Arc;
+    use crate::tinyarc::TinyArc as Arc;
     #[cfg(test)]
     use std::thread;
     #[cfg(test)]
