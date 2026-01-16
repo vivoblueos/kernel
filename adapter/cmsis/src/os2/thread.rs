@@ -730,11 +730,10 @@ mod tests {
     // Call osThreadNew to create a thread
     // Call osThreadNew with null thread function
     // Call osThreadNew from ISR
-    // #[test]
+    #[test]
     fn TC_osThreadNew_1() {
         let thread_id = osThreadNew(Some(Th_Run), ptr::null_mut(), ptr::null());
         assert!(!thread_id.is_null(), "Thread ID should be greater than 0");
-        osThreadJoin(thread_id);
         let thread_id2 = osThreadNew(None, ptr::null_mut(), ptr::null());
         assert!(thread_id2.is_null(), "Thread ID should be NULL");
     }
@@ -743,11 +742,11 @@ mod tests {
     // Call osThreadGetName to retrieve a name of a thread with assigned name
     // Call osThreadGetName from ISR
     // Call osThreadGetName with null object
-    // #[test]
+    #[test]
     fn TC_osThreadGetName_1() {
         let mut attr = osThreadAttr_t {
             name: ptr::null(),
-            attr_bits: 0,
+            attr_bits: osThreadJoinable,
             cb_mem: ptr::null_mut(),
             cb_size: 0,
             stack_mem: ptr::null_mut(),
@@ -776,12 +775,12 @@ mod tests {
     // Call osThreadGetState from ISR
     // Call osThreadGetState to retrieve the state of a terminated thread
     // Call osThreadGetState with null object
-    // #[test]
+    #[test]
     fn TC_osThreadGetState_1() {
         let mut cnt = 0;
         let attr = osThreadAttr_t {
             name: ptr::null(),
-            attr_bits: 0,
+            attr_bits: osThreadJoinable,
             cb_mem: ptr::null_mut(),
             cb_size: 0,
             stack_mem: ptr::null_mut(),
@@ -806,11 +805,11 @@ mod tests {
         // test call from ISR
     }
 
-    // #[test]
+    #[test]
     fn TC_osThreadGetStackSize_1() {
         let attr = osThreadAttr_t {
             name: ptr::null(),
-            attr_bits: 0,
+            attr_bits: osThreadJoinable,
             cb_mem: ptr::null_mut(),
             cb_size: 0,
             stack_mem: ptr::null_mut(),
@@ -828,7 +827,7 @@ mod tests {
             "Stack size should be {} for the new thread",
             DEFAULT_STACK_SIZE * 2,
         );
-        // osThreadTerminate(thread_id);
+        osThreadJoin(thread_id);
         assert_eq!(
             osThreadGetStackSize(ptr::null_mut()),
             0,
@@ -840,11 +839,11 @@ mod tests {
     // Call osThreadGetStackSpace to retrieve the unused stack space of a ready thread
     // Call osThreadGetStackSpace from ISR
     // Call osThreadGetStackSpace with null object
-    // #[test]
+    #[test]
     fn TC_osThreadGetStackSpace_1() {
         let attr = osThreadAttr_t {
             name: ptr::null(),
-            attr_bits: 0,
+            attr_bits: osThreadJoinable,
             cb_mem: ptr::null_mut(),
             cb_size: 0,
             stack_mem: ptr::null_mut(),
@@ -871,11 +870,11 @@ mod tests {
         osThreadJoin(thread_id);
     }
 
-    // #[test]
+    #[test]
     fn TC_osThreadEnumerate_1() {
         let mut attr = osThreadAttr_t {
             name: ptr::null(),
-            attr_bits: 0,
+            attr_bits: osThreadJoinable,
             cb_mem: ptr::null_mut(),
             cb_size: 0,
             stack_mem: ptr::null_mut(),
@@ -920,14 +919,14 @@ mod tests {
         osThreadJoin(id_1);
     }
 
-    // #[test]
+    #[test]
     fn TC_ThreadMultiInstance() {
         const N: usize = 16;
         let mut cnt = [0u8; N];
         let mut thread_ids = [ptr::null_mut(); N];
         let attr = osThreadAttr_t {
             name: ptr::null(),
-            attr_bits: 0,
+            attr_bits: osThreadJoinable,
             cb_mem: ptr::null_mut(),
             cb_size: 0,
             stack_mem: ptr::null_mut(),
@@ -947,7 +946,6 @@ mod tests {
                 "Thread ID should be greater than 0"
             );
         }
-        scheduler::suspend_me_for(128);
         for i in 0..N {
             osThreadJoin(thread_ids[i]);
             assert_eq!(
