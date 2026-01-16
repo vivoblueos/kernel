@@ -84,6 +84,9 @@ pub mod syscalls {
         MqTimedReceive,
         MqGetSetAttr,
         Ioctl,
+        SchedGetPriorityMax,
+        SchedGetPriorityMin,
+        SchedRrGetInterval,
         LastNR,
     }
 }
