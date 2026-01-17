@@ -15,7 +15,9 @@
 pub mod systick;
 pub mod timer;
 
-use crate::{arch, boards, scheduler, support::DisableInterruptGuard, thread::Thread};
+use crate::{
+    arch, boards, irq::IrqTrace, scheduler, support::DisableInterruptGuard, thread::Thread,
+};
 use systick::SYSTICK;
 
 pub const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
@@ -40,7 +42,9 @@ pub fn reset_systick() {
 }
 
 pub extern "C" fn handle_tick_increment() {
-    let _guard = DisableInterruptGuard::new();
+    // riscv has its own irq trace in riscv.rs
+    #[cfg(not(any(target_board = "qemu_riscv64", target_board = "qemu_riscv32")))]
+    let _trace = IrqTrace::new(systick::SYSTICK_IRQ_NUM);
     let mut need_schedule = false;
     // FIXME: aarch64 and riscv64 need to be supported
     if arch::current_cpu_id() == 0 {
