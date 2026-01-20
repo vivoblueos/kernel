@@ -441,6 +441,12 @@ pub(crate) struct IsrContext {
 impl Context {
     #[inline]
     pub(crate) fn init(&mut self) -> &mut Self {
+        let gp_val: usize;
+        unsafe {
+            core::arch::asm!("la {}, __global_pointer$", out(reg) gp_val,
+                             options(nostack, nomem))
+        }
+        self.gp = gp_val;
         self
     }
 

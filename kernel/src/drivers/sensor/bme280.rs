@@ -29,11 +29,11 @@ struct KernelDelay;
 
 impl DelayNs for KernelDelay {
     fn delay_ns(&mut self, ns: u32) {
-        let ticks = blueos_kconfig::TICKS_PER_SECOND as u32 * ns / 1_000_000_000;
+        let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as u32 * ns / 1_000_000_000;
         if ticks == 0 {
             scheduler::yield_me();
         } else {
-            scheduler::suspend_me_for(ticks as _);
+            // scheduler::suspend_me_for(ticks as _);
         }
     }
 }
