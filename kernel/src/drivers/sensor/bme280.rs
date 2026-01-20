@@ -33,7 +33,7 @@ impl DelayNs for KernelDelay {
         if ticks == 0 {
             scheduler::yield_me();
         } else {
-            // scheduler::suspend_me_for(ticks as _);
+            scheduler::suspend_me_for(ticks as _);
         }
     }
 }
