@@ -441,7 +441,18 @@ pub(crate) struct IsrContext {
 impl Context {
     #[inline]
     pub(crate) fn init(&mut self) -> &mut Self {
+        self.gp = Self::__global_pointer();
         self
+    }
+
+    #[inline]
+    pub(crate) fn __global_pointer() -> usize {
+        let gp_val: usize;
+        unsafe {
+            core::arch::asm!("la {}, __global_pointer$", out(reg) gp_val,
+                             options(nostack, nomem))
+        }
+        gp_val
     }
 
     // We are following C-ABI, since Rust ABI is not stablized.
