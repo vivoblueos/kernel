@@ -159,8 +159,10 @@ pub(crate) extern "C" fn save_context_finish_hook(
     // are on current stack.
     // FIXME: We must be careful about performance issue of Option::take, since besides
     // loading content from the Option, storing None into the Option also happens.
-    let next = unsafe { Arc::from_raw(hook.next_thread) };
     let closure = hook.closure.take();
+    let next = unsafe { Arc::from_raw(hook.next_thread) };
+    let next_id = Thread::id(&next);
+    let next_priority = next.priority();
     let next_saved_sp = spin_until_ready_to_run(&next);
     // FIXME: Signal feature should be optional.
     {
@@ -168,15 +170,15 @@ pub(crate) extern "C" fn save_context_finish_hook(
             prepare_signal_handling(&next);
         }
     }
-    next.clear_saved_sp();
-    let ok = next.transfer_state(thread::READY, thread::RUNNING);
-    debug_assert!(ok);
     // FIXME: Statistics of cycles should be optional.
     let cycles = time::get_sys_cycles();
     next.lock().set_start_cycles(cycles);
-    let next_id = Thread::id(&next);
-    let next_priority = next.priority();
+    next.clear_saved_sp();
+    let ok = next.transfer_state(thread::READY, thread::RUNNING);
+    debug_assert!(ok);
     let mut old = set_current_thread(next);
+    // FIXME: Statistics of cycles should be optional.
+    old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -187,8 +189,6 @@ pub(crate) extern "C" fn save_context_finish_hook(
         next_saved_sp,
         next_priority,
     );
-    // FIXME: Statistics of cycles should be optional.
-    old.lock().increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         let cleanup = old.lock().take_cleanup();
         if let Some(entry) = cleanup {
@@ -212,16 +212,18 @@ pub(crate) extern "C" fn save_context_finish_hook(
 }
 
 fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
-    let next_saved_sp = spin_until_ready_to_run(&next);
-    next.clear_saved_sp();
-    let ok = next.transfer_state(thread::READY, thread::RUNNING);
-    debug_assert!(ok);
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     // FIXME: Statistics of cycles should be optional.
     let cycles = time::get_sys_cycles();
     next.lock().set_start_cycles(cycles);
+    let next_saved_sp = spin_until_ready_to_run(&next);
+    next.clear_saved_sp();
+    let ok = next.transfer_state(thread::READY, thread::RUNNING);
+    debug_assert!(ok);
     let old = set_current_thread(next);
+    // FIXME: Statistics of cycles should be optional.
+    old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[PENDSV] Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -232,8 +234,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         next_saved_sp,
         next_priority,
     );
-    // FIXME: Statistics of cycles should be optional.
-    old.lock().increment_cycles(cycles);
     if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert!(ok);
