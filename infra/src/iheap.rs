@@ -415,14 +415,9 @@ where
     fn inner_remove(&mut self, mut node: NonNull<MinHeapNode<T, A>>) {
         let mut path = (0, 0);
         let (last, last_parent) = self.node_at(self.size - 1, &mut path);
-        //println!("Path for {}: {:?}", self.size - 1, path);
         let Some(mut last) = last else {
             panic!("Node should not be None when the index is valid")
         };
-        //        println!(
-        //            "node: {:?}, last: {:?}, last_parent: {:?}",
-        //            node, last, last_parent
-        //        );
         let last_mut = unsafe { last.as_mut() };
         debug_assert!(last_mut.link.is_detached());
         unsafe { self.swap_nodes(node, last) };
@@ -573,18 +568,18 @@ where
             let mut path = (0, 0);
             let (current, current_parent) = self.node_at(i, &mut path);
             let current_mut = unsafe { current.unwrap().as_mut() };
-            //            println!(
-            //                "Node[{}] = {:?}, L: {:?}, R: {:?}, parent = {:?}",
-            //                i,
-            //                current,
-            //                current_mut.link.left().map(|mut v| NonNull::from_mut(
-            //                    MinHeapNode::node_of_link_mut(unsafe { v.as_mut() })
-            //                )),
-            //                current_mut.link.right().map(|mut v| NonNull::from_mut(
-            //                    MinHeapNode::node_of_link_mut(unsafe { v.as_mut() })
-            //                )),
-            //                current_parent
-            //            );
+            dbg!(
+                "Node[{}] = {:?}, L: {:?}, R: {:?}, parent = {:?}",
+                i,
+                current,
+                current_mut.link.left().map(|mut v| NonNull::from_mut(
+                    MinHeapNode::node_of_link_mut(unsafe { v.as_mut() })
+                )),
+                current_mut.link.right().map(|mut v| NonNull::from_mut(
+                    MinHeapNode::node_of_link_mut(unsafe { v.as_mut() })
+                )),
+                current_parent
+            );
             assert!(current.is_some());
             assert_eq!(unsafe { current.unwrap().as_ref() }.parent, current_parent);
             if path.0 == 0 {
