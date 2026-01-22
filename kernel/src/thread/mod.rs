@@ -205,6 +205,7 @@ pub struct Thread {
     // fields this lock is protecting. lock is protecting the
     // whole struct except those atomic fields.
     lock: ISpinLock<Thread, OffsetOfLock>,
+    #[cfg(thread_stats)]
     stats: ThreadStats,
     #[cfg(event_flags)]
     event_flags_mode: EventFlagsMode,
@@ -250,6 +251,7 @@ extern "C" fn run_closure(raw: *mut Box<dyn FnOnce()>) {
 }
 
 impl Thread {
+    #[cfg(thread_stats)]
     #[inline]
     pub fn stats(&self) -> &ThreadStats {
         &self.stats
@@ -413,6 +415,7 @@ impl Thread {
             priority: 0,
             origin_priority: 0,
             preempt_count: AtomicUint::new(0),
+            #[cfg(thread_stats)]
             stats: ThreadStats::new(),
             timer: None,
             #[cfg(robin_scheduler)]
@@ -626,21 +629,25 @@ impl Thread {
             .store(blueos_kconfig::CONFIG_ROBIN_SLICE as i32, Ordering::Relaxed);
     }
 
+    #[cfg(thread_stats)]
     #[inline]
     pub fn increment_cycles(&mut self, cycles: u64) {
         self.stats.increment_cycles(cycles);
     }
 
+    #[cfg(thread_stats)]
     #[inline]
     pub fn set_start_cycles(&mut self, cycles: u64) {
         self.stats.set_start_cycles(cycles);
     }
 
+    #[cfg(thread_stats)]
     #[inline]
     pub fn start_cycles(&self) -> u64 {
         self.stats.start_cycles()
     }
 
+    #[cfg(thread_stats)]
     #[inline]
     pub fn get_cycles(&self) -> u64 {
         self.stats.get_cycles()

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use blueos::time;
+use blueos::{scheduler, time};
 
 const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 // Define constants that will be exported to C
@@ -35,7 +35,9 @@ mod tests {
 
     #[test]
     fn test_osKernelSysTick() {
+        scheduler::suspend_me_for(1);
         // If the system runs fast enough, it can be zero.
         let tick = osKernelSysTick();
+        assert!(tick > 0);
     }
 }

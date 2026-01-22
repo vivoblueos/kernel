@@ -163,21 +163,24 @@ pub(crate) extern "C" fn save_context_finish_hook(
     let next = unsafe { Arc::from_raw(hook.next_thread) };
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
+    #[cfg(thread_stats)]
+    let cycles = time::get_sys_cycles();
+    #[cfg(thread_stats)]
+    next.lock().set_start_cycles(cycles);
     let next_saved_sp = spin_until_ready_to_run(&next);
+    // Handling signals relies on previously saved sp, so it must be put between
+    // spin_until_ready_to_run and clear_saved_sp.
     // FIXME: Signal feature should be optional.
     {
         if next.lock().has_pending_signals() {
             prepare_signal_handling(&next);
         }
     }
-    // FIXME: Statistics of cycles should be optional.
-    let cycles = time::get_sys_cycles();
-    next.lock().set_start_cycles(cycles);
     next.clear_saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert!(ok);
     let mut old = set_current_thread(next);
-    // FIXME: Statistics of cycles should be optional.
+    #[cfg(thread_stats)]
     old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
@@ -214,15 +217,16 @@ pub(crate) extern "C" fn save_context_finish_hook(
 fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
-    // FIXME: Statistics of cycles should be optional.
+    #[cfg(thread_stats)]
     let cycles = time::get_sys_cycles();
+    #[cfg(thread_stats)]
     next.lock().set_start_cycles(cycles);
     let next_saved_sp = spin_until_ready_to_run(&next);
     next.clear_saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert!(ok);
     let old = set_current_thread(next);
-    // FIXME: Statistics of cycles should be optional.
+    #[cfg(thread_stats)]
     old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
