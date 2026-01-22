@@ -81,3 +81,7 @@ impl Drop for Storage {
         }
     }
 }
+
+// FIXME: Workaround for pointer based storage.
+unsafe impl Send for Storage {}
+unsafe impl Sync for Storage {}
