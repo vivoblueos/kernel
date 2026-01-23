@@ -15,14 +15,21 @@
 mod config;
 
 use crate::{arch, error::Error, sync::SpinLock, time};
-use blueos_kconfig::NUM_CORES;
+use blueos_kconfig::CONFIG_NUM_CORES;
 use core::sync::atomic::Ordering;
 
 pub(crate) fn init() {
     crate::boot::init_runtime();
     crate::boot::init_heap();
     arch::vector::init();
-    unsafe { arch::irq::init(config::GICD as u64, config::GICR as u64, NUM_CORES, false) };
+    unsafe {
+        arch::irq::init(
+            config::GICD as u64,
+            config::GICR as u64,
+            CONFIG_NUM_CORES as usize,
+            false,
+        )
+    };
     arch::irq::cpu_init();
     time::systick_init(24000000);
 }
