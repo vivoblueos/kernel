@@ -21,6 +21,7 @@ use crate::{
         registers::cntfrq_el0::CNTFRQ_EL0,
     },
     error::Error,
+    irq::IrqTrace,
     scheduler,
     support::SmpStagedInit,
     time,
@@ -81,6 +82,7 @@ crate::define_pin_states!(None);
 pub struct Serial0Irq {}
 impl IrqHandler for Serial0Irq {
     fn handle(&mut self) {
+        let _trace = IrqTrace::new(config::PL011_UART0_IRQNUM);
         let uart = get_device!(console_uart);
         if let Some(handler) = unsafe {
             let intr_handler_cell = &*uart.intr_handler.get();
