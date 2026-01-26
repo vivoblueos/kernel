@@ -254,7 +254,9 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
-    debug_assert_eq!(current_thread_ref().preempt_count(), 0);
+    if !current_thread_ref().is_preemptable() {
+        return old_sp;
+    }
     let Some(next) = next_preferred_thread(current_thread_ref().priority()) else {
         #[cfg(debugging_scheduler)]
         crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
@@ -451,9 +453,6 @@ pub fn suspend_me_with_timeout(w: SpinLockGuard<'_, WaitQueue>, ticks: usize) ->
 // perfectly meet this semantics.
 pub fn yield_me_now_or_later() {
     if unlikely(!is_schedule_ready()) {
-        return;
-    }
-    if current_thread_ref().preempt_count() != 0 {
         return;
     }
     arch::pend_switch_context();

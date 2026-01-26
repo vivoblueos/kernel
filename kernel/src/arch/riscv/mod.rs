@@ -58,6 +58,9 @@ pub(crate) extern "C" fn pend_switch_context() {
 
 #[inline]
 pub(crate) extern "C" fn claim_switch_context() -> bool {
+    if !scheduler::current_thread_ref().is_preemptable() {
+        return false;
+    }
     let level = disable_local_irq_save();
     let id = current_cpu_id();
     let ok = unsafe { PENDING_SWITCH_CONTEXT[id].get() };
