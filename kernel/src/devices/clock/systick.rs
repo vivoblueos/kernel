@@ -16,15 +16,16 @@ use crate::{arch, arch::irq::IRQ_PRIORITY_FOR_SCHEDULER, devices::clock::Clock};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use cortex_m::peripheral::{scb::SystemHandler, syst::SystClkSource, SCB, SYST};
 
-static INTERRUPT_AT: AtomicUsize = AtomicUsize::new(0);
-static TICKS: AtomicUsize = AtomicUsize::new(0);
-
 // A SysTick device is a built-in, 24-bit system timer in ARM Cortex-M
 // processors, acting as a simple, precise hardware timer for generating
 // periodic interrupts, creating delays, or serving real-time operating systems
 // (RTOS) by counting down from a set value and reloading, providing essential
 // timing for embedded applications.
 pub struct SysTickClock<const TICKS_PS: usize, const HZ: usize>;
+// We're using a count-down clock to emulate a monotonic clock. That's to say
+// the counter is emulated and is maintained by software.
+static TICKS: AtomicUsize = AtomicUsize::new(0);
+static INTERRUPT_AT: AtomicUsize = AtomicUsize::new(0);
 
 // Use SysTick's count-down counter to simulate a monotonith counter.
 impl<const TICKS_PS: usize, const HZ: usize> Clock for SysTickClock<TICKS_PS, HZ> {
