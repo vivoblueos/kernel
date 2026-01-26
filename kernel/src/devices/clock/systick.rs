@@ -77,7 +77,7 @@ impl<const TICKS_PS: usize, const HZ: usize> SysTickClock<TICKS_PS, HZ> {
         systick.enable_interrupt();
     }
 
-    pub fn on_interrupt() {
+    pub fn claim_interrupt() -> bool {
         let now = if Self::systick().has_wrapped() {
             TICKS.fetch_add(1, Ordering::Relaxed) + 1
         } else {
@@ -85,8 +85,8 @@ impl<const TICKS_PS: usize, const HZ: usize> SysTickClock<TICKS_PS, HZ> {
             TICKS.load(Ordering::Relaxed)
         };
         if now < INTERRUPT_AT.load(Ordering::Relaxed) {
-            return;
+            return false;
         }
-        crate::time::handle_clock_interrupt();
+        true
     }
 }
