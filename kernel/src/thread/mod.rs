@@ -198,7 +198,7 @@ pub struct Thread {
     origin_priority: ThreadPriority,
     state: AtomicUint,
     preempt_count: AtomicUint,
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     robin_count: AtomicI32,
     // FIXME: Using a rusty lock looks not flexible. Now we are using
     // a C-style intrusive lock. It's conventional to declare which
@@ -418,7 +418,7 @@ impl Thread {
             #[cfg(thread_stats)]
             stats: ThreadStats::new(),
             timer: None,
-            #[cfg(robin_scheduler)]
+            #[cfg(round_robin)]
             robin_count: AtomicI32::new(0),
             kind,
             #[cfg(event_flags)]
@@ -616,13 +616,13 @@ impl Thread {
         self.preempt_count.load(Ordering::Acquire)
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     #[inline]
     pub fn round_robin(&self, ticks: usize) -> i32 {
         self.robin_count.fetch_sub(ticks as i32, Ordering::Relaxed)
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     #[inline]
     pub fn reset_robin(&self) {
         self.robin_count
