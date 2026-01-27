@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // GICv3 and GICv2 defines the IRQ number of the generic timer.
-pub const IRQ_NUMER: usize = 30;
+pub const IRQ_NUMBER: usize = 30;
 
 pub struct GenericTimer;
 

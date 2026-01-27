@@ -22,6 +22,7 @@
 #![feature(c_size_t)]
 #![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
+#![feature(let_chains)]
 #![feature(linkage)]
 #![feature(negative_impls)]
 #![feature(non_null_from_ref)]
@@ -41,4 +42,5 @@ pub mod storage;
 pub mod string;
 pub mod tinyarc;
 pub use tinyarc::sorted_list;
+pub mod iheap;
 pub mod tinyrwlock;
