@@ -11,7 +11,7 @@ config EVENT_FLAGS
     default n
     bool "Enable event flags"
 
-config CONFIG_ROUND_ROBIN
+config ROUND_ROBIN
     default y
     bool "Enable robin scheduler"
 
