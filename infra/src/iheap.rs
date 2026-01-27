@@ -24,12 +24,11 @@ use core::{marker::PhantomData, ptr::NonNull};
 #[derive(Default)]
 #[repr(transparent)]
 pub struct IouMinHeapNodeMut<'a, T, A: const Adapter<T>> {
-    // We don't want to have to &mut T simultaneously during iterating over the list.
     node: Option<NonNull<MinHeapNode<T, A>>>,
     _lt: PhantomData<&'a mut T>,
 }
 
-impl<'a, T, A: const Adapter<T>> IouMinHeapNodeMut<'a, T, A> {
+impl<T, A: const Adapter<T>> IouMinHeapNodeMut<'_, T, A> {
     pub const fn new() -> Self {
         Self {
             node: None,
@@ -482,10 +481,10 @@ where
         self.top_down_adjust(last_val, last)
     }
 
-    pub fn remove<'a, 'b>(
+    pub fn remove<'a>(
         &mut self,
-        mut iou: IouMinHeapNodeMut<'a, T, A>,
-    ) -> Option<IouMinHeapNodeMut<'b, T, A>> {
+        mut iou: IouMinHeapNodeMut<'_, T, A>,
+    ) -> Option<IouMinHeapNodeMut<'a, T, A>> {
         let Some(mut node) = iou.node else {
             panic!("Nil node")
         };
@@ -505,7 +504,7 @@ where
         })
     }
 
-    pub fn is_active<'a>(&self, iou: &IouMinHeapNodeMut<'a, T, A>) -> bool {
+    pub fn is_active(&self, iou: &IouMinHeapNodeMut<'_, T, A>) -> bool {
         let Some(node) = iou.node else {
             return false;
         };
@@ -518,9 +517,22 @@ where
         };
         debug_assert!(self.is_linked_in_heap(node));
         self.inner_remove(node);
-        debug_assert_eq!(unsafe { node.as_ref() }.link.left(), None);
-        debug_assert_eq!(unsafe { node.as_ref() }.link.right(), None);
-        LinkType::insert_after(&mut self.popped, &mut unsafe { node.as_mut() }.link);
+        debug_assert!(unsafe { node.as_ref() }.link.is_detached());
+        debug_assert!(self.popped.prev.is_none());
+        let ok = LinkType::insert_after(&mut self.popped, &mut unsafe { node.as_mut() }.link);
+        debug_assert!(ok);
+        debug_assert_eq!(
+            self.popped.right(),
+            Some(NonNull::from_ref(&unsafe { node.as_ref() }.link))
+        );
+        debug_assert_eq!(
+            self.popped.next,
+            Some(NonNull::from_ref(&unsafe { node.as_ref() }.link))
+        );
+        debug_assert_eq!(
+            Some(NonNull::from_ref(&self.popped)),
+            unsafe { node.as_ref() }.link.prev
+        );
         self
     }
 
@@ -535,7 +547,10 @@ where
     {
         let mut it = LinkTypeIterator::new(&self.popped, None);
         for mut node in it {
-            let val = unsafe { LinkType::owner_mut(node.as_mut()) };
+            let node_mut = unsafe { node.as_mut() };
+            debug_assert_ne!(node_mut.left(), Some(node));
+            debug_assert_ne!(node_mut.right(), Some(node));
+            let val = unsafe { LinkType::owner_mut(node_mut) };
             f(val);
         }
     }
@@ -568,18 +583,6 @@ where
             let mut path = (0, 0);
             let (current, current_parent) = self.node_at(i, &mut path);
             let current_mut = unsafe { current.unwrap().as_mut() };
-            dbg!(
-                "Node[{}] = {:?}, L: {:?}, R: {:?}, parent = {:?}",
-                i,
-                current,
-                current_mut.link.left().map(|mut v| NonNull::from_mut(
-                    MinHeapNode::node_of_link_mut(unsafe { v.as_mut() })
-                )),
-                current_mut.link.right().map(|mut v| NonNull::from_mut(
-                    MinHeapNode::node_of_link_mut(unsafe { v.as_mut() })
-                )),
-                current_parent
-            );
             assert!(current.is_some());
             assert_eq!(unsafe { current.unwrap().as_ref() }.parent, current_parent);
             if path.0 == 0 {
