@@ -18,7 +18,7 @@ config ROUND_ROBIN
 config ROBIN_SLICE
     default 10
     int "The tick slice of robin scheduler"
-    depends on CONFIG_ROUND_ROBIN
+    depends on ROUND_ROBIN
 
 config OVERFLOW_CHECK
     default y
