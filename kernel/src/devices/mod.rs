@@ -29,6 +29,7 @@ use spin::{Once, RwLock as SpinRwLock};
 #[cfg(virtio)]
 pub mod block;
 pub mod bus;
+pub mod clock;
 pub mod console;
 mod error;
 pub mod i2c_core;
