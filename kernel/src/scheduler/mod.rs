@@ -516,7 +516,7 @@ pub fn current_thread_id() -> usize {
 }
 
 pub(crate) fn handle_tick_increment(elapsed_ticks: usize) -> bool {
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     {
         let this_thread = current_thread_ref();
         if Thread::id(this_thread) != Thread::id(idle::current_idle_thread_ref())
