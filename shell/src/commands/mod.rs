@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod alloc;
 pub mod cat;
 pub mod cd;
 pub mod cmp;
 pub mod cp;
+pub mod dealloc;
 pub mod echo;
 pub mod free;
 pub mod help;
@@ -108,4 +110,13 @@ pub static COMMANDS: Map<&'static str, CommandInfo> = phf_map! {
         handler: umount::command,
         description: "Unmount filesystems, usage: umout <path>",
     },
+    "alloc" => CommandInfo {
+        handler: crate::commands::alloc::command,
+        description: "Allocate memory via system allocator",
+    },
+    "dealloc" => CommandInfo {
+        handler: crate::commands::dealloc::command,
+        description: "Deallocate memory via system allocator",
+    },
+
 };
