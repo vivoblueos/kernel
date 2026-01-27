@@ -18,6 +18,7 @@ use crate::devices::bus::{Bus, BusInterface};
 
 pub(crate) mod ic;
 pub(crate) mod sensor;
+pub(crate) mod timer;
 
 /// use c-compatible error type
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
