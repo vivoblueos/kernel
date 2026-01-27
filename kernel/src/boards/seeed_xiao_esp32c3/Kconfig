@@ -1,0 +1,20 @@
+# Soc specific configuration
+# cortex-m
+choice
+    prompt "The cortex-m irq priority bits"
+    default IRQ_PRIORITY_BITS_2
+    help
+      Choose between 2, 3 or 8 for the cortex-m irq priority bits.
+    config IRQ_PRIORITY_BITS_2
+        bool "2"
+        help
+          Set irq priority bits to 2.
+    config IRQ_PRIORITY_BITS_3
+        bool "3"
+        help
+          Set irq priority bits to 3.
+    config IRQ_PRIORITY_BITS_8
+        bool "8"
+        help
+          Set irq priority bits to 8.
+endchoice
