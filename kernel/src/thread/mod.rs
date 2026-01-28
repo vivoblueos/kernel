@@ -347,10 +347,10 @@ impl Thread {
     }
 
     #[inline]
-    pub fn transfer_state(&self, from: Uint, to: Uint) -> bool {
+    pub fn transfer_state(&self, from: Uint, to: Uint) -> Result<(), Uint> {
         self.state
             .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+            .map(|_| ())
     }
 
     #[inline]

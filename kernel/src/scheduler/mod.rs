@@ -214,7 +214,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     }
     next.clear_saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
-    debug_assert!(ok);
+    debug_assert_eq!(ok, Ok(()));
     let mut old = set_current_thread(next);
     #[cfg(thread_stats)]
     old.lock().increment_cycles(cycles);
@@ -266,12 +266,14 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
     };
     debug_assert_eq!(next.state(), thread::READY);
     let old = current_thread_ref();
-    let ok = if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
-        old.transfer_state(thread::RUNNING, thread::READY)
+    if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
+        let ok = old.transfer_state(thread::RUNNING, thread::READY);
+        debug_assert_eq!(ok, Ok(()));
     } else {
-        queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) })
+        let ok = queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
+        debug_assert_eq!(ok, Ok(()));
     };
-    debug_assert!(ok);
+
     switch_current_thread(next, old_sp)
 }
 
@@ -288,7 +290,7 @@ pub fn retire_me() -> ! {
     // usage.
     let mut hooks = ContextSwitchHookHolder::new(next);
     let ok = current_thread_ref().transfer_state(thread::RUNNING, thread::RETIRED);
-    debug_assert!(ok);
+    debug_assert_eq!(ok, Ok(()));
     arch::switch_context_with_hook(&mut hooks as *mut _);
     unreachable!("Retired thread should not reach here")
 }
@@ -297,12 +299,13 @@ fn inner_yield(next: ThreadNode) {
     let old = current_thread();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     old.disable_preempt();
-    let ok = if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
-        old.transfer_state(thread::RUNNING, thread::READY)
+    if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
+        let ok = old.transfer_state(thread::RUNNING, thread::READY);
+        debug_assert_eq!(ok, Ok(()));
     } else {
-        queue_ready_thread(thread::RUNNING, old.clone())
+        let ok = queue_ready_thread(thread::RUNNING, old.clone());
+        debug_assert_eq!(ok, Ok(()));
     };
-    debug_assert!(ok);
     arch::switch_context_with_hook(&mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
     old.enable_preempt();
@@ -360,7 +363,7 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     old.disable_preempt();
     let ok = old.transfer_state(thread::RUNNING, thread::SUSPENDED);
-    debug_assert!(ok);
+    debug_assert_eq!(ok, Ok(()));
     drop(wq);
     let mut reached_deadline = false;
     if deadline != Tick::MAX {

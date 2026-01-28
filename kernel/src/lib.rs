@@ -185,7 +185,7 @@ mod tests {
                 w.set_cleanup(Entry::C(cleanup));
             };
             let ok = scheduler::queue_ready_thread(w.state(), t.clone());
-            assert!(ok);
+            assert_eq!(ok, Ok(()));
         }
     }
 
@@ -222,7 +222,7 @@ mod tests {
             ThreadKind::Normal,
         );
         let ok = scheduler::queue_ready_thread(thread::IDLE, t.clone());
-        assert!(ok);
+        assert_eq!(ok, Ok(()));
     }
 
     #[cfg(target_pointer_width = "64")]
@@ -517,7 +517,7 @@ mod tests {
         for _i in 0..n {
             let t = thread::Builder::new(thread::Entry::C(do_it)).build();
             let ok = scheduler::queue_ready_thread(t.state(), t);
-            assert!(ok);
+            assert_eq!(ok, Ok(()));
         }
         loop {
             let m = BUILT_THREADS.load(Ordering::Relaxed);
@@ -785,13 +785,13 @@ mod tests {
             .set_priority(config::MAX_THREAD_PRIORITY / 2)
             .build();
         let ok1 = scheduler::queue_ready_thread(t1.state(), t1);
-        assert!(ok1);
+        assert_eq!(ok1, Ok(()));
 
         let t2 = thread::Builder::new(thread::Entry::C(allocator_stress_thread2))
             .set_priority(config::MAX_THREAD_PRIORITY / 2)
             .build();
         let ok2 = scheduler::queue_ready_thread(t2.state(), t2);
-        assert!(ok2);
+        assert_eq!(ok2, Ok(()));
 
         // Wait for both threads to complete
         wait_until(1, &ALLOCATOR_STRESS_THREAD1_DONE);

@@ -79,7 +79,7 @@ pub(crate) fn init() {
         ThreadKind::AsyncPoller,
     );
     let ok = scheduler::queue_ready_thread(thread::IDLE, poller);
-    debug_assert!(ok);
+    debug_assert_eq!(ok, Ok(()));
 }
 
 fn create_tasklet(future: impl Future<Output = ()> + 'static) -> Arc<Tasklet> {
@@ -134,7 +134,7 @@ fn poll_inner() {
         if let Poll::Ready(()) = l.future.as_mut().poll(&mut ctx) {
             if let Some(t) = l.blocked.take() {
                 let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
-                debug_assert!(ok);
+                debug_assert_eq!(ok, Ok(()));
             }
             // If we detach the task what ever it's ready or
             // pending, it would be edge-level triggered. Now

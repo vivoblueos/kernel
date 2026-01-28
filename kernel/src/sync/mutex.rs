@@ -348,7 +348,7 @@ impl Mutex {
             let mut this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
             for we in this_lock.iter() {
                 let t = we.thread.clone();
-                if scheduler::queue_ready_thread(thread::SUSPENDED, t) {
+                if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
                     break;
                 }
             }

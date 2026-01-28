@@ -122,8 +122,7 @@ impl MessageQueue {
     fn wakeup_pend_receiver(w: &mut SpinLockGuard<'_, WaitQueue>) -> bool {
         for next in w.iter() {
             let t = next.thread.clone();
-            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
-            if ok {
+            if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
                 return true;
             }
         }

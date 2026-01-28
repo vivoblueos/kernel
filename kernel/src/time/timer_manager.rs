@@ -31,7 +31,7 @@ fn execute_callback(tm: &mut Timer) {
             let Some(owner) = maybe_owner.take() else {
                 return;
             };
-            *timeout = scheduler::queue_ready_thread(thread::SUSPENDED, owner);
+            *timeout = scheduler::queue_ready_thread(thread::SUSPENDED, owner).is_ok();
         }
         TimerCallback::Do(f) => f(),
         TimerCallback::Posix(f, arg) => f(*arg),

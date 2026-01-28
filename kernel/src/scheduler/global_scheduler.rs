@@ -73,7 +73,7 @@ fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Op
     let q = &mut tbl.tables[index];
     let next = q.pop_front();
     debug_assert!(next.is_some());
-    debug_assert_eq!(next.as_ref().unwrap().state(), READY);
+    debug_assert_eq!(next.as_ref().unwrap().state(), thread::READY);
     if q.is_empty() {
         tbl.clear_active_queue(index as u32);
     }
@@ -112,8 +112,10 @@ pub fn queue_ready_thread_with_post_action<R, F>(
 where
     F: Fn() -> R,
 {
-    debug_assert_ne!(old_state, thread::READY);
-    if !t.transfer_state(old_state, thread::READY) {
+    if old_state == thread::READY {
+        return None;
+    }
+    if !t.transfer_state(old_state, thread::READY).is_ok() {
         return None;
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
@@ -128,7 +130,7 @@ fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNo
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
     let q = &mut tbl.tables[priority as usize];
-    if !q.push_back(t.clone()) {
+    if !q.push_back(t) {
         return false;
     }
     tbl.set_active_queue(priority as u32);
@@ -145,17 +147,17 @@ fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNo
 }
 
 // We only queue the thread if old_state equals thread's current state.
-pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
-    debug_assert_ne!(old_state, thread::READY);
-    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
-    if !t.transfer_state(old_state, thread::READY) {
-        return false;
+pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
+    if old_state == thread::READY {
+        return Err(thread::READY);
     }
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    let _ = t.transfer_state(old_state, thread::READY)?;
     let ok = queue_ready_thread_inner(&mut tbl, t);
     debug_assert!(ok);
     drop(tbl);
     super::notify_idle_cores(1);
-    ok
+    Ok(())
 }
 
 fn remove_from_ready_queue_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadNode) -> bool {

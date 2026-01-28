@@ -218,11 +218,11 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
     debug_assert_ne!(Thread::id(old), Thread::id(&next));
     let mut hook = ContextSwitchHookHolder::new(next);
     if Thread::id(old) == Thread::id(scheduler::current_idle_thread_ref()) {
-        let ok = old.transfer_state(thread::RUNNING, thread::READY);
-        debug_assert!(ok);
+        let res = old.transfer_state(thread::RUNNING, thread::READY);
+        debug_assert_eq!(res, Ok(()));
     } else {
-        let ok = scheduler::queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
-        debug_assert!(ok);
+        let res = scheduler::queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
+        debug_assert_eq!(res, Ok(()));
     };
     let next_saved_sp = scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() });
     switch_stack_with_hook(&mut hook, old_sp, next_saved_sp, ra, handle_switch)

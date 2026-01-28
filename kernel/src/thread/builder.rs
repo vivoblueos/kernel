@@ -95,7 +95,7 @@ where
     let entry = Box::new(f);
     let builder = Builder::new(Entry::Closure(entry));
     let t = builder.build();
-    if scheduler::queue_ready_thread(thread::IDLE, t.clone()) {
+    if scheduler::queue_ready_thread(thread::IDLE, t.clone()).is_ok() {
         return Some(t);
     }
     None
@@ -152,7 +152,7 @@ impl Builder {
     pub fn start(self) -> ThreadNode {
         let t = self.build();
         let ok = scheduler::queue_ready_thread(super::IDLE, t.clone());
-        debug_assert!(ok);
+        debug_assert_eq!(ok, Ok(()));
         // TODO: Invoke yield_me_now_or_later for better realtime performance. However
         // this breaks some existed tests and need TBI.
         t

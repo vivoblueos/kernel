@@ -158,7 +158,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
         }
         let mut we = e.pending.irqsave_lock();
         for next in we.iter() {
-            if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()) {
+            if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()).is_ok() {
                 woken += 1;
                 #[cfg(debugging_scheduler)]
                 crate::trace!(

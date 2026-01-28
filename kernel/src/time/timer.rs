@@ -98,7 +98,7 @@ pub(crate) fn init() {
             ThreadKind::SoftTimer,
         );
         let ok = scheduler::queue_ready_thread(thread::IDLE, worker);
-        debug_assert!(ok);
+        debug_assert_eq!(ok, Ok(()));
     }
 }
 
