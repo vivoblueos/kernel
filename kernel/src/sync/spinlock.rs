@@ -16,6 +16,7 @@ use crate::{
     support::DisableInterruptGuard,
     types::{IRwLock, IntrusiveAdapter, NestedAdapter, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
+use blueos_infra::nolock::{INoLock, NoLock, NoLockReadGuard, NoLockWriteGuard};
 use core::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
@@ -24,7 +25,10 @@ use core::{
 
 #[derive(Debug)]
 pub struct SpinLock<T: ?Sized> {
+    #[cfg(smp)]
     lock: RwLock<T>,
+    #[cfg(not(smp))]
+    lock: NoLock<T>,
 }
 
 pub type SpinLockWriteGuard<'a, T> = SpinLockGuard<'a, T>;
@@ -33,7 +37,10 @@ pub type SpinLockWriteGuard<'a, T> = SpinLockGuard<'a, T>;
 #[derive(Debug)]
 #[repr(C)]
 pub struct SpinLockGuard<'a, T: ?Sized> {
+    #[cfg(smp)]
     lock_guard: RwLockWriteGuard<'a, T>,
+    #[cfg(not(smp))]
+    lock_guard: NoLockWriteGuard<'a, T>,
     irq_guard: Option<DisableInterruptGuard>,
 }
 
@@ -62,7 +69,10 @@ impl<'a, T: 'a + ?Sized> DerefMut for SpinLockGuard<'a, T> {
 #[derive(Debug)]
 #[repr(C)]
 pub struct SpinLockReadGuard<'a, T: ?Sized> {
+    #[cfg(smp)]
     lock_guard: RwLockReadGuard<'a, T>,
+    #[cfg(not(smp))]
+    lock_guard: NoLockReadGuard<'a, T>,
     irq_guard: Option<DisableInterruptGuard>,
 }
 
@@ -84,7 +94,10 @@ impl<'a, T: 'a + ?Sized> Deref for SpinLockReadGuard<'a, T> {
 impl<T> SpinLock<T> {
     pub const fn new(val: T) -> Self {
         Self {
+            #[cfg(smp)]
             lock: RwLock::new(val),
+            #[cfg(not(smp))]
+            lock: NoLock::new(val),
         }
     }
 }
@@ -222,13 +235,19 @@ impl<T: Sized, A: const IntrusiveAdapter<T>> const IntrusiveAdapter<ISpinLock<T,
 #[allow(clippy::type_complexity)]
 #[derive(Default, Debug)]
 pub struct ISpinLock<T: Sized, A: const IntrusiveAdapter<T>> {
+    #[cfg(smp)]
     lock: IRwLock<T, NestedAdapter<T, A, ISpinLock<T, A>, ISpinLockOffset<T, A>>>,
+    #[cfg(not(smp))]
+    lock: INoLock<T, NestedAdapter<T, A, ISpinLock<T, A>, ISpinLockOffset<T, A>>>,
 }
 
 impl<T: Sized, A: const IntrusiveAdapter<T>> ISpinLock<T, A> {
     pub const fn new() -> Self {
         Self {
+            #[cfg(smp)]
             lock: IRwLock::new(),
+            #[cfg(not(smp))]
+            lock: INoLock::new(),
         }
     }
 
