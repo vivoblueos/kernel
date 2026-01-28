@@ -74,7 +74,8 @@ pub extern "C" fn tm_thread_create(
 pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref().clone() };
     // Resuming myself should not happen.
-    if scheduler::queue_ready_thread(SUSPENDED, t.clone()) || scheduler::queue_ready_thread(IDLE, t)
+    if scheduler::queue_ready_thread(SUSPENDED, t.clone()).is_ok()
+        || scheduler::queue_ready_thread(IDLE, t).is_ok()
     {
         scheduler::relinquish_me();
         return TM_SUCCESS;

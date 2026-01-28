@@ -292,7 +292,7 @@ pub extern "C" fn osThreadNew(
         .set_alien_ptr(unsafe { NonNull::new_unchecked(ptr as *mut core::ffi::c_void) });
     let ok =
         scheduler::queue_ready_thread(to_thread_state(osThreadState_t_osThreadInactive) as Uint, t);
-    debug_assert!(ok);
+    debug_assert_eq!(ok, Ok(()));
     ptr as osThreadId_t
 }
 
@@ -477,12 +477,10 @@ pub extern "C" fn osThreadSuspend(thread_id: osThreadId_t) -> osStatus_t {
         return osStatus_t_osErrorResource;
     }
     // Try our best make the thread run again.
-    let ok = scheduler::queue_ready_thread(thread::IDLE, t.inner().clone());
-    if ok {
+    if scheduler::queue_ready_thread(thread::IDLE, t.inner().clone()).is_ok() {
         return osStatus_t_osOK;
     }
-    let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone());
-    if ok {
+    if scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone()).is_ok() {
         return osStatus_t_osOK;
     }
     // TODO: For smp system, the thread might be running on another CPU core, we have to
@@ -587,12 +585,10 @@ pub extern "C" fn osThreadTerminate(thread_id: osThreadId_t) -> osStatus_t {
         return osStatus_t_osErrorResource;
     }
     // Try our best make the thread run again.
-    let ok = scheduler::queue_ready_thread(thread::IDLE, t.inner().clone());
-    if ok {
+    if scheduler::queue_ready_thread(thread::IDLE, t.inner().clone()).is_ok() {
         return osStatus_t_osOK;
     }
-    let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone());
-    if ok {
+    if scheduler::queue_ready_thread(thread::SUSPENDED, t.inner().clone()).is_ok() {
         return osStatus_t_osOK;
     }
     // TODO: For smp system, the thread might be running on another CPU core, we have to
