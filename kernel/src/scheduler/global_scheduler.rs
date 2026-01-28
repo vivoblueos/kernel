@@ -115,7 +115,7 @@ where
     if old_state == thread::READY {
         return None;
     }
-    if !t.transfer_state(old_state, thread::READY).is_ok() {
+    if t.transfer_state(old_state, thread::READY).is_err() {
         return None;
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
@@ -152,7 +152,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
         return Err(thread::READY);
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
-    let _ = t.transfer_state(old_state, thread::READY)?;
+    t.transfer_state(old_state, thread::READY)?;
     let ok = queue_ready_thread_inner(&mut tbl, t);
     debug_assert!(ok);
     drop(tbl);

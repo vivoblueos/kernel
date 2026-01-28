@@ -57,7 +57,7 @@ pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
     let mut woken = 0;
     for entry in wq.iter() {
         let t = entry.thread.clone();
-        if !scheduler::queue_ready_thread(SUSPENDED, t).is_ok() {
+        if scheduler::queue_ready_thread(SUSPENDED, t).is_err() {
             continue;
         }
         woken += 1;
