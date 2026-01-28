@@ -35,6 +35,7 @@ const SLAB_ALLOCATOR_COUNT: usize = MAX_SLAB_SHIFT - MIN_SLAB_SHIFT + 1 + ADDITI
 const SYSTEM_ALLOCATOR_INDEX: usize = SLAB_ALLOCATOR_COUNT;
 const PAGE_SHIFT: usize = 12;
 const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
+const SLAB_MAX_UPSEARCH_SIZE: usize = 16; // When SLAB_32 is full, 18B is not allowed in SLAB_64
 
 #[derive(Copy, Clone)]
 pub struct Slab {
@@ -252,12 +253,15 @@ impl<
         let mut allocator_index = Self::layout_to_allocator(layout.size(), layout.align());
         while ptr.is_none() {
             if allocator_index < SLAB_ALLOCATOR_COUNT {
-                if self.slab_allocator[allocator_index].len > 0 {
+                if self.slab_allocator[allocator_index].len > 0
+                    && Self::SLAB_SIZES[allocator_index] % layout.align() == 0
+                {
                     ptr = self.slab_allocator[allocator_index].allocate(layout);
                     self.allocated += Self::SLAB_SIZES[allocator_index];
-                } else {
-                    // TODO: Need to limit min block size
+                } else if Self::SLAB_SIZES[allocator_index] <= SLAB_MAX_UPSEARCH_SIZE {
                     allocator_index += 1;
+                } else {
+                    allocator_index = SYSTEM_ALLOCATOR_INDEX;
                 }
             } else {
                 ptr = self.system_allocator.allocate(layout);
