@@ -49,6 +49,7 @@ group("run_tests") {
   testonly = true
   deps = [
     ":run_tm_basic_process_test",
+    ":run_tm_cooperative_scheduling_test",
     ":run_tm_preemptive_scheduling_test",
   ]
 }
