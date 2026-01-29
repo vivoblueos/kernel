@@ -788,7 +788,9 @@ impl OperationIPCReply {
                 continue;
             }
 
-            let Err(e) = futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX) else {
+            let Err(e) =
+                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
+            else {
                 continue;
             };
 
