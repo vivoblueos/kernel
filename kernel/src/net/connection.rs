@@ -747,7 +747,8 @@ impl OperationIPCReply {
     }
 
     fn queue_and_wait(&self, task: Operation) -> ConnectionResult {
-        // Must store before enqueue, our connection suppose to be only one thread can write at one time
+        // NOTE: Must store before enqueue, our connection suppose to be only one thread can write at one time.
+        // If multiple threads share this socket, a stalled owner can block all I/O indefinitely.
         while self.reply_futex.load(Ordering::Acquire) != STATE_IDLE {
             yield_me();
         }
@@ -778,6 +779,7 @@ impl OperationIPCReply {
 
         loop {
             if let Some(result) = self.reply_result.lock().take() {
+                self.reply_futex.store(STATE_IDLE, Ordering::Release);
                 return result.map_err(Into::into);
             }
 
@@ -818,8 +820,6 @@ impl OperationIPCReply {
             .store(STATE_AFTER_CONSUME, Ordering::Release);
 
         let _ = futex::atomic_wake(&self.reply_futex, 1);
-
-        self.reply_futex.store(STATE_IDLE, Ordering::Release);
     }
 
     fn wakeup_client(&self, result: OperationResult, socket_fd: SocketFd) {
