@@ -15,7 +15,7 @@
 pub(crate) mod irq;
 mod trap;
 
-use crate::{irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
+use crate::{boards, irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
 use core::{
     cell::Cell,
     mem::offset_of,
@@ -533,4 +533,8 @@ pub(crate) extern "C" fn switch_stack(
             "
         )
     }
+}
+
+pub(crate) extern "C" fn send_ipi(hart: usize) {
+    boards::send_ipi(hart);
 }

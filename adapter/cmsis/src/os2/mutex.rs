@@ -16,6 +16,7 @@ use crate::common_objects::OsMutex;
 use blueos::{
     irq,
     sync::mutex::Mutex,
+    time::Tick,
     types::{Arc, ArcInner, Int},
 };
 use cmsis_os2::*;
@@ -104,7 +105,7 @@ pub extern "C" fn osMutexAcquire(mutex_id: osMutexId_t, timeout: u32) -> osStatu
     }
 
     let mutex = unsafe { ManuallyDrop::new(Arc::from_raw(mutex_id as *const OsMutex)) };
-    if !mutex.pend_for(timeout as usize) {
+    if !mutex.pend_for(Tick(timeout as usize)) {
         return osStatus_t_osErrorResource;
     }
     osStatus_t_osOK

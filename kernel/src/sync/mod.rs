@@ -27,3 +27,31 @@ pub mod barrier;
 pub use barrier::ConstBarrier;
 #[cfg(event_flags)]
 pub mod event_flags;
+
+use crate::time::Tick;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+pub fn wait_until(expected: usize, signal: &AtomicUsize) {
+    loop {
+        let current = signal.load(Ordering::Acquire);
+        if current == expected {
+            break;
+        }
+        atomic_wait(signal, current, Tick::MAX);
+    }
+}
+
+pub fn wake(signal: &AtomicUsize) {
+    atomic_wake(signal, usize::MAX);
+}
+
+// This routine might be used when round robin is enabled.
+pub fn spin_until(expected: usize, signal: &AtomicUsize) {
+    loop {
+        let current = signal.load(Ordering::Acquire);
+        if current == expected {
+            break;
+        }
+        core::hint::spin_loop();
+    }
+}

@@ -17,6 +17,7 @@ use blueos::{
     irq,
     scheduler::{self, InsertModeTrait, InsertToEnd},
     sync::semaphore::Semaphore,
+    time::Tick,
     types::{Arc, ArcInner, Uint},
 };
 use cmsis_os2::*;
@@ -113,7 +114,7 @@ pub extern "C" fn osSemaphoreAcquire(semaphore_id: osSemaphoreId_t, timeout: u32
         if !semaphore.acquire_notimeout::<InsertToEnd>() {
             return osStatus_t_osError;
         }
-    } else if !semaphore.acquire_timeout::<InsertToEnd>(timeout as usize) {
+    } else if !semaphore.acquire_timeout::<InsertToEnd>(Tick(timeout as usize)) {
         return osStatus_t_osErrorResource;
     }
     osStatus_t_osOK

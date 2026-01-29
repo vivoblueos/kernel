@@ -16,7 +16,7 @@ use core::cell::RefCell;
 
 use crate::{
     net::net_interface::{NetDevice, NetInterface},
-    time::TickTime,
+    time,
 };
 use alloc::{rc::Rc, vec};
 use smoltcp::{
@@ -47,7 +47,7 @@ impl NetInterface<'_> {
         let mut interface = Interface::new(
             config,
             &mut inner,
-            Instant::from_millis(i64::try_from(TickTime::now().as_millis()).unwrap_or(0)),
+            Instant::from_millis(i64::try_from(time::now().as_millis()).unwrap_or(0)),
         );
 
         interface.update_ip_addrs(|ip_addrs| {

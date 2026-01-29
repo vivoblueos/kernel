@@ -15,6 +15,7 @@
 use blueos::{
     scheduler::InsertToEnd,
     sync::semaphore::Semaphore,
+    time::Tick,
     types::{Arc, Int, Uint},
 };
 use cmsis_os::*;
@@ -67,7 +68,7 @@ pub extern "C" fn osSemaphoreWait(semaphore_id: osSemaphoreId, millis: u32) -> i
             return SEM_WAIT_ERROR;
         }
     } else {
-        if !semaphore.acquire_timeout::<InsertToEnd>(millis as usize) {
+        if !semaphore.acquire_timeout::<InsertToEnd>(Tick::from_millis(millis as u64)) {
             return SEM_WAIT_ERROR;
         }
     }

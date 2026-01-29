@@ -21,7 +21,7 @@ const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize
 // uint32_t osKernelGetTickCount (void);
 #[no_mangle]
 pub extern "C" fn osKernelGetTickCount() -> u32 {
-    time::TickTime::now().as_ticks() as u32
+    time::Tick::now().0 as u32
 }
 
 // Get the RTOS kernel tick frequency.
@@ -37,7 +37,7 @@ pub extern "C" fn osKernelGetTickFreq() -> u32 {
 // uint32_t osKernelGetSysTimerCount (void);
 #[no_mangle]
 pub extern "C" fn osKernelGetSysTimerCount() -> u32 {
-    time::get_sys_cycles() as u32
+    time::current_clock_cycles() as u32
 }
 
 // Get the RTOS kernel system timer frequency.

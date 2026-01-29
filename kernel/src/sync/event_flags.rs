@@ -19,7 +19,7 @@ use crate::{
     scheduler::{wait_queue, InsertMode, InsertModeTrait, InsertToEnd, WaitEntry, WaitQueue},
     thread,
     thread::Thread,
-    time::WAITING_FOREVER,
+    time::Tick,
     types::{Arc, ArcList},
 };
 use bitflags::bitflags;
@@ -89,9 +89,6 @@ impl EventFlags {
                     clear_flags |= thread.event_flags_mask();
                 }
                 need_schedule = true;
-                if let Some(timer) = &thread.timer {
-                    timer.stop();
-                }
                 scheduler::queue_ready_thread(thread::SUSPENDED, thread);
             }
         }
@@ -121,7 +118,7 @@ impl EventFlags {
         self.flags.get()
     }
 
-    pub fn wait<M>(&self, flags: u32, mode: EventFlagsMode, timeout: usize) -> Result<u32, Error>
+    pub fn wait<M>(&self, flags: u32, mode: EventFlagsMode, timeout: Tick) -> Result<u32, Error>
     where
         M: InsertModeTrait,
     {
@@ -153,7 +150,7 @@ impl EventFlags {
             return Ok(event_flags & flags);
         }
 
-        if timeout == 0 {
+        if timeout.0 == 0 {
             return Err(code::ETIMEDOUT);
         }
 
@@ -168,7 +165,7 @@ impl EventFlags {
             let mut wait_entry = WaitEntry::new(current_thread.clone());
             borrowed_wait_entry =
                 wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
-            reached_deadline = scheduler::suspend_me_with_timeout(w, timeout);
+            reached_deadline = scheduler::suspend_me_for(timeout, Some(w));
             w = self.pending.irqsave_lock();
             borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
         }
@@ -244,11 +241,11 @@ mod tests {
         assert!(event_flags.set(0x01).is_ok());
 
         // Wait for any flag (should succeed immediately)
-        let result = event_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, 100);
+        let result = event_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, Tick(100));
         assert!(result.is_ok());
 
         // Wait for flag that doesn't exist (should timeout)
-        let result = event_flags.wait::<InsertToEnd>(0x02, EventFlagsMode::ANY, 100);
+        let result = event_flags.wait::<InsertToEnd>(0x02, EventFlagsMode::ANY, Tick(100));
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -262,11 +259,11 @@ mod tests {
         assert!(event_flags.set(0x02).is_ok());
 
         // Wait for all flags (should succeed)
-        let result = event_flags.wait::<InsertToEnd>(0x03, EventFlagsMode::ALL, 100);
+        let result = event_flags.wait::<InsertToEnd>(0x03, EventFlagsMode::ALL, Tick(100));
         assert!(result.is_ok());
 
         // Wait for flags that don't all exist (should timeout)
-        let result = event_flags.wait::<InsertToEnd>(0x07, EventFlagsMode::ALL, 100);
+        let result = event_flags.wait::<InsertToEnd>(0x07, EventFlagsMode::ALL, Tick(100));
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -276,13 +273,13 @@ mod tests {
         event_flags.init(0);
 
         // Waiting for zero flags should return error
-        let result = event_flags.wait::<InsertToEnd>(0, EventFlagsMode::ALL, 100);
+        let result = event_flags.wait::<InsertToEnd>(0, EventFlagsMode::ALL, Tick(100));
         assert_eq!(result, Err(code::EINVAL));
 
-        let result = event_flags.wait::<InsertToEnd>(0, EventFlagsMode::ANY, 0);
+        let result = event_flags.wait::<InsertToEnd>(0, EventFlagsMode::ANY, Tick(0));
         assert_eq!(result, Err(code::ETIMEDOUT));
 
-        let result = event_flags.wait::<InsertToEnd>(0, EventFlagsMode::ANY, 100);
+        let result = event_flags.wait::<InsertToEnd>(0, EventFlagsMode::ANY, Tick(100));
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -292,7 +289,7 @@ mod tests {
         event_flags.init(0);
 
         // Wait with zero timeout should return error immediately
-        let result = event_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, 0);
+        let result = event_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, Tick(0));
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -309,7 +306,7 @@ mod tests {
         let result = event_flags.wait::<InsertToEnd>(
             0x01,
             EventFlagsMode::ANY | EventFlagsMode::NO_CLEAR,
-            100,
+            Tick(100),
         );
         assert!(result.is_ok());
 
@@ -327,7 +324,7 @@ mod tests {
         assert_eq!(event_flags.get(), 0x01);
 
         // Wait without NO_CLEAR mode
-        let result = event_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, 1000);
+        let result = event_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, Tick(1000));
         assert!(result.is_ok());
 
         // Flags should be cleared
@@ -372,13 +369,13 @@ mod tests {
 
         // Wait for ANY with multiple flags set
         assert!(event_flags
-            .wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, 100)
+            .wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, Tick(100))
             .is_ok());
         assert_eq!(event_flags.get(), 0x06); // 0x02 and 0x04 remain
 
         // Wait for ALL with remaining flags
         assert!(event_flags
-            .wait::<InsertToEnd>(0x06, EventFlagsMode::ALL, 100)
+            .wait::<InsertToEnd>(0x06, EventFlagsMode::ALL, Tick(100))
             .is_ok());
         assert_eq!(event_flags.get(), 0x00); // All cleared
     }
@@ -395,13 +392,21 @@ mod tests {
 
         // Wait with NO_CLEAR for ANY
         assert!(event_flags
-            .wait::<InsertToEnd>(0x01, EventFlagsMode::ANY | EventFlagsMode::NO_CLEAR, 100)
+            .wait::<InsertToEnd>(
+                0x01,
+                EventFlagsMode::ANY | EventFlagsMode::NO_CLEAR,
+                Tick(100)
+            )
             .is_ok());
         assert_eq!(event_flags.get(), 0x03); // Should not be cleared
 
         // Wait with NO_CLEAR for ALL
         assert!(event_flags
-            .wait::<InsertToEnd>(0x03, EventFlagsMode::ALL | EventFlagsMode::NO_CLEAR, 100)
+            .wait::<InsertToEnd>(
+                0x03,
+                EventFlagsMode::ALL | EventFlagsMode::NO_CLEAR,
+                Tick(100)
+            )
             .is_ok());
         assert_eq!(event_flags.get(), 0x03); // Should not be cleared
 
@@ -421,7 +426,7 @@ mod tests {
 
         // Wait for any flag
         assert!(event_flags
-            .wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, 100)
+            .wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, Tick(100))
             .is_ok());
         assert_eq!(event_flags.get(), 0x00); // Should be cleared
 
@@ -433,7 +438,7 @@ mod tests {
 
         // Wait for specific combination
         assert!(event_flags
-            .wait::<InsertToEnd>(0x03, EventFlagsMode::ALL, 100)
+            .wait::<InsertToEnd>(0x03, EventFlagsMode::ALL, Tick(100))
             .is_ok());
         assert_eq!(event_flags.get(), 0x04); // Only 0x04 should remain
 
@@ -450,14 +455,22 @@ mod tests {
         // Test ANY + NO_CLEAR
         assert!(event_flags.set(0x01).is_ok());
         assert!(event_flags
-            .wait::<InsertToEnd>(0x01, EventFlagsMode::ANY | EventFlagsMode::NO_CLEAR, 100)
+            .wait::<InsertToEnd>(
+                0x01,
+                EventFlagsMode::ANY | EventFlagsMode::NO_CLEAR,
+                Tick(100)
+            )
             .is_ok());
         assert_eq!(event_flags.get(), 0x01); // Should not be cleared
 
         // Test ALL + NO_CLEAR
         assert!(event_flags.set(0x02).is_ok());
         assert!(event_flags
-            .wait::<InsertToEnd>(0x03, EventFlagsMode::ALL | EventFlagsMode::NO_CLEAR, 100)
+            .wait::<InsertToEnd>(
+                0x03,
+                EventFlagsMode::ALL | EventFlagsMode::NO_CLEAR,
+                Tick(100)
+            )
             .is_ok());
         assert_eq!(event_flags.get(), 0x03); // Should not be cleared
 

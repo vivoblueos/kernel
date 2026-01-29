@@ -21,6 +21,7 @@ use blueos::{
     scheduler::{self, InsertModeTrait},
     sync::{mqueue::SendMode, SpinLockGuard},
     thread,
+    time::Tick,
     types::{Arc, ThreadPriority, Uint},
 };
 use core::ptr::NonNull;
@@ -38,8 +39,8 @@ impl OsSemaphore {
             pub fn count(&self) -> blueos::types::Uint;
             pub fn try_acquire<M: InsertModeTrait>(&self) -> bool;
             pub fn acquire_notimeout<M: InsertModeTrait>(&self) -> bool;
-            pub fn acquire_timeout<M: InsertModeTrait>(&self, t: usize) -> bool;
-            pub fn acquire<M: InsertModeTrait>(&self, timeout: Option<usize>) -> bool;
+            pub fn acquire_timeout<M: InsertModeTrait>(&self, t: Tick) -> bool;
+            pub fn acquire<M: InsertModeTrait>(&self, timeout: Tick) -> bool;
             pub fn release(&self);
         }
     }
@@ -58,7 +59,7 @@ impl OsEventFlags {
             pub fn get(&self) -> u32;
             pub fn set(&self, flags: u32) -> Result<u32, Error>;
             pub fn clear(&self, flags: u32) -> u32;
-            pub fn wait<M: InsertModeTrait>(&self, flags: u32, mode: EventFlagsMode, timeout: usize) -> Result<u32, Error>;
+            pub fn wait<M: InsertModeTrait>(&self, flags: u32, mode: EventFlagsMode, timeout: Tick) -> Result<u32, Error>;
         }
     }
 }
@@ -73,8 +74,8 @@ impl OsMessageQueue {
             pub fn node_info(&self) -> (usize, u32);
             pub fn sendable_count(&self) -> u32;
             pub fn recvable_count(&self) ->u32;
-            pub fn send(&self, buffer: &[u8], size: usize, timeout: usize, urgent: SendMode) -> Result<(), Error>;
-            pub fn recv(&self, buffer: &mut [u8], size: usize, timeout: usize) -> Result<(), Error>;
+            pub fn send(&self, buffer: &[u8], size: usize, timeout: Tick, urgent: SendMode) -> Result<(), Error>;
+            pub fn recv(&self, buffer: &mut [u8], size: usize, timeout: Tick) -> Result<(), Error>;
             pub fn reset(&self);
         }
     }
@@ -87,7 +88,7 @@ os_adapter! {
 impl OsMutex {
     delegate! {
         to self.inner() {
-            pub fn pend_for(&self, timeout: usize) -> bool;
+            pub fn pend_for(&self, timeout: Tick) -> bool;
             pub fn post(&self);
             pub fn owner(&self) -> Option<thread::ThreadNode>;
         }

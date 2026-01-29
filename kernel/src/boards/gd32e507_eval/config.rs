@@ -12,4 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::arch::irq::IrqNumber;
+
 pub const PLL_SYS_FREQ: usize = 180_000_000; // 180 MHz
+#[allow(non_upper_case_globals)]
+pub const USBFS_IRQn: IrqNumber = IrqNumber::new(37);

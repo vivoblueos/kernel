@@ -152,6 +152,7 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
             let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
                 core::mem::replace(&mut v.as_mut().prev, Some(NonNull::from_mut(me)))
             });
+            debug_assert_eq!(prev, Some(NonNull::from_mut(head)));
             let _ = core::mem::replace(&mut me.prev, prev);
             true
         }

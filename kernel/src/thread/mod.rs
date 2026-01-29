@@ -27,7 +27,7 @@ use crate::{
         ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard,
     },
     thread::builder::GlobalQueue,
-    time::timer::Timer,
+    time::Tick,
     types::{
         impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, AtomicUint, IlistHead, ThreadPriority,
         Uint, UniqueListHead,
@@ -36,6 +36,7 @@ use crate::{
 use alloc::boxed::Box;
 use core::{
     alloc::Layout,
+    cell::Cell,
     ptr::NonNull,
     sync::atomic::{AtomicI32, AtomicUsize, Ordering},
 };
@@ -183,7 +184,6 @@ impl core::fmt::Debug for SignalContext {
 pub struct Thread {
     global: GlobalQueueListHead,
     sched_node: IlistHead<Thread, OffsetOfSchedNode>,
-    pub timer: Option<Arc<Timer>>,
     // Cleanup function will be invoked when retiring.
     cleanup: Option<Entry>,
     kind: ThreadKind,
@@ -198,8 +198,6 @@ pub struct Thread {
     origin_priority: ThreadPriority,
     state: AtomicUint,
     preempt_count: AtomicUint,
-    #[cfg(robin_scheduler)]
-    robin_count: AtomicI32,
     // FIXME: Using a rusty lock looks not flexible. Now we are using
     // a C-style intrusive lock. It's conventional to declare which
     // fields this lock is protecting. lock is protecting the
@@ -230,6 +228,25 @@ pub struct Thread {
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
     signal_context: Option<Box<SignalContext>>,
+    #[cfg(robin_scheduler)]
+    rr: RoundRobin,
+}
+
+#[cfg(robin_scheduler)]
+#[derive(Default, Debug)]
+pub(crate) struct RoundRobin {
+    this_round_start_at: Cell<Tick>,
+    time_slices: Cell<Tick>,
+}
+
+#[cfg(robin_scheduler)]
+impl RoundRobin {
+    pub const fn new() -> Self {
+        Self {
+            this_round_start_at: Cell::new(Tick(0)),
+            time_slices: Cell::new(Tick(0)),
+        }
+    }
 }
 
 extern "C" fn run_simple_c(f: extern "C" fn()) {
@@ -330,10 +347,10 @@ impl Thread {
     }
 
     #[inline]
-    pub fn transfer_state(&self, from: Uint, to: Uint) -> bool {
+    pub fn transfer_state(&self, from: Uint, to: Uint) -> Result<(), Uint> {
         self.state
             .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+            .map(|_| ())
     }
 
     #[inline]
@@ -417,9 +434,6 @@ impl Thread {
             preempt_count: AtomicUint::new(0),
             #[cfg(thread_stats)]
             stats: ThreadStats::new(),
-            timer: None,
-            #[cfg(robin_scheduler)]
-            robin_count: AtomicI32::new(0),
             kind,
             #[cfg(event_flags)]
             event_flags_mode: EventFlagsMode::empty(),
@@ -429,6 +443,8 @@ impl Thread {
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
             signal_context: None,
+            #[cfg(robin_scheduler)]
+            rr: RoundRobin::new(),
         }
     }
 
@@ -616,19 +632,6 @@ impl Thread {
         self.preempt_count.load(Ordering::Acquire)
     }
 
-    #[cfg(robin_scheduler)]
-    #[inline]
-    pub fn round_robin(&self, ticks: usize) -> i32 {
-        self.robin_count.fetch_sub(ticks as i32, Ordering::Relaxed)
-    }
-
-    #[cfg(robin_scheduler)]
-    #[inline]
-    pub fn reset_robin(&self) {
-        self.robin_count
-            .store(blueos_kconfig::CONFIG_ROBIN_SLICE as i32, Ordering::Relaxed);
-    }
-
     #[cfg(thread_stats)]
     #[inline]
     pub fn increment_cycles(&mut self, cycles: u64) {
@@ -747,6 +750,45 @@ impl Thread {
         }
         self.priority = target_priority;
         true
+    }
+
+    #[cfg(robin_scheduler)]
+    pub fn this_round_start_at(&self) -> Tick {
+        self.rr.this_round_start_at.get()
+    }
+
+    #[cfg(robin_scheduler)]
+    pub fn set_this_round_start_at(&self, moment: Tick) -> &Self {
+        self.rr.this_round_start_at.set(moment);
+        self
+    }
+
+    #[cfg(robin_scheduler)]
+    pub fn remaining_time_slices(&self) -> Tick {
+        self.rr.time_slices.get()
+    }
+
+    #[cfg(robin_scheduler)]
+    pub fn elapse_time_slices(&self, elapsed: Tick) -> Tick {
+        let old = self.rr.time_slices.get();
+        let diff = if elapsed.0 >= old.0 {
+            Tick(0)
+        } else {
+            Tick(old.0 - elapsed.0)
+        };
+        self.rr.time_slices.set(diff);
+        diff
+    }
+
+    #[cfg(robin_scheduler)]
+    pub fn refresh_time_slices(&self) -> Tick {
+        let mut current = self.rr.time_slices.get();
+        if current.0 != 0 {
+            return current;
+        }
+        current = Tick(blueos_kconfig::CONFIG_ROBIN_SLICE as usize);
+        self.rr.time_slices.set(current);
+        current
     }
 }
 

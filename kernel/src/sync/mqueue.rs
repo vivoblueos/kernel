@@ -18,8 +18,8 @@ use crate::{
     irq,
     scheduler::{self, wait_queue, InsertMode, WaitEntry, WaitQueue},
     support::align_up_size,
-    thread,
-    time::{self, NO_WAITING, WAITING_FOREVER},
+    thread, time,
+    time::Tick,
     types::{impl_simple_intrusive_adapter, Arc},
 };
 use alloc::alloc::{alloc, dealloc, Layout};
@@ -122,11 +122,7 @@ impl MessageQueue {
     fn wakeup_pend_receiver(w: &mut SpinLockGuard<'_, WaitQueue>) -> bool {
         for next in w.iter() {
             let t = next.thread.clone();
-            if let Some(timer) = &t.timer {
-                timer.stop();
-            }
-            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
-            if ok {
+            if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
                 return true;
             }
         }
@@ -137,7 +133,7 @@ impl MessageQueue {
         &self,
         buffer: &[u8],
         size: usize,
-        timeout: usize,
+        timeout: Tick,
         urgent: SendMode,
     ) -> Result<(), Error> {
         if buffer.len() < size {
@@ -154,13 +150,13 @@ impl MessageQueue {
         let mut queue = self.lock();
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
         while self.sendable_count() == 0 {
-            if timeout == NO_WAITING {
+            if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
             }
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = time::TickTime::now().as_ticks();
+            let mut ticks = Tick::now();
             send_queue.take_irq_guard(&mut queue);
             drop(queue);
             let mut borrowed_wait_entry;
@@ -173,7 +169,7 @@ impl MessageQueue {
                     InsertMode::InsertToEnd,
                 )
                 .unwrap();
-                reached_deadline = scheduler::suspend_me_with_timeout(send_queue, timeout);
+                reached_deadline = scheduler::suspend_me_for(timeout, Some(send_queue));
                 queue = self.lock();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
@@ -182,9 +178,9 @@ impl MessageQueue {
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
             }
-            if timeout != WAITING_FOREVER {
-                ticks = time::TickTime::now().as_ticks().saturating_sub(ticks);
-                timeout = timeout.saturating_sub(ticks);
+            if timeout != Tick::MAX {
+                ticks.0 = Tick::now().0.saturating_sub(ticks.0);
+                timeout.0 = timeout.0.saturating_sub(ticks.0 as usize);
             }
         }
         drop(send_queue);
@@ -226,7 +222,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub fn recv(&self, buffer: &mut [u8], size: usize, timeout: usize) -> Result<(), Error> {
+    pub fn recv(&self, buffer: &mut [u8], size: usize, timeout: Tick) -> Result<(), Error> {
         if buffer.len() < size || size == 0 {
             return Err(code::EINVAL);
         }
@@ -238,13 +234,13 @@ impl MessageQueue {
         let mut queue = self.lock();
         let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
         while self.recvable_count() == 0 {
-            if timeout == NO_WAITING {
+            if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
             }
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = time::TickTime::now().as_ticks();
+            let mut ticks = Tick::now();
             recv_queue.take_irq_guard(&mut queue);
             drop(queue);
             let mut borrowed_wait_entry;
@@ -257,7 +253,7 @@ impl MessageQueue {
                     InsertMode::InsertToEnd,
                 )
                 .unwrap();
-                reached_deadline = scheduler::suspend_me_with_timeout(recv_queue, timeout);
+                reached_deadline = scheduler::suspend_me_for(timeout, Some(recv_queue));
                 queue = self.lock();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
@@ -266,9 +262,9 @@ impl MessageQueue {
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
             }
-            if timeout != WAITING_FOREVER {
-                ticks = time::TickTime::now().as_ticks().saturating_sub(ticks);
-                timeout = timeout.saturating_sub(ticks);
+            if timeout != Tick::MAX {
+                ticks.0 = Tick::now().0.saturating_sub(ticks.0);
+                timeout.0 = timeout.0.saturating_sub(ticks.0 as usize);
             }
         }
         drop(recv_queue);
@@ -322,6 +318,7 @@ mod tests {
     use super::*;
     use blueos_test_macro::test;
     use core::ptr;
+    const NO_WAITING: Tick = Tick(0);
 
     #[test]
     fn test_message_init() {
@@ -449,19 +446,19 @@ mod tests {
         assert!(result);
 
         let buffer = [1u8; 4];
-        let result = queue.send(&buffer, 4, 10, SendMode::Normal);
+        let result = queue.send(&buffer, 4, Tick(10), SendMode::Normal);
         assert!(result.is_ok());
         assert_eq!(queue.sendable_count(), 1);
         assert_eq!(queue.recvable_count(), 1);
 
         let buffer = [3u8; 4];
-        let result = queue.send(&buffer, 4, 10, SendMode::Urgent);
+        let result = queue.send(&buffer, 4, Tick(10), SendMode::Urgent);
         assert!(result.is_ok());
         assert_eq!(queue.sendable_count(), 0);
         assert_eq!(queue.recvable_count(), 2);
 
         let buffer = [5u8; 4];
-        let result = queue.send(&buffer, 4, 10, SendMode::Urgent);
+        let result = queue.send(&buffer, 4, Tick(10), SendMode::Urgent);
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -474,31 +471,31 @@ mod tests {
         assert!(result);
 
         let buffer = [1u8; 4];
-        let result = queue.send(&buffer, 4, 10, SendMode::Normal);
+        let result = queue.send(&buffer, 4, Tick(10), SendMode::Normal);
         assert!(result.is_ok());
         assert_eq!(queue.sendable_count(), 1);
         assert_eq!(queue.recvable_count(), 1);
 
         let buffer = [3u8; 4];
-        let result = queue.send(&buffer, 4, 10, SendMode::Urgent);
+        let result = queue.send(&buffer, 4, Tick(10), SendMode::Urgent);
         assert!(result.is_ok());
         assert_eq!(queue.sendable_count(), 0);
         assert_eq!(queue.recvable_count(), 2);
 
         let mut buffer = [0u8; 4];
-        let result = queue.recv(&mut buffer, 4, 10);
+        let result = queue.recv(&mut buffer, 4, Tick(10));
         assert!(result.is_ok());
         assert_eq!(buffer, [3u8, 3u8, 3u8, 3u8]);
         assert_eq!(queue.sendable_count(), 1);
         assert_eq!(queue.recvable_count(), 1);
 
-        let result = queue.recv(&mut buffer, 4, 10);
+        let result = queue.recv(&mut buffer, 4, Tick(10));
         assert!(result.is_ok());
         assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
         assert_eq!(queue.sendable_count(), 2);
         assert_eq!(queue.recvable_count(), 0);
 
-        let result = queue.recv(&mut buffer, 4, 10);
+        let result = queue.recv(&mut buffer, 4, Tick(10));
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
@@ -513,16 +510,16 @@ mod tests {
         let recv_queue = queue.clone();
         let _ = thread::spawn(move || {
             let mut buffer = [0u8; 4];
-            let result = recv_queue.recv(&mut buffer, 4, 10);
+            let result = recv_queue.recv(&mut buffer, 4, Tick(10));
             assert!(result.is_ok());
             assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
             assert_eq!(recv_queue.sendable_count(), 2);
             assert_eq!(recv_queue.recvable_count(), 0);
         });
         let buffer = [1u8; 4];
-        let result = queue.send(&buffer, 4, 10, SendMode::Normal);
+        let result = queue.send(&buffer, 4, Tick(10), SendMode::Normal);
         assert!(result.is_ok());
-        scheduler::suspend_me_for(1);
+        scheduler::suspend_me_for::<WaitQueue>(Tick(1), None);
     }
 
     #[test]
@@ -536,12 +533,12 @@ mod tests {
         let send_queue = queue.clone();
         let _ = thread::spawn(move || {
             let buffer = [1u8; 4];
-            let result = send_queue.send(&buffer, 4, 0, SendMode::Normal);
+            let result = send_queue.send(&buffer, 4, NO_WAITING, SendMode::Normal);
             assert!(result.is_ok());
         });
 
         let mut buffer = [0u8; 4];
-        let result = queue.recv(&mut buffer, 4, 10);
+        let result = queue.recv(&mut buffer, 4, Tick(10));
         assert!(result.is_ok());
         assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
         assert_eq!(queue.sendable_count(), 2);
@@ -560,17 +557,17 @@ mod tests {
         let recv_queue = queue.clone();
         let _ = thread::spawn(move || {
             let mut buffer = [0u8; 4];
-            let result = recv_queue.recv(&mut buffer, 4, 5);
+            let result = recv_queue.recv(&mut buffer, 4, Tick(5));
             assert!(result.is_ok());
             assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
         });
 
         let buffer = [1u8; 4];
-        let result = queue.send(&buffer, 4, 5, SendMode::Normal);
+        let result = queue.send(&buffer, 4, Tick(5), SendMode::Normal);
         assert!(result.is_ok());
 
         let buffer = [3u8; 4];
-        let result = queue.send(&buffer, 4, 5, SendMode::Normal);
+        let result = queue.send(&buffer, 4, Tick(5), SendMode::Normal);
         assert!(result.is_ok());
         assert_eq!(queue.sendable_count(), 0);
         assert_eq!(queue.recvable_count(), 1);

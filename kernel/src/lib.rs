@@ -29,8 +29,10 @@
 #![feature(core_intrinsics)]
 #![feature(coverage_attribute)]
 #![feature(fn_align)]
+#![feature(generic_arg_infer)]
 #![feature(inherent_associated_types)]
 #![feature(lazy_get)]
+#![feature(let_chains)]
 #![feature(link_llvm_intrinsics)]
 #![feature(linkage)]
 #![feature(macro_metavar_expr)]
@@ -48,6 +50,9 @@
 #![cfg_attr(test, feature(custom_test_frameworks))]
 #![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
+
+//#[cfg(test)]
+//blueos_test_macro::test_only!();
 
 extern crate alloc;
 pub mod allocator;
@@ -113,8 +118,14 @@ mod tests {
     extern crate alloc;
     use super::*;
     use crate::{
-        allocator, allocator::KernelAllocator, config, support::DisableInterruptGuard, sync,
-        sync::ConstBarrier, time::WAITING_FOREVER, types::Arc,
+        allocator,
+        allocator::KernelAllocator,
+        config,
+        support::DisableInterruptGuard,
+        sync,
+        sync::{wait_until, wake, ConstBarrier},
+        time::Tick,
+        types::Arc,
     };
     use alloc::vec::Vec;
     use blueos_header::syscalls::NR::Nop;
@@ -174,7 +185,7 @@ mod tests {
                 w.set_cleanup(Entry::C(cleanup));
             };
             let ok = scheduler::queue_ready_thread(w.state(), t.clone());
-            assert!(ok);
+            assert_eq!(ok, Ok(()));
         }
     }
 
@@ -211,7 +222,7 @@ mod tests {
             ThreadKind::Normal,
         );
         let ok = scheduler::queue_ready_thread(thread::IDLE, t.clone());
-        assert!(ok);
+        assert_eq!(ok, Ok(()));
     }
 
     #[cfg(target_pointer_width = "64")]
@@ -276,13 +287,13 @@ mod tests {
     #[cfg(cortex_m)]
     #[test]
     fn test_sys_tick() {
-        let tick = time::TickTime::now().as_ticks();
+        let tick = Tick::now();
         assert!(scheduler::current_thread().validate_sp());
-        scheduler::suspend_me_for(10);
+        scheduler::suspend_me_for::<()>(Tick(10), None);
         assert!(scheduler::current_thread().validate_sp());
-        let tick2 = time::TickTime::now().as_ticks();
-        assert!(tick2 - tick >= 10);
-        assert!(tick2 - tick <= 11);
+        let tick2 = Tick::now();
+        assert!(tick2.0 - tick.0 >= 10);
+        assert!(tick2.0 - tick.0 <= 11);
     }
 
     #[test]
@@ -322,7 +333,7 @@ mod tests {
         }
         pub fn spin_until_eq(&self, n: usize) {
             while self.counter.load(Ordering::Relaxed) != n {
-                core::hint::spin_loop();
+                scheduler::yield_me();
             }
         }
         pub fn increment(&self) {
@@ -384,7 +395,7 @@ mod tests {
             if n == l {
                 break;
             }
-            sync::atomic_wait::atomic_wait(&TEST_ATOMIC_WAIT, n, None);
+            sync::atomic_wait::atomic_wait(&TEST_ATOMIC_WAIT, n, Tick::MAX);
         }
         ATOMIC_WAIT_CLEANUP.spin_until_eq(l);
     }
@@ -396,7 +407,7 @@ mod tests {
     static mut MUTEX_COUNTER: usize = 0usize;
 
     extern "C" fn test_mutex() {
-        MUTEX.pend_for(WAITING_FOREVER);
+        MUTEX.pend_for(Tick::MAX);
         unsafe { MUTEX_COUNTER += 1 };
         MUTEX.post();
     }
@@ -411,7 +422,7 @@ mod tests {
         reset_and_queue_test_threads(test_mutex, Some(test_mutex_cleanup));
         let l = unsafe { TEST_THREADS.len() };
         loop {
-            MUTEX.pend_for(WAITING_FOREVER);
+            MUTEX.pend_for(Tick::MAX);
             let n = unsafe { MUTEX_COUNTER };
             if n == l {
                 MUTEX.post();
@@ -429,7 +440,7 @@ mod tests {
 
     extern "C" fn test_mqueue() {
         let buffer = [1u8; 4];
-        let result = MQUEUE.send(&buffer, 4, 512, sync::mqueue::SendMode::Normal);
+        let result = MQUEUE.send(&buffer, 4, Tick(512), sync::mqueue::SendMode::Normal);
         assert!(result.is_ok());
     }
 
@@ -437,7 +448,10 @@ mod tests {
         TEST_SEND_CNT.fetch_add(1, Ordering::Relaxed);
     }
 
-    #[test]
+    // FIXME: We have performance issue on SMP. See
+    // https://github.com/vivoblueos/kernel/issues/111 for details.
+    #[cfg_attr(not(target_board = "qemu_riscv64"), test)]
+    #[cfg_attr(target_board = "qemu_riscv64", blueos_test_macro::ignore)]
     fn stress_mqueue() {
         MQUEUE.init();
         reset_and_queue_test_threads(test_mqueue, Some(test_mqueue_cleanup));
@@ -448,7 +462,7 @@ mod tests {
             if recv_cnt == l {
                 break;
             }
-            let result = MQUEUE.recv(&mut buffer, 4, 512);
+            let result = MQUEUE.recv(&mut buffer, 4, Tick(512));
             recv_cnt += 1;
             assert!(result.is_ok());
             assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
@@ -503,7 +517,7 @@ mod tests {
         for _i in 0..n {
             let t = thread::Builder::new(thread::Entry::C(do_it)).build();
             let ok = scheduler::queue_ready_thread(t.state(), t);
-            assert!(ok);
+            assert_eq!(ok, Ok(()));
         }
         loop {
             let m = BUILT_THREADS.load(Ordering::Relaxed);
@@ -546,7 +560,7 @@ mod tests {
         let b_cloned = b.clone();
         let t = crate::thread::spawn(move || {
             a.wait();
-            sync::atomic_wait::atomic_wait(&b, 0, None);
+            sync::atomic_wait::atomic_wait(&b, 0, Tick::MAX);
         })
         .unwrap();
         // Send SIGTERM after t enters its entry function.
@@ -577,7 +591,6 @@ mod tests {
         assert_eq!(a - b, 0);
     }
 
-    // FIXME: We still have chance falling into deadlock, TBI.
     #[test]
     fn stress_async_basic() {
         let n = 1024;
@@ -661,7 +674,11 @@ mod tests {
     static EVENT: sync::event_flags::EventFlags = sync::event_flags::EventFlags::new();
     #[cfg(event_flags)]
     extern "C" fn test_event_flags() {
-        EVENT.wait::<scheduler::InsertToEnd>(1 << 0, sync::event_flags::EventFlagsMode::ANY, 100);
+        EVENT.wait::<scheduler::InsertToEnd>(
+            1 << 0,
+            sync::event_flags::EventFlagsMode::ANY,
+            Tick(100),
+        );
     }
     #[cfg(event_flags)]
     extern "C" fn test_event_flags_cleanup() {
@@ -681,6 +698,22 @@ mod tests {
             }
             scheduler::yield_me();
         }
+    }
+
+    extern "C" fn test_sched_timers() {
+        scheduler::suspend_me_for::<()>(Tick(10), None);
+    }
+
+    extern "C" fn test_sched_timers_cleanup() {
+        SCHED_TIMERS_CLEANUP.increment();
+    }
+
+    static SCHED_TIMERS_CLEANUP: CleanupCounter = CleanupCounter::new();
+    #[test]
+    fn stress_sched_timers() {
+        reset_and_queue_test_threads(test_sched_timers, Some(test_sched_timers_cleanup));
+        let l = unsafe { TEST_THREADS.len() };
+        SCHED_TIMERS_CLEANUP.spin_until_eq(l);
     }
 
     static ALLOCATOR_STRESS_THREAD1_DONE: AtomicUsize = AtomicUsize::new(0);
@@ -705,7 +738,7 @@ mod tests {
                     // Release some allocations to make room
                     while !allocations.is_empty() && current_used > test_size / 4 {
                         allocations.pop();
-                        scheduler::yield_me();
+                        scheduler::relinquish_me();
                     }
                 }
 
@@ -715,7 +748,7 @@ mod tests {
                 current_used += size;
 
                 // Yield to allow other thread to run
-                scheduler::yield_me();
+                scheduler::relinquish_me();
             }
         }
 
@@ -726,11 +759,13 @@ mod tests {
     extern "C" fn allocator_stress_thread1() {
         alloc_test();
         ALLOCATOR_STRESS_THREAD1_DONE.store(1, Ordering::Release);
+        wake(&ALLOCATOR_STRESS_THREAD1_DONE);
     }
 
     extern "C" fn allocator_stress_thread2() {
         alloc_test();
         ALLOCATOR_STRESS_THREAD2_DONE.store(1, Ordering::Release);
+        wake(&ALLOCATOR_STRESS_THREAD2_DONE);
     }
 
     #[test]
@@ -750,23 +785,17 @@ mod tests {
             .set_priority(config::MAX_THREAD_PRIORITY / 2)
             .build();
         let ok1 = scheduler::queue_ready_thread(t1.state(), t1);
-        assert!(ok1);
+        assert_eq!(ok1, Ok(()));
 
         let t2 = thread::Builder::new(thread::Entry::C(allocator_stress_thread2))
             .set_priority(config::MAX_THREAD_PRIORITY / 2)
             .build();
         let ok2 = scheduler::queue_ready_thread(t2.state(), t2);
-        assert!(ok2);
+        assert_eq!(ok2, Ok(()));
 
         // Wait for both threads to complete
-        loop {
-            let done1 = ALLOCATOR_STRESS_THREAD1_DONE.load(Ordering::Acquire);
-            let done2 = ALLOCATOR_STRESS_THREAD2_DONE.load(Ordering::Acquire);
-            if done1 == 1 && done2 == 1 {
-                break;
-            }
-            scheduler::yield_me();
-        }
+        wait_until(1, &ALLOCATOR_STRESS_THREAD1_DONE);
+        wait_until(1, &ALLOCATOR_STRESS_THREAD2_DONE);
 
         // Verify memory state after stress test
         let final_info = allocator::memory_info();

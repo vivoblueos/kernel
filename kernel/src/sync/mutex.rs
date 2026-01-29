@@ -31,7 +31,8 @@ use crate::{
     irq,
     scheduler::{self, wait_queue, InsertMode, OffsetOfWait, WaitEntry, WaitQueue},
     thread::{self, Thread, ThreadNode},
-    time::{NO_WAITING, WAITING_FOREVER},
+    time,
+    time::Tick,
     types::{
         impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, ArcListIterator, GenericList,
         ThreadPriority, Uint,
@@ -119,7 +120,7 @@ impl Mutex {
         mutex
     }
 
-    pub fn pend_for(&self, mut ticks: usize) -> bool {
+    pub fn pend_for(&self, mut ticks: Tick) -> bool {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
@@ -137,7 +138,7 @@ impl Mutex {
             self as *const _
         );
 
-        let mut last_sys_ticks = crate::time::TickTime::now().as_ticks();
+        let mut last_sys_ticks = crate::time::Tick::now();
         loop {
             if self.nesting_count() == 0 {
                 self.increment_nesting_count();
@@ -166,7 +167,7 @@ impl Mutex {
                 return true;
             }
 
-            if ticks == NO_WAITING {
+            if ticks.0 == 0 {
                 this_thread.replace_pending_on_mutex(None);
                 Self::recover_priority(&this_thread, &this_mutex);
                 return false;
@@ -187,20 +188,23 @@ impl Mutex {
                 Self::recover_priority(&this_thread, &this_mutex);
                 return false;
             }
-
-            let now = crate::time::TickTime::now().as_ticks();
-            let elapsed_ticks = now - last_sys_ticks;
-            if elapsed_ticks >= ticks {
-                ticks = 0;
+            if ticks == Tick::MAX {
+                continue;
+            }
+            let now = crate::time::Tick::now();
+            debug_assert!(now.0 >= last_sys_ticks.0);
+            let elapsed_ticks = now.0 - last_sys_ticks.0;
+            if elapsed_ticks >= ticks.0 {
+                ticks.0 = 0;
             } else {
-                ticks -= elapsed_ticks;
+                ticks.0 -= elapsed_ticks;
             }
             last_sys_ticks = now;
         }
     }
 
     fn inner_pend_for<'a>(
-        ticks: usize,
+        ticks: Tick,
         this_mutex: &'a Arc<Self>,
         mut this_lock: SpinLockGuard<'a, WaitQueue>,
         this_thread: &'a ThreadNode,
@@ -238,9 +242,7 @@ impl Mutex {
                 this_priority,
                 ok,
             );
-
-            // TODO: If the scanning thread is in the ready queue, we can
-            // promote it to a higher priority queue.
+            // FIXME: Adjust priority in RQ for the scanning_thread.
             other_lock = None;
             other_mutex = scanning_thread.pending_on_mutex();
             let Some(other_mutex_ref) = &other_mutex else {
@@ -293,7 +295,7 @@ impl Mutex {
                 InsertMode::InsertByPrio,
             )
             .unwrap();
-            timeout = scheduler::suspend_me_with_timeout(this_lock, ticks);
+            timeout = scheduler::suspend_me_for(ticks, Some(this_lock));
             this_lock = this_mutex.pending.irqsave_lock();
             borrowed_wait_entry = this_lock.pop(borrowed_wait_entry).unwrap();
         }
@@ -346,10 +348,7 @@ impl Mutex {
             let mut this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
             for we in this_lock.iter() {
                 let t = we.thread.clone();
-                if let Some(timer) = &t.timer {
-                    timer.stop();
-                }
-                if scheduler::queue_ready_thread(thread::SUSPENDED, t) {
+                if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
                     break;
                 }
             }
@@ -428,20 +427,16 @@ unsafe impl Sync for Mutex {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{scheduler, sync::ConstBarrier, thread, time};
+    use crate::{
+        scheduler,
+        sync::{atomic_wait, atomic_wake, wait_until, wake, ConstBarrier},
+        thread, time,
+    };
     use alloc::{boxed::Box, vec, vec::Vec};
     use blueos_test_macro::{only_test, test};
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    fn spin_until(target: usize, clock: &AtomicUsize) {
-        while clock.load(Ordering::Relaxed) < target {
-            #[cfg(target_pointer_width = "32")]
-            scheduler::suspend_me_for(8);
-            #[cfg(target_pointer_width = "64")]
-            scheduler::yield_me();
-            core::hint::spin_loop();
-        }
-    }
+    const NO_WAITING: Tick = Tick(0);
 
     #[test]
     fn test_mutex_new() {
@@ -471,7 +466,7 @@ mod tests {
         let mutex = Mutex::create();
 
         // Test successful pend
-        let result = mutex.pend_for(WAITING_FOREVER);
+        let result = mutex.pend_for(Tick::MAX);
         assert!(result);
         assert_eq!(mutex.nesting_count(), 1);
 
@@ -480,7 +475,7 @@ mod tests {
         assert_eq!(mutex.nesting_count(), 0);
 
         // pend
-        let result = mutex.pend_for(WAITING_FOREVER);
+        let result = mutex.pend_for(Tick::MAX);
         assert!(result);
         assert_eq!(mutex.nesting_count(), 1);
 
@@ -494,12 +489,12 @@ mod tests {
         let mutex = Mutex::create();
 
         // Test successful pend
-        let result = mutex.pend_for(WAITING_FOREVER);
+        let result = mutex.pend_for(Tick::MAX);
         assert!(result);
         assert_eq!(mutex.nesting_count(), 1);
 
         // pend operations
-        assert!(mutex.pend_for(WAITING_FOREVER));
+        assert!(mutex.pend_for(Tick::MAX));
         assert_eq!(mutex.nesting_count(), 2);
         mutex.post();
         mutex.post();
@@ -511,7 +506,7 @@ mod tests {
 
         // Test 10x pend operations
         for i in 0..10 {
-            let result = mutex.pend_for(10);
+            let result = mutex.pend_for(Tick(10));
             assert!(result);
             assert_eq!(mutex.nesting_count(), i + 1);
         }
@@ -525,7 +520,7 @@ mod tests {
 
         // Test 10x pend operations again
         for i in 0..10 {
-            let result = mutex.pend_for(10);
+            let result = mutex.pend_for(Tick(10));
             assert!(result);
             assert_eq!(mutex.nesting_count(), i + 1);
         }
@@ -547,20 +542,23 @@ mod tests {
         let pend_flag_clone = pend_flag.clone();
 
         let consumer = thread::spawn(move || {
-            spin_until(1, &pend_flag_clone);
+            wait_until(1, &pend_flag_clone);
             assert_eq!(mutex_consumer.nesting_count(), 1);
             pend_flag_clone.store(2, Ordering::Relaxed);
-            mutex_consumer.pend_for(10);
+            wake(&pend_flag_clone);
+            mutex_consumer.pend_for(Tick(10));
             assert_eq!(mutex_consumer.nesting_count(), 1);
             mutex_consumer.post();
             pend_flag_clone.fetch_add(1, Ordering::SeqCst);
+            wake(&pend_flag_clone);
         });
-        mutex.pend_for(10);
+        mutex.pend_for(Tick(10));
         assert_eq!(mutex.nesting_count(), 1);
         pend_flag.store(1, Ordering::SeqCst);
-        spin_until(2, &pend_flag);
+        wake(&pend_flag);
+        wait_until(2, &pend_flag);
         mutex.post();
-        while pend_flag.load(Ordering::SeqCst) == 1 {}
+        wait_until(3, &pend_flag);
     }
 
     #[test]
@@ -581,7 +579,7 @@ mod tests {
             assert!(!result);
             pend_flag_clone.fetch_add(1, Ordering::SeqCst);
         });
-        mutex.pend_for(10);
+        mutex.pend_for(Tick(10));
         assert_eq!(mutex.nesting_count(), 1);
         pend_flag.fetch_add(1, Ordering::SeqCst);
         while pend_flag.load(Ordering::SeqCst) == 1 {
@@ -593,34 +591,33 @@ mod tests {
     #[test]
     fn test_mutex_multi_thread_timeout() {
         let mutex = Mutex::create();
-        let pend_flag = Arc::new(AtomicU32::new(0));
+        let pend_flag = Arc::new(AtomicUsize::new(0));
         let closure = {
             let pend_flag = pend_flag.clone();
-            let mutex_consumer = mutex.clone();
+            let mutex = mutex.clone();
             move || {
-                while pend_flag.load(Ordering::SeqCst) == 0 {
-                    scheduler::yield_me();
-                }
-                assert_eq!(mutex_consumer.nesting_count(), 1);
-                let result = mutex_consumer.pend_for(5);
+                wait_until(1, &pend_flag);
+                assert_eq!(mutex.nesting_count(), 1);
+                let result = mutex.pend_for(Tick(5));
                 assert!(!result);
                 pend_flag.fetch_add(1, Ordering::SeqCst);
+                wake(&pend_flag);
             }
         };
         let consumer = thread::spawn(closure);
-        let succ = mutex.pend_for(10);
+        let succ = mutex.pend_for(Tick(10));
         assert!(succ);
         assert_eq!(mutex.nesting_count(), 1);
         pend_flag.fetch_add(1, Ordering::SeqCst);
-        scheduler::yield_me();
-        let start = time::TickTime::now().as_ticks();
-        let mut current = time::TickTime::now().as_ticks();
-        while current - start < 10 {
-            scheduler::yield_me();
-            current = time::TickTime::now().as_ticks();
+        wake(&pend_flag);
+        let start = Tick::now();
+        let mut current = start;
+        while current.0 - start.0 < 10 {
+            scheduler::relinquish_me();
+            current = Tick::now();
         }
         mutex.post();
-        while pend_flag.load(Ordering::SeqCst) != 2 {}
+        wait_until(2, &pend_flag);
     }
 
     #[test]
@@ -642,7 +639,7 @@ mod tests {
             consumer_sync1.wait();
             // Now the outer thread has got the mutex, the following pend_for
             // will promote the priority of the outer thread temporarily.
-            let result = mutex_consumer.pend_for(10);
+            let result = mutex_consumer.pend_for(Tick(10));
             assert!(result);
             mutex_consumer.post();
         });
@@ -652,7 +649,7 @@ mod tests {
         w.set_priority(origin_priority - 1);
         drop(w);
         sync0.wait();
-        mutex.pend_for(10);
+        mutex.pend_for(Tick(10));
         assert_eq!(mutex.nesting_count(), 1);
         sync1.wait();
         // Spin until consumer thread has suspended on the mutex.
@@ -667,136 +664,89 @@ mod tests {
     }
 
     // Demonstrate a classic PI scene. Event orders,
-    // t1[P3] acquires mu0.
-    // t2[P6] acquires mu1
-    // t2[P6] acquires mu0.
-    // t0[P0] acquires mu1.
+    // t1[P3] acquires mu0, success, until t0 is acquiring mu1.
+    // t2[P6] acquires mu1, success.
+    // t2[P6] acquires mu0, waiting for t1 to release.
+    // t0[P0] acquires mu1, waiting for t2 to release.
     #[test]
     fn test_blocking_mutex_chain_basic() {
+        // A clock to sync states between threads.
         let clock = Arc::new(AtomicUsize::new(0));
         let mut mu = vec![Mutex::create(), Mutex::create(), Mutex::create()];
-        let helper_mutex = Mutex::create();
-        // t0.
         let t0 = {
+            let clock = clock.clone();
             let mu = mu.clone();
-            let clock_t0 = clock.clone();
             thread::Builder::new(thread::Entry::Closure(Box::new(move || {
-                let me = scheduler::current_thread();
-                // crate::trace!("TH:0x{:x} t0 started", Thread::id(&me));
-                // crate::trace!("t0 is waiting for 3");
-                spin_until(3, &clock_t0);
-                // t0 is ready to pend.
-                // crate::trace!(
-                //     "[TH:0x{:x}] t0 is ready to pend.",
-                //     scheduler::current_thread_id()
-                // );
-                let ok = mu[1].pend_for(WAITING_FOREVER);
+                wait_until(2, &clock);
+                let ok = mu[1].pend_for(Tick::MAX);
                 assert!(ok);
                 mu[1].post();
-                clock_t0.fetch_add(1, Ordering::Relaxed);
+                clock.fetch_add(1, Ordering::Relaxed);
+                wake(&clock);
             })))
             .set_priority(0 as ThreadPriority)
             .start()
         };
-        // t1.
-        {
-            let mu = mu.clone();
-            let clock = clock.clone();
-            let helper_mutex = helper_mutex.clone();
-            thread::Builder::new(thread::Entry::Closure(Box::new(move || {
-                let me = scheduler::current_thread();
-                // crate::trace!("TH:0x{:x} t1 started", Thread::id(&me));
-                // crate::trace!("t1 is waiting for 1");
-                spin_until(1, &clock);
-                let ok = mu[0].pend_for(WAITING_FOREVER);
-                assert!(ok);
-                assert_eq!(me.priority(), me.origin_priority());
-                // Make t2 progress.
-                // crate::trace!("Making t2 progress");
-                clock.store(2, Ordering::Relaxed);
-                // Waiting for t0 to promote my priority.
-                let ok = helper_mutex.pend_for(WAITING_FOREVER);
-                assert!(ok);
-                // crate::trace!(
-                //     "[TH:0x{:x}] t1 got the helper mutex",
-                //     scheduler::current_thread_id()
-                // );
-                assert_eq!(me.priority(), 0);
-                helper_mutex.post();
-                mu[0].post();
-                assert_eq!(me.priority(), me.origin_priority());
-                clock.fetch_add(1, Ordering::Relaxed);
-            })))
-            .set_priority(3 as ThreadPriority)
-            .start();
-        }
-        // t2.
         let t2 = {
-            let mu = mu.clone();
             let clock = clock.clone();
+            let mu = mu.clone();
             thread::Builder::new(thread::Entry::Closure(Box::new(move || {
-                let me = scheduler::current_thread();
-                // crate::trace!("TH:0x{:x} t2 started", Thread::id(&me));
-                // Waiting for t1".
-                // crate::trace!("Waiting for t1");
-                spin_until(2, &clock);
-                // t1 make me progress.
-                // crate::trace!("t1 make me progress.");
-                let ok = mu[1].pend_for(WAITING_FOREVER);
+                let this_thread = scheduler::current_thread_ref();
+                wait_until(1, &clock);
+                let ok = mu[1].pend_for(Tick::MAX);
                 assert!(ok);
-                // Acquired mu[1].
-                assert_eq!(me.priority(), me.origin_priority());
-                // t1 has acquired mu0.
-                let ok = mu[0].pend_for(WAITING_FOREVER);
-                assert!(ok);
-                // t0 has made t1 progress.
-                assert_eq!(me.priority(), 0);
-                mu[0].post();
-                mu[1].post();
-                assert_eq!(me.priority(), me.origin_priority());
                 clock.fetch_add(1, Ordering::Relaxed);
+                wake(&clock);
+                let ok = mu[0].pend_for(Tick::MAX);
+                assert_eq!(this_thread.priority(), 0);
+                mu[0].post();
+                assert_eq!(this_thread.priority(), 0);
+                mu[1].post();
+                assert_eq!(this_thread.priority(), this_thread.origin_priority());
             })))
             .set_priority(6 as ThreadPriority)
             .start()
         };
-        // Helper thread to inspect t0's state via spin.
-        {
-            let mu = mu.clone();
+        let t1 = {
             let clock = clock.clone();
-            let helper_mutex = helper_mutex.clone();
-            let helper = thread::Builder::new(thread::Entry::Closure(Box::new(move || {
-                let me = scheduler::current_thread();
-                // crate::trace!("TH:0x{:x} helper", Thread::id(&me));
-                // crate::trace!("helper thread is running");
-                let ok = helper_mutex.pend_for(WAITING_FOREVER);
+            let mu = mu.clone();
+            let t0 = t0.clone();
+            let t2 = t2.clone();
+            thread::Builder::new(thread::Entry::Closure(Box::new(move || {
+                let this_thread = scheduler::current_thread_ref();
+                wait_until(0, &clock);
+                let ok = mu[0].pend_for(Tick::MAX);
                 assert!(ok);
-                // crate::trace!("helper thread acquired helper_mutex");
-                clock.store(1, Ordering::Relaxed);
-                // crate::trace!("t0 has suspended");
+                clock.fetch_add(1, Ordering::Relaxed);
+                wake(&clock);
+                // Wait t2 blocking at mu[0].
                 loop {
-                    if let Some(m) = t2.pending_on_mutex() {
-                        if Arc::is(&m, &mu[0]) {
-                            break;
-                        }
+                    if let Some(mutex) = t2.pending_on_mutex()
+                        && Arc::is(&mutex, &mu[0])
+                    {
+                        break;
                     };
-                    // crate::trace!("Waiting t0 to be suspended");
                     scheduler::yield_me();
-                    core::hint::spin_loop();
                 }
-                // crate::trace!("t2 has suspended on mu0");
-                clock.store(3, Ordering::Relaxed);
-                // crate::trace!("Make t1 progress");
-                while t0.pending_on_mutex().is_none() {
-                    // crate::trace!("Waiting t0 to be suspended");
+                // Wait t0 blocking at mu[1].
+                loop {
+                    if let Some(mutex) = t0.pending_on_mutex()
+                        && Arc::is(&mutex, &mu[1])
+                    {
+                        break;
+                    };
                     scheduler::yield_me();
-                    core::hint::spin_loop();
                 }
-                helper_mutex.post();
+                // PI successfully performed.
+                assert_eq!(this_thread.priority(), 0);
+                mu[0].post();
+                assert_eq!(this_thread.priority(), this_thread.origin_priority());
+                assert_eq!(this_thread.priority(), 3);
             })))
-            .set_priority(0 as ThreadPriority)
-            .start();
-        }
-        spin_until(6, &clock);
+            .set_priority(3 as ThreadPriority)
+            .start()
+        };
+        wait_until(3, &clock);
     }
 
     #[test]
@@ -823,19 +773,20 @@ mod tests {
             let counter = counter.clone();
             let t = thread::Builder::new(thread::Entry::Closure(Box::new(move || {
                 for m in mu.iter() {
-                    m.pend_for(WAITING_FOREVER);
+                    m.pend_for(Tick::MAX);
                 }
                 for m in mu.iter().rev() {
                     m.post();
                 }
                 counter.fetch_add(1, Ordering::Relaxed);
+                wake(&counter);
                 let this_thread = scheduler::current_thread();
                 assert_eq!(this_thread.origin_priority(), this_thread.priority());
             })))
             .set_priority(MAX_THREAD_PRIORITY - (prio as ThreadPriority))
             .start();
         }
-        spin_until(N, &counter);
+        wait_until(N, &counter);
     }
 
     type MutexGroup = Vec<Arc<Mutex>>;
@@ -852,7 +803,7 @@ mod tests {
     #[inline]
     fn pend_mutex_group(mg: &Arc<MutexGroup>) {
         for m in mg.iter() {
-            m.pend_for(WAITING_FOREVER);
+            m.pend_for(Tick::MAX);
         }
     }
 
@@ -918,6 +869,7 @@ mod tests {
             thread::Builder::new(thread::Entry::Closure(Box::new(move || {
                 pend_then_post_forked_mutex_groups(&mg0, &mg2, &mg3);
                 counter.fetch_add(1, Ordering::Relaxed);
+                wake(&counter);
                 let this_thread = scheduler::current_thread();
                 assert_eq!(this_thread.origin_priority(), this_thread.priority());
             })))
@@ -934,12 +886,13 @@ mod tests {
             thread::Builder::new(thread::Entry::Closure(Box::new(move || {
                 pend_then_post_forked_mutex_groups(&mg1, &mg2, &mg4);
                 counter.fetch_add(1, Ordering::Relaxed);
+                wake(&counter);
                 let this_thread = scheduler::current_thread();
                 assert_eq!(this_thread.origin_priority(), this_thread.priority());
             })))
             .set_priority(MAX_THREAD_PRIORITY - (prio as ThreadPriority))
             .start();
         }
-        spin_until(2 * N, &counter);
+        wait_until(2 * N, &counter);
     }
 }

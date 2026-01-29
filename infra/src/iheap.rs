@@ -577,14 +577,20 @@ where
         chosen
     }
 
-    fn validate(&self) {
+    pub fn validate(&self) {
         let size = self.size();
         for i in 0..size {
             let mut path = (0, 0);
             let (current, current_parent) = self.node_at(i, &mut path);
-            let current_mut = unsafe { current.unwrap().as_mut() };
             assert!(current.is_some());
-            assert_eq!(unsafe { current.unwrap().as_ref() }.parent, current_parent);
+            let current_mut = unsafe { current.unwrap().as_mut() };
+            if 2 * i + 1 >= size {
+                unsafe { assert!(current_mut.link.left().is_none()) };
+            }
+            if 2 * i + 2 >= size {
+                unsafe { assert!(current_mut.link.right().is_none()) };
+            }
+            assert_eq!(current_mut.parent, current_parent);
             if path.0 == 0 {
                 assert!(current_parent.is_none());
                 assert_eq!(self.root, current);
@@ -594,21 +600,18 @@ where
             let is_left = 1 << (path.0 - 1) & path.1 == 0;
             let parent_ref = unsafe { current_parent.unwrap().as_ref() };
             let parent_val = MinHeapNode::owner(parent_ref);
-            let current_ref = unsafe { current.unwrap().as_ref() };
-            let current_val = MinHeapNode::owner(current_ref);
-            assert_eq!(
-                (self.compare)(parent_val, current_val),
-                core::cmp::Ordering::Less
-            );
+            let current_val = MinHeapNode::owner(current_mut);
+            let order = (self.compare)(parent_val, current_val);
+            assert!(order == core::cmp::Ordering::Less || order == core::cmp::Ordering::Equal);
             if is_left {
                 assert_eq!(
                     parent_ref.link.left(),
-                    Some(NonNull::from_ref(&current_ref.link))
+                    Some(NonNull::from_ref(&current_mut.link))
                 );
             } else {
                 assert_eq!(
                     parent_ref.link.right(),
-                    Some(NonNull::from_ref(&current_ref.link))
+                    Some(NonNull::from_ref(&current_mut.link))
                 );
             }
         }

@@ -16,6 +16,7 @@ use blueos::{
     scheduler,
     sync::{atomic_wait, atomic_wake},
     thread::{Builder, Entry},
+    time::Tick,
 };
 use blueos_test_macro::test;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -53,7 +54,7 @@ fn test_futex_thread_wait() {
     // Thread entry function
     extern "C" fn thread_entry(arg: *mut core::ffi::c_void) {
         // Wait for futex signal.
-        match atomic_wait(&TEST_FUTEX_WAIT, 0, None) {
+        match atomic_wait(&TEST_FUTEX_WAIT, 0, Tick::MAX) {
             Ok(_) => {
                 TEST_FUTEX_WAIT.store(42, Ordering::Relaxed);
             }

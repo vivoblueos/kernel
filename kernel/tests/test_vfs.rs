@@ -29,6 +29,7 @@ use blueos::{
     scheduler,
     sync::atomic_wait as futex,
     thread::{Builder as ThreadBuilder, Entry, Stack},
+    time::Tick,
     vfs::{
         dirent::{Dirent, DirentType},
         syscalls::*,
@@ -633,7 +634,7 @@ fn test_socket_file() {
         })),
     );
 
-    let _ = futex::atomic_wait(&TCP_SOCKET_FILE_DONE, 0, None);
+    let _ = futex::atomic_wait(&TCP_SOCKET_FILE_DONE, 0, Tick::MAX);
 }
 
 #[cfg(enable_net)]
@@ -752,7 +753,7 @@ fn test_socket_file_nonblock() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_DONE, 0, None);
+    let _ = futex::atomic_wait(&TCP_CLIENT_DONE, 0, Tick::MAX);
 }
 
 #[cfg(enable_net)]
@@ -849,5 +850,5 @@ fn socket_client_thread(client_fd: i32) {
         scheduler::yield_me();
     }
     close(client_fd);
-    let _ = futex::atomic_wait(&TCP_SERVER_DONE, 0, None);
+    let _ = futex::atomic_wait(&TCP_SERVER_DONE, 0, Tick::MAX);
 }

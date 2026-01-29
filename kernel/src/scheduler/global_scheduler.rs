@@ -13,13 +13,13 @@
 // limitations under the License.
 
 use crate::{
+    arch,
     config::MAX_THREAD_PRIORITY,
     sync::spinlock::{SpinLock, SpinLockGuard},
     thread,
     thread::{Thread, ThreadNode},
     types::{ArcList, ThreadPriority, Uint},
 };
-
 use core::mem::MaybeUninit;
 
 static mut READY_TABLE: MaybeUninit<SpinLock<ReadyTable>> = MaybeUninit::zeroed();
@@ -73,6 +73,7 @@ fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Op
     let q = &mut tbl.tables[index];
     let next = q.pop_front();
     debug_assert!(next.is_some());
+    debug_assert_eq!(next.as_ref().unwrap().state(), thread::READY);
     if q.is_empty() {
         tbl.clear_active_queue(index as u32);
     }
@@ -111,8 +112,10 @@ pub fn queue_ready_thread_with_post_action<R, F>(
 where
     F: Fn() -> R,
 {
-    debug_assert_ne!(old_state, thread::READY);
-    if !t.transfer_state(old_state, thread::READY) {
+    if old_state == thread::READY {
+        return None;
+    }
+    if t.transfer_state(old_state, thread::READY).is_err() {
         return None;
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
@@ -127,7 +130,7 @@ fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNo
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
     let q = &mut tbl.tables[priority as usize];
-    if !q.push_back(t.clone()) {
+    if !q.push_back(t) {
         return false;
     }
     tbl.set_active_queue(priority as u32);
@@ -144,19 +147,22 @@ fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNo
 }
 
 // We only queue the thread if old_state equals thread's current state.
-pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> bool {
-    debug_assert_ne!(old_state, thread::READY);
-    if !t.transfer_state(old_state, thread::READY) {
-        return false;
+pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
+    if old_state == thread::READY {
+        return Err(thread::READY);
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
-    queue_ready_thread_inner(&mut tbl, t)
+    t.transfer_state(old_state, thread::READY)?;
+    let ok = queue_ready_thread_inner(&mut tbl, t);
+    debug_assert!(ok);
+    drop(tbl);
+    super::notify_idle_cores(1);
+    Ok(())
 }
 
 fn remove_from_ready_queue_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadNode) -> bool {
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
-    debug_assert_eq!(t.state(), thread::READY);
     let q = &mut tbl.tables[priority as usize];
     // Conservatively search the whole queue.
     let removed = q.remove_if(|e| ThreadNode::as_ptr(t) == e as *const _);
@@ -185,7 +191,6 @@ pub fn update_ready_thread_priority(
     }
 
     let mut thread_guard = t.lock();
-    thread_guard.set_origin_priority(new_priority);
     thread_guard.set_priority(new_priority);
     drop(thread_guard);
 

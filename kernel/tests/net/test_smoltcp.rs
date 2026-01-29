@@ -22,6 +22,7 @@ use blueos::{
     allocator, net, scheduler,
     sync::atomic_wait as futex,
     thread::{Builder as ThreadBuilder, Entry, Stack},
+    time::Tick,
 };
 use blueos_test_macro::test;
 use byteorder::{ByteOrder, NetworkEndian};
@@ -411,7 +412,7 @@ fn test_smoltcp() {
             let _ = futex::atomic_wake(&SMOLTCP_TEST_DONE, 1);
         })),
     );
-    let _ = futex::atomic_wait(&SMOLTCP_TEST_DONE, 0, None);
+    let _ = futex::atomic_wait(&SMOLTCP_TEST_DONE, 0, Tick::MAX);
 }
 
 #[test]
@@ -428,5 +429,5 @@ fn test_smoltcp_icmp_loopback() {
             let _ = futex::atomic_wake(&ICMP_LOOPBACK_TEST_DONE, 1);
         })),
     );
-    let _ = futex::atomic_wait(&ICMP_LOOPBACK_TEST_DONE, 0, None);
+    let _ = futex::atomic_wait(&ICMP_LOOPBACK_TEST_DONE, 0, Tick::MAX);
 }

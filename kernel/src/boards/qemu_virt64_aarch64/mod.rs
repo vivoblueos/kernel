@@ -15,3 +15,4 @@
 pub mod init;
 pub use init::*;
 mod config;
+pub type ClockImpl = crate::devices::clock::gic_generic_timer::QemuGtClk;

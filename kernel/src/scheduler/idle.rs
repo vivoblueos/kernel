@@ -30,7 +30,7 @@ use spin::Once;
 
 static mut IDLE_THREAD_BLOCKS: [SystemThreadStorage; NUM_CORES as usize] =
     [const { SystemThreadStorage::new(ThreadKind::Idle) }; NUM_CORES as usize];
-static mut IDLE_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES as usize] =
+pub(super) static mut IDLE_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES as usize] =
     [const { MaybeUninit::zeroed() }; NUM_CORES as usize];
 
 // Idle is per core, disable interrupt to set idle hook

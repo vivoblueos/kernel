@@ -19,6 +19,7 @@ use blueos::{
     scheduler,
     sync::atomic_wait as futex,
     thread::Builder as ThreadBuilder,
+    time::Tick,
 };
 use blueos_test_macro::test;
 use core::{
@@ -218,7 +219,7 @@ fn tcp_client_thread(args: Arc<NetTestArgs>) {
         "Failed to shutdown tcp client socket."
     );
 
-    let _ = futex::atomic_wait(&TCP_SERVER_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&TCP_SERVER_THREAD_FINISH, 0, Tick::MAX);
 
     assert!(bytes_sent > 0, "Test tcp client send fail.");
     println!("Thread exit:[tcp_client_thread]");
@@ -241,7 +242,7 @@ fn test_tcp_ipv4() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -262,7 +263,7 @@ fn test_tcp_ipv4_non_blocking() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -282,7 +283,7 @@ fn test_tcp_ipv6() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -302,5 +303,5 @@ fn test_tcp_ipv6_non_blocking() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }

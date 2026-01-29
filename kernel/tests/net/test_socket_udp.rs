@@ -19,6 +19,7 @@ use blueos::{
     scheduler,
     sync::atomic_wait as futex,
     thread::Builder as ThreadBuilder,
+    time::Tick,
 };
 use blueos_test_macro::test;
 use core::{
@@ -233,7 +234,7 @@ fn udp_client_thread(args: Arc<NetTestArgs>) {
     });
     assert!(bytes_sent > 0, "Test udp client send fail.");
 
-    let _ = futex::atomic_wait(&UDP_SERVER_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&UDP_SERVER_THREAD_FINISH, 0, Tick::MAX);
     // Warning!!! Shutdown after server thread exit, or server may not able to recv data from client
     let shutdown_result = net::syscalls::shutdown(sock_fd, 0);
     assert!(
@@ -261,7 +262,7 @@ fn test_udp_ipv4() {
         }),
     );
 
-    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -282,7 +283,7 @@ fn test_udp_ipv4_non_blocking() {
         }),
     );
 
-    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -302,7 +303,7 @@ fn test_udp_ipv6() {
         }),
     );
 
-    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -322,5 +323,5 @@ fn test_udp_ipv6_non_blocking() {
         }),
     );
 
-    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, None);
+    let _ = futex::atomic_wait(&UDP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
 }

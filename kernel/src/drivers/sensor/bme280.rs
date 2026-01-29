@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::time::Tick;
 use blueos_driver::i2c::I2cConfig;
 use blueos_hal::PlatPeri;
 use blueos_infra::tinyarc::TinyArc;
@@ -33,7 +34,7 @@ impl DelayNs for KernelDelay {
         if ticks == 0 {
             scheduler::yield_me();
         } else {
-            scheduler::suspend_me_for(ticks as _);
+            scheduler::suspend_me_for::<()>(Tick(ticks as usize), None);
         }
     }
 }

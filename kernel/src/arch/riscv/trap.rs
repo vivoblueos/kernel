@@ -16,7 +16,8 @@ use super::{
     claim_switch_context, disable_local_irq, enable_local_irq, Context, IsrContext, NR_SWITCH,
 };
 use crate::{
-    boards::handle_plic_irq,
+    arch,
+    boards::{clear_ipi, handle_plic_irq},
     debug,
     irq::{enter_irq, leave_irq},
     rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
@@ -35,8 +36,9 @@ use core::{
 
 pub(crate) const INTERRUPT_MASK: usize = 1usize << (usize::BITS - 1);
 pub(crate) const TIMER_INT: usize = INTERRUPT_MASK | 0x7;
-pub(crate) const ECALL: usize = 0xB;
 pub(crate) const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
+pub(crate) const ECALL: usize = 0xB;
+pub(crate) const MSI: usize = INTERRUPT_MASK | 0x3;
 
 type ContextSwitcher = extern "C" fn(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize;
 
@@ -216,11 +218,11 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
     debug_assert_ne!(Thread::id(old), Thread::id(&next));
     let mut hook = ContextSwitchHookHolder::new(next);
     if Thread::id(old) == Thread::id(scheduler::current_idle_thread_ref()) {
-        let ok = old.transfer_state(thread::RUNNING, thread::READY);
-        debug_assert!(ok);
+        let res = old.transfer_state(thread::RUNNING, thread::READY);
+        debug_assert_eq!(res, Ok(()));
     } else {
-        let ok = scheduler::queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
-        debug_assert!(ok);
+        let res = scheduler::queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
+        debug_assert_eq!(res, Ok(()));
     };
     let next_saved_sp = scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() });
     switch_stack_with_hook(&mut hook, old_sp, next_saved_sp, ra, handle_switch)
@@ -235,10 +237,15 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
             might_switch_context(ctx, cont)
         }
         TIMER_INT => {
-            crate::time::handle_tick_increment();
+            crate::time::handle_clock_interrupt();
             might_switch_context(ctx, cont)
         }
         ECALL => handle_ecall(ctx, cont),
+        // For waking up from wfi.
+        MSI => {
+            clear_ipi(arch::current_cpu_id());
+            sp
+        }
         _ => {
             let t = scheduler::current_thread_ref();
             panic!(

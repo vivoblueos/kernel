@@ -15,9 +15,12 @@
 #![no_std]
 
 use blueos::{
-    scheduler, thread,
+    scheduler,
+    scheduler::InsertToEnd,
+    thread,
     thread::{Entry, Thread, ThreadNode, IDLE, READY, RUNNING, SUSPENDED},
     time,
+    time::Tick,
     types::{Arc, ThreadPriority},
 };
 use core::mem::MaybeUninit;
@@ -27,7 +30,7 @@ const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize
 const TM_SUCCESS: c_int = 0;
 const TM_ERROR: c_int = 1;
 
-const MAX_THREADS: usize = 16;
+const MAX_THREADS: usize = 8;
 static mut TM_THREADS: [MaybeUninit<ThreadNode>; MAX_THREADS] =
     [const { MaybeUninit::zeroed() }; MAX_THREADS];
 
@@ -71,7 +74,8 @@ pub extern "C" fn tm_thread_create(
 pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref().clone() };
     // Resuming myself should not happen.
-    if scheduler::queue_ready_thread(SUSPENDED, t.clone()) || scheduler::queue_ready_thread(IDLE, t)
+    if scheduler::queue_ready_thread(SUSPENDED, t.clone()).is_ok()
+        || scheduler::queue_ready_thread(IDLE, t).is_ok()
     {
         scheduler::relinquish_me();
         return TM_SUCCESS;
@@ -85,7 +89,7 @@ pub extern "C" fn tm_thread_suspend(thread_id: c_int) -> c_int {
     let this_thread = scheduler::current_thread_ref();
     // I'm suspending myself.
     if Thread::id(this_thread) == Thread::id(&t) {
-        scheduler::suspend_me_for(time::WAITING_FOREVER);
+        scheduler::suspend_me_for::<()>(Tick::MAX, None);
         return TM_SUCCESS;
     }
     if scheduler::remove_from_ready_queue(t) {
@@ -102,5 +106,5 @@ pub extern "C" fn tm_thread_relinquish() {
 
 #[no_mangle]
 pub extern "C" fn tm_thread_sleep(secs: c_int) {
-    scheduler::suspend_me_for(TICKS_PER_SECOND * secs as usize);
+    scheduler::suspend_me_for::<()>(Tick(TICKS_PER_SECOND * secs as usize), None);
 }

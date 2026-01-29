@@ -27,6 +27,7 @@ use crate::{
     sync::atomic_wait as futex,
     thread::{self, Builder, Entry, Stack, Thread},
     time,
+    time::Tick,
 };
 
 pub use crate::sync::posix_mqueue;
@@ -396,7 +397,7 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     // We don't increment the rc of the created thread since it's also
     // referenced by the global queue. When this thread is retired,
     // it's removed from the global queue.
-    debug_assert!(ok);
+    debug_assert_eq!(ok, Ok(()));
     unsafe {core::mem::transmute(handle)}
 });
 
@@ -406,10 +407,10 @@ atomic_wait(addr: usize, val: usize, timeout: *const timespec) -> c_long {
         return -1;
     }
     let timeout = if timeout.is_null() {
-        None
+        Tick::MAX
     } else {
         let timeout = unsafe { &*timeout };
-        Some(time::tick_from_millisecond((timeout.tv_sec * 1000 + timeout.tv_nsec / 1000000) as usize))
+        time::Tick::from_millis((timeout.tv_sec * 1000 + timeout.tv_nsec / 1000000) as u64)
     };
     let ptr = addr as *const AtomicUsize;
     let atom = unsafe { &*ptr };
@@ -436,13 +437,13 @@ define_syscall_handler!(
         if tp.is_null() {
             return -1;
         }
-        // only support CLOCK_MONOTONIC
-        const TICK_TO_NANOSECOND: usize = 1_000_000_000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
-        let ticks = time::TickTime::now().as_ticks();
-        let seconds = ticks / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize);
-        let nanoseconds = (ticks % (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize)) * TICK_TO_NANOSECOND;
+        // Only support CLOCK_MONOTONIC.
+        let now = time::now();
         unsafe {
-            *tp = timespec { tv_sec: seconds as c_int, tv_nsec: nanoseconds as c_int };
+            tp.write(timespec {
+                tv_sec: now.as_secs() as c_int,
+                tv_nsec: now.subsec_nanos() as c_int,
+            });
         }
         0
 });
@@ -770,12 +771,14 @@ define_syscall_handler!(
         };
 
         // TODO: Implement tv_nsec
-        let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize * duration.tv_sec as usize +
-                    duration.tv_nsec as usize / (1000000000 / (blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize));
-        if ticks == 0 {
+        let ticks = Tick(blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize  *
+                         duration.tv_sec as usize +
+                         duration.tv_nsec as usize *
+                         blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize / 1_000_000_000);
+        if ticks.0 == 0 {
             scheduler::yield_me();
         } else {
-            scheduler::suspend_me_for(ticks);
+            scheduler::suspend_me_for::<()>(ticks,None);
         }
         0
     }

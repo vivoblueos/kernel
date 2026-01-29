@@ -41,12 +41,15 @@ pub(crate) fn init() {
     });
     STAGING.run(4, false, arch::irq::cpu_init);
     STAGING.run(5, false, || {
-        let sys_clk = (CNTFRQ_EL0.get() * 1000) as u32;
-        time::systick_init(sys_clk);
+        irq::enable_irq_with_priority(
+            config::PL011_UART0_IRQNUM,
+            arch::current_cpu_id(),
+            irq::Priority::Normal,
+        );
     });
     STAGING.run(6, false, || {
         irq::enable_irq_with_priority(
-            config::PL011_UART0_IRQNUM,
+            config::GENERIC_TIMER_IRQNUM,
             arch::current_cpu_id(),
             irq::Priority::Normal,
         );
@@ -63,6 +66,7 @@ pub(crate) fn init() {
         irq::IrqTrigger::Level,
     );
     let _ = irq::register_handler(config::PL011_UART0_IRQNUM, Box::new(Serial0Irq {}));
+    let _ = irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {}));
 }
 
 crate::define_peripheral! {
@@ -88,5 +92,12 @@ impl IrqHandler for Serial0Irq {
         } {
             handler();
         }
+    }
+}
+
+pub struct TimerIrq;
+impl IrqHandler for TimerIrq {
+    fn handle(&mut self) {
+        crate::time::handle_clock_interrupt();
     }
 }

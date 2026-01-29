@@ -159,7 +159,7 @@ extern "C" fn init() {
     // FIXME: remove this after riscv64 is supported
     #[cfg(not(target_arch = "riscv64"))]
     logger::logger_init();
-    time::timer::system_timer_init();
+    time::timer::init();
     #[cfg(kernel_async)]
     asynk::init();
     #[cfg(enable_net)]

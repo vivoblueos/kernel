@@ -15,7 +15,15 @@
 mod config;
 mod handler;
 
-use crate::{arch, arch::irq::IrqNumber, boot, boot::INIT_BSS_DONE, sync::SpinLock, time};
+use crate::{
+    arch,
+    arch::irq::IrqNumber,
+    boot,
+    boot::INIT_BSS_DONE,
+    devices::clock::{systick, Clock},
+    sync::SpinLock,
+    time,
+};
 use alloc::sync::Arc;
 use blueos_driver::pinctrl::gd32_afio::*;
 use blueos_infra::tinyarc::TinyArc;
@@ -68,6 +76,10 @@ unsafe fn copy_data() {
     INIT_BSS_DONE = true;
 }
 
+const TICKS_PS: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
+const HZ: usize = config::PLL_SYS_FREQ as usize;
+pub type ClockImpl = systick::SysTickClock<TICKS_PS, HZ>;
+
 pub(crate) fn init() {
     unsafe { copy_data() };
     boot::init_runtime();
@@ -76,8 +88,8 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
-    arch::irq::enable_irq_with_priority(IrqNumber::new(37), arch::irq::Priority::Normal);
-    time::systick_init(config::PLL_SYS_FREQ as u32);
+    arch::irq::enable_irq_with_priority(config::USBFS_IRQn, arch::irq::Priority::Normal);
+    ClockImpl::init();
 }
 
 crate::define_peripheral! {
@@ -126,4 +138,12 @@ pub unsafe extern "C" fn uart0_handler() {
     } {
         handler();
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn handle_systick() {
+    if !ClockImpl::claim_interrupt() {
+        return;
+    }
+    crate::time::handle_clock_interrupt();
 }

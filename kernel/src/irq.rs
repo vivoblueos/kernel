@@ -118,12 +118,12 @@ pub mod irq_trace {
     impl IrqTraceInfo {
         #[inline]
         pub fn on_enter(&mut self) {
-            self.last_irq_enter_cycles = time::get_sys_cycles();
+            self.last_irq_enter_cycles = time::current_clock_cycles();
         }
 
         #[inline]
         pub fn on_leave(&mut self) {
-            let current_cycles = time::get_sys_cycles();
+            let current_cycles = time::current_clock_cycles();
             self.total_irq_process_cycles =
                 current_cycles.saturating_sub(self.last_irq_enter_cycles);
         }

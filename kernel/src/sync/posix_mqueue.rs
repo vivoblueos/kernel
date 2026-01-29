@@ -19,7 +19,8 @@ use crate::{
         SpinLock,
     },
     syscall_handlers::mq_attr,
-    time::{self, NO_WAITING, WAITING_FOREVER},
+    time,
+    time::Tick,
     types::Arc,
 };
 use alloc::{
@@ -72,16 +73,16 @@ fn get_mq(fd: c_int) -> Option<Arc<MQ>> {
     reg.fds.get(&fd).cloned()
 }
 
-fn to_ticks(timeout: *const timespec) -> Option<usize> {
+fn to_ticks(timeout: *const timespec) -> Option<Tick> {
     if timeout.is_null() {
         return None;
     }
     let ts = unsafe { &*timeout };
     let ms = ts.tv_sec * 1000 + ts.tv_nsec / 1_000_000;
     if ms < 0 {
-        return Some(0);
+        return Some(Tick(0));
     }
-    Some(time::tick_from_millisecond(ms as usize))
+    Some(time::Tick::from_millis(ms as u64))
 }
 
 fn err(e: Error) -> c_int {
@@ -193,11 +194,11 @@ pub fn mq_timedsend(
     let timed = !timeout.is_null();
     let is_nonblock = (mq.flags.load(Ordering::Relaxed) & (libc::O_NONBLOCK as u32)) != 0;
     let timeout = if timed {
-        to_ticks(timeout).unwrap_or(WAITING_FOREVER)
+        to_ticks(timeout).unwrap_or(Tick::MAX)
     } else if is_nonblock {
-        NO_WAITING
+        Tick(0)
     } else {
-        WAITING_FOREVER
+        Tick::MAX
     };
 
     let slice = unsafe { core::slice::from_raw_parts(msg_ptr as *const u8, msg_len) };
@@ -235,11 +236,11 @@ pub fn mq_timedrecv(
     let timed = !timeout.is_null();
     let is_nonblock = (mq.flags.load(Ordering::Relaxed) & (libc::O_NONBLOCK as u32)) != 0;
     let timeout = if timed {
-        to_ticks(timeout).unwrap_or(WAITING_FOREVER)
+        to_ticks(timeout).unwrap_or(Tick::MAX)
     } else if is_nonblock {
-        NO_WAITING
+        Tick(0)
     } else {
-        WAITING_FOREVER
+        Tick::MAX
     };
 
     let buf = unsafe { core::slice::from_raw_parts_mut(msg_ptr as *mut u8, msg_len) };

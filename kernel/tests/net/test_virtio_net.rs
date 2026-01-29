@@ -60,6 +60,7 @@ use blueos::{
     scheduler,
     sync::atomic_wait as futex,
     thread::{Builder as ThreadBuilder, Entry, Stack},
+    time::Tick,
 };
 use blueos_test_macro::test;
 use core::{
@@ -200,7 +201,7 @@ fn test_virtio_net() {
         })),
     );
 
-    let _ = futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, None);
+    let _ = futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, Tick::MAX);
 }
 
 #[test]
@@ -223,5 +224,5 @@ fn test_virtio_net_non_blocking() {
         })),
     );
 
-    let _ = futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, None);
+    let _ = futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, Tick::MAX);
 }

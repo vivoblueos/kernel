@@ -15,14 +15,19 @@
 use alloc::boxed::Box;
 use blueos::{
     time,
-    time::timer::{Timer, TimerEntry},
+    time::{
+        timer,
+        timer::{Repeat, Timer, TimerCallback, TimerMode},
+        timer_manager::Iou,
+        Tick,
+    },
     types::{Arc, Int, Uint},
 };
 use cmsis_os::*;
 use core::{
     ffi::c_void,
     mem::{self, ManuallyDrop},
-    ptr,
+    ptr::NonNull,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -35,7 +40,7 @@ use core::{
 pub extern "C" fn osTimerCreate(
     timer_def: *const osTimerDef_t,
     timer_type: os_timer_type,
-    argument: *const c_void,
+    argument: *mut c_void,
 ) -> osTimerId {
     if timer_def.is_null() {
         return core::ptr::null_mut();
@@ -46,26 +51,19 @@ pub extern "C" fn osTimerCreate(
         return core::ptr::null_mut();
     };
 
-    if ((timer_type != os_timer_type_osTimerOnce) && (timer_type != os_timer_type_osTimerPeriodic))
-    {
-        return core::ptr::null_mut();
+    let mut tm = Timer::new();
+    #[allow(non_upper_case_globals)]
+    match timer_type {
+        os_timer_type_osTimerOnce => tm.mode = TimerMode::Deadline(Tick::MAX),
+        os_timer_type_osTimerPeriodic => tm.mode = TimerMode::Repeat(Repeat::default()),
+        _ => return core::ptr::null_mut(),
     }
 
-    let entry = TimerEntry::C(
-        unsafe {
-            core::mem::transmute::<
-                unsafe extern "C" fn(*const c_void),
-                unsafe extern "C" fn(*mut c_void),
-            >(func)
-        },
-        argument as *mut c_void,
-    );
-    let timer = if timer_type == os_timer_type_osTimerOnce {
-        Timer::new_hard_oneshot(0, entry)
-    } else {
-        Timer::new_hard_periodic(0, entry)
-    };
-    let os_timer = Arc::into_raw(timer);
+    let func: unsafe extern "C" fn(*mut c_void) = unsafe { core::mem::transmute(func) };
+
+    tm.callback = TimerCallback::UnsafePosix(func, argument);
+    let os_timer = Box::into_raw(Box::new(tm));
+
     os_timer as osTimerId
 }
 
@@ -74,13 +72,28 @@ pub extern "C" fn osTimerCreate(
 // \param[in]     millisec      \ref CMSIS_RTOS_TimeOutValue "Time delay" value of the timer.
 // \return status code that indicates the execution status of the function.
 #[no_mangle]
-pub extern "C" fn osTimerStart(timer_id: osTimerId, millisec: u32) -> osStatus {
-    if timer_id.is_null() {
+pub extern "C" fn osTimerStart(timer_id: osTimerId, millis: u32) -> osStatus {
+    let Some(mut os_timer) = NonNull::new(timer_id as *mut Timer) else {
         return osStatus_osErrorParameter;
-    }
+    };
 
-    let timer = unsafe { &*(timer_id as *const Timer) };
-    timer.start_new_interval(millisec as usize);
+    let tm_mut = unsafe { os_timer.as_mut() };
+    let mut duration = Tick::from_millis(millis as u64);
+    // To avoid endless clock interrupt.
+    if duration == Tick(0) {
+        duration = Tick(1);
+    }
+    let base = Tick::after(duration);
+
+    match &mut tm_mut.mode {
+        TimerMode::Deadline(d) => *d = base,
+        TimerMode::Repeat(r) => {
+            r.base_deadline = base;
+            r.period = duration;
+        }
+    }
+    timer::add_hard_timer(tm_mut);
+
     osStatus_osOK
 }
 
@@ -89,11 +102,14 @@ pub extern "C" fn osTimerStart(timer_id: osTimerId, millisec: u32) -> osStatus {
 // \return status code that indicates the execution status of the function.
 #[no_mangle]
 pub extern "C" fn osTimerStop(timer_id: osTimerId) -> osStatus {
-    if timer_id.is_null() {
+    let Some(mut os_timer) = NonNull::new(timer_id as *mut Timer) else {
         return osStatus_osErrorParameter;
-    }
-    let timer = unsafe { &*(timer_id as *const Timer) };
-    timer.stop();
+    };
+
+    let tm_mut = unsafe { os_timer.as_mut() };
+    let iou = unsafe { Iou::from_mut(tm_mut) };
+    timer::remove_hard_timer(iou);
+
     osStatus_osOK
 }
 
@@ -102,11 +118,11 @@ pub extern "C" fn osTimerStop(timer_id: osTimerId) -> osStatus {
 // \return status code that indicates the execution status of the function.
 #[no_mangle]
 pub extern "C" fn osTimerDelete(timer_id: osTimerId) -> osStatus {
-    if timer_id.is_null() {
+    let Some(mut os_timer) = NonNull::new(timer_id as *mut Timer) else {
         return osStatus_osErrorParameter;
-    }
+    };
 
-    let _ = unsafe { Arc::from_raw(timer_id as *mut Timer) };
+    let _ = unsafe { Box::from_raw(os_timer.as_ptr()) };
     osStatus_osOK
 }
 
@@ -131,12 +147,16 @@ mod tests {
             timer: core::ptr::null_mut(),
         };
 
-        let timer_id = osTimerCreate(&timer_def, os_timer_type_osTimerOnce, core::ptr::null());
+        let timer_id = osTimerCreate(&timer_def, os_timer_type_osTimerOnce, core::ptr::null_mut());
         assert!(!timer_id.is_null());
         let result = osTimerDelete(timer_id);
         assert_eq!(result, osStatus_osOK);
 
-        let timer_id = osTimerCreate(&timer_def, os_timer_type_osTimerPeriodic, core::ptr::null());
+        let timer_id = osTimerCreate(
+            &timer_def,
+            os_timer_type_osTimerPeriodic,
+            core::ptr::null_mut(),
+        );
         assert!(!timer_id.is_null());
         let result = osTimerDelete(timer_id);
         assert_eq!(result, osStatus_osOK);
@@ -157,11 +177,12 @@ mod tests {
         );
         assert!(!timer_id.is_null());
 
-        let result = osTimerStart(timer_id, 5);
+        let result = osTimerStart(timer_id, 50);
         assert_eq!(result, osStatus_osOK);
 
-        scheduler::suspend_me_for(20);
+        scheduler::suspend_me_for::<()>(Tick::from_millis(50), None);
         assert_eq!(counter.load(Ordering::Relaxed), 1);
+        let result = osTimerStop(timer_id);
 
         let result = osTimerDelete(timer_id);
         assert_eq!(result, osStatus_osOK);
@@ -181,10 +202,10 @@ mod tests {
         );
         assert!(!timer_id.is_null());
 
-        let result = osTimerStart(timer_id, 5);
+        let result = osTimerStart(timer_id, 50);
         assert_eq!(result, osStatus_osOK);
 
-        scheduler::suspend_me_for(23);
+        scheduler::suspend_me_for::<()>(Tick::from_millis(50 * 4), None);
         assert_eq!(counter.load(Ordering::Relaxed), 4);
 
         let result = osTimerStop(timer_id);
@@ -201,10 +222,10 @@ mod tests {
             timer: core::ptr::null_mut(),
         };
         let counter = Arc::new(AtomicUsize::new(0));
-        let timer_id = osTimerCreate(&timer_def, os_timer_type_osTimerOnce, core::ptr::null());
+        let timer_id = osTimerCreate(&timer_def, os_timer_type_osTimerOnce, core::ptr::null_mut());
         assert!(!timer_id.is_null());
 
-        let result = osTimerStart(timer_id, 5);
+        let result = osTimerStart(timer_id, 50);
         assert_eq!(result, osStatus_osOK);
 
         let result = osTimerStop(timer_id);
@@ -221,10 +242,10 @@ mod tests {
         );
         assert!(!timer_id.is_null());
 
-        let result = osTimerStart(timer_id, 5);
+        let result = osTimerStart(timer_id, 50);
         assert_eq!(result, osStatus_osOK);
 
-        scheduler::suspend_me_for(23);
+        scheduler::suspend_me_for::<()>(Tick::from_millis(50 * 4), None);
         assert_eq!(counter.load(Ordering::Relaxed), 4);
         let result = osTimerStop(timer_id);
         assert_eq!(result, osStatus_osOK);

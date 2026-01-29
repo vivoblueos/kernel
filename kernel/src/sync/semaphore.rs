@@ -18,7 +18,7 @@ use crate::{
     scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitEntry, WaitQueue},
     thread,
     thread::Thread,
-    time::WAITING_FOREVER,
+    time::Tick,
     types::Uint,
 };
 use core::{cell::Cell, ops::DerefMut};
@@ -54,7 +54,7 @@ impl Semaphore {
     where
         M: InsertModeTrait,
     {
-        self.acquire_timeout::<M>(0)
+        self.acquire_timeout::<M>(Tick(0))
     }
 
     pub fn try_acquire_nowait(&self) -> bool {
@@ -98,7 +98,7 @@ impl Semaphore {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
-                let timeout = scheduler::suspend_me_with_timeout(w, WAITING_FOREVER);
+                let timeout = scheduler::suspend_me_for(Tick::MAX, Some(w));
                 debug_assert!(!timeout);
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
@@ -107,14 +107,14 @@ impl Semaphore {
         }
     }
 
-    pub fn acquire_timeout<M>(&self, mut ticks: usize) -> bool
+    pub fn acquire_timeout<M>(&self, mut ticks: Tick) -> bool
     where
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
-        let mut last_sys_ticks = crate::time::TickTime::now().as_ticks();
+        let mut last_sys_ticks = Tick::now();
         loop {
             let old = self.counter.get();
             #[cfg(debugging_scheduler)]
@@ -131,7 +131,7 @@ impl Semaphore {
                 return true;
             }
             // Don't bother to suspend further.
-            if ticks == 0 {
+            if ticks.0 == 0 {
                 return false;
             }
             let mut borrowed_wait_entry;
@@ -139,7 +139,7 @@ impl Semaphore {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
-                let timeout = scheduler::suspend_me_with_timeout(w, ticks);
+                let timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
                 if timeout {
@@ -147,25 +147,28 @@ impl Semaphore {
                 }
             }
             drop(borrowed_wait_entry);
-            let now = crate::time::TickTime::now().as_ticks();
-            let elapsed_ticks = now - last_sys_ticks;
-            if elapsed_ticks >= ticks {
-                ticks = 0;
+            if ticks == Tick::MAX {
+                continue;
+            }
+            let now = Tick::now();
+            let elapsed_ticks = now.0 - last_sys_ticks.0;
+            if elapsed_ticks >= ticks.0 {
+                ticks = Tick(0);
             } else {
-                ticks -= elapsed_ticks;
+                ticks.0 -= elapsed_ticks;
             }
             last_sys_ticks = now;
         }
     }
 
-    pub fn acquire<M>(&self, timeout: Option<usize>) -> bool
+    pub fn acquire<M>(&self, timeout: Tick) -> bool
     where
         M: InsertModeTrait,
     {
-        let Some(t) = timeout else {
+        if timeout.0 == 0 {
             return self.acquire_notimeout::<M>();
         };
-        self.acquire_timeout::<M>(t)
+        self.acquire_timeout::<M>(timeout)
     }
 
     #[inline(never)]
@@ -187,11 +190,7 @@ impl Semaphore {
         }
         for next in w.iter() {
             let t = next.thread.clone();
-            if let Some(timer) = &t.timer {
-                timer.stop();
-            }
-            let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
-            if ok {
+            if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
                 break;
             }
             #[cfg(debugging_scheduler)]
@@ -308,12 +307,12 @@ mod tests {
         semaphore.init(2);
 
         // Test successful acquisition with timeout
-        let result = semaphore.acquire_timeout::<InsertToEnd>(100);
+        let result = semaphore.acquire_timeout::<InsertToEnd>(Tick(100));
         assert!(result);
         assert_eq!(semaphore.counter.get(), 1);
 
         // Test second acquisition
-        let result2 = semaphore.acquire_timeout::<InsertToEnd>(100);
+        let result2 = semaphore.acquire_timeout::<InsertToEnd>(Tick(100));
         assert!(result2);
         assert_eq!(semaphore.counter.get(), 0);
     }
@@ -324,7 +323,7 @@ mod tests {
         semaphore.init(2);
 
         // Test acquire with None timeout (should call acquire_notimeout)
-        let result = semaphore.acquire::<InsertToEnd>(None);
+        let result = semaphore.acquire::<InsertToEnd>(Tick::MAX);
         assert!(result);
         assert_eq!(semaphore.counter.get(), 1);
     }
@@ -335,7 +334,7 @@ mod tests {
         semaphore.init(2);
 
         // Test acquire with Some timeout (should call acquire_timeout)
-        let result = semaphore.acquire::<InsertToEnd>(Some(100));
+        let result = semaphore.acquire::<InsertToEnd>(Tick(100));
         assert!(result);
         assert_eq!(semaphore.counter.get(), 1);
     }
