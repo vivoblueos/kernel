@@ -790,7 +790,10 @@ impl OperationIPCReply {
                         }
                         code::ETIMEDOUT => {
                             log::error!("Unexpected ETIMEDOUT");
-                            debug_assert!(false, "atomic_wait returned ETIMEDOUT without timeout support");
+                            debug_assert!(
+                                false,
+                                "atomic_wait returned ETIMEDOUT without timeout support"
+                            );
                         }
                         _ => {
                             // Treat as spurious wake; keep waiting.
