@@ -767,7 +767,8 @@ impl OperationIPCReply {
         self.queue_and_wait_timeout(IPC_REPLY_TIMEOUT)
     }
 
-    fn queue_and_wait_timeout(&self, timeout: usize) -> ConnectionResult {
+    fn queue_and_wait_timeout(&self, _timeout: usize) -> ConnectionResult {
+        // TODO: timeout is not implemented yet; we wait indefinitely and retry.
         let t = scheduler::current_thread();
         log::debug!(
             "[Thread ID 0x{:x}] futex::atomic_wait for addr=0x{:x} begin!",
@@ -780,30 +781,31 @@ impl OperationIPCReply {
                 return result.map_err(Into::into);
             }
 
-            if self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
-                if let Err(e) =
-                    futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
-                {
-                    match e {
-                        code::EAGAIN => {
-                            log::debug!("EAGAIN: operation task finish before wait, try again");
-                        }
-                        code::ETIMEDOUT => {
-                            log::error!("Unexpected ETIMEDOUT");
-                            debug_assert!(
-                                false,
-                                "atomic_wait returned ETIMEDOUT without timeout support"
-                            );
-                        }
-                        _ => {
-                            // Treat as spurious wake; keep waiting.
-                            log::error!("Unexpected atomic_wait error: {:?}", e);
-                            debug_assert!(false, "atomic_wait returned unexpected error: {:?}", e);
-                        }
+            if !self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
+                yield_me();
+                continue;
+            }
+
+            if let Err(e) =
+                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
+            {
+                match e {
+                    code::EAGAIN => {
+                        log::debug!("EAGAIN: operation task finish before wait, try again");
+                    }
+                    code::ETIMEDOUT => {
+                        log::error!("Unexpected ETIMEDOUT");
+                        debug_assert!(
+                            false,
+                            "atomic_wait returned ETIMEDOUT without timeout support"
+                        );
+                    }
+                    _ => {
+                        // Treat as spurious wake; keep waiting.
+                        log::error!("Unexpected atomic_wait error: {:?}", e);
+                        debug_assert!(false, "atomic_wait returned unexpected error: {:?}", e);
                     }
                 }
-            } else {
-                yield_me();
             }
         }
     }
