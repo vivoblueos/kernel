@@ -788,25 +788,25 @@ impl OperationIPCReply {
                 continue;
             }
 
-            if let Err(e) =
-                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
-            {
-                match e {
-                    code::EAGAIN => {
-                        log::debug!("EAGAIN: operation task finish before wait, try again");
-                    }
-                    code::ETIMEDOUT => {
-                        log::error!("Unexpected ETIMEDOUT");
-                        debug_assert!(
-                            false,
-                            "atomic_wait returned ETIMEDOUT without timeout support"
-                        );
-                    }
-                    _ => {
-                        // Treat as spurious wake; keep waiting.
-                        log::error!("Unexpected atomic_wait error: {:?}", e);
-                        debug_assert!(false, "atomic_wait returned unexpected error: {:?}", e);
-                    }
+            let Err(e) = futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX) else {
+                continue;
+            };
+
+            match e {
+                code::EAGAIN => {
+                    log::debug!("EAGAIN: operation task finish before wait, try again");
+                }
+                code::ETIMEDOUT => {
+                    log::error!("Unexpected ETIMEDOUT");
+                    debug_assert!(
+                        false,
+                        "atomic_wait returned ETIMEDOUT without timeout support"
+                    );
+                }
+                _ => {
+                    // Treat as spurious wake; keep waiting.
+                    log::error!("Unexpected atomic_wait error: {:?}", e);
+                    debug_assert!(false, "atomic_wait returned unexpected error: {:?}", e);
                 }
             }
         }
