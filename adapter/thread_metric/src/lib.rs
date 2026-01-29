@@ -17,6 +17,7 @@
 use blueos::{
     scheduler,
     scheduler::InsertToEnd,
+    sync::semaphore::Semaphore,
     thread,
     thread::{Entry, Thread, ThreadNode, IDLE, READY, RUNNING, SUSPENDED},
     time,
@@ -33,6 +34,9 @@ const TM_ERROR: c_int = 1;
 const MAX_THREADS: usize = 8;
 static mut TM_THREADS: [MaybeUninit<ThreadNode>; MAX_THREADS] =
     [const { MaybeUninit::zeroed() }; MAX_THREADS];
+const MAX_SEMAS: usize = 8;
+static mut TM_SEMAS: [MaybeUninit<Arc<Semaphore>>; MAX_SEMAS] =
+    [const { MaybeUninit::zeroed() }; MAX_SEMAS];
 
 #[no_mangle]
 pub extern "C" fn tm_initialize(test_initialization_function: extern "C" fn()) {
@@ -107,4 +111,27 @@ pub extern "C" fn tm_thread_relinquish() {
 #[no_mangle]
 pub extern "C" fn tm_thread_sleep(secs: c_int) {
     scheduler::suspend_me_for::<()>(Tick(TICKS_PER_SECOND * secs as usize), None);
+}
+
+#[no_mangle]
+pub extern "C" fn tm_semaphore_create(sema_id: c_int) -> c_int {
+    let sema = Arc::new(Semaphore::new());
+    sema.init(1);
+    unsafe {
+        TM_SEMAS[sema_id as usize].write(sema);
+    }
+    TM_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn tm_semaphore_get(sema_id: c_int) -> c_int {
+    let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
+    sema.acquire_notimeout::<InsertToEnd>() as c_int
+}
+
+#[no_mangle]
+pub extern "C" fn tm_semaphore_put(sema_id: c_int) -> c_int {
+    let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
+    sema.release();
+    TM_SUCCESS
 }

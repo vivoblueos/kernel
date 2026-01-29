@@ -45,10 +45,17 @@ tm_case("tm_cooperative_scheduling_test") {
       [ "//external/thread_metric/v6.4.2/src/tm_cooperative_scheduling_test.c" ]
 }
 
+tm_case("tm_synchronization_processing_test") {
+  sources = [
+    "//external/thread_metric/v6.4.2/src/tm_synchronization_processing_test.c",
+  ]
+}
+
 group("run_tests") {
   testonly = true
   deps = [
     ":run_tm_basic_process_test",
     ":run_tm_preemptive_scheduling_test",
+    ":run_tm_synchronization_processing_test",
   ]
 }
