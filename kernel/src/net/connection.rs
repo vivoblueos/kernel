@@ -775,40 +775,33 @@ impl OperationIPCReply {
             (self.reply_futex.as_ptr() as *const _ as usize)
         );
 
-        // wait for consume
-        if self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
-            // TODO add timeout
-            if let Err(e) =
-                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
-            {
-                match e {
-                    code::EAGAIN => {
-                        // task finish before wait , don't need to wait anymore, continue
-                        log::error!("Unknown error from EAGAIN");
-                    }
-                    code::ETIMEDOUT => {
-                        // TODO futex wait timeout
-                        log::error!("Unknown error from ETIMEDOUT");
-                    }
-                    _ => {
-                        log::error!("Unknown error from futex::atomic_wait");
-                        // unknown state, user may try again , restore state
-                        self.reply_futex.store(STATE_IDLE, Ordering::Release);
-                        return Err(ConnectionError::PosixError(code::EINTR));
+        loop {
+            if let Some(result) = self.reply_result.lock().take() {
+                return result.map_err(Into::into);
+            }
+
+            if self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
+                if let Err(e) =
+                    futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
+                {
+                    match e {
+                        code::EAGAIN => {
+                            log::debug!("EAGAIN: operation task finish before wait, try again");
+                        }
+                        code::ETIMEDOUT => {
+                            log::error!("Unexpected ETIMEDOUT");
+                            debug_assert!(false, "atomic_wait returned ETIMEDOUT without timeout support");
+                        }
+                        _ => {
+                            // Treat as spurious wake; keep waiting.
+                            log::error!("Unexpected atomic_wait error: {:?}", e);
+                            debug_assert!(false, "atomic_wait returned unexpected error: {:?}", e);
+                        }
                     }
                 }
+            } else {
+                yield_me();
             }
-        }
-
-        log::debug!(
-            "[Thread ID 0x{:x}] futex::atomic_wait for addr=0x{:x} finish!",
-            Thread::id(&t),
-            (self.reply_futex.as_ptr() as *const _ as usize)
-        );
-
-        match self.reply_result.lock().take() {
-            Some(result) => result.map_err(Into::into),
-            None => Err(ConnectionError::Timeout(timeout)),
         }
     }
 
