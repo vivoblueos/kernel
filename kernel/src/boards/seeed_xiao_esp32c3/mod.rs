@@ -13,9 +13,7 @@
 // limitations under the License.
 
 // This code is based on
-// https://github.com/eclipse-threadx/threadx/blob/master/ports/risc-v64/gnu/example_build/qemu_virt/hwtimer.c
-// https://github.com/eclipse-threadx/threadx/blob/master/ports/risc-v64/gnu/example_build/qemu_virt/trap.c
-// https://github.com/eclipse-threadx/threadx/blob/master/ports/risc-v64/gnu/example_build/qemu_virt/uart.c
+// https://github.com/esp-rs/esp-hal/blob/main/esp-bootloader-esp-idf/src/lib.rs
 // Copyright (c) 2024 - present Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
@@ -82,7 +80,7 @@ pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
 }
 
 pub(crate) fn set_timeout_after(ns: usize) {
-    set_timecmp(current_ticks() + ns / NS_PER_TICK);
+    set_timecmp(0 + ns / NS_PER_TICK);
 }
 
 pub(crate) fn ticks_to_duration(ticks: usize) -> core::time::Duration {
@@ -103,6 +101,7 @@ pub(crate) fn init() {
     STAGING.run(3, true, || {
         time::systick_init(1_000_000_000);
     });
+
     STAGING.run(4, false, time::reset_systick);
     // From now on, all work will be done by core 0.
     if arch::current_cpu_id() != 0 {
