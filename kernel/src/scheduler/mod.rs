@@ -190,7 +190,7 @@ pub(crate) extern "C" fn save_context_finish_hook(
 
 fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let now = Tick::now();
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     {
         next.set_this_round_start_at(now);
         let time_slices = next.refresh_time_slices();
@@ -228,7 +228,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         next_saved_sp,
         next_priority,
     );
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     {
         let start = old.this_round_start_at();
         let elapsed = now.since(start);
@@ -460,9 +460,9 @@ pub fn current_thread_id() -> usize {
 }
 
 pub(crate) fn need_reschedule_at(moment: Tick) -> bool {
-    #[cfg(not(robin_scheduler))]
+    #[cfg(not(round_robin))]
     return false;
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     {
         let this_thread = current_thread_ref();
         if Thread::id(this_thread) == Thread::id(idle::current_idle_thread_ref()) {
