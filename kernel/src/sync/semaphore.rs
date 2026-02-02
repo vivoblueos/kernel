@@ -49,7 +49,7 @@ impl Semaphore {
         self.counter.get()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn try_acquire<M>(&self) -> bool
     where
         M: InsertModeTrait,
@@ -69,7 +69,6 @@ impl Semaphore {
         true
     }
 
-    #[inline(never)]
     pub fn acquire_notimeout<M>(&self) -> bool
     where
         M: InsertModeTrait,
@@ -171,7 +170,6 @@ impl Semaphore {
         self.acquire_timeout::<M>(timeout)
     }
 
-    #[inline(never)]
     pub fn release(&self) {
         let mut w = self.pending.irqsave_lock();
         let old = self.counter.get();
@@ -208,7 +206,6 @@ impl Semaphore {
         scheduler::yield_me_now_or_later();
     }
 
-    #[inline(never)]
     pub fn reset(&self) -> usize {
         let mut w = self.pending.irqsave_lock();
         self.counter.set(0);
