@@ -98,7 +98,6 @@ pub extern "C" fn reset_msp_and_start_schedule(msp: *mut u8, cont: extern "C" fn
             msr control, {tmp}
             ldr lr, =0
             msr basepri, {basepri}
-            isb
             cpsie i
             bx {cont}
             ",
@@ -328,6 +327,7 @@ pub unsafe extern "C" fn handle_svc() {
             "
             ldr r12, ={basepri}
             msr basepri, r12
+            isb
             ",
             store_callee_saved_regs!(),
             "
@@ -341,7 +341,6 @@ pub unsafe extern "C" fn handle_svc() {
             "
             ldr r12, =0
             msr basepri, r12
-            isb
             bx lr
             ",
         ),
@@ -445,6 +444,7 @@ pub unsafe extern "C" fn handle_pendsv() {
             "
             ldr r12, ={basepri}
             msr basepri, r12
+            isb
             ",
             store_callee_saved_regs!(),
             "
@@ -458,7 +458,6 @@ pub unsafe extern "C" fn handle_pendsv() {
             "
             ldr r12, =0
             msr basepri, r12
-            isb
             bx lr
             "
         ),
@@ -525,6 +524,7 @@ pub extern "C" fn disable_local_irq() {
     unsafe {
         core::arch::asm!(
             "msr basepri, {}",
+            "isb",
             in(reg) DISABLE_LOCAL_IRQ_BASEPRI,
             options(nostack),
         )
@@ -541,6 +541,7 @@ pub extern "C" fn disable_local_irq_save() -> usize {
                 "
                 mrs {old}, basepri
                 msr basepri, {val}
+                isb
                 ",
             ),
             old = out(reg) old,
