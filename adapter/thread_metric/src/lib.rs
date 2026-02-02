@@ -126,7 +126,10 @@ pub extern "C" fn tm_semaphore_create(sema_id: c_int) -> c_int {
 #[no_mangle]
 pub extern "C" fn tm_semaphore_get(sema_id: c_int) -> c_int {
     let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
-    sema.acquire_notimeout::<InsertToEnd>() as c_int
+    if sema.acquire_notimeout::<InsertToEnd>() {
+        return TM_SUCCESS;
+    }
+    TM_ERROR
 }
 
 #[no_mangle]
