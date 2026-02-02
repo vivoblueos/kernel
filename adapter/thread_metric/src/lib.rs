@@ -18,6 +18,7 @@ extern crate alloc;
 
 use alloc::alloc::{alloc as system_alloc, dealloc as system_dealloc};
 use blueos::{
+    arch::arm::{Context, NR_DEBUG_SYSCALL},
     scheduler,
     scheduler::InsertToEnd,
     sync::semaphore::Semaphore,
@@ -163,4 +164,30 @@ pub extern "C" fn tm_memory_pool_deallocate(_pool_id: c_int, result: *mut u8) ->
     let layout = unsafe { Layout::from_size_align(128, 16).unwrap_unchecked() };
     unsafe { system_dealloc(result, layout) };
     TM_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn tm_cause_interrupt() {
+    unsafe {
+        core::arch::asm!(
+            "movs {tmp}, r7",
+            "ldr r7, ={nr}",
+            "svc 0",
+            "mov r7, {tmp}",
+            tmp = out(reg) _,
+            nr = const NR_DEBUG_SYSCALL,
+            options(nostack)
+        )
+    }
+}
+
+extern "C" {
+    fn tm_interrupt_handler();
+}
+
+#[no_mangle]
+pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
+    let sp = ctx as *const _ as usize;
+    unsafe { tm_interrupt_handler() }
+    sp
 }

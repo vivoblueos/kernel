@@ -40,6 +40,7 @@ pub const CONTROL: usize = 0b110;
 pub const THUMB_MODE: usize = 0x01000000;
 pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
+pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 1;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
 
 #[macro_export]
@@ -388,6 +389,12 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     scheduler::save_context_finish_hook(&mut *hook, ctx as *const _ as usize)
 }
 
+#[linkage = "weak"]
+#[no_mangle]
+pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
+    ctx as *const _ as usize
+}
+
 extern "C" fn handle_syscall(ctx: &Context) -> usize {
     if ctx.r7 == NR_SWITCH {
         return handle_svc_switch(ctx);
@@ -396,6 +403,9 @@ extern "C" fn handle_syscall(ctx: &Context) -> usize {
         // We are using syscall(NR_RET_FROM_SYSCALL, ctx_before_syscall) to
         // return from syscall. ctx_before_syscall is contained in r0.
         return ctx.r0;
+    }
+    if ctx.r7 == NR_DEBUG_SYSCALL {
+        return bk_debug_syscall(ctx);
     }
     // Due to cortex-m's limitation, we split syscall handling into 2 phases:
     // P0:
