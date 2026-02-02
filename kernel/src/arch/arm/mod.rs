@@ -315,6 +315,7 @@ macro_rules! load_callee_saved_regs {
     };
 }
 
+#[inline(always)]
 pub(crate) extern "C" fn post_pendsv() {
     SCB::set_pendsv();
     unsafe { core::arch::asm!("isb", options(nostack),) }
