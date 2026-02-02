@@ -71,13 +71,12 @@ impl ReadyTable {
 #[inline]
 fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Option<ThreadNode> {
     let q = &mut tbl.tables[index];
-    let next = q.pop_front();
-    debug_assert!(next.is_some());
-    debug_assert_eq!(next.as_ref().unwrap().state(), thread::READY);
+    let next = q.pop_front()?;
+    debug_assert_eq!(next.state(), thread::READY);
     if q.is_empty() {
         tbl.clear_active_queue(index as u32);
     }
-    next
+    Some(next)
 }
 
 pub fn next_preferred_thread(prio: ThreadPriority) -> Option<ThreadNode> {
@@ -156,6 +155,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
     let ok = queue_ready_thread_inner(&mut tbl, t);
     debug_assert!(ok);
     drop(tbl);
+    #[cfg(smp)]
     super::notify_idle_cores(1);
     Ok(())
 }
