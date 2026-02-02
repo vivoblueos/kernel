@@ -317,7 +317,7 @@ macro_rules! load_callee_saved_regs {
 
 pub(crate) extern "C" fn post_pendsv() {
     SCB::set_pendsv();
-    unsafe { core::arch::asm!("dsb", "isb", options(nostack),) }
+    unsafe { core::arch::asm!("isb", options(nostack),) }
 }
 
 #[naked]
@@ -389,13 +389,16 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     scheduler::save_context_finish_hook(&mut *hook, ctx as *const _ as usize)
 }
 
-#[linkage = "weak"]
 #[no_mangle]
+#[linkage = "weak"]
 pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
     ctx as *const _ as usize
 }
 
 extern "C" fn handle_syscall(ctx: &Context) -> usize {
+    if ctx.r7 == NR_DEBUG_SYSCALL {
+        return bk_debug_syscall(ctx);
+    }
     if ctx.r7 == NR_SWITCH {
         return handle_svc_switch(ctx);
     }
@@ -403,9 +406,6 @@ extern "C" fn handle_syscall(ctx: &Context) -> usize {
         // We are using syscall(NR_RET_FROM_SYSCALL, ctx_before_syscall) to
         // return from syscall. ctx_before_syscall is contained in r0.
         return ctx.r0;
-    }
-    if ctx.r7 == NR_DEBUG_SYSCALL {
-        return bk_debug_syscall(ctx);
     }
     // Due to cortex-m's limitation, we split syscall handling into 2 phases:
     // P0:

@@ -13,12 +13,15 @@
 // limitations under the License.
 
 #![no_std]
+#![feature(linkage)]
+
+extern crate blueos;
 
 extern crate alloc;
 
 use alloc::alloc::{alloc as system_alloc, dealloc as system_dealloc};
 use blueos::{
-    arch::arm::{Context, NR_DEBUG_SYSCALL},
+    arch::arm::{self, Context, NR_DEBUG_SYSCALL},
     scheduler,
     scheduler::InsertToEnd,
     sync::semaphore::Semaphore,
@@ -85,7 +88,7 @@ pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     if scheduler::queue_ready_thread(SUSPENDED, t.clone()).is_ok()
         || scheduler::queue_ready_thread(IDLE, t).is_ok()
     {
-        scheduler::relinquish_me();
+        scheduler::yield_me_now_or_later();
         return TM_SUCCESS;
     }
     TM_ERROR
@@ -171,7 +174,7 @@ pub extern "C" fn tm_cause_interrupt() {
     unsafe {
         core::arch::asm!(
             "movs {tmp}, r7",
-            "ldr r7, ={nr}",
+            "mov r7, #{nr}",
             "svc 0",
             "mov r7, {tmp}",
             tmp = out(reg) _,
@@ -181,13 +184,12 @@ pub extern "C" fn tm_cause_interrupt() {
     }
 }
 
-extern "C" {
-    fn tm_interrupt_handler();
-}
+#[no_mangle]
+#[linkage = "weak"]
+pub extern "C" fn tm_interrupt_handler() {}
 
 #[no_mangle]
 pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
-    let sp = ctx as *const _ as usize;
     unsafe { tm_interrupt_handler() }
-    sp
+    ctx as *const _ as usize
 }
