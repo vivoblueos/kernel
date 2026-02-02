@@ -14,19 +14,21 @@
 
 import("//build/templates/build_template.gni")
 
+_kconfig_files = [
+  "config/Kconfig",
+  "config/${board}/${build_type}/defconfig",
+  "//kernel/arch/Kconfig",
+  "//kernel/kernel/src/boards/${board}/Kconfig",
+  "//kernel/kernel/src/Kconfig",
+  "//kernel/kernel/src/allocator/Kconfig",
+  "//kernel/kernel/src/scheduler/Kconfig",
+  "//kernel/kernel/src/vfs/Kconfig",
+  "//kernel/kernel/src/net/Kconfig",
+]
+
 action("generate_c_header") {
   script = "//kernel/kconfig/src/generate_c_header.py"
-  inputs = [
-    "config/Kconfig",
-    "config/${board}/${build_type}/defconfig",
-    "//kernel/arch/Kconfig",
-    "//kernel/kernel/src/boards/${board}/Kconfig",
-    "//kernel/kernel/src/Kconfig",
-    "//kernel/kernel/src/allocator/Kconfig",
-    "//kernel/kernel/src/scheduler/Kconfig",
-    "//kernel/kernel/src/vfs/Kconfig",
-    "//kernel/kernel/src/net/Kconfig",
-  ]
+  inputs = _kconfig_files
   output_headers = rebase_path("${root_gen_dir}/autoconf.h")
   outputs = [ "${root_gen_dir}/autoconf.h" ]
   args = [
@@ -83,7 +85,8 @@ _kernel_configs = exec_script("//kernel/kconfig/src/parse_rustflags.py",
                                 "--build_type",
                                 "${build_type}",
                               ],
-                              "list lines")
+                              "list lines",
+                              _kconfig_files)
 
 config("kconfigs") {
   rustflags = []
