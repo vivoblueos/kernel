@@ -555,25 +555,27 @@ mod tests {
     #[test]
     fn test_simple_signal() {
         let a = Arc::new(ConstBarrier::<{ 2 }>::new());
-        let a_cloned = a.clone();
         let b = Arc::new(AtomicUsize::new(0));
-        let b_cloned = b.clone();
-        let t = crate::thread::spawn(move || {
-            a.wait();
-            sync::atomic_wait::atomic_wait(&b, 0, Tick::MAX);
-        })
-        .unwrap();
+        let closure = {
+            let a = a.clone();
+            let b = b.clone();
+            move || {
+                a.wait();
+                sync::atomic_wait::atomic_wait(&b, 0, Tick::MAX);
+            }
+        };
+        let t = crate::thread::spawn(closure).unwrap();
         // Send SIGTERM after t enters its entry function.
-        a_cloned.wait();
+        a.wait();
         // FIXME: Memory leaks since we are using a boxed closure as t's entry.
         t.lock().kill(libc::SIGTERM as i32);
         // At this point, t is either
-        // 0: waking up from a or
-        // 1: is suspended on b.
+        // 0: waking up from "a" or
+        // 1: is suspended on "b".
         // We solve both cases by invoking yield_me and atomic_wake, which
         // should not hang.
-        b_cloned.store(1, Ordering::Release);
-        sync::atomic_wait::atomic_wake(&b_cloned, 1);
+        b.store(1, Ordering::Release);
+        sync::atomic_wait::atomic_wake(&b, 1);
         scheduler::yield_me();
     }
 
