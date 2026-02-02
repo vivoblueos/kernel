@@ -270,16 +270,12 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
 }
 
 pub fn retire_me() -> ! {
-    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
-    debug_assert_eq!(next.state(), thread::READY);
     #[cfg(procfs)]
     {
         let _ = crate::vfs::trace_thread_close(current_thread());
     }
-    // FIXME: Some WaitQueue might still share the ownership of
-    // the `old`, shall we record which WaitQueue the `old`
-    // belongs to? Weak reference might not help to reduce memory
-    // usage.
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
+    debug_assert_eq!(next.state(), thread::READY);
     let mut hooks = ContextSwitchHookHolder::new(next);
     let ok = current_thread_ref().transfer_state(thread::RUNNING, thread::RETIRED);
     debug_assert_eq!(ok, Ok(()));
