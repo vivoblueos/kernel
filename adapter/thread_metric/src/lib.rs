@@ -190,6 +190,6 @@ pub extern "C" fn tm_interrupt_handler() {}
 
 #[no_mangle]
 pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
-    unsafe { tm_interrupt_handler() }
+    tm_interrupt_handler();
     ctx as *const _ as usize
 }
