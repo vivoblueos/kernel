@@ -40,7 +40,7 @@ pub const CONTROL: usize = 0b110;
 pub const THUMB_MODE: usize = 0x01000000;
 pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
-pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 1;
+pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 2;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
 
 #[macro_export]
