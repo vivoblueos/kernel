@@ -14,7 +14,8 @@
 
 extern crate alloc;
 use crate::{
-    arch, signal,
+    arch::{self, Context},
+    signal,
     support::DisableInterruptGuard,
     sync::SpinLockGuard,
     thread,
@@ -248,7 +249,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
 
 // It's usually used in cortex-m's pendsv handler.
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
-    debug_assert_eq!(old_sp % 8, 0);
+    debug_assert_eq!(old_sp % core::mem::align_of::<Context>(), 0);
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
     let old = current_thread_ref();
