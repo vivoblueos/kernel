@@ -40,6 +40,7 @@ pub const CONTROL: usize = 0b110;
 pub const THUMB_MODE: usize = 0x01000000;
 pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
+pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 2;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
 
 #[macro_export]
@@ -97,7 +98,6 @@ pub extern "C" fn reset_msp_and_start_schedule(msp: *mut u8, cont: extern "C" fn
             msr control, {tmp}
             ldr lr, =0
             msr basepri, {basepri}
-            isb
             cpsie i
             bx {cont}
             ",
@@ -314,9 +314,10 @@ macro_rules! load_callee_saved_regs {
     };
 }
 
+#[inline(always)]
 pub(crate) extern "C" fn post_pendsv() {
     SCB::set_pendsv();
-    unsafe { core::arch::asm!("dsb", "isb", options(nostack),) }
+    unsafe { core::arch::asm!("isb", options(nostack),) }
 }
 
 #[naked]
@@ -326,6 +327,7 @@ pub unsafe extern "C" fn handle_svc() {
             "
             ldr r12, ={basepri}
             msr basepri, r12
+            isb
             ",
             store_callee_saved_regs!(),
             "
@@ -339,7 +341,6 @@ pub unsafe extern "C" fn handle_svc() {
             "
             ldr r12, =0
             msr basepri, r12
-            isb
             bx lr
             ",
         ),
@@ -388,7 +389,16 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     scheduler::save_context_finish_hook(&mut *hook, ctx as *const _ as usize)
 }
 
+#[no_mangle]
+#[linkage = "weak"]
+pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
+    ctx as *const _ as usize
+}
+
 extern "C" fn handle_syscall(ctx: &Context) -> usize {
+    if ctx.r7 == NR_DEBUG_SYSCALL {
+        return bk_debug_syscall(ctx);
+    }
     if ctx.r7 == NR_SWITCH {
         return handle_svc_switch(ctx);
     }
@@ -434,6 +444,7 @@ pub unsafe extern "C" fn handle_pendsv() {
             "
             ldr r12, ={basepri}
             msr basepri, r12
+            isb
             ",
             store_callee_saved_regs!(),
             "
@@ -447,7 +458,6 @@ pub unsafe extern "C" fn handle_pendsv() {
             "
             ldr r12, =0
             msr basepri, r12
-            isb
             bx lr
             "
         ),
@@ -514,6 +524,7 @@ pub extern "C" fn disable_local_irq() {
     unsafe {
         core::arch::asm!(
             "msr basepri, {}",
+            "isb",
             in(reg) DISABLE_LOCAL_IRQ_BASEPRI,
             options(nostack),
         )
@@ -530,6 +541,7 @@ pub extern "C" fn disable_local_irq_save() -> usize {
                 "
                 mrs {old}, basepri
                 msr basepri, {val}
+                isb
                 ",
             ),
             old = out(reg) old,

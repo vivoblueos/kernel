@@ -14,7 +14,8 @@
 
 extern crate alloc;
 use crate::{
-    arch, signal,
+    arch::{self, Context},
+    signal,
     support::DisableInterruptGuard,
     sync::SpinLockGuard,
     thread,
@@ -248,16 +249,17 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
 
 // It's usually used in cortex-m's pendsv handler.
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
+    debug_assert_eq!(old_sp % core::mem::align_of::<Context>(), 0);
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
-    debug_assert_eq!(current_thread_ref().preempt_count(), 0);
-    let Some(next) = next_preferred_thread(current_thread_ref().priority()) else {
+    let old = current_thread_ref();
+    debug_assert_eq!(old.preempt_count(), 0);
+    let Some(next) = next_preferred_thread(old.priority()) else {
         #[cfg(debugging_scheduler)]
-        crate::trace!("[TH:0x{:x}] keeps running", current_thread_id());
+        crate::trace!("[TH:0x{:x}] keeps running", Thread::id(old));
         return old_sp;
     };
     debug_assert_eq!(next.state(), thread::READY);
-    let old = current_thread_ref();
     if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert_eq!(ok, Ok(()));
@@ -265,7 +267,6 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
         let ok = queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
         debug_assert_eq!(ok, Ok(()));
     };
-
     switch_current_thread(next, old_sp)
 }
 
@@ -284,14 +285,14 @@ pub fn retire_me() -> ! {
 }
 
 fn inner_yield(next: ThreadNode) {
-    let old = current_thread();
+    let old = current_thread_ref();
     let mut hook_holder = ContextSwitchHookHolder::new(next);
     old.disable_preempt();
-    if Thread::id(&old) == Thread::id(idle::current_idle_thread_ref()) {
+    if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert_eq!(ok, Ok(()));
     } else {
-        let ok = queue_ready_thread(thread::RUNNING, old.clone());
+        let ok = queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
         debug_assert_eq!(ok, Ok(()));
     };
     arch::switch_context_with_hook(&mut hook_holder as *mut _);

@@ -56,10 +56,21 @@ tm_case("tm_memory_allocation_test") {
       [ "//external/thread_metric/v6.4.2/src/tm_memory_allocation_test.c" ]
 }
 
+tm_case("tm_interrupt_preemption_processing_test") {
+  sources = [ "//external/thread_metric/v6.4.2/src/tm_interrupt_preemption_processing_test.c" ]
+}
+
+tm_case("tm_interrupt_processing_test") {
+  sources =
+      [ "//external/thread_metric/v6.4.2/src/tm_interrupt_processing_test.c" ]
+}
+
 group("run_tests") {
   testonly = true
   deps = [
     ":run_tm_basic_process_test",
+    ":run_tm_interrupt_preemption_processing_test",
+    ":run_tm_interrupt_processing_test",
     ":run_tm_memory_allocation_test",
     ":run_tm_preemptive_scheduling_test",
     ":run_tm_synchronization_processing_test",
