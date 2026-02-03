@@ -51,9 +51,6 @@
 #![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
 
-//#[cfg(test)]
-//blueos_test_macro::test_only!();
-
 extern crate alloc;
 pub mod allocator;
 pub mod arch;
@@ -448,10 +445,7 @@ mod tests {
         TEST_SEND_CNT.fetch_add(1, Ordering::Relaxed);
     }
 
-    // FIXME: We have performance issue on SMP. See
-    // https://github.com/vivoblueos/kernel/issues/111 for details.
-    #[cfg_attr(not(target_board = "qemu_riscv64"), test)]
-    #[cfg_attr(target_board = "qemu_riscv64", blueos_test_macro::ignore)]
+    #[test]
     fn stress_mqueue() {
         MQUEUE.init();
         reset_and_queue_test_threads(test_mqueue, Some(test_mqueue_cleanup));
