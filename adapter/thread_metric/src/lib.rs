@@ -142,10 +142,12 @@ pub extern "C" fn tm_semaphore_put(sema_id: c_int) -> c_int {
     TM_SUCCESS
 }
 
+#[no_mangle]
 pub extern "C" fn tm_memory_pool_create(_pool_id: c_int) -> c_int {
     TM_SUCCESS
 }
 
+#[no_mangle]
 pub extern "C" fn tm_memory_pool_allocate(_pool_id: c_int, result: *mut *mut u8) -> c_int {
     let layout = unsafe { Layout::from_size_align(128, 16).unwrap_unchecked() };
     let ptr = unsafe { system_alloc(layout) };
