@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{arch, scheduler, thread, thread::ThreadNode};
+use crate::{arch, scheduler, thread, thread::Thread};
 
 fn handle_signal_fallback(signum: i32) {
     if signum != libc::SIGTERM {
@@ -21,7 +21,7 @@ fn handle_signal_fallback(signum: i32) {
     scheduler::retire_me();
 }
 
-fn handle_signal(t: &ThreadNode, signum: i32) {
+fn handle_signal(t: &Thread, signum: i32) {
     let mut l = t.lock();
     let Some(handler) = l.take_signal_handler(signum) else {
         drop(l);
@@ -29,6 +29,18 @@ fn handle_signal(t: &ThreadNode, signum: i32) {
     };
     drop(l);
     handler();
+}
+
+pub(crate) fn handle_signals() {
+    let this = scheduler::current_thread_ref();
+    let sigset = this.lock().pending_signals();
+    for i in 0..32 {
+        if sigset & (1 << i) == 0 {
+            continue;
+        }
+        handle_signal(this, i);
+        this.lock().clear_signal(i);
+    }
 }
 
 // This routine is supposed to be executed in THREAD mode.

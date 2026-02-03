@@ -204,14 +204,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     let next_saved_sp = spin_until_ready_to_run(&next);
-    // Handling signals relies on previously saved sp, so it must be put between
-    // spin_until_ready_to_run and clear_saved_sp.
-    // FIXME: Signal feature should be optional.
-    {
-        if next.lock().has_pending_signals() {
-            prepare_signal_handling(&next);
-        }
-    }
     next.clear_saved_sp();
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
@@ -278,16 +270,12 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
 }
 
 pub fn retire_me() -> ! {
-    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
-    debug_assert_eq!(next.state(), thread::READY);
     #[cfg(procfs)]
     {
         let _ = crate::vfs::trace_thread_close(current_thread());
     }
-    // FIXME: Some WaitQueue might still share the ownership of
-    // the `old`, shall we record which WaitQueue the `old`
-    // belongs to? Weak reference might not help to reduce memory
-    // usage.
+    let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
+    debug_assert_eq!(next.state(), thread::READY);
     let mut hooks = ContextSwitchHookHolder::new(next);
     let ok = current_thread_ref().transfer_state(thread::RUNNING, thread::RETIRED);
     debug_assert_eq!(ok, Ok(()));
@@ -309,6 +297,14 @@ fn inner_yield(next: ThreadNode) {
     arch::switch_context_with_hook(&mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
     old.enable_preempt();
+    // FIXME: Signal feature should be optional.
+    {
+        // FIXME: Do we need to change stack to handle signals?
+        if !old.lock().has_pending_signals() {
+            return;
+        }
+        signal::handle_signals();
+    }
 }
 
 pub fn yield_me() {
@@ -340,6 +336,10 @@ pub fn suspend_me_for<T>(mut timeout: Tick, wq: Option<SpinLockGuard<'_, T>>) ->
     suspend_me_until(timeout, wq)
 }
 
+// FIXME: To support detaching a thread from a waitqueue or a sleepqueue on
+// exception, we have to implement waking up the thread via signal. Currently,
+// the timer is detached when the thread is re-scheduled, we have to implement
+// detaching from a waitqueue uniformly.
 pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> bool {
     if unlikely(!is_schedule_ready()) {
         return false;
@@ -386,6 +386,14 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
     }
     debug_assert!(arch::local_irq_enabled());
     old.enable_preempt();
+    // FIXME: Signal feature should be optional.
+    {
+        // FIXME: Do we need to change stack to handle signals?
+        if !old.lock().has_pending_signals() {
+            return reached_deadline;
+        }
+        signal::handle_signals();
+    }
     reached_deadline
 }
 
