@@ -123,6 +123,7 @@ pub extern "C" fn tm_semaphore_create(sema_id: c_int) -> c_int {
     unsafe {
         TM_SEMAS[sema_id as usize].write(sema);
     }
+    TM_SUCCESS
 }
 
 #[no_mangle]
