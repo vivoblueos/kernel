@@ -146,9 +146,9 @@ impl MessageQueue {
             return Err(code::EOVERFLOW);
         }
 
-        let this_thread = scheduler::current_thread();
+        let this_thread = scheduler::current_thread_ref();
         let mut queue = self.lock();
-        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+        let mut send_queue = self.pend_queues[SEND_TYPE].lock();
         while self.sendable_count() == 0 {
             if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
@@ -156,13 +156,13 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = Tick::now();
             send_queue.take_irq_guard(&mut queue);
             drop(queue);
+            let mut ticks = Tick::now();
             let mut borrowed_wait_entry;
             let reached_deadline;
             {
-                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                let mut wait_entry = WaitEntry::new(unsafe { Arc::clone_from(this_thread) });
                 borrowed_wait_entry = wait_queue::insert(
                     send_queue.deref_mut(),
                     &mut wait_entry,
@@ -171,7 +171,7 @@ impl MessageQueue {
                 .unwrap();
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(send_queue));
                 queue = self.lock();
-                send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+                send_queue = self.pend_queues[SEND_TYPE].lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
             }
             drop(borrowed_wait_entry);
@@ -210,12 +210,13 @@ impl MessageQueue {
             unsafe { *(dst.as_ptr() as *mut usize) = size };
             sender.push_front_done(queue.node_size);
         }
-
+        let mut recv_queue = self.pend_queues[RECV_TYPE].lock();
+        recv_queue.take_irq_guard(&mut queue);
         queue.increment_recvable_count();
-        let mut recv_queue = queue.pend_queues[RECV_TYPE].irqsave_lock();
+        drop(queue);
+
         if MessageQueue::wakeup_pend_receiver(&mut recv_queue) {
             drop(recv_queue);
-            drop(queue);
             scheduler::yield_me_now_or_later();
         }
 
@@ -230,9 +231,9 @@ impl MessageQueue {
         let head_size = core::mem::size_of::<usize>();
         let mut timeout = timeout;
 
-        let this_thread = scheduler::current_thread();
+        let this_thread = scheduler::current_thread_ref();
         let mut queue = self.lock();
-        let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
+        let mut recv_queue = self.pend_queues[RECV_TYPE].lock();
         while self.recvable_count() == 0 {
             if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
@@ -240,13 +241,13 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = Tick::now();
             recv_queue.take_irq_guard(&mut queue);
             drop(queue);
+            let mut ticks = Tick::now();
             let mut borrowed_wait_entry;
             let reached_deadline;
             {
-                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                let mut wait_entry = WaitEntry::new(unsafe { Arc::clone_from(this_thread) });
                 borrowed_wait_entry = wait_queue::insert(
                     recv_queue.deref_mut(),
                     &mut wait_entry,
@@ -255,7 +256,7 @@ impl MessageQueue {
                 .unwrap();
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(recv_queue));
                 queue = self.lock();
-                recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
+                recv_queue = self.pend_queues[RECV_TYPE].lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
             }
             drop(borrowed_wait_entry);
@@ -279,11 +280,12 @@ impl MessageQueue {
         buffer[0..cpysize].copy_from_slice(&src[head_size..(head_size + cpysize)]);
         receiver.pop_done(queue.node_size);
         queue.increment_sendable_count();
+        let mut send_queue = self.pend_queues[SEND_TYPE].lock();
+        send_queue.take_irq_guard(&mut queue);
+        drop(queue);
 
-        let mut send_queue = queue.pend_queues[SEND_TYPE].irqsave_lock();
         if MessageQueue::wakeup_pend_receiver(&mut send_queue) {
             drop(send_queue);
-            drop(queue);
             scheduler::yield_me_now_or_later();
         }
         Ok(())
@@ -291,9 +293,8 @@ impl MessageQueue {
 
     pub fn reset(&self) {
         let mut queue = self.lock();
-
         // Wakeup the sender thread.
-        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+        let mut send_queue = self.pend_queues[SEND_TYPE].lock();
         for val in send_queue.iter() {
             let t = val.thread.clone();
             scheduler::queue_ready_thread(thread::SUSPENDED, t);
