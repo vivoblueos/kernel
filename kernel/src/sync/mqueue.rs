@@ -279,9 +279,9 @@ impl MessageQueue {
 
         buffer[0..cpysize].copy_from_slice(&src[head_size..(head_size + cpysize)]);
         receiver.pop_done(queue.node_size);
+        queue.increment_sendable_count();
         let mut send_queue = self.pend_queues[SEND_TYPE].lock();
         send_queue.take_irq_guard(&mut queue);
-        queue.increment_sendable_count();
         drop(queue);
 
         if MessageQueue::wakeup_pend_receiver(&mut send_queue) {
