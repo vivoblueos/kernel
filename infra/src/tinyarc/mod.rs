@@ -283,10 +283,17 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     }
 
     #[inline]
+    pub unsafe fn from_mut(node: &mut AtomicListHead<T, A>) -> TinyArc<T> {
+        let ptr = node as *mut _ as *mut u8;
+        let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
+        let inner = ptr.sub(offset) as *mut TinyArcInner<T>;
+        TinyArc::from_inner(NonNull::new_unchecked(inner))
+    }
+
+    #[inline]
     pub unsafe fn clone_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
         let ptr = node as *const _ as *const u8;
-        let mut offset = core::mem::offset_of!(TinyArcInner<T>, data);
-        offset += A::offset();
+        let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
         let inner = &*(ptr.sub(offset) as *const TinyArcInner<T>);
         TinyArc::clone_from_inner(NonNull::from_ref(inner))
     }
@@ -339,18 +346,16 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     }
 
     pub fn pop_front(&mut self) -> Option<TinyArc<T>> {
-        assert!(self.head.next().is_some());
         if self.is_empty() {
             return None;
         }
         let Some(mut next) = self.head.next() else {
             panic!("Head's next node should not be None");
         };
-        let arc = unsafe { Self::clone_from(next.as_ref()) };
-        let ok = AtomicListHead::<T, A>::detach(unsafe { next.as_mut() });
-        assert!(ok);
-        unsafe { TinyArc::<T>::decrement_strong_count(&arc) };
-        Some(arc)
+        let next_mut = unsafe { next.as_mut() };
+        let ok = AtomicListHead::<T, A>::detach(next_mut);
+        debug_assert!(ok);
+        Some(unsafe { Self::from_mut(next_mut) })
     }
 
     pub fn detach(me: &mut TinyArc<T>) -> bool {
