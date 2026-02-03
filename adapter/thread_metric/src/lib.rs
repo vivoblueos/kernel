@@ -139,6 +139,7 @@ pub extern "C" fn tm_semaphore_get(sema_id: c_int) -> c_int {
 pub extern "C" fn tm_semaphore_put(sema_id: c_int) -> c_int {
     let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
     sema.release();
+    TM_SUCCESS
 }
 
 pub extern "C" fn tm_memory_pool_create(_pool_id: c_int) -> c_int {
