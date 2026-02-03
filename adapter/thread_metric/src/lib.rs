@@ -14,6 +14,9 @@
 
 #![no_std]
 
+extern crate alloc;
+
+use alloc::alloc::{alloc as system_alloc, dealloc as system_dealloc};
 use blueos::{
     scheduler,
     scheduler::InsertToEnd,
@@ -24,7 +27,7 @@ use blueos::{
     time::Tick,
     types::{Arc, ThreadPriority},
 };
-use core::mem::MaybeUninit;
+use core::{alloc::Layout, mem::MaybeUninit};
 use libc::c_int;
 
 const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
@@ -136,5 +139,28 @@ pub extern "C" fn tm_semaphore_get(sema_id: c_int) -> c_int {
 pub extern "C" fn tm_semaphore_put(sema_id: c_int) -> c_int {
     let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
     sema.release();
+    TM_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn tm_memory_pool_create(_pool_id: c_int) -> c_int {
+    TM_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn tm_memory_pool_allocate(_pool_id: c_int, result: *mut *mut u8) -> c_int {
+    let layout = unsafe { Layout::from_size_align(128, 16).unwrap_unchecked() };
+    let ptr = unsafe { system_alloc(layout) };
+    if ptr.is_null() {
+        return TM_ERROR;
+    }
+    unsafe { result.write(ptr) };
+    TM_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn tm_memory_pool_deallocate(_pool_id: c_int, result: *mut u8) -> c_int {
+    let layout = unsafe { Layout::from_size_align(128, 16).unwrap_unchecked() };
+    unsafe { system_dealloc(result, layout) };
     TM_SUCCESS
 }
