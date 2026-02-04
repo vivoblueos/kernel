@@ -179,6 +179,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
             break;
         }
     }
+    drop(we);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] woken up {} threads",
