@@ -227,7 +227,7 @@ pub fn remove_soft_timer<'a>(iou: Iou<'_>) -> Option<Iou<'a>> {
     res
 }
 
-pub fn add_hard_timer<'a>(tm: &'a mut Timer) -> Option<Iou<'a>> {
+pub fn add_hard_timer(tm: &mut Timer) -> Option<Iou<'_>> {
     let res;
     {
         let mut w = HW_TIMERS.irqsave_lock();
