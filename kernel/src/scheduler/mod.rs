@@ -27,6 +27,7 @@ use crate::{
         Tick,
     },
     types::{Arc, IlistHead, Uint},
+    with_iou,
 };
 use alloc::boxed::Box;
 use core::{
@@ -370,8 +371,7 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
         let mut tm = Timer::new();
         tm.mode = TimerMode::Deadline(deadline);
         tm.callback = TimerCallback::Resched(Some(unsafe { Arc::clone_from(old) }), false);
-        let mut iou;
-        {
+        with_iou!(|iou| {
             iou = timer::add_hard_timer(&mut tm).unwrap();
             arch::switch_context_with_hook(&mut hook_holder as *mut _);
             iou = timer::remove_hard_timer(iou).unwrap();
@@ -379,8 +379,7 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
                 TimerCallback::Resched(_, timeout) => timeout,
                 _ => false,
             };
-        }
-        drop(iou);
+        });
     } else {
         arch::switch_context_with_hook(&mut hook_holder as *mut _);
     }

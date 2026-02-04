@@ -293,7 +293,7 @@ fn update_clock_interrupt() -> Tick {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{sync::SpinLock, types::Arc};
+    use crate::{sync::SpinLock, types::Arc, with_iou};
     use alloc::vec::Vec;
     use blueos_test_macro::test;
     use core::sync::atomic::{AtomicUsize, Ordering};
@@ -315,9 +315,11 @@ mod tests {
         let mut timer = Timer::new();
         timer.mode = TimerMode::Deadline(deadline);
         timer.callback = create_test_callback(&counter);
-        let mut iou = add_hard_timer(&mut timer).unwrap();
-        scheduler::suspend_me_until::<()>(deadline, None);
-        remove_hard_timer(iou);
+        with_iou!(|iou| {
+            iou = add_hard_timer(&mut timer).unwrap();
+            scheduler::suspend_me_until::<()>(deadline, None);
+            iou = remove_hard_timer(iou).unwrap();
+        });
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 
@@ -330,11 +332,13 @@ mod tests {
         let deadline = Tick::after(Tick(10));
         swtm.mode = TimerMode::Deadline(deadline);
         swtm.callback = callback;
-        let mut iou = add_soft_timer(&mut swtm).unwrap();
-        // The SW timer worker is working at priority 0, so should be as realtime
-        // as the HW timer.
-        scheduler::suspend_me_until::<()>(deadline.add(Tick(1)), None);
-        remove_soft_timer(iou);
+        with_iou!(|iou| {
+            iou = add_soft_timer(&mut swtm).unwrap();
+            // The SW timer worker is working at priority 0, so should be as realtime
+            // as the HW timer.
+            scheduler::suspend_me_until::<()>(deadline.add(Tick(1)), None);
+            iou = remove_soft_timer(iou).unwrap();
+        });
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 
@@ -352,9 +356,11 @@ mod tests {
         let mut tm = Timer::new();
         tm.mode = TimerMode::Repeat(r);
         tm.callback = callback;
-        let mut iou = add_hard_timer(&mut tm).unwrap();
-        scheduler::suspend_me_until::<()>(deadline.add(Tick(20)), None);
-        remove_hard_timer(iou);
+        with_iou!(|iou| {
+            iou = add_hard_timer(&mut tm).unwrap();
+            scheduler::suspend_me_until::<()>(deadline.add(Tick(20)), None);
+            iou = remove_hard_timer(iou).unwrap();
+        });
         assert_eq!(counter.load(Ordering::Relaxed), 5);
     }
 
@@ -373,9 +379,11 @@ mod tests {
         let mut tm = Timer::new();
         tm.mode = TimerMode::Repeat(r);
         tm.callback = callback;
-        let mut iou = add_soft_timer(&mut tm).unwrap();
-        scheduler::suspend_me_until::<()>(base_deadline.add(Tick(21)), None);
-        remove_soft_timer(iou);
+        with_iou!(|iou| {
+            iou = add_soft_timer(&mut tm).unwrap();
+            scheduler::suspend_me_until::<()>(base_deadline.add(Tick(21)), None);
+            iou = remove_soft_timer(iou).unwrap();
+        });
         assert_eq!(counter.load(Ordering::Relaxed), 3);
     }
 
@@ -400,14 +408,15 @@ mod tests {
         timer3.mode = TimerMode::Deadline(deadline);
         timer3.callback = callback3;
 
-        let iou1 = add_hard_timer(&mut timer1).unwrap();
-        let iou2 = add_hard_timer(&mut timer2).unwrap();
-        let iou3 = add_hard_timer(&mut timer3).unwrap();
-        scheduler::suspend_me_until::<()>(deadline, None);
-        remove_hard_timer(iou1);
-        remove_hard_timer(iou2);
-        remove_hard_timer(iou3);
-
+        with_iou!(|iou1, iou2, iou3| {
+            iou1 = add_hard_timer(&mut timer1).unwrap();
+            iou2 = add_hard_timer(&mut timer2).unwrap();
+            iou3 = add_hard_timer(&mut timer3).unwrap();
+            scheduler::suspend_me_until::<()>(deadline, None);
+            iou1 = remove_hard_timer(iou1).unwrap();
+            iou2 = remove_hard_timer(iou2).unwrap();
+            iou3 = remove_hard_timer(iou3).unwrap();
+        });
         // All timers should have fired.
         assert_eq!(counter1.load(Ordering::Relaxed), 1);
         assert_eq!(counter2.load(Ordering::Relaxed), 1);
@@ -423,9 +432,11 @@ mod tests {
         timer.mode = TimerMode::Deadline(Tick(0));
         timer.callback = callback;
         assert!(arch::local_irq_enabled());
-        let mut iou = add_hard_timer(&mut timer).unwrap();
-        // Clock interrupt should be triggered here.
-        remove_hard_timer(iou);
+        with_iou!(|iou| {
+            iou = add_hard_timer(&mut timer).unwrap();
+            // Clock interrupt should be triggered here.
+            iou = remove_hard_timer(iou).unwrap();
+        });
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 
@@ -472,13 +483,15 @@ mod tests {
             w.callback = cb;
         }
 
-        let iou1 = add_hard_timer(unsafe { Arc::get_mut_unchecked(&mut timer1) }).unwrap();
-        let iou2 = add_hard_timer(unsafe { Arc::get_mut_unchecked(&mut timer2) }).unwrap();
-        let iou3 = add_hard_timer(unsafe { Arc::get_mut_unchecked(&mut timer3) }).unwrap();
-        scheduler::suspend_me_for::<()>(Tick(30), None);
-        remove_hard_timer(iou1);
-        remove_hard_timer(iou2);
-        remove_hard_timer(iou3);
+        with_iou!(|iou1, iou2, iou3| {
+            iou1 = add_hard_timer(unsafe { Arc::get_mut_unchecked(&mut timer1) }).unwrap();
+            iou2 = add_hard_timer(unsafe { Arc::get_mut_unchecked(&mut timer2) }).unwrap();
+            iou3 = add_hard_timer(unsafe { Arc::get_mut_unchecked(&mut timer3) }).unwrap();
+            scheduler::suspend_me_for::<()>(Tick(30), None);
+            iou1 = remove_hard_timer(iou1).unwrap();
+            iou2 = remove_hard_timer(iou2).unwrap();
+            iou3 = remove_hard_timer(iou3).unwrap();
+        });
         let mut r = order.irqsave_lock();
         assert_eq!(r.len(), 3);
         assert!(Arc::is(&r[0], &timer2));
@@ -494,14 +507,16 @@ mod tests {
         let mut deadline = Tick::after(Tick(8));
         timer.mode = TimerMode::Deadline(deadline);
         timer.callback = callback;
-        let iou = add_hard_timer(&mut timer).unwrap();
-        assert!(is_active_hard_timer(&iou));
-        scheduler::suspend_me_until::<()>(deadline, None);
-        assert_eq!(counter.load(Ordering::Relaxed), 1);
-        // For oneshot timer, it should not be reactivated automatically
-        // The timer should remain inactive after running.
-        assert!(!is_active_hard_timer(&iou));
-        remove_hard_timer(iou);
+        with_iou!(|iou| {
+            let iou = add_hard_timer(&mut timer).unwrap();
+            assert!(is_active_hard_timer(&iou));
+            scheduler::suspend_me_until::<()>(deadline, None);
+            assert_eq!(counter.load(Ordering::Relaxed), 1);
+            // For oneshot timer, it should not be reactivated automatically
+            // The timer should remain inactive after running.
+            assert!(!is_active_hard_timer(&iou));
+            iou = remove_hard_timer(iou).unwrap();
+        });
     }
 
     #[test]
@@ -517,15 +532,17 @@ mod tests {
             elapsed_times: 0,
         });
         timer.callback = callback;
-        let iou = add_hard_timer(&mut timer).unwrap();
-        // Run timer multiple times.
-        for i in 0..5 {
-            assert!(is_active_hard_timer(&iou));
-            assert_eq!(counter.load(Ordering::Relaxed), i);
-            scheduler::suspend_me_until::<()>(deadline, None);
-            deadline = deadline.add(Tick(7));
-        }
-        remove_hard_timer(iou);
+        with_iou!(|iou| {
+            iou = add_hard_timer(&mut timer).unwrap();
+            // Run timer multiple times.
+            for i in 0..5 {
+                assert!(is_active_hard_timer(&iou));
+                assert_eq!(counter.load(Ordering::Relaxed), i);
+                scheduler::suspend_me_until::<()>(deadline, None);
+                deadline = deadline.add(Tick(7));
+            }
+            iou = remove_hard_timer(iou).unwrap();
+        });
     }
 
     #[test]
@@ -545,9 +562,7 @@ mod tests {
         // Test differences between soft and hard timers
         let counter1 = Arc::new(AtomicUsize::new(0));
         let counter2 = Arc::new(AtomicUsize::new(0));
-        let mut hwiou;
-        let mut swiou;
-        {
+        with_iou!(|hwiou, swiou| {
             let mut deadline = Tick::after(Tick(8));
             let mut hwtm = Timer::new();
             hwtm.mode = TimerMode::Deadline(deadline);
@@ -572,9 +587,7 @@ mod tests {
             }
             hwiou = remove_hard_timer(hwiou).unwrap();
             swiou = remove_soft_timer(swiou).unwrap();
-        }
-        drop(hwiou);
-        drop(swiou);
+        });
     }
 
     #[test]

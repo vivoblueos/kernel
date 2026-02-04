@@ -413,11 +413,11 @@ pub(crate) fn show_current_heap_usage() {
 
 #[macro_export]
 macro_rules! with_iou {
-    (|$name:ident| $body:block) => {
-        let mut $name;
+    (|$($iou:ident),*| $body:block) => {
+        $(let mut $iou;)*
         {
             $body
         }
-        drop($name);
+        $(drop($iou);)*
     };
 }
