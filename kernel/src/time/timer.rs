@@ -227,14 +227,14 @@ pub fn remove_soft_timer<'a>(iou: Iou<'_>) -> Option<Iou<'a>> {
     res
 }
 
-pub fn add_hard_timer(tm: &mut Timer) -> Option<Iou<'_>> {
-    let mut iou;
+pub fn add_hard_timer<'a>(tm: &'a mut Timer) -> Option<Iou<'a>> {
+    let res;
     {
         let mut w = HW_TIMERS.irqsave_lock();
-        iou = w.add(tm);
+        res = w.add(tm);
     }
     update_clock_interrupt();
-    iou
+    res
 }
 
 pub fn remove_hard_timer<'a>(iou: Iou<'_>) -> Option<Iou<'a>> {
@@ -312,10 +312,10 @@ mod tests {
     fn test_oneshot_hwtm() {
         let counter = Arc::new(AtomicUsize::new(0));
         let deadline = Tick::after(Tick(10));
-        let mut timer = Timer::new();
-        timer.mode = TimerMode::Deadline(deadline);
-        timer.callback = create_test_callback(&counter);
         with_iou!(|iou| {
+            let mut timer = Timer::new();
+            timer.mode = TimerMode::Deadline(deadline);
+            timer.callback = create_test_callback(&counter);
             iou = add_hard_timer(&mut timer).unwrap();
             scheduler::suspend_me_until::<()>(deadline, None);
             iou = remove_hard_timer(iou).unwrap();
@@ -328,11 +328,11 @@ mod tests {
     fn test_oneshot_swtm() {
         let counter = Arc::new(AtomicUsize::new(0));
         let callback = create_test_callback(&counter);
-        let mut swtm = Timer::new();
         let deadline = Tick::after(Tick(10));
-        swtm.mode = TimerMode::Deadline(deadline);
-        swtm.callback = callback;
         with_iou!(|iou| {
+            let mut swtm = Timer::new();
+            swtm.mode = TimerMode::Deadline(deadline);
+            swtm.callback = callback;
             iou = add_soft_timer(&mut swtm).unwrap();
             // The SW timer worker is working at priority 0, so should be as realtime
             // as the HW timer.
@@ -353,10 +353,10 @@ mod tests {
             total_times: Some(5),
             elapsed_times: 0,
         };
-        let mut tm = Timer::new();
-        tm.mode = TimerMode::Repeat(r);
-        tm.callback = callback;
         with_iou!(|iou| {
+            let mut tm = Timer::new();
+            tm.mode = TimerMode::Repeat(r);
+            tm.callback = callback;
             iou = add_hard_timer(&mut tm).unwrap();
             scheduler::suspend_me_until::<()>(deadline.add(Tick(20)), None);
             iou = remove_hard_timer(iou).unwrap();
@@ -376,10 +376,10 @@ mod tests {
             total_times: Some(3),
             elapsed_times: 0,
         };
-        let mut tm = Timer::new();
-        tm.mode = TimerMode::Repeat(r);
-        tm.callback = callback;
         with_iou!(|iou| {
+            let mut tm = Timer::new();
+            tm.mode = TimerMode::Repeat(r);
+            tm.callback = callback;
             iou = add_soft_timer(&mut tm).unwrap();
             scheduler::suspend_me_until::<()>(base_deadline.add(Tick(21)), None);
             iou = remove_soft_timer(iou).unwrap();
@@ -398,17 +398,16 @@ mod tests {
         let callback3 = create_test_callback(&counter3);
         let deadline = Tick::after(Tick(10));
 
-        let mut timer1 = Timer::new();
-        timer1.mode = TimerMode::Deadline(deadline);
-        timer1.callback = callback1;
-        let mut timer2 = Timer::new();
-        timer2.mode = TimerMode::Deadline(deadline);
-        timer2.callback = callback2;
-        let mut timer3 = Timer::new();
-        timer3.mode = TimerMode::Deadline(deadline);
-        timer3.callback = callback3;
-
         with_iou!(|iou1, iou2, iou3| {
+            let mut timer1 = Timer::new();
+            timer1.mode = TimerMode::Deadline(deadline);
+            timer1.callback = callback1;
+            let mut timer2 = Timer::new();
+            timer2.mode = TimerMode::Deadline(deadline);
+            timer2.callback = callback2;
+            let mut timer3 = Timer::new();
+            timer3.mode = TimerMode::Deadline(deadline);
+            timer3.callback = callback3;
             iou1 = add_hard_timer(&mut timer1).unwrap();
             iou2 = add_hard_timer(&mut timer2).unwrap();
             iou3 = add_hard_timer(&mut timer3).unwrap();
@@ -428,11 +427,11 @@ mod tests {
         // Test with zero interval.
         let counter = Arc::new(AtomicUsize::new(0));
         let callback = create_test_callback(&counter);
-        let mut timer = Timer::new();
-        timer.mode = TimerMode::Deadline(Tick(0));
-        timer.callback = callback;
         assert!(arch::local_irq_enabled());
         with_iou!(|iou| {
+            let mut timer = Timer::new();
+            timer.mode = TimerMode::Deadline(Tick(0));
+            timer.callback = callback;
             iou = add_hard_timer(&mut timer).unwrap();
             // Clock interrupt should be triggered here.
             iou = remove_hard_timer(iou).unwrap();
@@ -503,12 +502,12 @@ mod tests {
     fn test_timer_oneshot_behavior() {
         let counter = Arc::new(AtomicUsize::new(0));
         let callback = create_test_callback(&counter);
-        let mut timer = Timer::new();
-        let mut deadline = Tick::after(Tick(8));
-        timer.mode = TimerMode::Deadline(deadline);
-        timer.callback = callback;
+        let deadline = Tick::after(Tick(8));
         with_iou!(|iou| {
-            let iou = add_hard_timer(&mut timer).unwrap();
+            let mut timer = Timer::new();
+            timer.mode = TimerMode::Deadline(deadline);
+            timer.callback = callback;
+            iou = add_hard_timer(&mut timer).unwrap();
             assert!(is_active_hard_timer(&iou));
             scheduler::suspend_me_until::<()>(deadline, None);
             assert_eq!(counter.load(Ordering::Relaxed), 1);
@@ -523,16 +522,16 @@ mod tests {
     fn test_timer_periodic_reactivation() {
         let counter = Arc::new(AtomicUsize::new(0));
         let callback = create_test_callback(&counter);
-        let mut timer = Timer::new();
         let mut deadline = Tick::after(Tick(13));
-        timer.mode = TimerMode::Repeat(Repeat {
-            base_deadline: deadline,
-            period: Tick(7),
-            total_times: None,
-            elapsed_times: 0,
-        });
-        timer.callback = callback;
         with_iou!(|iou| {
+            let mut timer = Timer::new();
+            timer.mode = TimerMode::Repeat(Repeat {
+                base_deadline: deadline,
+                period: Tick(7),
+                total_times: None,
+                elapsed_times: 0,
+            });
+            timer.callback = callback;
             iou = add_hard_timer(&mut timer).unwrap();
             // Run timer multiple times.
             for i in 0..5 {

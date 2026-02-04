@@ -132,17 +132,18 @@ impl Semaphore {
             if ticks.0 == 0 {
                 return false;
             }
+            let timeout;
             with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
-                let timeout = scheduler::suspend_me_for(ticks, Some(w));
+                timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
-                if timeout {
-                    return false;
-                }
             });
+            if timeout {
+                return false;
+            }
             if ticks == Tick::MAX {
                 continue;
             }
