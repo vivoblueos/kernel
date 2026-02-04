@@ -109,7 +109,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), 
         |e| unsafe { Arc::clone_from(e) },
     );
     let t = scheduler::current_thread();
-    let mut we = entry.pending.irqsave_lock();
+    let mut we = entry.pending.lock();
     we.take_irq_guard(w.get_guard_mut());
     drop(w);
     #[cfg(debugging_scheduler)]
@@ -126,7 +126,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), 
             wait_queue::insert(we.deref_mut(), &mut wait_entry, InsertMode::InsertToEnd).unwrap();
         reached_deadline = scheduler::suspend_me_for(timeout, Some(we));
         w = EntryListHead::lock();
-        we = entry.pending.irqsave_lock();
+        we = entry.pending.lock();
         borrowed_wait_entry = we.pop(borrowed_wait_entry).unwrap();
     }
     drop(borrowed_wait_entry);
@@ -152,37 +152,39 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
     );
     let mut woken = 0;
     let mut w = EntryListHead::lock();
+    let mut entry = None;
     for e in ArcListIterator::new(w.get_list_mut(), None) {
-        if e.addr() != addr {
-            continue;
+        if e.addr() == addr {
+            entry = Some(unsafe { Arc::clone_from(e) });
+            break;
         }
-        let mut we = e.pending.irqsave_lock();
-        for next in we.iter() {
-            if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()).is_ok() {
-                woken += 1;
-                #[cfg(debugging_scheduler)]
-                crate::trace!(
-                    "[TH:0x{:x}] Woken up 0x{:x}",
-                    scheduler::current_thread_id(),
-                    Thread::id(&next.thread)
-                );
-            }
-            if woken == how_many {
-                break;
-            }
+    }
+    let Some(entry) = entry else {
+        return Ok(woken);
+    };
+    let mut we = entry.pending.lock();
+    we.take_irq_guard(w.get_guard_mut());
+    drop(w);
+    for next in we.iter() {
+        if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()).is_ok() {
+            woken += 1;
+            #[cfg(debugging_scheduler)]
+            crate::trace!(
+                "[TH:0x{:x}] Woken up 0x{:x}",
+                scheduler::current_thread_id(),
+                Thread::id(&next.thread)
+            );
         }
         if woken == how_many {
             break;
         }
     }
-    drop(w);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] woken up {} threads",
         scheduler::current_thread_id(),
         woken
     );
-
     if woken > 0 {
         scheduler::yield_me_now_or_later();
     }
