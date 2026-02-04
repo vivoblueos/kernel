@@ -368,10 +368,10 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
     drop(wq);
     let mut reached_deadline = false;
     if deadline != Tick::MAX {
-        let mut tm = Timer::new();
-        tm.mode = TimerMode::Deadline(deadline);
-        tm.callback = TimerCallback::Resched(Some(unsafe { Arc::clone_from(old) }), false);
         with_iou!(|iou| {
+            let mut tm = Timer::new();
+            tm.mode = TimerMode::Deadline(deadline);
+            tm.callback = TimerCallback::Resched(Some(unsafe { Arc::clone_from(old) }), false);
             iou = timer::add_hard_timer(&mut tm).unwrap();
             arch::switch_context_with_hook(&mut hook_holder as *mut _);
             iou = timer::remove_hard_timer(iou).unwrap();
