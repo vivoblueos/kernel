@@ -37,6 +37,7 @@ use crate::{
         impl_simple_intrusive_adapter, Arc, ArcCas, ArcList, ArcListIterator, GenericList,
         ThreadPriority, Uint,
     },
+    with_iou,
 };
 use alloc::string::String;
 use core::{
@@ -285,9 +286,8 @@ impl Mutex {
             debug_assert!(Arc::is(check, this_mutex));
         };
         drop(old);
-        let mut borrowed_wait_entry;
         let timeout;
-        {
+        with_iou!(|borrowed_wait_entry| {
             let mut wait_entry = WaitEntry::new(this_thread.clone());
             borrowed_wait_entry = wait_queue::insert(
                 this_lock.deref_mut(),
@@ -298,8 +298,7 @@ impl Mutex {
             timeout = scheduler::suspend_me_for(ticks, Some(this_lock));
             this_lock = this_mutex.pending.irqsave_lock();
             borrowed_wait_entry = this_lock.pop(borrowed_wait_entry).unwrap();
-        }
-        drop(borrowed_wait_entry);
+        });
         (timeout, this_lock)
     }
 

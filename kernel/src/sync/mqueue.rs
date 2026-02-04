@@ -21,6 +21,7 @@ use crate::{
     thread, time,
     time::Tick,
     types::{impl_simple_intrusive_adapter, Arc},
+    with_iou,
 };
 use alloc::alloc::{alloc, dealloc, Layout};
 use blueos_infra::ringbuffer::BoxedRingBuffer;
@@ -159,9 +160,8 @@ impl MessageQueue {
             let mut ticks = Tick::now();
             send_queue.take_irq_guard(&mut queue);
             drop(queue);
-            let mut borrowed_wait_entry;
             let reached_deadline;
-            {
+            with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry = wait_queue::insert(
                     send_queue.deref_mut(),
@@ -173,8 +173,7 @@ impl MessageQueue {
                 queue = self.lock();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
-            }
-            drop(borrowed_wait_entry);
+            });
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
             }
@@ -243,9 +242,8 @@ impl MessageQueue {
             let mut ticks = Tick::now();
             recv_queue.take_irq_guard(&mut queue);
             drop(queue);
-            let mut borrowed_wait_entry;
             let reached_deadline;
-            {
+            with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry = wait_queue::insert(
                     recv_queue.deref_mut(),
@@ -257,8 +255,7 @@ impl MessageQueue {
                 queue = self.lock();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
-            }
-            drop(borrowed_wait_entry);
+            });
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
             }

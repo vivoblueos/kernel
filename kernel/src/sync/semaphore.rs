@@ -20,6 +20,7 @@ use crate::{
     thread::Thread,
     time::Tick,
     types::Uint,
+    with_iou,
 };
 use core::{cell::Cell, ops::DerefMut};
 
@@ -92,8 +93,7 @@ impl Semaphore {
                 self.counter.set(old - 1);
                 return true;
             }
-            let mut borrowed_wait_entry;
-            {
+            with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
@@ -101,8 +101,7 @@ impl Semaphore {
                 debug_assert!(!timeout);
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
-            }
-            drop(borrowed_wait_entry);
+            });
         }
     }
 
@@ -133,8 +132,7 @@ impl Semaphore {
             if ticks.0 == 0 {
                 return false;
             }
-            let mut borrowed_wait_entry;
-            {
+            with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
@@ -144,8 +142,7 @@ impl Semaphore {
                 if timeout {
                     return false;
                 }
-            }
-            drop(borrowed_wait_entry);
+            });
             if ticks == Tick::MAX {
                 continue;
             }

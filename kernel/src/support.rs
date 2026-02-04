@@ -410,3 +410,14 @@ macro_rules! static_assert {
 pub(crate) fn show_current_heap_usage() {
     log::info!("Current heap: {:?}", crate::allocator::memory_info());
 }
+
+#[macro_export]
+macro_rules! with_iou {
+    (|$name:ident| $body:block) => {
+        let mut $name;
+        {
+            $body
+        }
+        drop($name);
+    };
+}
