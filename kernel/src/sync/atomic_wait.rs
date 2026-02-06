@@ -28,6 +28,7 @@ use crate::{
         impl_simple_intrusive_adapter, Arc, ArcList, ArcListIterator, AtomicIlistHead as ListHead,
         StaticListOwner, UniqueListHead,
     },
+    with_iou,
 };
 use core::{
     ops::DerefMut,
@@ -118,9 +119,8 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), 
         scheduler::current_thread_id(),
         addr
     );
-    let mut borrowed_wait_entry;
     let reached_deadline;
-    {
+    with_iou!(|borrowed_wait_entry| {
         let mut wait_entry = WaitEntry::new(t);
         borrowed_wait_entry =
             wait_queue::insert(we.deref_mut(), &mut wait_entry, InsertMode::InsertToEnd).unwrap();
@@ -128,8 +128,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), 
         w = EntryListHead::lock();
         we = entry.pending.irqsave_lock();
         borrowed_wait_entry = we.pop(borrowed_wait_entry).unwrap();
-    }
-    drop(borrowed_wait_entry);
+    });
     if we.is_empty() {
         w.detach(&mut entry.clone());
     }
