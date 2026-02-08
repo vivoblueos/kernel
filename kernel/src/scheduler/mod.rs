@@ -201,7 +201,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     #[cfg(thread_stats)]
     let cycles = time::current_clock_cycles();
     #[cfg(thread_stats)]
-    next.lock().set_start_cycles(cycles);
+    next.set_start_cycles(cycles);
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     let next_saved_sp = spin_until_ready_to_run(&next);
@@ -210,7 +210,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     debug_assert_eq!(ok, Ok(()));
     let mut old = set_current_thread(next);
     #[cfg(thread_stats)]
-    old.lock().increment_cycles(cycles);
+    old.increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -228,7 +228,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         old.elapse_time_slices(elapsed);
     }
     #[cfg(thread_stats)]
-    old.lock().increment_cycles(cycles);
+    old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         let cleanup = old.lock().take_cleanup();
         if let Some(entry) = cleanup {
