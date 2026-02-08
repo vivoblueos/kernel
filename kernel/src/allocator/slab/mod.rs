@@ -30,10 +30,12 @@ pub mod heap;
 
 const MIN_SLAB_SHIFT: usize = 3;
 const MAX_SLAB_SHIFT: usize = 10;
-const SLAB_ALLOCATOR_COUNT: usize = MAX_SLAB_SHIFT - MIN_SLAB_SHIFT + 1;
+const ADDITIONAL_SLAB_COUNT: usize = 2; // Add 96 and 192 to improve memory utilization
+const SLAB_ALLOCATOR_COUNT: usize = MAX_SLAB_SHIFT - MIN_SLAB_SHIFT + 1 + ADDITIONAL_SLAB_COUNT;
 const SYSTEM_ALLOCATOR_INDEX: usize = SLAB_ALLOCATOR_COUNT;
 const PAGE_SHIFT: usize = 12;
 const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
+const SLAB_MAX_UPSEARCH_SIZE: usize = 16; // When SLAB_32 is full, 18B is not allowed in SLAB_64
 
 #[derive(Copy, Clone)]
 pub struct Slab {
@@ -130,7 +132,9 @@ pub struct SlabHeap<
     const SLAB_16: usize,
     const SLAB_32: usize,
     const SLAB_64: usize,
+    const SLAB_96: usize,
     const SLAB_128: usize,
+    const SLAB_192: usize,
     const SLAB_256: usize,
     const SLAB_512: usize,
     const SLAB_1024: usize,
@@ -150,15 +154,31 @@ impl<
         const SLAB_16: usize,
         const SLAB_32: usize,
         const SLAB_64: usize,
+        const SLAB_96: usize,
         const SLAB_128: usize,
+        const SLAB_192: usize,
         const SLAB_256: usize,
         const SLAB_512: usize,
         const SLAB_1024: usize,
-    > SlabHeap<SLAB_8, SLAB_16, SLAB_32, SLAB_64, SLAB_128, SLAB_256, SLAB_512, SLAB_1024>
+    >
+    SlabHeap<
+        SLAB_8,
+        SLAB_16,
+        SLAB_32,
+        SLAB_64,
+        SLAB_96,
+        SLAB_128,
+        SLAB_192,
+        SLAB_256,
+        SLAB_512,
+        SLAB_1024,
+    >
 {
     // Constants for slab boundaries
+    const SLAB_SIZES: [usize; SLAB_ALLOCATOR_COUNT] = [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024];
     const SLAB_PAGE_COUNT: [usize; SLAB_ALLOCATOR_COUNT] = [
-        SLAB_8, SLAB_16, SLAB_32, SLAB_64, SLAB_128, SLAB_256, SLAB_512, SLAB_1024,
+        SLAB_8, SLAB_16, SLAB_32, SLAB_64, SLAB_96, SLAB_128, SLAB_192, SLAB_256, SLAB_512,
+        SLAB_1024,
     ];
     const SLAB_PAGE_END: [usize; SLAB_ALLOCATOR_COUNT] = Self::get_slab_page_end();
     const SLAB_COUNT: [usize; SLAB_ALLOCATOR_COUNT] = Self::get_slab_count();
@@ -178,7 +198,7 @@ impl<
         let mut result = [0; SLAB_ALLOCATOR_COUNT];
         let mut i = 0;
         while i < SLAB_ALLOCATOR_COUNT {
-            result[i] = Self::SLAB_PAGE_COUNT[i] << (PAGE_SHIFT - (i + MIN_SLAB_SHIFT));
+            result[i] = (Self::SLAB_PAGE_COUNT[i] << PAGE_SHIFT) / Self::SLAB_SIZES[i];
             i += 1;
         }
         result
@@ -204,9 +224,17 @@ impl<
         self.total = size;
 
         // allocate slabs
-        self.slab_total_size =
-            (SLAB_8 + SLAB_16 + SLAB_32 + SLAB_64 + SLAB_128 + SLAB_256 + SLAB_512 + SLAB_1024)
-                * PAGE_SIZE;
+        self.slab_total_size = (SLAB_8
+            + SLAB_16
+            + SLAB_32
+            + SLAB_64
+            + SLAB_96
+            + SLAB_128
+            + SLAB_192
+            + SLAB_256
+            + SLAB_512
+            + SLAB_1024)
+            * PAGE_SIZE;
         debug_assert!(self.slab_total_size < size);
         let slab_layout = Layout::from_size_align(self.slab_total_size, PAGE_SIZE).unwrap();
         let slab_ptr = self.system_allocator.allocate(&slab_layout).unwrap();
@@ -215,7 +243,7 @@ impl<
         let mut start_addr = slab_ptr.as_ptr() as usize;
         self.slab_begin_addr = start_addr;
         for i in 0..SLAB_ALLOCATOR_COUNT {
-            self.slab_allocator[i].init(start_addr, Self::SLAB_COUNT[i], 1 << (i + MIN_SLAB_SHIFT));
+            self.slab_allocator[i].init(start_addr, Self::SLAB_COUNT[i], Self::SLAB_SIZES[i]);
             start_addr += Self::SLAB_PAGE_COUNT[i] * PAGE_SIZE;
         }
     }
@@ -225,11 +253,15 @@ impl<
         let mut allocator_index = Self::layout_to_allocator(layout.size(), layout.align());
         while ptr.is_none() {
             if allocator_index < SLAB_ALLOCATOR_COUNT {
-                if self.slab_allocator[allocator_index].len > 0 {
+                if self.slab_allocator[allocator_index].len > 0
+                    && Self::SLAB_SIZES[allocator_index] % layout.align() == 0
+                {
                     ptr = self.slab_allocator[allocator_index].allocate(layout);
-                    self.allocated += 1 << (allocator_index + MIN_SLAB_SHIFT);
-                } else {
+                    self.allocated += Self::SLAB_SIZES[allocator_index];
+                } else if Self::SLAB_SIZES[allocator_index] <= SLAB_MAX_UPSEARCH_SIZE {
                     allocator_index += 1;
+                } else {
+                    allocator_index = SYSTEM_ALLOCATOR_INDEX;
                 }
             } else {
                 ptr = self.system_allocator.allocate(layout);
@@ -266,8 +298,8 @@ impl<
             size
         } else {
             self.slab_allocator[allocator_index].deallocate(ptr);
-            self.allocated -= 1 << (allocator_index + MIN_SLAB_SHIFT);
-            1 << (allocator_index + MIN_SLAB_SHIFT)
+            self.allocated -= Self::SLAB_SIZES[allocator_index];
+            Self::SLAB_SIZES[allocator_index]
         }
     }
 
@@ -279,8 +311,8 @@ impl<
             size
         } else {
             self.slab_allocator[allocator_index].deallocate(ptr);
-            self.allocated -= 1 << (allocator_index + MIN_SLAB_SHIFT);
-            1 << (allocator_index + MIN_SLAB_SHIFT)
+            self.allocated -= Self::SLAB_SIZES[allocator_index];
+            Self::SLAB_SIZES[allocator_index]
         }
     }
 
@@ -293,7 +325,7 @@ impl<
         if allocator_index >= SLAB_ALLOCATOR_COUNT {
             self.system_allocator.reallocate(ptr, new_layout)
         } else {
-            let block_size = 1 << (allocator_index + MIN_SLAB_SHIFT);
+            let block_size = Self::SLAB_SIZES[allocator_index];
             if new_layout.size() <= block_size {
                 return Some(ptr);
             }
@@ -315,7 +347,7 @@ impl<
             self.system_allocator
                 .reallocate_unknown_align(ptr, new_size)
         } else {
-            let block_size = 1 << (allocator_index + MIN_SLAB_SHIFT);
+            let block_size = Self::SLAB_SIZES[allocator_index];
             if new_size <= block_size {
                 return Some(ptr);
             }
@@ -334,20 +366,12 @@ impl<
     // - For sizes > 1024 bytes, use the system allocator
     // - For smaller sizes, use the smallest slab that can accommodate both size and alignment
     fn layout_to_allocator(size: usize, align: usize) -> usize {
-        let size_log2_ceil = core::cmp::max(Self::log2_ceil(size), Self::log2_ceil(align));
-        if size_log2_ceil <= MAX_SLAB_SHIFT {
-            size_log2_ceil.saturating_sub(MIN_SLAB_SHIFT)
+        let index = Self::SLAB_SIZES.partition_point(|index| index < &core::cmp::max(size, align));
+        if index <= SLAB_ALLOCATOR_COUNT {
+            index
         } else {
-            MAX_SLAB_SHIFT
+            SLAB_ALLOCATOR_COUNT
         }
-    }
-
-    #[inline]
-    fn log2_ceil(n: usize) -> usize {
-        if n <= 1 {
-            return 0;
-        }
-        (usize::BITS - (n - 1).leading_zeros()) as usize
     }
 
     fn ptr_to_allocator(&mut self, ptr: usize) -> usize {
@@ -383,7 +407,7 @@ impl<
             if Self::SLAB_PAGE_COUNT[i] != 0 {
                 kprintln!(
                     "{:6} {:6} {:6} {:6} {:6}",
-                    1 << (i + MIN_SLAB_SHIFT),
+                    Self::SLAB_SIZES[i],
                     Self::SLAB_COUNT[i],
                     self.slab_allocator[i].len,
                     Self::SLAB_COUNT[i] - self.slab_allocator[i].min_len,
@@ -403,19 +427,19 @@ impl<
 
         let pos = Self::SLAB_PAGE_END.partition_point(|pos| pos <= &slab_index);
         if pos < SLAB_ALLOCATOR_COUNT {
-            return Some(1 << (pos + MIN_SLAB_SHIFT));
+            return Some(Self::SLAB_SIZES[pos]);
         }
         self.system_allocator.size_of_allocation(ptr)
     }
 
     pub fn get_max_free_block_size(&self) -> usize {
         let max_free = self.system_allocator.get_max_free_block_size();
-        if max_free > (1 << MAX_SLAB_SHIFT) {
+        if max_free > Self::SLAB_SIZES[SLAB_ALLOCATOR_COUNT - 1] {
             return max_free;
         }
-        for i in (MIN_SLAB_SHIFT..=MAX_SLAB_SHIFT).rev() {
-            if self.slab_allocator[i - MIN_SLAB_SHIFT].len > 0 {
-                return core::cmp::max(max_free, 1 << i);
+        for i in (0..SLAB_ALLOCATOR_COUNT).rev() {
+            if self.slab_allocator[i].len > 0 {
+                return core::cmp::max(max_free, Self::SLAB_SIZES[i]);
             }
         }
         max_free
