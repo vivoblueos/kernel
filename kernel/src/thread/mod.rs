@@ -228,18 +228,18 @@ pub struct Thread {
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
     signal_context: Option<Box<SignalContext>>,
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     rr: RoundRobin,
 }
 
-#[cfg(robin_scheduler)]
+#[cfg(round_robin)]
 #[derive(Default, Debug)]
 pub(crate) struct RoundRobin {
     this_round_start_at: Cell<Tick>,
     time_slices: Cell<Tick>,
 }
 
-#[cfg(robin_scheduler)]
+#[cfg(round_robin)]
 impl RoundRobin {
     pub const fn new() -> Self {
         Self {
@@ -443,7 +443,7 @@ impl Thread {
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
             signal_context: None,
-            #[cfg(robin_scheduler)]
+            #[cfg(round_robin)]
             rr: RoundRobin::new(),
         }
     }
@@ -752,23 +752,23 @@ impl Thread {
         true
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     pub fn this_round_start_at(&self) -> Tick {
         self.rr.this_round_start_at.get()
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     pub fn set_this_round_start_at(&self, moment: Tick) -> &Self {
         self.rr.this_round_start_at.set(moment);
         self
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     pub fn remaining_time_slices(&self) -> Tick {
         self.rr.time_slices.get()
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     pub fn elapse_time_slices(&self, elapsed: Tick) -> Tick {
         let old = self.rr.time_slices.get();
         let diff = if elapsed.0 >= old.0 {
@@ -780,7 +780,7 @@ impl Thread {
         diff
     }
 
-    #[cfg(robin_scheduler)]
+    #[cfg(round_robin)]
     pub fn refresh_time_slices(&self) -> Tick {
         let mut current = self.rr.time_slices.get();
         if current.0 != 0 {
