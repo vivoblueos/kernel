@@ -37,9 +37,9 @@ unsafe impl GlobalAlloc for PosixAllocator {
 static GLOBAL: PosixAllocator = PosixAllocator;
 
 #[cfg(any(
-    target_arch = "riscv32",
-    target_arch = "riscv64",
-    target_arch = "aarch64"
+    target_board = "qemu_riscv32",
+    target_board = "qemu_riscv64",
+    target_board = "qemu_virt64_aarch64",
 ))]
 fn trace_stack() {
     use core::ffi::c_void;
