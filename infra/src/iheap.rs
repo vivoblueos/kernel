@@ -233,6 +233,9 @@ where
 
     pub fn push<'a>(&mut self, val: &'a mut T) -> Option<IouMinHeapNodeMut<'a, T, A>> {
         let node = MinHeapNode::node_of_mut(val);
+        if Some(NonNull::from_mut(node)) == self.root {
+            return None;
+        }
         if node.parent.is_some() || !node.link.is_detached() {
             return None;
         }
@@ -1035,5 +1038,21 @@ mod tests {
         for handle in handles {
             handle.join().expect("Thread panicked");
         }
+    }
+
+    #[test]
+    fn push_root_twice() {
+        let mut iheap = MinHeap::<Foo, Node, _>::new(|l, r| l.val.cmp(&r.val).reverse());
+        let mut root = Foo {
+            node: MinHeapNode::new(),
+            val: 42,
+        };
+        let mut iou = iheap.push(&mut root);
+        assert!(iou.is_some());
+        let iou_again = iheap.push(&mut root);
+        assert!(iou_again.is_none());
+        // Adding following statement won't compile due to iou is re-borrowed. So it demonstrates that
+        // using Iou properly can prevent pushing an node twice.
+        //iheap.remove(iou.unwrap());
     }
 }
