@@ -84,7 +84,9 @@ fn oops(info: &core::panic::PanicInfo) -> ! {
             target_arch = "riscv64",
             target_arch = "aarch64"
         ))]
+        semihosting::println!("---- Begin stack unwinding ----");
         trace_stack();
+        semihosting::println!("---- End stack unwinding ----");
     }
     loop {}
 }
