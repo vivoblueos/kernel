@@ -87,7 +87,7 @@ fn oops(info: &core::panic::PanicInfo) -> ! {
         {
             semihosting::println!("---- Begin stack unwinding ----");
             trace_stack();
-            semihosting::println!("---- End stack unwinding ----");
+            semihosting::println!("---- Ended stack unwinding ----");
         }
     }
     loop {}
