@@ -37,7 +37,12 @@ pub struct BoxedRingBuffer {
 impl BoxedRingBuffer {
     /// Create a new ring buffer with the given size
     pub fn new(size: usize) -> Self {
-        let layout = Layout::from_size_align(size, 1).unwrap();
+        let Ok(layout) = Layout::from_size_align(size, 1) else {
+            return Self {
+                inner: unsafe { RingBuffer::new_with_buffer(ptr::null_mut(), 0) },
+                _box: Storage::new(),
+            };
+        };
         let buf = Storage::from_layout(layout);
         Self {
             inner: unsafe { RingBuffer::new_with_buffer(buf.base(), buf.size()) },

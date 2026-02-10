@@ -226,13 +226,25 @@ pub extern "C" fn osThreadNew(
         inner_attr.stack_size as usize,
     );
     // All checks passed, create stack first.
-    let mut layout = Layout::from_size_align(DEFAULT_STACK_SIZE as usize, STACK_ALIGN).unwrap();
+    let mut layout = match Layout::from_size_align(DEFAULT_STACK_SIZE as usize, STACK_ALIGN) {
+        Ok(layout) => layout,
+        Err(_) => {
+            log::error!("osThreadNew: invalid default stack layout");
+            return ptr::null_mut();
+        }
+    };
     if inner_attr.stack_mem.is_null() {
         let mut stack_size = inner_attr.stack_size;
         if stack_size == 0 {
             stack_size = (DEFAULT_STACK_SIZE as u32) * 2;
         }
-        layout = Layout::from_size_align(stack_size as usize, STACK_ALIGN).unwrap();
+        layout = match Layout::from_size_align(stack_size as usize, STACK_ALIGN) {
+            Ok(layout) => layout,
+            Err(_) => {
+                log::error!("osThreadNew: invalid stack layout size={}", stack_size);
+                return ptr::null_mut();
+            }
+        };
         let stack_memory = unsafe { system_alloc(layout) };
         if stack_memory.is_null() {
             log::error!("osThreadNew: failed to allocate stack memory");

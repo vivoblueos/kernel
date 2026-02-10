@@ -67,8 +67,11 @@ impl MemoryPoolInner {
                 ));
             })
         } else {
-            Box::new(|i, block: &mut Block| {
-                let layout = Layout::from_size_align(block_size, ALIGN).unwrap();
+            let Ok(layout) = Layout::from_size_align(block_size, ALIGN) else {
+                return;
+            };
+            Box::new(move |i, block: &mut Block| {
+                let _ = i;
                 block.set_storage(Storage::from_layout(layout));
             })
         };

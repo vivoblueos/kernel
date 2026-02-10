@@ -86,7 +86,9 @@ pub fn malloc(size: usize) -> *mut u8 {
         return ptr::null_mut();
     }
     const ALIGN: usize = core::mem::size_of::<usize>();
-    let layout = Layout::from_size_align(size, ALIGN).unwrap();
+    let Ok(layout) = Layout::from_size_align(size, ALIGN) else {
+        return ptr::null_mut();
+    };
     HEAP.alloc(layout)
         .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
 }
@@ -132,7 +134,9 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
 pub fn calloc(count: usize, size: usize) -> *mut u8 {
     let required_size = count * size;
     const ALIGN: usize = core::mem::size_of::<usize>();
-    let layout = Layout::from_size_align(required_size, ALIGN).unwrap();
+    let Ok(layout) = Layout::from_size_align(required_size, ALIGN) else {
+        return ptr::null_mut();
+    };
     if let Some(alloc_ptr) = HEAP.alloc(layout) {
         unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
         alloc_ptr.as_ptr()
@@ -152,7 +156,9 @@ pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
         return ptr::null_mut();
     }
 
-    let layout = Layout::from_size_align(size, align).unwrap();
+    let Ok(layout) = Layout::from_size_align(size, align) else {
+        return ptr::null_mut();
+    };
     HEAP.alloc(layout)
         .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
 }

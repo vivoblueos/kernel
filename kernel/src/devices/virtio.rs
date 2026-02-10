@@ -102,10 +102,17 @@ pub struct VirtioHal;
 unsafe impl Hal for VirtioHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (PhysAddr, NonNull<u8>) {
         debug_assert!(pages > 0);
-        let layout = Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE).unwrap();
+        let layout = match Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE) {
+            Ok(layout) => layout,
+            Err(_) => {
+                error!("virtio dma_alloc: invalid layout pages={}", pages);
+                return (0, NonNull::dangling());
+            }
+        };
         let vaddr = unsafe { alloc_zeroed(layout) };
         if vaddr.is_null() {
-            handle_alloc_error(layout);
+            error!("virtio dma_alloc: alloc_zeroed failed pages={}", pages);
+            return (0, NonNull::dangling());
         }
         let paddr = virt_to_phys(vaddr as _);
         let vaddr = NonNull::new(vaddr).unwrap();
@@ -113,7 +120,13 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn dma_dealloc(_paddr: PhysAddr, vaddr: NonNull<u8>, pages: usize) -> i32 {
-        let layout = Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE).unwrap();
+        let layout = match Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE) {
+            Ok(layout) => layout,
+            Err(_) => {
+                error!("virtio dma_dealloc: invalid layout pages={}", pages);
+                return -1;
+            }
+        };
         dealloc(vaddr.as_ptr(), layout);
         0
     }
