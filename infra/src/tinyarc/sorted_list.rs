@@ -488,7 +488,7 @@ mod tests {
             priorities.push(task.priority);
         }
         assert_eq!(priorities, vec![3, 5, 8]);
-        while let Some(_) = list.pop_front() {}
+        while list.pop_front().is_some() {}
     }
 
     #[test]
@@ -559,6 +559,6 @@ mod tests {
         // Verify removal
         assert_eq!(list.len(), 2);
         assert!(list.find(|t| t.id == 2).is_none());
-        while let Some(_) = list.pop_front() {}
+        while list.pop_front().is_some() {}
     }
 }
