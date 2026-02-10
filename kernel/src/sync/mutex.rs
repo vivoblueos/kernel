@@ -131,6 +131,7 @@ impl Mutex {
             Thread::id(&this_thread),
             self as *const _
         );
+        let mut start = Tick::now();
         let mut w = self.pending.irqsave_lock();
         #[cfg(debugging_scheduler)]
         crate::trace!(
@@ -138,8 +139,6 @@ impl Mutex {
             Thread::id(&this_thread),
             self as *const _
         );
-
-        let mut last_sys_ticks = crate::time::Tick::now();
         loop {
             if self.nesting_count() == 0 {
                 self.increment_nesting_count();
@@ -189,18 +188,11 @@ impl Mutex {
                 Self::recover_priority(&this_thread, &this_mutex);
                 return false;
             }
-            if ticks == Tick::MAX {
-                continue;
+            if ticks != Tick::MAX {
+                let now = Tick::now();
+                ticks = ticks.since(now.since(start));
+                start = now;
             }
-            let now = crate::time::Tick::now();
-            debug_assert!(now.0 >= last_sys_ticks.0);
-            let elapsed_ticks = now.0 - last_sys_ticks.0;
-            if elapsed_ticks >= ticks.0 {
-                ticks.0 = 0;
-            } else {
-                ticks.0 -= elapsed_ticks;
-            }
-            last_sys_ticks = now;
         }
     }
 

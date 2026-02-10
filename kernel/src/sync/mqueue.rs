@@ -134,14 +134,13 @@ impl MessageQueue {
         &self,
         buffer: &[u8],
         size: usize,
-        timeout: Tick,
+        mut timeout: Tick,
         urgent: SendMode,
     ) -> Result<(), Error> {
         if buffer.len() < size {
             return Err(code::EINVAL);
         }
         let head_size = core::mem::size_of::<usize>();
-        let mut timeout = timeout;
 
         if size > (self.node_size - head_size) {
             return Err(code::EOVERFLOW);
@@ -150,6 +149,7 @@ impl MessageQueue {
         let this_thread = scheduler::current_thread();
         let mut queue = self.lock();
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+        let mut start = Tick::now();
         while self.sendable_count() == 0 {
             if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
@@ -157,7 +157,6 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = Tick::now();
             send_queue.take_irq_guard(&mut queue);
             drop(queue);
             let reached_deadline;
@@ -178,8 +177,9 @@ impl MessageQueue {
                 return Err(code::ETIMEDOUT);
             }
             if timeout != Tick::MAX {
-                ticks.0 = Tick::now().0.saturating_sub(ticks.0);
-                timeout.0 = timeout.0.saturating_sub(ticks.0 as usize);
+                let now = Tick::now();
+                timeout = timeout.since(now.since(start));
+                start = now;
             }
         }
         drop(send_queue);
@@ -221,17 +221,17 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub fn recv(&self, buffer: &mut [u8], size: usize, timeout: Tick) -> Result<(), Error> {
+    pub fn recv(&self, buffer: &mut [u8], size: usize, mut timeout: Tick) -> Result<(), Error> {
         if buffer.len() < size || size == 0 {
             return Err(code::EINVAL);
         }
         let mut cpysize = size;
         let head_size = core::mem::size_of::<usize>();
-        let mut timeout = timeout;
 
         let this_thread = scheduler::current_thread();
         let mut queue = self.lock();
         let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
+        let mut start = Tick::now();
         while self.recvable_count() == 0 {
             if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
@@ -239,7 +239,6 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            let mut ticks = Tick::now();
             recv_queue.take_irq_guard(&mut queue);
             drop(queue);
             let reached_deadline;
@@ -260,8 +259,9 @@ impl MessageQueue {
                 return Err(code::ETIMEDOUT);
             }
             if timeout != Tick::MAX {
-                ticks.0 = Tick::now().0.saturating_sub(ticks.0);
-                timeout.0 = timeout.0.saturating_sub(ticks.0 as usize);
+                let now = Tick::now();
+                timeout = timeout.since(now.since(start));
+                start = now;
             }
         }
         drop(recv_queue);
