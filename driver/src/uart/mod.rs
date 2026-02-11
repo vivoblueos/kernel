@@ -16,7 +16,7 @@ pub mod arm_pl011;
 pub mod cmsdk;
 pub mod dumb;
 #[cfg(target_chip = "esp32c3")]
-pub mod esp32_uart;
+pub mod esp32_usb_serial;
 #[cfg(target_chip = "gd32e5x")]
 pub mod gd32e5x_uart;
 #[cfg(target_chip = "gd32vw55x")]

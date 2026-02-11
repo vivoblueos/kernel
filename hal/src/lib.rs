@@ -20,6 +20,7 @@ pub mod err;
 use core::num::NonZeroUsize;
 
 use err::Result;
+pub mod clock;
 pub mod clock_control;
 pub mod i2c;
 pub mod pinctrl;

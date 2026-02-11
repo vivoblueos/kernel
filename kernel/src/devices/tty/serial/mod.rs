@@ -534,7 +534,11 @@ impl Device for Serial {
     }
 
     fn write(&self, _pos: u64, buf: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
-        self.fifo_tx(buf, is_nonblocking).map_err(ErrorKind::from)
+        // self.fifo_tx(buf, is_nonblocking).map_err(ErrorKind::from)
+        self.uart_ops
+            .irqsave_lock()
+            .write(buf)
+            .map_err(ErrorKind::from)
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {

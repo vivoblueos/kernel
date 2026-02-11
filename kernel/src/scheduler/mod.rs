@@ -440,7 +440,9 @@ pub extern "C" fn schedule() -> ! {
     debug_assert!(arch::local_irq_enabled());
     loop {
         yield_me();
-        idle::get_idle_hook()();
+        crate::kprintln!("running idle hook");
+        // idle::get_idle_hook()();
+        crate::kprintln!("returned from idle hook");
     }
 }
 

@@ -55,6 +55,8 @@ extern "C" fn switch_stack_with_hook(
 
 // trap_handler decides whether nested interrupt is allowed.
 #[repr(align(4))]
+#[no_mangle]
+#[link_section = ".trap.handler"]
 #[naked]
 pub(crate) unsafe extern "C" fn trap_entry() {
     core::arch::naked_asm!(
@@ -231,6 +233,7 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     debug_assert!(!super::local_irq_enabled());
     let sp = ctx as *const _ as usize;
+    crate::kprintln!("mcause: 0x{:x}, mepc: 0x{:x}", mcause, ctx.mepc);
     match mcause & (INTERRUPT_MASK | 0x3f) {
         EXTERN_INT => {
             handle_plic_irq(ctx, mcause, mtval);
@@ -240,7 +243,11 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
             crate::time::handle_clock_interrupt();
             might_switch_context(ctx, cont)
         }
-        ECALL => handle_ecall(ctx, cont),
+        // ECALL => handle_ecall(ctx, cont),
+        ECALL => {
+            ctx.mepc += 4;
+            sp
+        }
         // For waking up from wfi.
         MSI => {
             clear_ipi(arch::current_cpu_id());

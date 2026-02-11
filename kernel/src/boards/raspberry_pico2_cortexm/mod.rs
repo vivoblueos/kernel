@@ -23,7 +23,7 @@ use crate::{
     irq::IrqTrace,
     time,
 };
-use blueos_hal::clock_control::ClockControl;
+use blueos_hal::{clock::Clock, clock_control::ClockControl};
 use core::ptr::addr_of;
 use spin::Once;
 
