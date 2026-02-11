@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{arch, devices::clock::Clock, drivers::timer::RiscvTimer};
-
+use crate::{arch, drivers::timer::RiscvTimer};
+use blueos_hal::clock::Clock;
 pub struct RiscvClock<const MTIME_PTR: usize, const MTIMECMP_BASE_PTR: usize, const HZ: u64>;
 
 impl<const MTIME_PTR: usize, const MTIMECMP_BASE_PTR: usize, const HZ: u64> RiscvTimer

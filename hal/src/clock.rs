@@ -12,28 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::drivers::timer::GenericTimer;
-use blueos_hal::clock::Clock;
-pub struct GenericClock;
-
-impl Clock for GenericClock {
-    fn hz() -> u64 {
-        GenericTimer::read_cntfrq()
-    }
-
-    fn estimate_current_cycles() -> u64 {
-        GenericTimer::read_cntpct()
-    }
-
-    fn interrupt_at(moment: u64) {
-        GenericTimer::write_cntp_cval(moment);
-        // ENABLE(1) | IMASK(0) = 1
-        GenericTimer::write_cntp_ctl(1);
-    }
-
-    fn stop() {
-        GenericTimer::write_cntp_ctl(0);
-    }
+// We use the term `cycles` to refer to the internal counter of the Clock. We
+// use the term `hz` to descripe how many cycles within a second. Tick is
+// defined as a short period of time, which is atomic in the system, just like
+// the Planck time in physical world. We use `TICKS_PER_SECOND` to measure it.
+// A clock instance should be able to interrupt the system.
+pub trait Clock {
+    fn hz() -> u64;
+    // Reading the current counter of the Clock requires some time(Time
+    // Drifting), we can only estimate it.
+    fn estimate_current_cycles() -> u64;
+    fn interrupt_at(moment: u64);
+    fn stop();
 }
-
-pub type QemuGtClk = GenericClock;
