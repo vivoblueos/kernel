@@ -193,7 +193,7 @@ pub(crate) fn build_static_thread(
     kind: ThreadKind,
 ) -> ThreadNode {
     let inner = &s.arc;
-        let stack_size = s.stack.rep.len();
+    let stack_size = s.stack.rep.len();
     let stack_base = s.stack.rep.as_ptr() as usize;
     let stack = &mut s.stack;
 
@@ -217,14 +217,6 @@ pub(crate) fn build_static_thread(
         stack.rep.as_ptr(),
         stack.rep.len(),
         core::mem::size_of::<arch::Context>(),
-    );
-    crate::kprintln!(
-        "System thread 0x{:x} created: sp: 0x{:x}, context size: {}, stack size: {}, stack base: 0x{:x}",
-        id,
-        w.saved_sp(),
-        core::mem::size_of::<arch::Context>(),
-        stack_size, 
-        stack_base
     );
     drop(w);
     t.write(arc.clone());

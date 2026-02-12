@@ -165,8 +165,28 @@ extern "C" fn init() {
     #[cfg(enable_vfs)]
     init_vfs();
     init_apps();
+    use crate::time::Tick;
+
+    enable_mie();
+    Tick::interrupt_after(Tick::from_millis(100));
+    for i in 0..100 {
+        let now = Tick::now();
+        crate::kprintln!("System booted at tick {:?}", now);
+    }
+    Tick::interrupt_after(Tick::from_millis(100));
+    loop {}
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
+}
+
+pub fn enable_mie() {
+    unsafe {
+        core::arch::asm!(
+            "csrrs zero, mstatus, {mask}",
+            mask = const 1 << 3,      // MIE 位是 bit 3
+            options(nomem, preserves_flags),
+        );
+    }
 }
 
 pub(crate) fn init_runtime() {
