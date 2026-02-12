@@ -233,9 +233,13 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     debug_assert!(!super::local_irq_enabled());
     let sp = ctx as *const _ as usize;
-    crate::kprintln!("mcause: 0x{:x}, mepc: 0x{:x}", mcause, ctx.mepc);
     match mcause & (INTERRUPT_MASK | 0x3f) {
         EXTERN_INT => {
+            handle_plic_irq(ctx, mcause, mtval);
+            might_switch_context(ctx, cont)
+        }
+        _ if mcause & 0x8000_0000 != 0 => {
+            // esp32c3 has another external interrupt number
             handle_plic_irq(ctx, mcause, mtval);
             might_switch_context(ctx, cont)
         }

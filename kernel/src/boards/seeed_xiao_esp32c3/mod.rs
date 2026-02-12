@@ -97,7 +97,14 @@ fn init_vector_table() {
 
 pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
-    PLIC.complete(cpu_id, PLIC.claim(cpu_id))
+    match mcause & 0xff {
+        TARGET0_INT_NUM => {
+            ClockImpl::clr_interrupt();
+            crate::kprintln!("Handle TARGET0 interrupt");
+        }
+        _ => {}
+    }
+    // PLIC.complete(cpu_id, PLIC.claim(cpu_id))
 }
 
 static STAGING: SmpStagedInit = SmpStagedInit::new();
@@ -106,8 +113,10 @@ const INTR_BASE: usize = 0x600c_2000;
 const TARGET0_INT_MAP_REG: usize = INTR_BASE + 0x94;
 const INT_ENABLE_REG: usize = INTR_BASE + 0x104;
 const INT_THRESH_REG: usize = INTR_BASE + 0x194;
-const TARGET0_INT_NUM: usize = 1; // IRQ number 16 in target0
+const TARGET0_INT_NUM: usize = 16; // IRQ number 16 in target0
 const CLOCK_GATE_REG: usize = INTR_BASE + 0x100;
+const INT_PRI_16_REG: usize = INTR_BASE + 0x154;
+const INT_TYPE_REG: usize = INTR_BASE + 0x108;
 
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
@@ -125,8 +134,12 @@ pub(crate) fn init() {
     unsafe {
         core::ptr::write_volatile(CLOCK_GATE_REG as *mut u32, 1);
         core::ptr::write_volatile(TARGET0_INT_MAP_REG as *mut u32, TARGET0_INT_NUM as u32);
-        core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, 0xFFFF_FFFF);
+        core::ptr::write_volatile(INT_TYPE_REG as *mut u32, 1); // edge interrupt avoid for spurious interrupt
         core::ptr::write_volatile(INT_THRESH_REG as *mut u32, 1);
+        core::ptr::write_volatile(INT_PRI_16_REG as *mut u32, 15);
+        core::ptr::write_volatile((INT_PRI_16_REG + 0x4) as *mut u32, 15);
+        core::ptr::write_volatile((INT_PRI_16_REG - 0x4) as *mut u32, 15);
+        core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, 0xFFFF_FFFF);
         // hal_espressif_rs::rust_helper_esp_cpu_inter_enable(1 << TARGET0_INT_NUM);
         // hal_espressif_rs::rust_helper_esp_cpu_intr_set_priority(TARGET0_INT_NUM as i32, 1);
     }

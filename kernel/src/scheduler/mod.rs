@@ -291,7 +291,6 @@ fn inner_yield(next: ThreadNode) {
     old.disable_preempt();
     if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
-        crate::kprintln!("ok = {:?}", ok);
         debug_assert_eq!(ok, Ok(()));
     } else {
         let ok = queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
@@ -441,10 +440,7 @@ pub extern "C" fn schedule() -> ! {
     debug_assert!(arch::local_irq_enabled());
     loop {
         yield_me();
-        // crate::arch::ecall_switch_context_with_hook(core::ptr::null_mut());
-        crate::kprintln!("running idle hook");
-        // idle::get_idle_hook()();
-        // crate::kprintln!("returned from idle hook");
+        idle::get_idle_hook()();
     }
 }
 

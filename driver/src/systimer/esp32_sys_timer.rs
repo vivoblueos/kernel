@@ -140,19 +140,24 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
 
     pub fn init() {
         // enable unit 0
-        // Self::registers().conf.modify(CONF::UNIT0_WORK_EN::SET);
+        Self::registers().conf.modify(CONF::UNIT0_WORK_EN::SET);
         // select unit 0 vs comparator 0
-        // Self::set_unit();
+        Self::set_unit();
         // enable comparator 0
-        // Self::set_comparator_enable(true);
+        Self::set_comparator_enable(true);
         // CLR interrupt
         // Self::registers().int_clr.modify(INT_CLR::TARGET0::SET);
         // enable interrupt
-        // Self::registers().int_ena.modify(INT_ENA::TARGET0::SET);
+        Self::registers().int_ena.modify(INT_ENA::TARGET0::SET);
         // set TARGET mode
-        // Self::registers()
-        //     .target0_conf
-        //     .modify(TARGET_CONF::PERIOD_MODE::CLEAR);
+        Self::registers()
+            .target0_conf
+            .modify(TARGET_CONF::PERIOD_MODE::CLEAR);
+    }
+
+    #[inline]
+    pub fn clr_interrupt() {
+        Self::registers().int_clr.modify(INT_CLR::TARGET0::SET);
     }
 
     fn set_unit() {
@@ -176,26 +181,25 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
     // This can be a shared reference as long as this type isn't Sync.
     // FIXME: A stress test should be added to verify whether this API is stalled in multi-task.
     fn estimate_current_cycles() -> u64 {
-        0
-        // Self::registers().unit0_op.modify(UNIT_OP::UPDATE::SET);
-        // while !Self::registers().unit0_op.is_set(UNIT_OP::VALUE_VALID) {}
+        Self::registers().unit0_op.modify(UNIT_OP::UPDATE::SET);
+        while !Self::registers().unit0_op.is_set(UNIT_OP::VALUE_VALID) {}
 
-        // let mut lo_prev = Self::registers()
-        //     .unit0_value_lo
-        //     .read(UNIT_VALUE_LO::VALUE_LO);
-        // loop {
-        //     let lo = lo_prev;
-        //     let hi = Self::registers()
-        //         .unit0_value_hi
-        //         .read(UNIT_VALUE_HI::VALUE_HI);
-        //     lo_prev = Self::registers()
-        //         .unit0_value_lo
-        //         .read(UNIT_VALUE_LO::VALUE_LO);
+        let mut lo_prev = Self::registers()
+            .unit0_value_lo
+            .read(UNIT_VALUE_LO::VALUE_LO);
+        loop {
+            let lo = lo_prev;
+            let hi = Self::registers()
+                .unit0_value_hi
+                .read(UNIT_VALUE_HI::VALUE_HI);
+            lo_prev = Self::registers()
+                .unit0_value_lo
+                .read(UNIT_VALUE_LO::VALUE_LO);
 
-        //     if lo == lo_prev {
-        //         return ((hi as u64) << 32) | lo as u64;
-        //     }
-        // }
+            if lo == lo_prev {
+                return ((hi as u64) << 32) | lo as u64;
+            }
+        }
     }
 
     fn hz() -> u64 {
@@ -208,7 +212,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
             .write(TARGET_HI::HI.val((moment >> 32) as u32));
         Self::registers()
             .target0_lo
-            .write(TARGET_LO::LO.val(moment as u32));
+            .write(TARGET_LO::LO.val((moment & 0xFFFF_FFFF) as u32));
         // load comparator
         Self::registers().comp0_load.write(COMP_LOAD::LOAD::SET);
     }
