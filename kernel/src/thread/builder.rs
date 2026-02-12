@@ -193,10 +193,13 @@ pub(crate) fn build_static_thread(
     kind: ThreadKind,
 ) -> ThreadNode {
     let inner = &s.arc;
+        let stack_size = s.stack.rep.len();
+    let stack_base = s.stack.rep.as_ptr() as usize;
     let stack = &mut s.stack;
+
     let arc = unsafe { ThreadNode::from_static_inner_ref(inner) };
     debug_assert_eq!(ThreadNode::strong_count(&arc), 1);
-    let _id = Thread::id(&arc);
+    let id = Thread::id(&arc);
     let mut w = arc.lock();
     let Some(stack) = Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()) else {
         panic!("Invalid stack");
@@ -214,6 +217,14 @@ pub(crate) fn build_static_thread(
         stack.rep.as_ptr(),
         stack.rep.len(),
         core::mem::size_of::<arch::Context>(),
+    );
+    crate::kprintln!(
+        "System thread 0x{:x} created: sp: 0x{:x}, context size: {}, stack size: {}, stack base: 0x{:x}",
+        id,
+        w.saved_sp(),
+        core::mem::size_of::<arch::Context>(),
+        stack_size, 
+        stack_base
     );
     drop(w);
     t.write(arc.clone());

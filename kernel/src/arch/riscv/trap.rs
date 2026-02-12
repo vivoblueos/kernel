@@ -243,11 +243,7 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
             crate::time::handle_clock_interrupt();
             might_switch_context(ctx, cont)
         }
-        // ECALL => handle_ecall(ctx, cont),
-        ECALL => {
-            ctx.mepc += 4;
-            sp
-        }
+        ECALL => handle_ecall(ctx, cont),
         // For waking up from wfi.
         MSI => {
             clear_ipi(arch::current_cpu_id());
