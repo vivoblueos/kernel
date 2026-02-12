@@ -165,10 +165,6 @@ extern "C" fn init() {
     #[cfg(enable_vfs)]
     init_vfs();
     init_apps();
-    use crate::time::Tick;
-    let now = Tick::now();
-    crate::kprintln!("Kernel initialized successfully! Uptime: {}", now.0);
-    Tick::interrupt_after(Tick::from_millis(100));
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }
