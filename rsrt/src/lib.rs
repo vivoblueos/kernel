@@ -36,13 +36,59 @@ unsafe impl GlobalAlloc for PosixAllocator {
 #[global_allocator]
 static GLOBAL: PosixAllocator = PosixAllocator;
 
+#[cfg(any(
+    target_board = "qemu_riscv32",
+    target_board = "qemu_riscv64",
+    target_board = "qemu_virt64_aarch64",
+))]
+fn trace_stack() {
+    use core::ffi::c_void;
+    use unwinding::abi::*;
+    #[derive(Default)]
+    struct StackInfo {
+        depth: usize,
+    };
+    extern "C" fn unwinder_callback(
+        unwind_ctx: &UnwindContext<'_>,
+        arg: *mut c_void,
+    ) -> UnwindReasonCode {
+        let info = unsafe { &mut *(arg as *mut StackInfo) };
+        semihosting::eprintln!(
+            "{:4}:{:#19x} - <unknown>",
+            info.depth,
+            _Unwind_GetIP(unwind_ctx)
+        );
+        info.depth += 1;
+        UnwindReasonCode::NO_REASON
+    }
+    let mut info = StackInfo::default();
+    _Unwind_Backtrace(unwinder_callback, &mut info as *mut _ as _);
+}
+
 #[cfg(not(feature = "std"))]
 #[panic_handler]
 fn oops(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(test)]
+    // Enable semihosting on qemu boards.
+    #[cfg(any(
+        target_board = "qemu_mps2_an385",
+        target_board = "qemu_mps3_an547",
+        target_board = "qemu_riscv32",
+        target_board = "qemu_riscv64",
+        target_board = "qemu_virt64_aarch64",
+    ))]
     {
         semihosting::println!("{}", info);
         semihosting::println!("{}", info.message());
+        #[cfg(any(
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "aarch64"
+        ))]
+        {
+            semihosting::println!("---- Begin stack unwinding ----");
+            trace_stack();
+            semihosting::println!("---- Ended stack unwinding ----");
+        }
     }
     loop {}
 }
