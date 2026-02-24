@@ -45,6 +45,7 @@ action("generate_c_header") {
   script = "//kernel/kconfig/src/generate_c_header.py"
   output_headers = rebase_path("${root_gen_dir}/autoconf.h")
   outputs = [ "${root_gen_dir}/autoconf.h" ]
+  inputs = _kconfig_files
   config_path = _config_file
   args = [
     "--config",
