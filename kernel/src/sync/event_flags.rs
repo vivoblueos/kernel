@@ -21,6 +21,7 @@ use crate::{
     thread::Thread,
     time::Tick,
     types::{Arc, ArcList},
+    with_iou,
 };
 use bitflags::bitflags;
 use core::{cell::Cell, ops::DerefMut};
@@ -159,17 +160,15 @@ impl EventFlags {
             locked_thread.set_event_flags_mask(flags);
             locked_thread.set_event_flags_mode(mode);
         }
-        let mut borrowed_wait_entry;
         let reached_deadline;
-        {
+        with_iou!(|borrowed_wait_entry| {
             let mut wait_entry = WaitEntry::new(current_thread.clone());
             borrowed_wait_entry =
                 wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
             reached_deadline = scheduler::suspend_me_for(timeout, Some(w));
             w = self.pending.irqsave_lock();
             borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
-        }
-        drop(borrowed_wait_entry);
+        });
         if reached_deadline {
             return Err(code::ETIMEDOUT);
         }

@@ -16,18 +16,20 @@ use super::SlabHeap as Slab;
 use crate::{allocator::MemoryInfo, sync::spinlock::SpinLock};
 use core::{alloc::Layout, ptr::NonNull};
 
-pub type Heap = SlabHeap<2, 4, 2, 1, 1, 1, 1, 1>;
+pub type Heap = SlabHeap<2, 4, 2, 1, 1, 1, 1, 1, 1, 1>;
 pub struct SlabHeap<
     const S8: usize,
     const S16: usize,
     const S32: usize,
     const S64: usize,
+    const S96: usize,
     const S128: usize,
+    const S192: usize,
     const S256: usize,
     const S512: usize,
     const S1024: usize,
 > {
-    heap: SpinLock<Slab<S8, S16, S32, S64, S128, S256, S512, S1024>>,
+    heap: SpinLock<Slab<S8, S16, S32, S64, S96, S128, S192, S256, S512, S1024>>,
 }
 
 impl<
@@ -35,16 +37,20 @@ impl<
         const S16: usize,
         const S32: usize,
         const S64: usize,
+        const S96: usize,
         const S128: usize,
+        const S192: usize,
         const S256: usize,
         const S512: usize,
         const S1024: usize,
-    > SlabHeap<S8, S16, S32, S64, S128, S256, S512, S1024>
+    > SlabHeap<S8, S16, S32, S64, S96, S128, S192, S256, S512, S1024>
 {
     // Create a new UNINITIALIZED heap allocator
     pub const fn new() -> Self {
         SlabHeap {
-            heap: SpinLock::new(Slab::<S8, S16, S32, S64, S128, S256, S512, S1024>::new()),
+            heap: SpinLock::new(
+                Slab::<S8, S16, S32, S64, S96, S128, S192, S256, S512, S1024>::new(),
+            ),
         }
     }
 
