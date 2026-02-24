@@ -14,45 +14,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Parse the configuration item in Kconfig
-Use the value of .config first, if not, use the default value
-Generate c header file
+Generate C header file from .config
 """
 
 import sys
-from kconfiglib import Kconfig, INT
+import re
 import os
 import argparse
 
+_UNSET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 
-def parse_int_configs(kconfig_path, board, build_type, output_headers):
-    kconf = Kconfig(kconfig_path)
-    dotconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
-                             'defconfig')
-    if os.path.exists(dotconfig):
-        kconf.load_config(dotconfig)
 
-    kconf.write_autoconf(output_headers)
+def write_autoconf_from_config(config_path, output_headers):
+    output_dir = os.path.dirname(output_headers)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    with open(config_path, "r",
+              encoding="utf-8") as src, open(output_headers,
+                                             "w",
+                                             encoding="utf-8") as out:
+        out.write("/* Automatically generated file; DO NOT EDIT. */\n")
+        for raw_line in src:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if _UNSET_RE.match(line):
+                continue
+            if not line.startswith("CONFIG_") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if value == "y":
+                out.write(f"#define {key}\n")
+            elif value == "n":
+                continue
+            elif value == "":
+                out.write(f"#define {key} \"\"\n")
+            else:
+                out.write(f"#define {key} {value}\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kconfig", help="Kconfig dir")
-    parser.add_argument("--board", help="target board")
-    parser.add_argument("--build_type", help="target build_type")
-    parser.add_argument("--output", help="Rust file output directory")
+    parser.add_argument("--config", help="config file")
     parser.add_argument("--output_headers", help="C header file output path")
     args = parser.parse_args()
-    os.environ['BOARD'] = args.board
-    os.environ['KCONFIG_DIR'] = os.path.dirname(args.kconfig)
-    # Set KERNEL_SRC_DIR to point to kernel/kernel/src directory
-    kconfig_dir = os.path.dirname(args.kconfig)
-    kernel_src_dir = os.path.join(
-        os.path.dirname(os.path.dirname(kconfig_dir)), 'kernel', 'src')
-    os.environ['KERNEL_SRC_DIR'] = os.path.abspath(kernel_src_dir)
     try:
-        parse_int_configs(args.kconfig, args.board, args.build_type,
-                          args.output_headers)
+        write_autoconf_from_config(args.config, args.output_headers)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
         sys.exit(1)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,24 +14,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Parse the int configuration item in Kconfig
-Use the value of .config first, if not, use the default value
-Generate config for rust build
+Parse the configuration item in Kconfig
+And generate .config file
 """
 
-import sys
-from kconfiglib import Kconfig, BOOL, STRING
-import os
 import argparse
+import os
+import sys
+
+from kconfiglib import Kconfig, BOOL, STRING
 
 
-def parse_rustflags(kconfig_path, board, build_type):
+def generate_configs(kconfig_path, board, build_type, output):
     rustflags = []
     kconf = Kconfig(kconfig_path)
-    dotconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
-                             'defconfig')
-    if os.path.exists(dotconfig):
-        kconf.load_config(dotconfig)
+    defconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
+                             "defconfig")
+    if os.path.exists(defconfig):
+        kconf.load_config(defconfig)
+
+    output_dir = os.path.dirname(output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    kconf.write_config(output)
     for sym in kconf.defined_syms:
         if sym.type == BOOL and sym.tri_value == 2:
             rustflags.append(sym.name.lower())
@@ -40,21 +45,24 @@ def parse_rustflags(kconfig_path, board, build_type):
     return rustflags
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--kconfig", help="Kconfig dir")
     parser.add_argument("--board", help="target board")
     parser.add_argument("--build_type", help="target build_type")
+    parser.add_argument("--output", help=".config output path")
     args = parser.parse_args()
-    os.environ['BOARD'] = args.board
-    os.environ['KCONFIG_DIR'] = os.path.dirname(args.kconfig)
+    os.environ["BOARD"] = args.board
+    os.environ["KCONFIG_DIR"] = os.path.dirname(args.kconfig)
     # Set KERNEL_SRC_DIR to point to kernel/kernel/src directory
     kconfig_dir = os.path.dirname(args.kconfig)
     kernel_src_dir = os.path.join(
-        os.path.dirname(os.path.dirname(kconfig_dir)), 'kernel', 'src')
-    os.environ['KERNEL_SRC_DIR'] = os.path.abspath(kernel_src_dir)
+        os.path.dirname(os.path.dirname(kconfig_dir)), "kernel", "src")
+    os.environ["KERNEL_SRC_DIR"] = os.path.abspath(kernel_src_dir)
+
     try:
-        rustflags = parse_rustflags(args.kconfig, args.board, args.build_type)
+        rustflags = generate_configs(args.kconfig, args.board, args.build_type,
+                                     args.output)
         if rustflags:
             for flag in rustflags:
                 print(flag)
