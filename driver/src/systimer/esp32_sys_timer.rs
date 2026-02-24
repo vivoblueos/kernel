@@ -140,13 +140,13 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
 
     pub fn init() {
         // enable unit 0
+        Self::registers().conf.modify(CONF::CLK_EN::SET);
         Self::registers().conf.modify(CONF::UNIT0_WORK_EN::SET);
+        Self::registers().conf.modify(CONF::TARGET0_WORK_EN::CLEAR);
         // select unit 0 vs comparator 0
         Self::set_unit();
-        // enable comparator 0
-        Self::set_comparator_enable(true);
         // CLR interrupt
-        // Self::registers().int_clr.modify(INT_CLR::TARGET0::SET);
+        Self::registers().int_clr.modify(INT_CLR::TARGET0::SET);
         // enable interrupt
         Self::registers().int_ena.modify(INT_ENA::TARGET0::SET);
         // set TARGET mode
@@ -215,6 +215,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
             .write(TARGET_LO::LO.val((moment & 0xFFFF_FFFF) as u32));
         // load comparator
         Self::registers().comp0_load.write(COMP_LOAD::LOAD::SET);
+        Self::set_comparator_enable(true);
     }
 
     fn stop() {

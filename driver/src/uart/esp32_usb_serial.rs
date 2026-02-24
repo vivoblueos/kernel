@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::cell::UnsafeCell;
+
 use crate::static_ref::StaticRef;
 use blueos_hal::{
     uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
@@ -62,6 +64,66 @@ register_bitfields! [
         ],
         IN_FIFO_RESET OFFSET(8) NUMBITS(1) [],
         OUT_FIFO_RESET OFFSET(9) NUMBITS(1) []
+    ],
+
+    pub INT_ENA_REG [
+        JTAG_IN_FLUSH OFFSET(0) NUMBITS(1) [],
+        SOF OFFSET(1) NUMBITS(1) [],
+        SERIAL_OUT_RECV_PKT OFFSET(2) NUMBITS(1) [],
+        SERIAL_IN_EMPTY OFFSET(3) NUMBITS(1) [],
+        PID_ERR OFFSET(4) NUMBITS(1) [],
+        CRC5_ERR OFFSET(5) NUMBITS(1) [],
+        CRC16_ERR OFFSET(6) NUMBITS(1) [],
+        STUFF_ERR OFFSET(7) NUMBITS(1) [],
+        IN_TOKEN_REC_IN_EP1 OFFSET(8) NUMBITS(1) [],
+        USB_BUS_RESET OFFSET(9) NUMBITS(1) [],
+        OUT_EP1_ZERO_PAYLOAD OFFSET(10) NUMBITS(1) [],
+        OUT_EP2_ZERO_PAYLOAD OFFSET(11) NUMBITS(1) []
+    ],
+
+    pub INT_RAW_REG [
+        JTAG_IN_FLUSH OFFSET(0) NUMBITS(1) [],
+        SOF OFFSET(1) NUMBITS(1) [],
+        SERIAL_OUT_RECV_PKT OFFSET(2) NUMBITS(1) [],
+        SERIAL_IN_EMPTY OFFSET(3) NUMBITS(1) [],
+        PID_ERR OFFSET(4) NUMBITS(1) [],
+        CRC5_ERR OFFSET(5) NUMBITS(1) [],
+        CRC16_ERR OFFSET(6) NUMBITS(1) [],
+        STUFF_ERR OFFSET(7) NUMBITS(1) [],
+        IN_TOKEN_REC_IN_EP1 OFFSET(8) NUMBITS(1) [],
+        USB_BUS_RESET OFFSET(9) NUMBITS(1) [],
+        OUT_EP1_ZERO_PAYLOAD OFFSET(10) NUMBITS(1) [],
+        OUT_EP2_ZERO_PAYLOAD OFFSET(11) NUMBITS(1) []
+    ],
+
+    pub INT_ST_REG [
+        JTAG_IN_FLUSH OFFSET(0) NUMBITS(1) [],
+        SOF OFFSET(1) NUMBITS(1) [],
+        SERIAL_OUT_RECV_PKT OFFSET(2) NUMBITS(1) [],
+        SERIAL_IN_EMPTY OFFSET(3) NUMBITS(1) [],
+        PID_ERR OFFSET(4) NUMBITS(1) [],
+        CRC5_ERR OFFSET(5) NUMBITS(1) [],
+        CRC16_ERR OFFSET(6) NUMBITS(1) [],
+        STUFF_ERR OFFSET(7) NUMBITS(1) [],
+        IN_TOKEN_REC_IN_EP1 OFFSET(8) NUMBITS(1) [],
+        USB_BUS_RESET OFFSET(9) NUMBITS(1) [],
+        OUT_EP1_ZERO_PAYLOAD OFFSET(10) NUMBITS(1) [],
+        OUT_EP2_ZERO_PAYLOAD OFFSET(11) NUMBITS(1) []
+    ],
+
+    pub INT_CLR_REG [
+        JTAG_IN_FLUSH OFFSET(0) NUMBITS(1) [],
+        SOF OFFSET(1) NUMBITS(1) [],
+        SERIAL_OUT_RECV_PKT OFFSET(2) NUMBITS(1) [],
+        SERIAL_IN_EMPTY OFFSET(3) NUMBITS(1) [],
+        PID_ERR OFFSET(4) NUMBITS(1) [],
+        CRC5_ERR OFFSET(5) NUMBITS(1) [],
+        CRC16_ERR OFFSET(6) NUMBITS(1) [],
+        STUFF_ERR OFFSET(7) NUMBITS(1) [],
+        IN_TOKEN_REC_IN_EP1 OFFSET(8) NUMBITS(1) [],
+        USB_BUS_RESET OFFSET(9) NUMBITS(1) [],
+        OUT_EP1_ZERO_PAYLOAD OFFSET(10) NUMBITS(1) [],
+        OUT_EP2_ZERO_PAYLOAD OFFSET(11) NUMBITS(1) []
     ]
 ];
 
@@ -69,7 +131,11 @@ register_structs! {
     Registers {
         (0x00 => ep1_reg: ReadWrite<u32, EP1_REG::Register>),
         (0x04 => ep1_conf_reg: ReadWrite<u32, EP1_CONF_REG::Register>),
-        (0x08 => _reserved0),
+        (0x08 => int_raw_reg: ReadWrite<u32, INT_RAW_REG::Register>),
+        (0x0c => int_st_reg: ReadWrite<u32, INT_ST_REG::Register>),
+        (0x10 => int_ena_reg: ReadWrite<u32, INT_ENA_REG::Register>),
+        (0x14 => int_clr_reg: ReadWrite<u32, INT_CLR_REG::Register>),
+        (0x18 => _reserved1),
         (0x20 => jfifo_st_reg: ReadWrite<u32, JFIFO_ST_REG::Register>),
         (0x24 => @END),
     }
@@ -78,10 +144,20 @@ register_structs! {
 const USB_SERIAL_BASE: StaticRef<Registers> =
     unsafe { StaticRef::new(0x6004_3000 as *const Registers) };
 
-pub struct Esp32UsbSerial;
+pub struct Esp32UsbSerial {
+    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
+}
 
 unsafe impl Send for Esp32UsbSerial {}
 unsafe impl Sync for Esp32UsbSerial {}
+
+impl Esp32UsbSerial {
+    pub const fn new() -> Self {
+        Self {
+            intr_handler: UnsafeCell::new(None),
+        }
+    }
+}
 
 impl Configuration<super::UartConfig> for Esp32UsbSerial {
     type Target = ();
@@ -147,23 +223,75 @@ impl HasInterruptReg for Esp32UsbSerial {
     type InterruptType = super::InterruptType;
 
     fn enable_interrupt(&self, intr: Self::InterruptType) {
-        // Not supported
+        match intr {
+            super::InterruptType::Rx => {
+                USB_SERIAL_BASE
+                    .int_ena_reg
+                    .modify(INT_ENA_REG::SERIAL_OUT_RECV_PKT::SET);
+            }
+            super::InterruptType::Tx => {
+                USB_SERIAL_BASE
+                    .int_ena_reg
+                    .modify(INT_ENA_REG::SERIAL_IN_EMPTY::SET);
+            }
+            _ => {}
+        }
     }
 
     fn disable_interrupt(&self, intr: Self::InterruptType) {
-        // Not supported
+        match intr {
+            super::InterruptType::Tx => {
+                USB_SERIAL_BASE
+                    .int_ena_reg
+                    .modify(INT_ENA_REG::SERIAL_IN_EMPTY::CLEAR);
+            }
+            super::InterruptType::Rx => {
+                USB_SERIAL_BASE
+                    .int_ena_reg
+                    .modify(INT_ENA_REG::SERIAL_OUT_RECV_PKT::CLEAR);
+            }
+            _ => {}
+        }
     }
 
     fn clear_interrupt(&self, intr: Self::InterruptType) {
-        // Not supported
+        match intr {
+            super::InterruptType::Rx => {
+                USB_SERIAL_BASE
+                    .int_clr_reg
+                    .write(INT_CLR_REG::SERIAL_OUT_RECV_PKT::SET);
+            }
+            super::InterruptType::Tx => {
+                USB_SERIAL_BASE
+                    .int_clr_reg
+                    .write(INT_CLR_REG::SERIAL_IN_EMPTY::SET);
+            }
+            super::InterruptType::All => {
+                USB_SERIAL_BASE.int_clr_reg.write(
+                    INT_CLR_REG::SERIAL_OUT_RECV_PKT::SET + INT_CLR_REG::SERIAL_IN_EMPTY::SET,
+                );
+            }
+            _ => {}
+        }
     }
 
     fn get_interrupt(&self) -> Self::InterruptType {
-        super::InterruptType::Unknown
+        let status = &USB_SERIAL_BASE.int_st_reg;
+        let rx = status.is_set(INT_ST_REG::SERIAL_OUT_RECV_PKT);
+        let tx = status.is_set(INT_ST_REG::SERIAL_IN_EMPTY);
+
+        match (rx, tx) {
+            (true, true) => super::InterruptType::All,
+            (true, false) => super::InterruptType::Rx,
+            (false, true) => super::InterruptType::Tx,
+            _ => super::InterruptType::Unknown,
+        }
     }
 
     fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        // Not supported
+        unsafe {
+            *self.intr_handler.get() = Some(handler);
+        }
     }
 
     fn get_irq_nums(&self) -> &[u32] {

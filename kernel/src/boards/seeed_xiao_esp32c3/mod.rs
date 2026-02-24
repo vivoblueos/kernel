@@ -100,7 +100,10 @@ pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     match mcause & 0xff {
         TARGET0_INT_NUM => {
             ClockImpl::clr_interrupt();
-            crate::kprintln!("Handle TARGET0 interrupt");
+            crate::time::handle_clock_interrupt();
+        }
+        USB_SERIAL_JTAG_INT_NUM => {
+            usb_serial_jtag_interrupt_handler();
         }
         _ => {}
     }
@@ -110,12 +113,19 @@ pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
 const INTR_BASE: usize = 0x600c_2000;
+
+const CLOCK_GATE_REG: usize = INTR_BASE + 0x100;
+
 const TARGET0_INT_MAP_REG: usize = INTR_BASE + 0x94;
+const TARGET0_INT_NUM: usize = 16; // IRQ number 16 in target0
+const INT_PRI16_REG: usize = INTR_BASE + 0x154;
+
+const USB_SERIAL_JTAG_INT_MAP_REG: usize = INTR_BASE + 0x68;
+const USB_SERIAL_JTAG_INT_NUM: usize = 15; // IRQ number 15 in USB Serial JTAG
+const INT_PRI15_REG: usize = INTR_BASE + 0x150;
+
 const INT_ENABLE_REG: usize = INTR_BASE + 0x104;
 const INT_THRESH_REG: usize = INTR_BASE + 0x194;
-const TARGET0_INT_NUM: usize = 16; // IRQ number 16 in target0
-const CLOCK_GATE_REG: usize = INTR_BASE + 0x100;
-const INT_PRI_16_REG: usize = INTR_BASE + 0x154;
 const INT_TYPE_REG: usize = INTR_BASE + 0x108;
 
 pub(crate) fn init() {
@@ -130,18 +140,22 @@ pub(crate) fn init() {
     init_vector_table();
 
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer::<0x6002_3000, 16_000_000>::init();
-    // map target0 interrupt to 16 interrupt
+
     unsafe {
         core::ptr::write_volatile(CLOCK_GATE_REG as *mut u32, 1);
+        // map target0 interrupt to 16 interrupt
         core::ptr::write_volatile(TARGET0_INT_MAP_REG as *mut u32, TARGET0_INT_NUM as u32);
-        core::ptr::write_volatile(INT_TYPE_REG as *mut u32, 1); // edge interrupt avoid for spurious interrupt
+        // map USB Serial JTAG interrupt to 15 interrupt
+        core::ptr::write_volatile(
+            USB_SERIAL_JTAG_INT_MAP_REG as *mut u32,
+            USB_SERIAL_JTAG_INT_NUM as u32,
+        );
+        // Enable USB Serial JTAG interrupt
+        // core::ptr::write_volatile(INT_TYPE_REG as *mut u32, 1); // edge interrupt avoid for spurious interrupt
         core::ptr::write_volatile(INT_THRESH_REG as *mut u32, 1);
-        core::ptr::write_volatile(INT_PRI_16_REG as *mut u32, 15);
-        core::ptr::write_volatile((INT_PRI_16_REG + 0x4) as *mut u32, 15);
-        core::ptr::write_volatile((INT_PRI_16_REG - 0x4) as *mut u32, 15);
+        core::ptr::write_volatile(INT_PRI16_REG as *mut u32, 15);
+        core::ptr::write_volatile(INT_PRI15_REG as *mut u32, 15);
         core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, 0xFFFF_FFFF);
-        // hal_espressif_rs::rust_helper_esp_cpu_inter_enable(1 << TARGET0_INT_NUM);
-        // hal_espressif_rs::rust_helper_esp_cpu_intr_set_priority(TARGET0_INT_NUM as i32, 1);
     }
     // From now on, all work will be done by core 0.
     // if arch::current_cpu_id() != 0 {
@@ -162,7 +176,7 @@ pub(crate) fn init() {
 
 crate::define_peripheral! {
     (console_uart, blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial,
-     blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial),
+     blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial::new()),
 }
 
 crate::define_pin_states!(None);
@@ -173,23 +187,16 @@ pub(crate) fn send_ipi(_hart: usize) {}
 #[inline(always)]
 pub(crate) fn clear_ipi(_hart: usize) {}
 
-// #[no_mangle]
-// pub unsafe extern "C" fn test_memory() {
-//     let mut v: u32 = 0;
-//     let addr_reg_0 = 0x3c000004usize as *const u32;
-//     let addr_reg_1 = 0x3c010004usize as *const u32;
-//     let addr_reg_3 = 0x3c018004usize as *const u32;
-//     let addr_reg_4 = 0x3c0182c0usize as *const u32;
-//     core::arch::asm!(
-//         "lw {out}, 0({addr_reg_0})",
-//         "lw {out}, 0({addr_reg_1})",
-//         "lw {out}, 0({addr_reg_3})",
-//         "lw {out}, 0({addr_reg_4})",
-//         out = out(reg) v,
-//         addr_reg_0 = in(reg) addr_reg_0,
-//         addr_reg_1 = in(reg) addr_reg_1,
-//         addr_reg_3 = in(reg) addr_reg_3,
-//         addr_reg_4 = in(reg) addr_reg_4,
-//         options(nostack, preserves_flags),
-//     );
-// }
+pub fn usb_serial_jtag_interrupt_handler() {
+    use blueos_hal::HasInterruptReg;
+    let uart = get_device!(console_uart);
+    let intr = uart.get_interrupt();
+    if let Some(handler) = unsafe {
+        let intr_handler_cell = &*uart.intr_handler.get();
+
+        intr_handler_cell.as_ref()
+    } {
+        handler();
+    }
+    uart.clear_interrupt(intr);
+}
