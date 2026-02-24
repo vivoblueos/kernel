@@ -30,7 +30,7 @@ _UNSET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 
 def _normalize_key(key: str) -> str:
     if key.startswith("CONFIG_"):
-        key = key[len("CONFIG_") :]
+        key = key[len("CONFIG_"):]
     return key.lower()
 
 
