@@ -193,13 +193,11 @@ pub(crate) fn build_static_thread(
     kind: ThreadKind,
 ) -> ThreadNode {
     let inner = &s.arc;
-    let stack_size = s.stack.rep.len();
-    let stack_base = s.stack.rep.as_ptr() as usize;
     let stack = &mut s.stack;
 
     let arc = unsafe { ThreadNode::from_static_inner_ref(inner) };
     debug_assert_eq!(ThreadNode::strong_count(&arc), 1);
-    let id = Thread::id(&arc);
+    let _id = Thread::id(&arc);
     let mut w = arc.lock();
     let Some(stack) = Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len()) else {
         panic!("Invalid stack");
