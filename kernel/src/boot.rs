@@ -165,7 +165,6 @@ extern "C" fn init() {
     #[cfg(enable_vfs)]
     init_vfs();
     init_apps();
-
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }
