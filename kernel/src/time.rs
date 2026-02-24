@@ -77,7 +77,6 @@ impl Tick {
     }
 
     pub fn interrupt_at(n: Tick) {
-        crate::kprintln!("Set interrupt at tick {:?}", n);
         let _guard = DisableInterruptGuard::new();
         if n == Self::MAX {
             ClockImpl::stop();
