@@ -362,9 +362,9 @@ unsafe extern "C" fn syscall_stub(ctx: *mut Context) -> ! {
     core::arch::naked_asm!(
         concat!(
             "
-            push {{r0}}
+            push {{r0, lr}}
             bl {syscall_handler}
-            pop {{r0}}
+            pop {{r0, lr}}
             ldr r7, ={syscall_ret}
             svc 0
             ",
