@@ -22,10 +22,11 @@ import argparse
 import os
 import sys
 
-from kconfiglib import Kconfig
+from kconfiglib import Kconfig, BOOL, STRING
 
 
 def generate_configs(kconfig_path, board, build_type, output):
+    rustflags = []
     kconf = Kconfig(kconfig_path)
     defconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
                              "defconfig")
@@ -36,6 +37,12 @@ def generate_configs(kconfig_path, board, build_type, output):
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
     kconf.write_config(output)
+    for sym in kconf.defined_syms:
+        if sym.type == BOOL and sym.tri_value == 2:
+            rustflags.append(sym.name.lower())
+        elif sym.type == STRING and sym.str_value:
+            rustflags.append(f'{sym.name.lower()}="{sym.str_value.lower()}"')
+    return rustflags
 
 
 if __name__ == "__main__":
@@ -54,8 +61,11 @@ if __name__ == "__main__":
     os.environ["KERNEL_SRC_DIR"] = os.path.abspath(kernel_src_dir)
 
     try:
-        generate_configs(args.kconfig, args.board, args.build_type,
-                         args.output)
+        rustflags = generate_configs(args.kconfig, args.board, args.build_type,
+                                     args.output)
+        if rustflags:
+            for flag in rustflags:
+                print(flag)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
         sys.exit(1)
