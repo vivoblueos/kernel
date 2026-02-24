@@ -130,11 +130,7 @@ const INT_TYPE_REG: usize = INTR_BASE + 0x108;
 
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
-    unsafe { hal_espressif_rs::soc_init() };
 
-    unsafe {
-        crate::boot::INIT_BSS_DONE = true;
-    }
     crate::boot::init_runtime();
     crate::boot::init_heap();
     init_vector_table();
