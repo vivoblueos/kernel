@@ -54,7 +54,8 @@ if __name__ == "__main__":
     os.environ["KERNEL_SRC_DIR"] = os.path.abspath(kernel_src_dir)
 
     try:
-        generate_configs(args.kconfig, args.board, args.build_type, args.output)
+        generate_configs(args.kconfig, args.board, args.build_type,
+                         args.output)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
         sys.exit(1)

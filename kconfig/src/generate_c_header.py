@@ -24,14 +24,16 @@ import argparse
 
 _UNSET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 
+
 def write_autoconf_from_config(config_path, output_headers):
     output_dir = os.path.dirname(output_headers)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    
-    with open(config_path, "r", encoding="utf-8") as src, open(
-        output_headers, "w", encoding="utf-8"
-    ) as out:
+
+    with open(config_path, "r",
+              encoding="utf-8") as src, open(output_headers,
+                                             "w",
+                                             encoding="utf-8") as out:
         out.write("/* Automatically generated file; DO NOT EDIT. */\n")
         for raw_line in src:
             line = raw_line.strip()
@@ -50,6 +52,7 @@ def write_autoconf_from_config(config_path, output_headers):
                 out.write(f"#define {key} \"\"\n")
             else:
                 out.write(f"#define {key} {value}\n")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
