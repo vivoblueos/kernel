@@ -1130,7 +1130,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
 
                 block.as_mut().common.size = new_size | SIZE_USED;
             }
-            debug_assert!(old_size - new_size >= self.allocated);
+            debug_assert!(old_size - new_size <= self.allocated);
             self.allocated -= old_size - new_size;
 
             return Some(ptr);
