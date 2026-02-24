@@ -23,38 +23,48 @@ import sys
 from kconfiglib import Kconfig, BOOL, STRING
 import os
 import argparse
+import re
+
+_UNSET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 
 
-def parse_rustflags(kconfig_path, board, build_type):
+def _normalize_key(key: str) -> str:
+    if key.startswith("CONFIG_"):
+        key = key[len("CONFIG_") :]
+    return key.lower()
+
+
+def parse_rustflags_from_config(config_path):
     rustflags = []
-    kconf = Kconfig(kconfig_path)
-    dotconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
-                             'defconfig')
-    if os.path.exists(dotconfig):
-        kconf.load_config(dotconfig)
-    for sym in kconf.defined_syms:
-        if sym.type == BOOL and sym.tri_value == 2:
-            rustflags.append(sym.name.lower())
-        elif sym.type == STRING and sym.str_value:
-            rustflags.append(f'{sym.name.lower()}="{sym.str_value.lower()}"')
+    with open(config_path, "r", encoding="utf-8") as src:
+        for raw_line in src:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if _UNSET_RE.match(line):
+                continue
+            if not line.startswith("CONFIG_") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = _normalize_key(key)
+            if value == "y":
+                rustflags.append(key)
+            elif value == "n":
+                continue
+            elif value == "":
+                rustflags.append(f'{key}=""')
+            else:
+                if value.startswith('"') and value.endswith('"'):
+                    rustflags.append(f'{key}="{value[1:-1].lower()}"')
     return rustflags
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kconfig", help="Kconfig dir")
-    parser.add_argument("--board", help="target board")
-    parser.add_argument("--build_type", help="target build_type")
+    parser.add_argument("--config", help=".config file path")
     args = parser.parse_args()
-    os.environ['BOARD'] = args.board
-    os.environ['KCONFIG_DIR'] = os.path.dirname(args.kconfig)
-    # Set KERNEL_SRC_DIR to point to kernel/kernel/src directory
-    kconfig_dir = os.path.dirname(args.kconfig)
-    kernel_src_dir = os.path.join(
-        os.path.dirname(os.path.dirname(kconfig_dir)), 'kernel', 'src')
-    os.environ['KERNEL_SRC_DIR'] = os.path.abspath(kernel_src_dir)
     try:
-        rustflags = parse_rustflags(args.kconfig, args.board, args.build_type)
+        rustflags = parse_rustflags_from_config(args.config)
         if rustflags:
             for flag in rustflags:
                 print(flag)

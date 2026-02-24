@@ -26,11 +26,11 @@ _kconfig_files = [
   "//kernel/kernel/src/net/Kconfig",
 ]
 
-action("generate_c_header") {
-  script = "//kernel/kconfig/src/generate_c_header.py"
+action("generate_configs") {
+  script = "//kernel/kconfig/src/generate_configs.py"
   inputs = _kconfig_files
-  output_headers = rebase_path("${root_gen_dir}/autoconf.h")
-  outputs = [ "${root_gen_dir}/autoconf.h" ]
+  output_config = rebase_path("${root_gen_dir}/.config")
+  outputs = [ "${root_gen_dir}/.config" ]
   args = [
     "--kconfig",
     rebase_path("config/Kconfig"),
@@ -38,9 +38,24 @@ action("generate_c_header") {
     "${board}",
     "--build_type",
     "${build_type}",
+    "--output",
+    "${output_config}",
+  ]
+}
+
+action("generate_c_header") {
+  script = "//kernel/kconfig/src/generate_c_header.py"
+  inputs = get_target_outputs(":generate_configs")
+  output_headers = rebase_path("${root_gen_dir}/autoconf.h")
+  outputs = [ "${root_gen_dir}/autoconf.h" ]
+  config_path = rebase_path("${root_gen_dir}/.config")
+  args = [
+    "--config",
+    "${config_path}",
     "--output_headers",
     "${output_headers}",
   ]
+  deps = [ ":generate_configs" ]
 }
 
 bindgen("autoconf_header") {
@@ -78,15 +93,11 @@ build_rust("blueos_kconfig") {
 
 _kernel_configs = exec_script("//kernel/kconfig/src/parse_rustflags.py",
                               [
-                                "--kconfig",
-                                rebase_path("//kernel/kconfig/config/Kconfig"),
-                                "--board",
-                                "${board}",
-                                "--build_type",
-                                "${build_type}",
+                                "--config",
+                                rebase_path("${root_gen_dir}/.config"),
                               ],
                               "list lines",
-                              _kconfig_files)
+                              [ rebase_path("${root_gen_dir}/.config") ])
 
 config("kconfigs") {
   rustflags = []
