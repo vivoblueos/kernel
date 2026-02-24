@@ -194,7 +194,6 @@ pub(crate) fn build_static_thread(
 ) -> ThreadNode {
     let inner = &s.arc;
     let stack = &mut s.stack;
-
     let arc = unsafe { ThreadNode::from_static_inner_ref(inner) };
     debug_assert_eq!(ThreadNode::strong_count(&arc), 1);
     let _id = Thread::id(&arc);
