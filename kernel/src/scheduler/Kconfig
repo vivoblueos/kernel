@@ -11,14 +11,14 @@ config EVENT_FLAGS
     default n
     bool "Enable event flags"
 
-config ROBIN_SCHEDULER
+config ROUND_ROBIN
     default y
     bool "Enable robin scheduler"
 
 config ROBIN_SLICE
     default 10
     int "The tick slice of robin scheduler"
-    depends on ROBIN_SCHEDULER
+    depends on ROUND_ROBIN
 
 config OVERFLOW_CHECK
     default y
