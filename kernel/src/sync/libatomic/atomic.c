@@ -75,9 +75,9 @@ extern void enable_local_irq_restore(size_t);
 #pragma redefine_extname __atomic_load_c SYMBOL_NAME(__atomic_load)
 #pragma redefine_extname __atomic_store_c SYMBOL_NAME(__atomic_store)
 #pragma redefine_extname __atomic_exchange_c SYMBOL_NAME(__atomic_exchange)
-#pragma redefine_extname __atomic_compare_exchange_c SYMBOL_NAME( \
+#pragma redefine_extname __atomic_compare_exchange_c SYMBOL_NAME(              \
     __atomic_compare_exchange)
-#pragma redefine_extname __atomic_is_lock_free_c SYMBOL_NAME( \
+#pragma redefine_extname __atomic_is_lock_free_c SYMBOL_NAME(              \
     __atomic_is_lock_free)
 
 #ifdef HAS_LOCK_FREE_CAS
@@ -98,15 +98,13 @@ _Static_assert(__atomic_always_lock_free(sizeof(uintptr_t), 0),
                "Implementation assumes lock-free pointer-size cmpxchg");
 typedef _Atomic(uintptr_t) Lock;
 /// Unlock a lock.  This is a release operation.
-__inline static void unlock(Lock *l, size_t irq_status)
-{
+__inline static void unlock(Lock *l, size_t irq_status) {
   __c11_atomic_store(l, 0, __ATOMIC_RELEASE);
   enable_local_irq_restore(irq_status);
 }
 /// Locks a lock.  In the current implementation, this is potentially
 /// unbounded in the contended case.
-__inline static size_t lock(Lock *l)
-{
+__inline static size_t lock(Lock *l) {
   size_t irq_status = disable_local_irq_save();
   uintptr_t old = 0;
   while (!__c11_atomic_compare_exchange_weak(l, &old, 1, __ATOMIC_ACQUIRE,
