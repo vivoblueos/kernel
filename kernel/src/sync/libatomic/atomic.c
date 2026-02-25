@@ -163,8 +163,7 @@ __inline static size_t lock(Lock *l) {
 /// when they exist.
 #define TRY_LOCK_FREE_CASE(n, type, ptr)                                       \
   case n:                                                                      \
-    if (IS_LOCK_FREE_##n(ptr))                                                 \
-    {                                                                          \
+    if (IS_LOCK_FREE_##n(ptr)) {                                               \                           \
       LOCK_FREE_ACTION(type);                                                  \
     }                                                                          \
     break;
@@ -175,10 +174,8 @@ __inline static size_t lock(Lock *l) {
 #endif
 
 #define LOCK_FREE_CASES(ptr)                                                   \
-  do                                                                           \
-  {                                                                            \
-    switch (size)                                                              \
-    {                                                                          \
+  do {                                                                         \
+    switch (size) {                                                            \
       TRY_LOCK_FREE_CASE(1, uint8_t, ptr)                                      \
       TRY_LOCK_FREE_CASE(2, uint16_t, ptr)                                     \
       TRY_LOCK_FREE_CASE(4, uint32_t, ptr)                                     \
