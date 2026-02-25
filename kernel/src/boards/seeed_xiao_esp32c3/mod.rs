@@ -128,6 +128,10 @@ const INT_ENABLE_REG: usize = INTR_BASE + 0x104;
 const INT_THRESH_REG: usize = INTR_BASE + 0x194;
 const INT_TYPE_REG: usize = INTR_BASE + 0x108;
 
+const RTC_CNTL_BASE: usize = 0x6000_8000;
+const RTC_CNTL_WDTWRITECT_REG: usize = RTC_CNTL_BASE + 0xA8;
+const RTC_CNTL_WDTCONFIG0_REG: usize = RTC_CNTL_BASE + 0x90;
+
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
 
@@ -138,6 +142,11 @@ pub(crate) fn init() {
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer::<0x6002_3000, 16_000_000>::init();
 
     unsafe {
+        // disable WDT to avoid unexpected reset
+        core::ptr::write_volatile(RTC_CNTL_WDTWRITECT_REG as *mut u32, 0x50D83AA1);
+        core::ptr::write_volatile(RTC_CNTL_WDTCONFIG0_REG as *mut u32, 0);
+        core::ptr::write_volatile(RTC_CNTL_WDTWRITECT_REG as *mut u32, 0);
+
         core::ptr::write_volatile(CLOCK_GATE_REG as *mut u32, 1);
         // map target0 interrupt to 16 interrupt
         core::ptr::write_volatile(TARGET0_INT_MAP_REG as *mut u32, TARGET0_INT_NUM as u32);
