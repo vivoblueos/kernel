@@ -77,7 +77,7 @@ extern void enable_local_irq_restore(size_t);
 #pragma redefine_extname __atomic_exchange_c SYMBOL_NAME(__atomic_exchange)
 #pragma redefine_extname __atomic_compare_exchange_c SYMBOL_NAME(              \
     __atomic_compare_exchange)
-#pragma redefine_extname __atomic_is_lock_free_c SYMBOL_NAME(              \
+#pragma redefine_extname __atomic_is_lock_free_c SYMBOL_NAME(                  \
     __atomic_is_lock_free)
 
 #ifdef HAS_LOCK_FREE_CAS
@@ -116,8 +116,7 @@ __inline static size_t lock(Lock *l) {
 static Lock locks[SPINLOCK_COUNT];
 
 /// Returns a lock to use for a given pointer.
-static __inline Lock *lock_for_pointer(void *ptr)
-{
+static __inline Lock *lock_for_pointer(void *ptr) {
   intptr_t hash = (intptr_t)ptr;
   // Disregard the lowest 4 bits.  We want all values that may be part of the
   // same memory operation to hash to the same value and therefore use the same
@@ -139,8 +138,7 @@ typedef int Lock;
 
 static __inline Lock *lock_for_pointer(void *ptr) { return 0; }
 
-__inline static void unlock(Lock *l, size_t irq_status)
-{
+__inline static void unlock(Lock *l, size_t irq_status) {
   enable_local_irq_restore(irq_status);
 }
 
