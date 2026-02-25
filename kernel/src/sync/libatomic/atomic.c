@@ -324,24 +324,22 @@ OPTIMISED_CASES
 OPTIMISED_CASES
 #undef OPTIMISED_CASE
 
-#define OPTIMISED_CASE(n, lockfree, type)                                     \
-  bool __atomic_compare_exchange_##n(type *ptr, type *expected, type desired, \
-                                     int success, int failure)                \
-  {                                                                           \
-    if (lockfree(ptr))                                                        \
-      return __c11_atomic_compare_exchange_strong(                            \
-          (_Atomic(type) *)ptr, expected, desired, success, failure);         \
-    Lock *l = lock_for_pointer(ptr);                                          \
-    size_t irq = lock(l);                                                     \
-    if (*ptr == *expected)                                                    \
-    {                                                                         \
-      *ptr = desired;                                                         \
-      unlock(l, irq);                                                         \
-      return true;                                                            \
-    }                                                                         \
-    *expected = *ptr;                                                         \
-    unlock(l, irq);                                                           \
-    return false;                                                             \
+#define OPTIMISED_CASE(n, lockfree, type)                                      \
+  bool __atomic_compare_exchange_##n(type *ptr, type *expected, type desired,  \
+                                     int success, int failure) {               \
+    if (lockfree(ptr))                                                         \
+      return __c11_atomic_compare_exchange_strong(                             \
+          (_Atomic(type) *)ptr, expected, desired, success, failure);          \
+    Lock *l = lock_for_pointer(ptr);                                           \
+    size_t irq = lock(l);                                                      \
+    if (*ptr == *expected) {                                                   \
+      *ptr = desired;                                                          \
+      unlock(l, irq);                                                          \
+      return true;                                                             \
+    }                                                                          \
+    *expected = *ptr;                                                          \
+    unlock(l, irq);                                                            \
+    return false;                                                              \
   }
 OPTIMISED_CASES
 #undef OPTIMISED_CASE
@@ -362,17 +360,16 @@ OPTIMISED_CASES
     return tmp;                                                             \
   }
 
-#define ATOMIC_RMW_NAND(n, lockfree, type)                              \
-  type __atomic_fetch_nand_##n(type *ptr, type val, int model)          \
-  {                                                                     \
-    if (lockfree(ptr))                                                  \
-      return __c11_atomic_fetch_nand((_Atomic(type) *)ptr, val, model); \
-    Lock *l = lock_for_pointer(ptr);                                    \
-    size_t irq = lock(l);                                               \
-    type tmp = *ptr;                                                    \
-    *ptr = ~(tmp & val);                                                \
-    unlock(l, irq);                                                     \
-    return tmp;                                                         \
+#define ATOMIC_RMW_NAND(n, lockfree, type)                                 \
+  type __atomic_fetch_nand_##n(type *ptr, type val, int model) {           \
+    if (lockfree(ptr))                                                     \
+      return __c11_atomic_fetch_nand((_Atomic(type) *)ptr, val, model);    \
+    Lock *l = lock_for_pointer(ptr);                                       \
+    size_t irq = lock(l);                                                  \
+    type tmp = *ptr;                                                       \
+    *ptr = ~(tmp & val);                                                   \
+    unlock(l, irq);                                                        \
+    return tmp;                                                            \
   }
 
 #define OPTIMISED_CASE(n, lockfree, type) ATOMIC_RMW(n, lockfree, type, add, +)
