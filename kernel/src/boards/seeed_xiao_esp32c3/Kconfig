@@ -18,3 +18,8 @@ choice
         help
           Set irq priority bits to 8.
 endchoice
+
+config SOC_ESP32C3
+    bool "Esp32c3"
+    default y
+    select RISCV
