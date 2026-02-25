@@ -485,9 +485,9 @@ pub(crate) extern "C" fn bootstrap() {
     unsafe {
         core::arch::asm!(
             "csrs mstatus, {mstatus}",
-            // "csrs mie, {mie}",
+            "csrs mie, {mie}",
             mstatus = in(reg) MSTATUS_MPP_M | MSTATUS_MPIE,
-            // mie = in(reg) MIE_MTIE|MIE_MSIE|MIE_MEIE,
+            mie = in(reg) MIE_MTIE|MIE_MSIE|MIE_MEIE,
             options(nostack),
         )
     };
