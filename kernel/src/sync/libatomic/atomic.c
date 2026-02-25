@@ -142,8 +142,7 @@ __inline static void unlock(Lock *l, size_t irq_status) {
   enable_local_irq_restore(irq_status);
 }
 
-__inline static size_t lock(Lock *l)
-{
+__inline static size_t lock(Lock *l) {
   size_t irq_status = disable_local_irq_save();
   return irq_status;
 }
@@ -151,8 +150,8 @@ __inline static size_t lock(Lock *l)
 #endif // HAS_LOCK_FREE_CAS
 
 /// Macros for determining whether a size is lock free.
-#define ATOMIC_ALWAYS_LOCK_FREE_OR_ALIGNED_LOCK_FREE(size, p) \
-  (__atomic_always_lock_free(size, p) ||                      \
+#define ATOMIC_ALWAYS_LOCK_FREE_OR_ALIGNED_LOCK_FREE(size, p)                  \
+  (__atomic_always_lock_free(size, p) ||                                       \
    (__atomic_always_lock_free(size, 0) && ((uintptr_t)p % size) == 0))
 #define IS_LOCK_FREE_1(p) ATOMIC_ALWAYS_LOCK_FREE_OR_ALIGNED_LOCK_FREE(1, p)
 #define IS_LOCK_FREE_2(p) ATOMIC_ALWAYS_LOCK_FREE_OR_ALIGNED_LOCK_FREE(2, p)
@@ -162,12 +161,12 @@ __inline static size_t lock(Lock *l)
 
 /// Macro that calls the compiler-generated lock-free versions of functions
 /// when they exist.
-#define TRY_LOCK_FREE_CASE(n, type, ptr) \
-  case n:                                \
-    if (IS_LOCK_FREE_##n(ptr))           \
-    {                                    \
-      LOCK_FREE_ACTION(type);            \
-    }                                    \
+#define TRY_LOCK_FREE_CASE(n, type, ptr)                                       \
+  case n:                                                                      \
+    if (IS_LOCK_FREE_##n(ptr))                                                 \
+    {                                                                          \
+      LOCK_FREE_ACTION(type);                                                  \
+    }                                                                          \
     break;
 #ifdef __SIZEOF_INT128__
 #define TRY_LOCK_FREE_CASE_16(p) TRY_LOCK_FREE_CASE(16, __uint128_t, p)
@@ -175,24 +174,23 @@ __inline static size_t lock(Lock *l)
 #define TRY_LOCK_FREE_CASE_16(p) /* __uint128_t not available */
 #endif
 
-#define LOCK_FREE_CASES(ptr)                                            \
-  do                                                                    \
-  {                                                                     \
-    switch (size)                                                       \
-    {                                                                   \
-      TRY_LOCK_FREE_CASE(1, uint8_t, ptr)                               \
-      TRY_LOCK_FREE_CASE(2, uint16_t, ptr)                              \
-      TRY_LOCK_FREE_CASE(4, uint32_t, ptr)                              \
-      TRY_LOCK_FREE_CASE(8, uint64_t, ptr)                              \
-      TRY_LOCK_FREE_CASE_16(ptr) /* __uint128_t may not be supported */ \
-    default:                                                            \
-      break;                                                            \
-    }                                                                   \
+#define LOCK_FREE_CASES(ptr)                                                   \
+  do                                                                           \
+  {                                                                            \
+    switch (size)                                                              \
+    {                                                                          \
+      TRY_LOCK_FREE_CASE(1, uint8_t, ptr)                                      \
+      TRY_LOCK_FREE_CASE(2, uint16_t, ptr)                                     \
+      TRY_LOCK_FREE_CASE(4, uint32_t, ptr)                                     \
+      TRY_LOCK_FREE_CASE(8, uint64_t, ptr)                                     \
+      TRY_LOCK_FREE_CASE_16(ptr) /* __uint128_t may not be supported */        \
+    default:                                                                   \
+      break;                                                                   \
+    }                                                                          \
   } while (0)
 
 /// Whether atomic operations for the given size (and alignment) are lock-free.
-bool __atomic_is_lock_free_c(size_t size, void *ptr)
-{
+bool __atomic_is_lock_free_c(size_t size, void *ptr) {
 #define LOCK_FREE_ACTION(type) return true;
   LOCK_FREE_CASES(ptr);
 #undef LOCK_FREE_ACTION
@@ -201,8 +199,7 @@ bool __atomic_is_lock_free_c(size_t size, void *ptr)
 
 /// An atomic load operation.  This is atomic with respect to the source
 /// pointer only.
-void __atomic_load_c(int size, void *src, void *dest, int model)
-{
+void __atomic_load_c(int size, void *src, void *dest, int model) {
 #define LOCK_FREE_ACTION(type)                                      \
   *((type *)dest) = __c11_atomic_load((_Atomic(type) *)src, model); \
   return;
@@ -216,8 +213,7 @@ void __atomic_load_c(int size, void *src, void *dest, int model)
 
 /// An atomic store operation.  This is atomic with respect to the destination
 /// pointer only.
-void __atomic_store_c(int size, void *dest, void *src, int model)
-{
+void __atomic_store_c(int size, void *dest, void *src, int model) {
 #define LOCK_FREE_ACTION(type)                                    \
   __c11_atomic_store((_Atomic(type) *)dest, *(type *)src, model); \
   return;
@@ -235,11 +231,10 @@ void __atomic_store_c(int size, void *dest, void *src, int model)
 ///
 /// This function returns 1 if the exchange takes place or 0 if it fails.
 int __atomic_compare_exchange_c(int size, void *ptr, void *expected,
-                                void *desired, int success, int failure)
-{
-#define LOCK_FREE_ACTION(type)                                           \
-  return __c11_atomic_compare_exchange_strong(                           \
-      (_Atomic(type) *)ptr, (type *)expected, *(type *)desired, success, \
+                                void *desired, int success, int failure) {
+#define LOCK_FREE_ACTION(type)                                                  \
+  return __c11_atomic_compare_exchange_strong(                                  \
+      (_Atomic(type) *)ptr, (type *)expected, *(type *)desired, success,        \
       failure)
   LOCK_FREE_CASES(ptr);
 #undef LOCK_FREE_ACTION
