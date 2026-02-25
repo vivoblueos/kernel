@@ -133,32 +133,34 @@ pub const RETIRED: Uint = 4;
 // ThreadStats is protected by thread scheduler.
 #[derive(Debug, Default)]
 pub struct ThreadStats {
-    start: u64,
-    cycles: u64,
+    start: Cell<u64>,
+    cycles: Cell<u64>,
 }
 
 impl ThreadStats {
     pub const fn new() -> Self {
         Self {
-            start: 0,
-            cycles: 0,
+            start: Cell::new(0),
+            cycles: Cell::new(0),
         }
     }
 
-    pub fn increment_cycles(&mut self, cycles: u64) {
-        self.cycles += cycles.saturating_sub(self.start);
+    pub fn increment_cycles(&self, cycles: u64) {
+        let cycles = self.get_cycles();
+        self.cycles
+            .set(cycles + cycles.saturating_sub(self.start.get()));
     }
 
-    pub fn set_start_cycles(&mut self, start: u64) {
-        self.start = start;
+    pub fn set_start_cycles(&self, start: u64) {
+        self.start.set(start);
     }
 
     pub fn start_cycles(&self) -> u64 {
-        self.start
+        self.start.get()
     }
 
     pub fn get_cycles(&self) -> u64 {
-        self.cycles
+        self.cycles.get()
     }
 }
 
@@ -634,13 +636,13 @@ impl Thread {
 
     #[cfg(thread_stats)]
     #[inline]
-    pub fn increment_cycles(&mut self, cycles: u64) {
+    pub fn increment_cycles(&self, cycles: u64) {
         self.stats.increment_cycles(cycles);
     }
 
     #[cfg(thread_stats)]
     #[inline]
-    pub fn set_start_cycles(&mut self, cycles: u64) {
+    pub fn set_start_cycles(&self, cycles: u64) {
         self.stats.set_start_cycles(cycles);
     }
 
