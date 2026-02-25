@@ -347,29 +347,28 @@ OPTIMISED_CASES
 ////////////////////////////////////////////////////////////////////////////////
 // Atomic read-modify-write operations for integers of various sizes.
 ////////////////////////////////////////////////////////////////////////////////
-#define ATOMIC_RMW(n, lockfree, type, opname, op)                           \
-  type __atomic_fetch_##opname##_##n(type *ptr, type val, int model)        \
-  {                                                                         \
-    if (lockfree(ptr))                                                      \
-      return __c11_atomic_fetch_##opname((_Atomic(type) *)ptr, val, model); \
-    Lock *l = lock_for_pointer(ptr);                                        \
-    size_t irq = lock(l);                                                   \
-    type tmp = *ptr;                                                        \
-    *ptr = tmp op val;                                                      \
-    unlock(l, irq);                                                         \
-    return tmp;                                                             \
+#define ATOMIC_RMW(n, lockfree, type, opname, op)                              \
+  type __atomic_fetch_##opname##_##n(type *ptr, type val, int model) {         \
+    if (lockfree(ptr))                                                         \
+      return __c11_atomic_fetch_##opname((_Atomic(type) *)ptr, val, model);    \
+    Lock *l = lock_for_pointer(ptr);                                           \
+    size_t irq = lock(l);                                                      \
+    type tmp = *ptr;                                                           \
+    *ptr = tmp op val;                                                         \
+    unlock(l, irq);                                                            \
+    return tmp;                                                                \
   }
 
-#define ATOMIC_RMW_NAND(n, lockfree, type)                                 \
-  type __atomic_fetch_nand_##n(type *ptr, type val, int model) {           \
-    if (lockfree(ptr))                                                     \
-      return __c11_atomic_fetch_nand((_Atomic(type) *)ptr, val, model);    \
-    Lock *l = lock_for_pointer(ptr);                                       \
-    size_t irq = lock(l);                                                  \
-    type tmp = *ptr;                                                       \
-    *ptr = ~(tmp & val);                                                   \
-    unlock(l, irq);                                                        \
-    return tmp;                                                            \
+#define ATOMIC_RMW_NAND(n, lockfree, type)                                     \
+  type __atomic_fetch_nand_##n(type *ptr, type val, int model) {               \
+    if (lockfree(ptr))                                                         \
+      return __c11_atomic_fetch_nand((_Atomic(type) *)ptr, val, model);        \
+    Lock *l = lock_for_pointer(ptr);                                           \
+    size_t irq = lock(l);                                                      \
+    type tmp = *ptr;                                                           \
+    *ptr = ~(tmp & val);                                                       \
+    unlock(l, irq);                                                            \
+    return tmp;                                                                \
   }
 
 #define OPTIMISED_CASE(n, lockfree, type) ATOMIC_RMW(n, lockfree, type, add, +)
