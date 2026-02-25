@@ -18,3 +18,10 @@ choice
         help
           Set irq priority bits to 8.
 endchoice
+
+config SOC_QEMU_VIRT_RISCV64
+    bool "Qemu Virt Riscv64"
+    default y
+    select RISCV
+    select HAS_MIE
+    select HAS_PLIC

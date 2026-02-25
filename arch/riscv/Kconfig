@@ -1,0 +1,23 @@
+# RISC-V Configuration
+
+menu "RISCV Configuration"
+
+config HAS_PLIC
+    bool "PLIC supports"
+    default n
+    help
+      Whether the platform supports the PLIC.
+
+config HAS_CLIC
+    bool "CLIC supports"
+    default n
+    help
+      Whether the platform supports the CLIC.
+
+config HAS_MIE
+    bool "MIE supports"
+    default n
+    help
+      Whether the platform supports the MIE.
+      
+endmenu
