@@ -163,7 +163,7 @@ __inline static size_t lock(Lock *l) {
 /// when they exist.
 #define TRY_LOCK_FREE_CASE(n, type, ptr)                                       \
   case n:                                                                      \
-    if (IS_LOCK_FREE_##n(ptr)) {                                               \                           \
+    if (IS_LOCK_FREE_##n(ptr)) {                                               \
       LOCK_FREE_ACTION(type);                                                  \
     }                                                                          \
     break;
@@ -197,8 +197,8 @@ bool __atomic_is_lock_free_c(size_t size, void *ptr) {
 /// An atomic load operation.  This is atomic with respect to the source
 /// pointer only.
 void __atomic_load_c(int size, void *src, void *dest, int model) {
-#define LOCK_FREE_ACTION(type)                                      \
-  *((type *)dest) = __c11_atomic_load((_Atomic(type) *)src, model); \
+#define LOCK_FREE_ACTION(type)                                                 \
+  *((type *)dest) = __c11_atomic_load((_Atomic(type) *)src, model);            \
   return;
   LOCK_FREE_CASES(src);
 #undef LOCK_FREE_ACTION
@@ -211,8 +211,8 @@ void __atomic_load_c(int size, void *src, void *dest, int model) {
 /// An atomic store operation.  This is atomic with respect to the destination
 /// pointer only.
 void __atomic_store_c(int size, void *dest, void *src, int model) {
-#define LOCK_FREE_ACTION(type)                                    \
-  __c11_atomic_store((_Atomic(type) *)dest, *(type *)src, model); \
+#define LOCK_FREE_ACTION(type)                                               \
+  __c11_atomic_store((_Atomic(type) *)dest, *(type *)src, model);            \
   return;
   LOCK_FREE_CASES(dest);
 #undef LOCK_FREE_ACTION
@@ -229,16 +229,15 @@ void __atomic_store_c(int size, void *dest, void *src, int model) {
 /// This function returns 1 if the exchange takes place or 0 if it fails.
 int __atomic_compare_exchange_c(int size, void *ptr, void *expected,
                                 void *desired, int success, int failure) {
-#define LOCK_FREE_ACTION(type)                                                  \
-  return __c11_atomic_compare_exchange_strong(                                  \
-      (_Atomic(type) *)ptr, (type *)expected, *(type *)desired, success,        \
+#define LOCK_FREE_ACTION(type)                                                   \
+  return __c11_atomic_compare_exchange_strong(                                   \
+      (_Atomic(type) *)ptr, (type *)expected, *(type *)desired, success,         \
       failure)
   LOCK_FREE_CASES(ptr);
 #undef LOCK_FREE_ACTION
   Lock *l = lock_for_pointer(ptr);
   size_t irq = lock(l);
-  if (memcmp(ptr, expected, size) == 0)
-  {
+  if (memcmp(ptr, expected, size) == 0) {
     memcpy(ptr, desired, size);
     unlock(l, irq);
     return 1;
@@ -250,11 +249,10 @@ int __atomic_compare_exchange_c(int size, void *ptr, void *expected,
 
 /// Performs an atomic exchange operation between two pointers.  This is atomic
 /// with respect to the target address.
-void __atomic_exchange_c(int size, void *ptr, void *val, void *old, int model)
-{
-#define LOCK_FREE_ACTION(type)                                          \
-  *(type *)old =                                                        \
-      __c11_atomic_exchange((_Atomic(type) *)ptr, *(type *)val, model); \
+void __atomic_exchange_c(int size, void *ptr, void *val, void *old, int model) {
+#define LOCK_FREE_ACTION(type)                                                 \
+  *(type *)old =                                                               \
+      __c11_atomic_exchange((_Atomic(type) *)ptr, *(type *)val, model);        \
   return;
   LOCK_FREE_CASES(ptr);
 #undef LOCK_FREE_ACTION
