@@ -481,12 +481,21 @@ impl Context {
 }
 
 pub(crate) extern "C" fn bootstrap() {
+    #[cfg(has_mie)]
     unsafe {
         core::arch::asm!(
             "csrs mstatus, {mstatus}",
             "csrs mie, {mie}",
             mstatus = in(reg) MSTATUS_MPP_M | MSTATUS_MPIE,
             mie = in(reg) MIE_MTIE|MIE_MSIE|MIE_MEIE,
+            options(nostack),
+        )
+    };
+    #[cfg(not(has_mie))]
+    unsafe {
+        core::arch::asm!(
+            "csrs mstatus, {mstatus}",
+            mstatus = in(reg) MSTATUS_MPP_M | MSTATUS_MPIE,
             options(nostack),
         )
     };

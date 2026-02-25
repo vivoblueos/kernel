@@ -48,3 +48,11 @@ if ROMSTART_RELOCATION
 		  Size of the region in KB.
 
 endif
+
+config RISCV
+    bool "RISC-V"
+    default n
+
+if RISCV
+    rsource "riscv/Kconfig"
+endif
