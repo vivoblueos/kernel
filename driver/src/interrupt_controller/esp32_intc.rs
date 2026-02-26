@@ -26,12 +26,8 @@ use crate::{
 register_structs! {
     pub IntcRegisters {
         (0x000 => _reserved0),
-        (0x068 => usb_intr_map_reg: ReadWrite<u32>),
-        (0x06c => _reserved1),
-        (0x094 => systimer_target0_int_map_reg: ReadWrite<u32>),
-        (0x098 => _reserved2),
         (0x104 => cpu_int_enable_reg: ReadWrite<u32>),
-        (0x108 => _reserved3),
+        (0x108 => _reserved1),
         (0x118 => priority_reg: [ReadWrite<u32, PRIORITY_REG::Register>; 31]),
         (0x194 => thresh_reg: ReadWrite<u32, THRESH_REG::Register>),
         (0x198 => @END),
