@@ -26,6 +26,7 @@ use crate::{
     support::SmpStagedInit,
     time,
 };
+use blueos_driver::interrupt_controller::Interrupt;
 use blueos_hal::Has8bitDataReg;
 use core::sync::atomic::Ordering;
 pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
@@ -110,27 +111,16 @@ pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     // PLIC.complete(cpu_id, PLIC.claim(cpu_id))
 }
 
-static STAGING: SmpStagedInit = SmpStagedInit::new();
+const TARGET0_INT_NUM: usize = 16;
 
-const INTR_BASE: usize = 0x600c_2000;
-
-const CLOCK_GATE_REG: usize = INTR_BASE + 0x100;
-
-const TARGET0_INT_MAP_REG: usize = INTR_BASE + 0x94;
-const TARGET0_INT_NUM: usize = 16; // IRQ number 16 in target0
-const INT_PRI16_REG: usize = INTR_BASE + 0x154;
-
-const USB_SERIAL_JTAG_INT_MAP_REG: usize = INTR_BASE + 0x68;
-const USB_SERIAL_JTAG_INT_NUM: usize = 15; // IRQ number 15 in USB Serial JTAG
-const INT_PRI15_REG: usize = INTR_BASE + 0x150;
-
-const INT_ENABLE_REG: usize = INTR_BASE + 0x104;
-const INT_THRESH_REG: usize = INTR_BASE + 0x194;
-const INT_TYPE_REG: usize = INTR_BASE + 0x108;
+const USB_SERIAL_JTAG_INT_NUM: usize = 15;
 
 const RTC_CNTL_BASE: usize = 0x6000_8000;
 const RTC_CNTL_WDTWRITECT_REG: usize = RTC_CNTL_BASE + 0xA8;
 const RTC_CNTL_WDTCONFIG0_REG: usize = RTC_CNTL_BASE + 0x90;
+
+const USB_SERIAL_JTAG_IRQ: Interrupt = Interrupt::new(26, 15);
+const SYSTIMER_TARGET0_IRQ: Interrupt = Interrupt::new(37, 16);
 
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
@@ -146,42 +136,24 @@ pub(crate) fn init() {
         core::ptr::write_volatile(RTC_CNTL_WDTWRITECT_REG as *mut u32, 0x50D83AA1);
         core::ptr::write_volatile(RTC_CNTL_WDTCONFIG0_REG as *mut u32, 0);
         core::ptr::write_volatile(RTC_CNTL_WDTWRITECT_REG as *mut u32, 0);
-
-        core::ptr::write_volatile(CLOCK_GATE_REG as *mut u32, 1);
-        // map target0 interrupt to 16 interrupt
-        core::ptr::write_volatile(TARGET0_INT_MAP_REG as *mut u32, TARGET0_INT_NUM as u32);
-        // map USB Serial JTAG interrupt to 15 interrupt
-        core::ptr::write_volatile(
-            USB_SERIAL_JTAG_INT_MAP_REG as *mut u32,
-            USB_SERIAL_JTAG_INT_NUM as u32,
-        );
-        // Enable USB Serial JTAG interrupt
-        // core::ptr::write_volatile(INT_TYPE_REG as *mut u32, 1); // edge interrupt avoid for spurious interrupt
-        core::ptr::write_volatile(INT_THRESH_REG as *mut u32, 1);
-        core::ptr::write_volatile(INT_PRI16_REG as *mut u32, 15);
-        core::ptr::write_volatile(INT_PRI15_REG as *mut u32, 15);
-        core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, 0xFFFF_FFFF);
     }
-    // From now on, all work will be done by core 0.
-    // if arch::current_cpu_id() != 0 {
-    //     scheduler::wait_and_then_start_schedule();
-    //     unreachable!("Secondary cores should have jumped to the scheduler");
-    // }
-    // Enable TARGET0 in PLIC.
-    // PLIC.enable(
-    //     arch::current_cpu_id(),
-    //     u32::try_from(16usize).expect("usize(64 bits) converts to u32 failed"),
-    // );
-    // Set TARGET0 priority in PLIC.
-    // PLIC.set_priority(
-    //     u32::try_from(16usize).expect("usize(64 bits) converts to u32 failed"),
-    //     1,
-    // );
+
+    get_device!(intc).alloc_irq(SYSTIMER_TARGET0_IRQ);
+    get_device!(intc).alloc_irq(USB_SERIAL_JTAG_IRQ);
+
+    get_device!(intc).set_thresh(1);
+
+    get_device!(intc).set_priority(USB_SERIAL_JTAG_IRQ, 15);
+    get_device!(intc).set_priority(SYSTIMER_TARGET0_IRQ, 15);
+    get_device!(intc).enable_irq(SYSTIMER_TARGET0_IRQ);
+    get_device!(intc).enable_irq(USB_SERIAL_JTAG_IRQ);
 }
 
 crate::define_peripheral! {
     (console_uart, blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial,
      blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial::new()),
+    (intc, blueos_driver::interrupt_controller::esp32_intc::Esp32Intc,
+     blueos_driver::interrupt_controller::esp32_intc::Esp32Intc::new(0x600c_2000)),
 }
 
 crate::define_pin_states!(None);

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![no_std]
-#![feature(const_nonnull_new)]
+#[cfg(target_chip = "esp32c3")]
+pub mod esp32_intc;
 
-pub mod clock_control;
-pub mod i2c;
-pub mod interrupt_controller;
-pub mod pinctrl;
-pub mod reset;
-pub mod static_ref;
-pub mod systimer;
-pub mod uart;
+pub struct Interrupt {
+    pub(crate) source_no: usize,
+    pub(crate) irq_no: usize,
+}
+
+impl Interrupt {
+    pub const fn new(source_no: usize, irq_no: usize) -> Self {
+        Self { source_no, irq_no }
+    }
+}
