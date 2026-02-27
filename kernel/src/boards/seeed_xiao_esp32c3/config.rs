@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// This code is copied from [esp-hal](https://github.com/esp-rs/esp-hal/blob/main/esp-bootloader-esp-idf/src/lib.rs)
 
-use crate::arch::irq::IrqNumber;
-
-pub const PLIC_BASE: usize = 0x0c00_0000;
-
-pub const UART0: u32 = 0x1000_0000;
-pub const UART0_IRQ: IrqNumber = IrqNumber::new(10);
+// License: Apache-2.0 OR MIT
+// Copyright 2021 esp-rs
 
 /// ESP-IDF compatible application descriptor
 ///
@@ -61,6 +57,7 @@ pub struct EspAppDesc {
 #[unsafe(export_name = "esp_app_desc")]
 #[unsafe(link_section = ".rodata_desc.appdesc")]
 /// Application metadata descriptor.
+/// FIXME: This is currently hardcoded, but we should generate it from build scripts.
 pub static ESP_APP_DESC: EspAppDesc = EspAppDesc {
     magic_word: 0xABCD_5432,
     secure_version: 0,
