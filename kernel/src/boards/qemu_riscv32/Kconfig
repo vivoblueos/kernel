@@ -24,4 +24,5 @@ config SOC_QEMU_VIRT_RISCV32
     default y
     select RISCV
     select HAS_MIE
+    select HAS_MTIME
     select HAS_PLIC
