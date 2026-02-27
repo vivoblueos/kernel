@@ -1,7 +1,7 @@
 /* This code is derived from
- * https://github.com/eclipse-threadx/threadx/blob/master/ports/risc-v64/gnu/example_build/qemu_virt/link.lds
- * Copyright (c) 2024 - present Microsoft Corporation
- * SPDX-License-Identifier: MIT
+ * https://github.com/esp-rs/esp-hal/tree/main/esp-hal/ld/esp32c3
+ * Copyright 2021 esp-rs
+ * License: Apache-2.0 OR MIT
  */
 
 OUTPUT_ARCH("riscv")
@@ -61,43 +61,6 @@ REGION_ALIAS("RTC_FAST_RWTEXT", RTC_FAST);
 REGION_ALIAS("RTC_FAST_RWDATA", RTC_FAST);
 
 SECTIONS {
-  .rotext_dummy (NOLOAD) :
-  {
-    /* This dummy section represents the .rodata section within ROTEXT.
-    * Since the same physical memory is mapped to both DROM and IROM,
-    * we need to make sure the .rodata and .text sections don't overlap.
-    * We skip the amount of memory taken by .rodata* in .text
-    */
-
-    /* Start at the same alignment constraint than .flash.text */
-
-    . = ALIGN(ALIGNOF(.rodata));
-
-    /* Create an empty gap as big as .text section */
-
-    . = . + SIZEOF(.rodata_desc);
-    . = . + SIZEOF(.rodata);
-
-    /* Prepare the alignment of the section above. Few bytes (0x20) must be
-     * added for the mapping header.
-     */
-
-    . = ALIGN(0x10000) + 0x20;
-    _rotext_reserved_start = .;
-  } > ROTEXT
-}
-INSERT BEFORE .text;
-
-/* Similar to .rotext_dummy this represents .rwtext but in .data */
-SECTIONS {
-  .rwdata_dummy (NOLOAD) : ALIGN(4)
-  {
-    . = . + SIZEOF(.rwtext) + SIZEOF(.rwtext.wifi) + SIZEOF(.trap);
-  } > RWDATA
-}
-INSERT BEFORE .data;
-
-SECTIONS {
   .trap : ALIGN(4)
   {
     _trap_section_origin = .;
@@ -129,6 +92,11 @@ SECTIONS {
 
     _rwtext_len = . - ORIGIN(RWTEXT);
   } > RWTEXT
+
+  .rwdata_dummy (NOLOAD) : ALIGN(4)
+  {
+    . = . + SIZEOF(.rwtext) + SIZEOF(.rwtext.wifi) + SIZEOF(.trap);
+  } > RWDATA
 
   .data : ALIGN(4)
   {
@@ -216,6 +184,31 @@ SECTIONS {
 }
 
 SECTIONS {
+  .rotext_dummy (NOLOAD) :
+  {
+    /* This dummy section represents the .rodata section within ROTEXT.
+    * Since the same physical memory is mapped to both DROM and IROM,
+    * we need to make sure the .rodata and .text sections don't overlap.
+    * We skip the amount of memory taken by .rodata* in .text
+    */
+
+    /* Start at the same alignment constraint than .flash.text */
+
+    . = ALIGN(ALIGNOF(.rodata));
+
+    /* Create an empty gap as big as .text section */
+
+    . = . + SIZEOF(.rodata_desc);
+    . = . + SIZEOF(.rodata);
+
+    /* Prepare the alignment of the section above. Few bytes (0x20) must be
+     * added for the mapping header.
+     */
+
+    . = ALIGN(0x10000) + 0x20;
+    _rotext_reserved_start = .;
+  } > ROTEXT
+
   .text : ALIGN(4)
   {
     KEEP(*(.init));
@@ -284,6 +277,13 @@ SECTIONS {
   .espressif.metadata 0 (INFO) :
   {
     KEEP(*(.espressif.metadata));
+  }
+}
+
+SECTIONS {
+  .eh_frame 0 (INFO) :
+  {
+    KEEP(*(.eh_frame));
   }
 }
 
