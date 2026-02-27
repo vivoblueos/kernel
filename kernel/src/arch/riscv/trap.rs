@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     arch,
-    boards::{clear_ipi, handle_plic_irq},
+    boards::clear_ipi,
     debug,
     irq::{enter_irq, leave_irq},
     rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
@@ -55,7 +55,6 @@ extern "C" fn switch_stack_with_hook(
 
 // trap_handler decides whether nested interrupt is allowed.
 #[repr(align(4))]
-#[no_mangle]
 #[link_section = ".trap.handler"]
 #[naked]
 pub(crate) unsafe extern "C" fn trap_entry() {
@@ -233,17 +232,14 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     debug_assert!(!super::local_irq_enabled());
     let sp = ctx as *const _ as usize;
-    // #[cfg(has_plic)]
     match mcause & (INTERRUPT_MASK | 0x3f) {
+        #[cfg(has_plic)]
         EXTERN_INT => {
+            use crate::boards::handle_plic_irq;
             handle_plic_irq(ctx, mcause, mtval);
             might_switch_context(ctx, cont)
         }
-        _ if mcause & 0x8000_0000 != 0 => {
-            // esp32c3 has another external interrupt number
-            handle_plic_irq(ctx, mcause, mtval);
-            might_switch_context(ctx, cont)
-        }
+        #[cfg(has_mtime)]
         TIMER_INT => {
             crate::time::handle_clock_interrupt();
             might_switch_context(ctx, cont)
@@ -253,6 +249,13 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
         MSI => {
             clear_ipi(arch::current_cpu_id());
             sp
+        }
+        #[cfg(not(has_plic))]
+        _ if mcause & 0x8000_0000 != 0 => {
+            use crate::boards::handle_intc_irq;
+            // esp32c3 has another external interrupt number
+            handle_intc_irq(ctx, mcause, mtval);
+            might_switch_context(ctx, cont)
         }
         _ => {
             let t = scheduler::current_thread_ref();
