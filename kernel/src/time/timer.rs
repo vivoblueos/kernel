@@ -590,7 +590,8 @@ mod tests {
 
     #[test]
     fn test_timer_accuracy() {
-        use crate::{boards::ClockImpl, devices::clock::Clock};
+        use crate::boards::ClockImpl;
+        use blueos_hal::clock::Clock;
         let start = ClockImpl::estimate_current_cycles();
         scheduler::suspend_me_for::<()>(
             Tick(blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize),
