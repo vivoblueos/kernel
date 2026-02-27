@@ -12,24 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This code is based on
-// https://github.com/esp-rs/esp-hal/blob/main/esp-bootloader-esp-idf/src/lib.rs
-// Copyright (c) 2024 - present Microsoft Corporation
-// SPDX-License-Identifier: MIT
-
 mod config;
 use crate::{
     arch,
     arch::riscv::{local_irq_enabled, trap_entry, Context},
-    drivers::ic::plic::Plic,
-    scheduler,
-    support::SmpStagedInit,
-    time,
+    scheduler, time,
 };
 use blueos_driver::interrupt_controller::Interrupt;
 use blueos_hal::Has8bitDataReg;
-use core::sync::atomic::Ordering;
-pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 // FIXME: Only support unit0 for now
 pub type ClockImpl =
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer<0x6002_3000, 16_000_000>;
@@ -45,39 +35,40 @@ core::arch::global_asm!(
 .option norvc
 
 _vector_table:
-    j trap_entry          // 0: Instruction address misaligned
-    j trap_entry          // 1: Instruction access fault
-    j trap_entry          // 2: Illegal instruction
-    j trap_entry          // 3: Breakpoint
-    j trap_entry          // 4: Load address misaligned
-    j trap_entry          // 5: Load access fault
-    j trap_entry          // 6: Store/AMO address misaligned
-    j trap_entry          // 7: Store/AMO access fault
-    j trap_entry          // 8: Environment call from U-mode
-    j trap_entry          // 9: Environment call from S-mode
-    j trap_entry          // 10: Reserved
-    j trap_entry          // 11: Environment call from M-mode
-    j trap_entry          // 12: Instruction page fault
-    j trap_entry          // 13: Load page fault
-    j trap_entry          // 14: Reserved
-    j trap_entry          // 15: Store/AMO page fault
-    j trap_entry          // 16: Reserved
-    j trap_entry          // 17: Reserved
-    j trap_entry          // 18: Reserved
-    j trap_entry          // 19: Reserved
-    j trap_entry          // 20: Reserved
-    j trap_entry          // 21: Reserved
-    j trap_entry          // 22: Reserved
-    j trap_entry          // 23: Reserved
-    j trap_entry          // 24: Reserved
-    j trap_entry          // 25: Reserved
-    j trap_entry          // 26: Reserved
-    j trap_entry          // 27: Reserved
-    j trap_entry          // 28: Reserved
-    j trap_entry          // 29: Reserved
-    j trap_entry          // 30: Reserved
-    j trap_entry          // 31: Reserved
-    "
+    j {trap_entry}          // 0: Exception 
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    j {trap_entry}          
+    ",
+    trap_entry = sym trap_entry,
 );
 
 #[inline]
@@ -96,7 +87,7 @@ fn init_vector_table() {
     }
 }
 
-pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
+pub(crate) fn handle_intc_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
     match mcause & 0xff {
         TARGET0_INT_NUM => {
@@ -108,7 +99,6 @@ pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
         }
         _ => {}
     }
-    // PLIC.complete(cpu_id, PLIC.claim(cpu_id))
 }
 
 const TARGET0_INT_NUM: usize = 16;
