@@ -19,5 +19,11 @@ config HAS_MIE
     default n
     help
       Whether the platform supports the MIE.
-      
+
+config HAS_MTIME
+    bool "MTIME supports"
+    default n
+    help
+      Whether the platform supports the MTIME.
+
 endmenu
