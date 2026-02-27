@@ -165,15 +165,16 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
     we.take_irq_guard(w.get_guard_mut());
     drop(w);
     for next in we.iter() {
-        if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()).is_ok() {
-            woken += 1;
-            #[cfg(debugging_scheduler)]
-            crate::trace!(
-                "[TH:0x{:x}] Woken up 0x{:x}",
-                scheduler::current_thread_id(),
-                Thread::id(&next.thread)
-            );
+        if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()).is_err() {
+            continue;
         }
+        #[cfg(debugging_scheduler)]
+        crate::trace!(
+            "[TH:0x{:x}] Woken up 0x{:x}",
+            scheduler::current_thread_id(),
+            Thread::id(&next.thread)
+        );
+        woken += 1;
         if woken == how_many {
             break;
         }
