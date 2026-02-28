@@ -156,7 +156,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
     }
 
     #[inline]
-    pub fn clr_interrupt() {
+    pub fn clear_interrupt() {
         Self::registers().int_clr.modify(INT_CLR::TARGET0::SET);
     }
 
