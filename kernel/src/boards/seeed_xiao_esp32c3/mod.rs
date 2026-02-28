@@ -91,7 +91,7 @@ pub(crate) fn handle_intc_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
     match mcause & 0xff {
         TARGET0_INT_NUM => {
-            ClockImpl::clr_interrupt();
+            ClockImpl::clear_interrupt();
             crate::time::handle_clock_interrupt();
         }
         USB_SERIAL_JTAG_INT_NUM => {
