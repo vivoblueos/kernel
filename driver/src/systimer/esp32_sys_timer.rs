@@ -166,7 +166,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
             .modify(TARGET_CONF::TIMER_UNIT_SEL::CLEAR);
     }
 
-    fn set_comparator_enable(enable: bool) {
+    fn set_comparator(enable: bool) {
         Self::registers().conf.modify(if enable {
             CONF::TARGET0_WORK_EN::SET
         } else {
