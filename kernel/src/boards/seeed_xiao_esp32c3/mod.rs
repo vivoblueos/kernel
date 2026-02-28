@@ -77,7 +77,7 @@ fn init_vector_table() {
         static _vector_table: u32;
     }
     let mut v = core::ptr::addr_of!(_vector_table) as usize;
-    v |= 0x3; // Set MODE to Vectored
+    // v |= 0x3; // Set MODE to Vectored
     unsafe {
         core::arch::asm!(
             "csrw mtvec, {0}",
