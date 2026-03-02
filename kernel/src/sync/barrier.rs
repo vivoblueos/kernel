@@ -55,13 +55,14 @@ mod tests {
     use crate::{static_arc, types::Arc};
     use alloc::vec::Vec;
     use blueos_test_macro::test;
+    const UNITTEST_THREAD_NUM: usize = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize;
 
     static_arc! {
         BARRIER(ConstBarrier<2>, ConstBarrier::<{ 2 }>::new()),
     }
 
     static_arc! {
-        BARRIER_MANY(ConstBarrier<64>, ConstBarrier::<{ 64 }>::new()),
+        BARRIER_MANY(ConstBarrier<{UNITTEST_THREAD_NUM}>, ConstBarrier::<{UNITTEST_THREAD_NUM}>::new()),
     }
 
     #[test]
@@ -75,7 +76,7 @@ mod tests {
     // Should not hang.
     #[test]
     fn stress_barrier() {
-        for i in 0..63 {
+        for i in 0..UNITTEST_THREAD_NUM - 1 {
             crate::thread::spawn(|| {
                 BARRIER_MANY.wait();
             });
@@ -85,7 +86,7 @@ mod tests {
 
     #[test]
     fn join_thread() {
-        let n = 64;
+        let n = UNITTEST_THREAD_NUM;
         let mut vt = Vec::new();
         let counter = Arc::new(AtomicUsize::new(n));
         for i in 0..n {
