@@ -112,7 +112,7 @@ impl Semaphore {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
-        let mut last_sys_ticks = Tick::now();
+        let mut start = Tick::now();
         loop {
             let old = self.counter.get();
             #[cfg(debugging_scheduler)]
@@ -144,17 +144,11 @@ impl Semaphore {
             if timeout {
                 return false;
             }
-            if ticks == Tick::MAX {
-                continue;
+            if ticks != Tick::MAX {
+                let now = Tick::now();
+                ticks = ticks.since(now.since(start));
+                start = now;
             }
-            let now = Tick::now();
-            let elapsed_ticks = now.0 - last_sys_ticks.0;
-            if elapsed_ticks >= ticks.0 {
-                ticks = Tick(0);
-            } else {
-                ticks.0 -= elapsed_ticks;
-            }
-            last_sys_ticks = now;
         }
     }
 
