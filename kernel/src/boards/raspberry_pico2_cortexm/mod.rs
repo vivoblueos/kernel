@@ -20,11 +20,15 @@ use crate::{
     boot,
     boot::INIT_BSS_DONE,
     devices::clock::{systick, Clock},
+    irq::IrqTrace,
     time,
 };
 use blueos_hal::clock_control::ClockControl;
 use core::ptr::addr_of;
 use spin::Once;
+
+// const definitions
+pub const UART0_IRQN: IrqNumber = IrqNumber::new(33);
 
 #[link_section = ".start_block"]
 #[used]
@@ -95,7 +99,7 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
-    arch::irq::enable_irq_with_priority(IrqNumber::new(33), arch::irq::Priority::Normal);
+    arch::irq::enable_irq_with_priority(UART0_IRQN, arch::irq::Priority::Normal);
     ClockImpl::init();
 }
 
@@ -140,6 +144,7 @@ crate::define_bus! {
 #[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;
+    let _trace = IrqTrace::new(UART0_IRQN);
     let uart = get_device!(console_uart);
     let intr = uart.get_interrupt();
     if let Some(handler) = unsafe {
