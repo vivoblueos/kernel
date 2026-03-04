@@ -761,7 +761,7 @@ mod tests {
     fn test_acquire_many_mutexes() {
         use crate::config::MAX_THREAD_PRIORITY;
         #[cfg(target_pointer_width = "32")]
-        const N: usize = 64;
+        const N: usize = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize;
         #[cfg(target_pointer_width = "32")]
         const M: usize = N / 8;
         #[cfg(target_pointer_width = "64")]
@@ -852,7 +852,7 @@ mod tests {
         // Thread group1 acquires MG1, MG2, MG4
         use crate::config::MAX_THREAD_PRIORITY;
         #[cfg(target_pointer_width = "32")]
-        const N: usize = 16;
+        const N: usize = (blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM / 4) as usize;
         #[cfg(target_pointer_width = "32")]
         const M: usize = N / 4;
         #[cfg(target_pointer_width = "64")]
