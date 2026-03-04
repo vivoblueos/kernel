@@ -138,6 +138,14 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
         unsafe { &*(BASE_ADDR as *const Registers) }
     }
 
+    fn enable_interrupt(enable: bool) {
+        Self::registers().int_ena.modify(if enable {
+            INT_ENA::TARGET0::SET
+        } else {
+            INT_ENA::TARGET0::CLEAR
+        });
+    }
+
     pub fn init() {
         // enable unit 0
         Self::registers().conf.modify(CONF::CLK_EN::SET);
@@ -147,8 +155,10 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
         Self::set_unit();
         // CLR interrupt
         Self::registers().int_clr.modify(INT_CLR::TARGET0::SET);
+        // disable comparator
+        Self::set_comparator_enable(false);
         // enable interrupt
-        Self::registers().int_ena.modify(INT_ENA::TARGET0::SET);
+        Self::enable_interrupt(true);
         // set TARGET mode
         Self::registers()
             .target0_conf
@@ -166,7 +176,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Esp32SysTimer<BASE_ADDR, HZ> {
             .modify(TARGET_CONF::TIMER_UNIT_SEL::CLEAR);
     }
 
-    fn set_comparator_enable(enable: bool) {
+    pub fn set_comparator_enable(enable: bool) {
         Self::registers().conf.modify(if enable {
             CONF::TARGET0_WORK_EN::SET
         } else {
@@ -207,12 +217,18 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
     }
 
     fn interrupt_at(moment: u64) {
+        Self::set_comparator_enable(false);
+        Self::clear_interrupt();
+        Self::registers()
+            .target0_conf
+            .modify(TARGET_CONF::PERIOD_MODE::CLEAR);
         Self::registers()
             .target0_hi
             .write(TARGET_HI::HI.val((moment >> 32) as u32));
         Self::registers()
             .target0_lo
             .write(TARGET_LO::LO.val((moment & 0xFFFF_FFFF) as u32));
+
         // load comparator
         Self::registers().comp0_load.write(COMP_LOAD::LOAD::SET);
         Self::set_comparator_enable(true);

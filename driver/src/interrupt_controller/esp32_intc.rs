@@ -72,7 +72,7 @@ impl Esp32Intc {
     }
 
     pub fn set_priority(&self, irq: Interrupt, priority: u8) {
-        self.registers.priority_reg[(irq.irq_no - 1) as usize]
+        self.registers.priority_reg[irq.irq_no as usize]
             .write(PRIORITY_REG::PRIORITY.val(priority as u32));
     }
 
