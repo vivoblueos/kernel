@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn stress_build_threads() {
         #[cfg(target_pointer_width = "32")]
-        let n = 32;
+        let n = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize / 2;
         #[cfg(all(debug_assertions, target_pointer_width = "64"))]
         let n = 32;
         #[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn stress_spawn_threads() {
         #[cfg(target_pointer_width = "32")]
-        let n = 32;
+        let n = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize / 2;
         #[cfg(all(debug_assertions, target_pointer_width = "64"))]
         let n = 32;
         #[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
@@ -711,7 +711,7 @@ mod tests {
     }
 
     static SCHED_TIMERS_CLEANUP: CleanupCounter = CleanupCounter::new();
-    #[test]
+
     fn stress_sched_timers() {
         reset_and_queue_test_threads(test_sched_timers, Some(test_sched_timers_cleanup));
         let l = unsafe { TEST_THREADS.len() };

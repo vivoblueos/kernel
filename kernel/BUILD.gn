@@ -98,6 +98,12 @@ build_rust("kernel_unittest") {
     "--test",
     "-Zpanic-abort-tests",
   ]
+  if (defined(chip)) {
+    rustflags += [
+      "--cfg",
+      "target_chip=\"${chip}\"",
+    ]
+  }
 }
 
 run_clippy("kernel_unittest_clippy") {
