@@ -67,20 +67,22 @@ pub(crate) fn init() {
     // Enable UART0 in PLIC.
     PLIC.enable(
         arch::current_cpu_id(),
-        u32::try_from(usize::from(config::UART0_IRQ))
+        u32::try_from(usize::from(config::NS16550A_UART0_IRQ))
             .expect("usize(64 bits) converts to u32 failed"),
     );
     // Set UART0 priority in PLIC.
     PLIC.set_priority(
-        u32::try_from(usize::from(config::UART0_IRQ))
+        u32::try_from(usize::from(config::NS16550A_UART0_IRQ))
             .expect("usize(64 bits) converts to u32 failed"),
         1,
     );
 }
 
 crate::define_peripheral! {
-    (console_uart, blueos_driver::uart::dumb::DumbUart,
-     blueos_driver::uart::dumb::DumbUart),
+    (console_uart, blueos_driver::uart::ns16550a::Ns16550a<'static>,
+     blueos_driver::uart::ns16550a::Ns16550a::<'static>::new(
+        config::NS16550A_UART0_BASE as _,
+    )),
 }
 
 crate::define_pin_states!(None);
