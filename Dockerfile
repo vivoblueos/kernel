@@ -65,7 +65,7 @@ RUN curl -L -o yamlfmt.tar.gz https://github.com/google/yamlfmt/releases/downloa
     && rm yamlfmt.tar.gz
 
 # Install esp32 QEMU.
-RUN wget https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20250817/qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz \
+RUN curl -L -o https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20250817/qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz \
     && tar -xvf qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz -C /opt \
     && rm qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz
 WORKDIR /opt/qemu/bin
