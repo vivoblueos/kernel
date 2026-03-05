@@ -45,7 +45,7 @@ RUN mkdir -p /opt/sysroot \
     && rm qemu.tar.xz
 
 # Download and unpack prebuilt Rust toolchain
-RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_11_24_10_32.tar.xz \
+RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_10_21_09_53.tar.xz \
     && tar xf blueos-toolchain.tar.xz -C /opt/sysroot \
     && rm blueos-toolchain.tar.xz
 
