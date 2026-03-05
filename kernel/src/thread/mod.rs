@@ -634,6 +634,11 @@ impl Thread {
         self.preempt_count.load(Ordering::Acquire)
     }
 
+    pub unsafe fn set_preempt_count(&self, val: Uint) -> &Self {
+        self.preempt_count.store(val, Ordering::Release);
+        self
+    }
+
     #[cfg(thread_stats)]
     #[inline]
     pub fn increment_cycles(&self, cycles: u64) {

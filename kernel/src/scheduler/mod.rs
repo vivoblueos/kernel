@@ -231,7 +231,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
-        old.enable_preempt();
         GlobalQueueVisitor::remove(&mut old);
         if ThreadNode::strong_count(&old) != 1 {
             // TODO: Add warning log that there are still references to the old thread.
