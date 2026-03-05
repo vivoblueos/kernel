@@ -231,18 +231,18 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
-        let cleanup = old.lock().take_cleanup();
-        if let Some(entry) = cleanup {
+        old.enable_preempt();
+        GlobalQueueVisitor::remove(&mut old);
+        if ThreadNode::strong_count(&old) != 1 {
+            // TODO: Add warning log that there are still references to the old thread.
+        }
+        if let Some(entry) = old.lock().take_cleanup() {
             match entry {
                 Entry::C(f) => f(),
                 Entry::Closure(f) => f(),
                 Entry::Posix(f, arg) => f(arg),
             }
         };
-        GlobalQueueVisitor::remove(&mut old);
-        if ThreadNode::strong_count(&old) != 1 {
-            // TODO: Add warning log that there are still references to the old thread.
-        }
     }
     old.set_saved_sp(old_sp);
     next_saved_sp
@@ -272,14 +272,16 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
 }
 
 pub fn retire_me() -> ! {
+    let retiring = current_thread_ref();
     #[cfg(procfs)]
     {
-        let _ = crate::vfs::trace_thread_close(current_thread());
+        let _ = crate::vfs::trace_thread_close(unsafe { Arc::clone_from(retiring) });
     }
     let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     debug_assert_eq!(next.state(), thread::READY);
     let mut hooks = ContextSwitchHookHolder::new(next);
-    let ok = current_thread_ref().transfer_state(thread::RUNNING, thread::RETIRED);
+    retiring.disable_preempt();
+    let ok = retiring.transfer_state(thread::RUNNING, thread::RETIRED);
     debug_assert_eq!(ok, Ok(()));
     arch::switch_context_with_hook(&mut hooks as *mut _);
     unreachable!("Retired thread should not reach here")
