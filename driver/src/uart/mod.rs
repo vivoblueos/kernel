@@ -19,8 +19,8 @@ pub mod dumb;
 pub mod gd32e5x_uart;
 #[cfg(target_chip = "gd32vw55x")]
 pub mod gd32vw55x;
-pub mod ns16650;
 pub mod ns16550a;
+pub mod ns16650;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
