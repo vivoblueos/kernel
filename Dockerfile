@@ -73,7 +73,9 @@ RUN mv qemu-system-riscv32 qemu-esp32-riscv32
 ENV PATH="/opt/qemu/bin:${PATH}"
 
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
-RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
+RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 \
+    && curl -L -o cbindgen https://github.com/mozilla/cbindgen/releases/download/0.29.0/cbindgen-ubuntu22.04 \
+    && mv cbindgen /opt/sysroot/usr/local/bin
 
 # Set working directory
 WORKDIR /blueos-dev
