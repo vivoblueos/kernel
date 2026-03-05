@@ -20,6 +20,7 @@ RUN apt-get update \
         pkg-config \
         clang-format yapf3 npm \
     && rm -rf /var/lib/apt/lists/*
+RUN pip3 install esptool==4.7.0 --break-system-packages
 
 # Install Arm GNU toolchain (ARM Cortex-M)
 RUN curl -L -o arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz \
@@ -61,6 +62,14 @@ RUN curl -L -o yamlfmt.tar.gz https://github.com/google/yamlfmt/releases/downloa
     && tar xf yamlfmt.tar.gz -C /opt/sysroot/usr/local/bin/ \
     && chmod a+x /opt/sysroot/usr/local/bin/yamlfmt \
     && rm yamlfmt.tar.gz
+
+# Install esp32 QEMU.
+RUN wget https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20250817/qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz \
+    && tar -xvf qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz -C /opt \
+    && rm qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz
+WORKDIR /opt/qemu/bin
+RUN mv qemu-system-riscv32 qemu-esp32-riscv32
+ENV PATH="/opt/qemu/bin:${PATH}"
 
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
 RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 cbindgen@0.29.0
