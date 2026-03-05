@@ -64,8 +64,6 @@ impl Drop for PlainDisableInterruptGuard {
     }
 }
 
-pub(crate) struct ScopeTimer {}
-
 #[derive(Default, Copy, Debug, Clone)]
 pub(crate) struct Region {
     pub base: usize,
