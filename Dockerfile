@@ -10,6 +10,7 @@ RUN apt-get update \
         git \
         clang lld \
         python3-kconfiglib \
+        python3-pip \
         ninja-build \
         generate-ninja \
         curl \
