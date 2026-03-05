@@ -67,12 +67,12 @@ pub(crate) fn init() {
     // Enable UART0 in PLIC.
     PLIC.enable(
         arch::current_cpu_id(),
-        u32::try_from(usize::from(config::NS16550A_UART0_IRQ))
+        u32::try_from(usize::from(config::NS16550A_UART0_IRQNUM))
             .expect("usize(64 bits) converts to u32 failed"),
     );
     // Set UART0 priority in PLIC.
     PLIC.set_priority(
-        u32::try_from(usize::from(config::NS16550A_UART0_IRQ))
+        u32::try_from(usize::from(config::NS16550A_UART0_IRQNUM))
             .expect("usize(64 bits) converts to u32 failed"),
         1,
     );
