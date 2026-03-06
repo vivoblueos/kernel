@@ -20,6 +20,7 @@ RUN apt-get update \
         build-essential \
         pkg-config \
         clang-format yapf3 npm \
+        libpixman-1-0 \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install esptool==4.7.0 --break-system-packages
 
@@ -71,7 +72,7 @@ RUN curl -L -o qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.
 WORKDIR /opt/qemu/bin
 RUN mv qemu-system-riscv32 qemu-esp32-riscv32
 ENV PATH="/opt/qemu/bin:${PATH}"
-
+RUN qemu-esp32-riscv32 -h
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
 RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 \
     && curl -L -o cbindgen https://github.com/mozilla/cbindgen/releases/download/0.29.0/cbindgen-ubuntu22.04 \
