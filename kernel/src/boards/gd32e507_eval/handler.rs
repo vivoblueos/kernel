@@ -18,45 +18,6 @@ use crate::{
     time,
 };
 
-#[used]
-#[link_section = ".exception.handlers"]
-#[no_mangle]
-pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
-
-// See https://documentation-service.arm.com/static/5ea823e69931941038df1b02?token=.
-const fn build_exception_handlers() -> [Vector; 15] {
-    let mut tbl = [Vector { reserved: 0 }; 15];
-    tbl[0] = Vector { handler: _start };
-    tbl[1] = Vector {
-        handler: arch::arm::handle_hardfault,
-    }; // NMI
-    tbl[2] = Vector {
-        handler: arch::arm::handle_hardfault,
-    }; // HardFault
-    tbl[3] = Vector {
-        handler: arch::arm::handle_hardfault,
-    }; // MemManage
-    tbl[4] = Vector {
-        handler: arch::arm::handle_hardfault,
-    }; // BusFault
-    tbl[5] = Vector {
-        handler: arch::arm::handle_hardfault,
-    }; // UsageFault
-    tbl[6] = Vector {
-        handler: arch::arm::handle_hardfault,
-    }; // SecureFault
-    tbl[10] = Vector {
-        handler: arch::arm::handle_svc,
-    };
-    tbl[13] = Vector {
-        handler: arch::arm::handle_pendsv,
-    };
-    tbl[14] = Vector {
-        handler: super::handle_systick,
-    };
-    tbl
-}
-
 extern "C" {
     fn uart0_handler();
 }
