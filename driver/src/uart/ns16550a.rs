@@ -91,6 +91,8 @@ impl HasFifo for Ns16550a<'static> {
         todo!()
     }
 
+    // FIXME: the current implementation is just a placeholder,
+    // we need to read the actual register to determine the status of the FIFO.
     fn is_tx_fifo_full(&self) -> bool {
         false
     }
