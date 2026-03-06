@@ -150,7 +150,6 @@ pub trait HasFifo {
     fn enable_fifo(&self, num: u8) -> Result<()>;
     fn is_tx_fifo_full(&self) -> bool;
     fn is_rx_fifo_empty(&self) -> bool;
-    fn flush(&self) {}
 }
 
 /// Status register operations trait

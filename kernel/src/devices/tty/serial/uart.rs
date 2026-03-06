@@ -113,7 +113,7 @@ where
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        self.uart.flush();
+        while self.uart.is_bus_busy() {}
         Ok(())
     }
 }
