@@ -134,6 +134,12 @@ build_rust("kernel_integration_test") {
     "--test",
     "-Zpanic-abort-tests",
   ]
+  if (defined(chip)) {
+    rustflags += [
+      "--cfg",
+      "target_chip=\"${chip}\"",
+    ]
+  }
 }
 
 run_clippy("kernel_integration_test_clippy") {
@@ -204,7 +210,7 @@ if (defined(use_defmt) && use_defmt) {
     chip = "$chip"
   }
 } else if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
-  gen_esp32_image("kernel_unittest_image") {
+  gen_esp32_image("kernel_unittest_esp32_image") {
     testonly = true
     elf = ":kernel_unittest"
     chip = "${chip}"
@@ -214,7 +220,7 @@ if (defined(use_defmt) && use_defmt) {
 
   gen_qemu_runner("unittest_runner") {
     testonly = true
-    img = ":kernel_unittest_image"
+    img = ":kernel_unittest_esp32_image"
     qemu = "$qemu_exe"
     machine = "$machine"
     qemu_args = qemu_extra_args
