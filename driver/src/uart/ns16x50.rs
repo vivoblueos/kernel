@@ -24,7 +24,7 @@ use tock_registers::{
 
 use crate::static_ref::StaticRef;
 
-#[cfg(any(target_board = "qemu_riscv32", target_board = "qemu_riscv64"))]
+#[cfg(not(target_board = "rk3568"))]
 // qemu virt platform uses NS16550 UART
 // NS16550 uses 8-bit registers, and the register offset is 1 byte.
 register_structs! {
@@ -134,7 +134,7 @@ impl Has8bitDataReg for Ns16x50 {
     }
 
     fn write_data8(&self, data: u8) {
-        #[cfg(any(target_board = "qemu_riscv32", target_board = "qemu_riscv64"))]
+        #[cfg(not(target_board = "rk3568"))]
         self.registers.rbr.set(data as u8);
         #[cfg(target_board = "rk3568")]
         self.registers.rbr.set(data as u32);
