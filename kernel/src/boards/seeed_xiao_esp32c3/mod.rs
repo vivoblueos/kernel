@@ -109,8 +109,8 @@ const RTC_CNTL_BASE: usize = 0x6000_8000;
 const RTC_CNTL_WDTWRITECT_REG: usize = RTC_CNTL_BASE + 0xA8;
 const RTC_CNTL_WDTCONFIG0_REG: usize = RTC_CNTL_BASE + 0x90;
 
-const USB_SERIAL_JTAG_IRQ: Interrupt = Interrupt::new(26, 15);
-const SYSTIMER_TARGET0_IRQ: Interrupt = Interrupt::new(37, 16);
+const USB_SERIAL_JTAG_IRQ: Interrupt = Interrupt::new(26, USB_SERIAL_JTAG_INT_NUM);
+const SYSTIMER_TARGET0_IRQ: Interrupt = Interrupt::new(37, TARGET0_INT_NUM);
 
 pub(crate) fn init() {
     assert!(!local_irq_enabled());

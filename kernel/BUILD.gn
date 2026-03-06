@@ -133,6 +133,12 @@ build_rust("kernel_integration_test") {
     "--test",
     "-Zpanic-abort-tests",
   ]
+  if (defined(chip)) {
+    rustflags += [
+      "--cfg",
+      "target_chip=\"${chip}\"",
+    ]
+  }
 }
 
 run_clippy("kernel_integration_test_clippy") {
@@ -172,16 +178,40 @@ cbindgen("rust_wrapper") {
          rebase_path([ "." ], root_build_dir)
 }
 
-gen_qemu_runner("integration_test_runner") {
-  testonly = true
-  semihosting = true
-  img = ":kernel_integration_test"
-  qemu = qemu_exe
-  machine = machine
-  qemu_args = qemu_extra_args
-  net_args = qemu_net_args
-  block_img = "integration_test_block.img"
-  block_args = qemu_block_args
+if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
+  gen_esp32_image("kernel_integration_test_esp32_image") {
+    testonly = true
+    elf = ":kernel_integration_test"
+    chip = "${chip}"
+    bootloader = qemu_esp32_bootloader_bin
+    partition_table = qemu_esp32_partition_table_bin
+  }
+
+  gen_qemu_runner("integration_test_runner") {
+    testonly = true
+    img = ":kernel_integration_test_esp32_image"
+    qemu = qemu_exe
+    machine = machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_img = "integration_test_block.img"
+    block_args = qemu_block_args
+    block_interface = qemu_block_interface
+    use_esp32_loader = qemu_use_esp32_loader
+    semihosting = true
+  }
+} else {
+  gen_qemu_runner("integration_test_runner") {
+    testonly = true
+    semihosting = true
+    img = ":kernel_integration_test"
+    qemu = qemu_exe
+    machine = machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_img = "integration_test_block.img"
+    block_args = qemu_block_args
+  }
 }
 
 run_qemu_check("run_integration_test") {
@@ -202,7 +232,7 @@ if (defined(use_defmt) && use_defmt) {
     chip = "$chip"
   }
 } else if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
-  gen_esp32_image("kernel_unittest_image") {
+  gen_esp32_image("kernel_unittest_esp32_image") {
     testonly = true
     elf = ":kernel_unittest"
     chip = "${chip}"
@@ -212,7 +242,7 @@ if (defined(use_defmt) && use_defmt) {
 
   gen_qemu_runner("unittest_runner") {
     testonly = true
-    img = ":kernel_unittest_image"
+    img = ":kernel_unittest_esp32_image"
     qemu = "$qemu_exe"
     machine = "$machine"
     qemu_args = qemu_extra_args
