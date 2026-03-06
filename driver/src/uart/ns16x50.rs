@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +24,26 @@ use tock_registers::{
 
 use crate::static_ref::StaticRef;
 
+#[cfg(any(target_board = "qemu_riscv32", target_board = "qemu_riscv64"))]
+// qemu virt platform uses NS16550 UART
+// NS16550 uses 8-bit registers, and the register offset is 1 byte.
+register_structs! {
+    UartRegisters {
+        /// Get or Put Register.
+        (0x00 => rbr: ReadWrite<u8>),
+        (0x01 => ier: ReadWrite<u8, IER::Register>),
+        (0x02 => fcr: ReadWrite<u8>),
+        (0x03 => lcr: ReadWrite<u8>),
+        (0x04 => mcr: ReadWrite<u8>),
+        (0x05 => lsr: ReadOnly<u8, LSR::Register>),
+        (0x06 => msr: ReadOnly<u8>),
+        (0x07 => @END),
+    }
+}
+
+#[cfg(target_board = "rk3568")]
+// rk3568 uses NS16650 UART
+// NS16650 uses 32-bit registers, and the register offset is 4 bytes.
 register_structs! {
     UartRegisters {
         /// Get or Put Register.
@@ -47,32 +67,42 @@ register_structs! {
     }
 }
 
-register_bitfields! [u32,
-    LSR [
-        DATA_READY OFFSET(0) NUMBITS(1) [],
-        OVERRUN_ERROR OFFSET(1) NUMBITS(1) [],
-        PARITY_ERROR OFFSET(2) NUMBITS(1) [],
-        FRAMING_ERROR OFFSET(3) NUMBITS(1) [],
-        BREAK_INTERRUPT OFFSET(4) NUMBITS(1) [],
-        TRANS_HOLD_REG_EMPTY OFFSET(5) NUMBITS(1) [],
-        TRANS_EMPTY OFFSET(6) NUMBITS(1) [],
-        RECV_FIFO_ERROR OFFSET(7) NUMBITS(1) [],
-    ],
+macro_rules! define_ns16x50_registers {
+    ($base:ident) => {
+        register_bitfields! [$base,
+            LSR [
+                DATA_READY OFFSET(0) NUMBITS(1) [],
+                OVERRUN_ERROR OFFSET(1) NUMBITS(1) [],
+                PARITY_ERROR OFFSET(2) NUMBITS(1) [],
+                FRAMING_ERROR OFFSET(3) NUMBITS(1) [],
+                BREAK_INTERRUPT OFFSET(4) NUMBITS(1) [],
+                TRANS_HOLD_REG_EMPTY OFFSET(5) NUMBITS(1) [],
+                TRANS_EMPTY OFFSET(6) NUMBITS(1) [],
+                RECV_FIFO_ERROR OFFSET(7) NUMBITS(1) [],
+            ],
 
-    IER [
-        RECV_DATA_AVAILABLE OFFSET(0) NUMBITS(1) [],
-        TRANS_HOLD_EMPTY OFFSET(1) NUMBITS(1) [],
-        RECV_LINE_STATUS OFFSET(2) NUMBITS(1) [],
-        MODEM_STATUS OFFSET(3) NUMBITS(1) [],
-        PROG_THRE OFFSET(5) NUMBITS(1) [],
-    ]
-];
+            IER [
+                RECV_DATA_AVAILABLE OFFSET(0) NUMBITS(1) [],
+                TRANS_HOLD_EMPTY OFFSET(1) NUMBITS(1) [],
+                RECV_LINE_STATUS OFFSET(2) NUMBITS(1) [],
+                MODEM_STATUS OFFSET(3) NUMBITS(1) [],
+                PROG_THRE OFFSET(5) NUMBITS(1) [],
+            ]
+        ];
+    }
+}
 
-pub struct Ns16650 {
+#[cfg(not(target_board = "rk3568"))]
+define_ns16x50_registers!(u8);
+
+#[cfg(target_board = "rk3568")]
+define_ns16x50_registers!(u32);
+
+pub struct Ns16x50 {
     registers: StaticRef<UartRegisters>,
 }
 
-impl Ns16650 {
+impl Ns16x50 {
     pub const fn new(base: usize) -> Self {
         Self {
             registers: unsafe { StaticRef::new(base as *const UartRegisters) },
@@ -80,16 +110,16 @@ impl Ns16650 {
     }
 }
 
-impl Configuration<super::UartConfig> for Ns16650 {
+impl Configuration<super::UartConfig> for Ns16x50 {
     type Target = ();
     fn configure(&self, para: &super::UartConfig) -> blueos_hal::err::Result<()> {
         Ok(())
     }
 }
 
-impl Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus> for Ns16650 {}
+impl Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus> for Ns16x50 {}
 
-impl Has8bitDataReg for Ns16650 {
+impl Has8bitDataReg for Ns16x50 {
     fn read_data8(&self) -> Result<u8> {
         let er_bits = self.registers.ier.get();
         if LSR::FRAMING_ERROR.is_set(er_bits)
@@ -104,6 +134,9 @@ impl Has8bitDataReg for Ns16650 {
     }
 
     fn write_data8(&self, data: u8) {
+        #[cfg(any(target_board = "qemu_riscv32", target_board = "qemu_riscv64"))]
+        self.registers.rbr.set(data as u8);
+        #[cfg(target_board = "rk3568")]
         self.registers.rbr.set(data as u32);
     }
 
@@ -112,13 +145,13 @@ impl Has8bitDataReg for Ns16650 {
     }
 }
 
-impl HasLineStatusReg for Ns16650 {
+impl HasLineStatusReg for Ns16x50 {
     fn is_bus_busy(&self) -> bool {
         !self.registers.lsr.is_set(LSR::TRANS_EMPTY)
     }
 }
 
-impl HasFifo for Ns16650 {
+impl HasFifo for Ns16x50 {
     fn enable_fifo(&self, num: u8) -> blueos_hal::err::Result<()> {
         todo!()
     }
@@ -132,12 +165,8 @@ impl HasFifo for Ns16650 {
     }
 }
 
-impl HasInterruptReg for Ns16650 {
+impl HasInterruptReg for Ns16x50 {
     type InterruptType = super::InterruptType;
-
-    fn enable_interrupt(&self, int_type: Self::InterruptType) {}
-
-    fn disable_interrupt(&self, int_type: Self::InterruptType) {}
 
     fn clear_interrupt(&self, int_type: Self::InterruptType) {
         match int_type {
@@ -150,19 +179,9 @@ impl HasInterruptReg for Ns16650 {
     fn get_interrupt(&self) -> Self::InterruptType {
         todo!()
     }
-
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {}
-
-    fn get_irq_nums(&self) -> &[u32] {
-        &[]
-    }
 }
 
-unsafe impl Sync for Ns16650 {}
-unsafe impl Send for Ns16650 {}
+unsafe impl Sync for Ns16x50 {}
+unsafe impl Send for Ns16x50 {}
 
-impl PlatPeri for Ns16650 {
-    fn enable(&self) {}
-
-    fn disable(&self) {}
-}
+impl PlatPeri for Ns16x50 {}

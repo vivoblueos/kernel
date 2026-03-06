@@ -17,5 +17,5 @@
 use crate::arch::irq::IrqNumber;
 
 pub const PLIC_BASE: usize = 0x0c00_0000;
-pub const NS16550A_UART0_BASE: u32 = 0x1000_0000;
-pub const NS16550A_UART0_IRQNUM: IrqNumber = IrqNumber::new(10);
+pub const NS16550_UART0_BASE: u32 = 0x1000_0000;
+pub const NS16550_UART0_IRQNUM: IrqNumber = IrqNumber::new(10);
