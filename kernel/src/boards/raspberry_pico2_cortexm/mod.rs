@@ -19,7 +19,7 @@ use crate::{
     arch::{self, irq::IrqNumber},
     boot,
     boot::INIT_BSS_DONE,
-    devices::clock::{systick, Clock},
+    devices::clock::systick,
     irq::IrqTrace,
     time,
 };
