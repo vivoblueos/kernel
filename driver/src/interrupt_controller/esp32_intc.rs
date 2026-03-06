@@ -76,7 +76,7 @@ impl Esp32Intc {
             .write(PRIORITY_REG::PRIORITY.val(priority as u32));
     }
 
-    pub fn set_thresh(&self, thresh: u8) {
+    pub fn set_threshold(&self, threshold: u8) {
         self.registers
             .thresh_reg
             .write(THRESH_REG::THRESH.val(thresh as u32));
