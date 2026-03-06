@@ -78,73 +78,24 @@ impl Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus>
 }
 
 impl Has8bitDataReg for Ns16550a<'static> {
-    fn read_data8(&self) -> blueos_hal::err::Result<u8> {
-        Ok(0u8)
-    }
-
     fn write_data8(&self, data: u8) {
         let unsafe_mut_ref = unsafe { &mut *self.regs.get() };
         field_used_by_inner!(unsafe_mut_ref, uartthr).write(data as u8);
     }
-
-    fn is_data_ready(&self) -> bool {
-        true
-    }
 }
 
-impl HasLineStatusReg for Ns16550a<'static> {
-    fn is_bus_busy(&self) -> bool {
-        false
-    }
-}
+impl HasLineStatusReg for Ns16550a<'static> {}
 
-impl HasFifo for Ns16550a<'static> {
-    fn enable_fifo(&self, _num: u8) -> blueos_hal::err::Result<()> {
-        Ok(())
-    }
-
-    fn is_tx_fifo_full(&self) -> bool {
-        false
-    }
-
-    fn is_rx_fifo_empty(&self) -> bool {
-        false
-    }
-}
+impl HasFifo for Ns16550a<'static> {}
 
 impl HasInterruptReg for Ns16550a<'static> {
     type InterruptType = super::InterruptType;
-
-    fn enable_interrupt(&self, intr: Self::InterruptType) {
-        let _ = intr;
-    }
-
-    fn disable_interrupt(&self, intr: Self::InterruptType) {
-        let _ = intr;
-    }
-
-    fn clear_interrupt(&self, intr: Self::InterruptType) {
-        let _ = intr;
-    }
-
     fn get_interrupt(&self) -> Self::InterruptType {
-        super::InterruptType::Unknown
-    }
-
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        let _ = handler;
-    }
-
-    fn get_irq_nums(&self) -> &[u32] {
-        &[]
+        Self::InterruptType::Unknown
     }
 }
 
 unsafe impl Send for Ns16550a<'static> {}
 unsafe impl Sync for Ns16550a<'static> {}
 
-impl PlatPeri for Ns16550a<'static> {
-    fn enable(&self) {}
-
-    fn disable(&self) {}
-}
+impl PlatPeri for Ns16550a<'static> {}

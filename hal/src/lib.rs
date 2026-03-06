@@ -90,7 +90,9 @@ pub trait HasLineStatusReg {
     ///
     /// This method is typically used to ensure the bus is idle before starting
     /// a new transmission, preventing data corruption or transmission conflicts.
-    fn is_bus_busy(&self) -> bool;
+    fn is_bus_busy(&self) -> bool {
+        false
+    }
 }
 
 /// 8-bit data register operations trait
@@ -100,10 +102,14 @@ pub trait HasLineStatusReg {
 /// such as UART, SPI, I2C, and other communication interfaces.
 ///
 pub trait Has8bitDataReg {
-    fn read_data8(&self) -> Result<u8>;
-    fn write_data8(&self, data: u8);
+    fn read_data8(&self) -> Result<u8> {
+        Ok(0u8)
+    }
+    fn write_data8(&self, data: u8) {}
 
-    fn is_data_ready(&self) -> bool;
+    fn is_data_ready(&self) -> bool {
+        true
+    }
 }
 
 /// Interrupt register operations trait
@@ -120,15 +126,17 @@ pub trait Has8bitDataReg {
 /// NOTE: this trait is unstable and may change in future releases.
 pub trait HasInterruptReg {
     type InterruptType;
-    fn enable_interrupt(&self, intr: Self::InterruptType);
-    fn disable_interrupt(&self, intr: Self::InterruptType);
+    fn enable_interrupt(&self, intr: Self::InterruptType) {}
+    fn disable_interrupt(&self, intr: Self::InterruptType) {}
     fn get_interrupt(&self) -> Self::InterruptType;
 
     // FIXME: dyn trait object may is not efficient enough
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn());
+    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {}
 
-    fn clear_interrupt(&self, intr: Self::InterruptType);
-    fn get_irq_nums(&self) -> &[u32];
+    fn clear_interrupt(&self, intr: Self::InterruptType) {}
+    fn get_irq_nums(&self) -> &[u32] {
+        &[]
+    }
 }
 
 /// FIFO (First-In-First-Out) operations trait
@@ -138,9 +146,15 @@ pub trait HasInterruptReg {
 /// such as UART, SPI, I2C, and other communication interfaces.
 ///
 pub trait HasFifo {
-    fn enable_fifo(&self, num: u8) -> Result<()>;
-    fn is_tx_fifo_full(&self) -> bool;
-    fn is_rx_fifo_empty(&self) -> bool;
+    fn enable_fifo(&self, num: u8) -> Result<()> {
+        Ok(())
+    }
+    fn is_tx_fifo_full(&self) -> bool {
+        false
+    }
+    fn is_rx_fifo_empty(&self) -> bool {
+        false
+    }
 }
 
 /// Status register operations trait
