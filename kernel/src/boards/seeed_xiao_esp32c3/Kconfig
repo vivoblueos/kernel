@@ -19,10 +19,7 @@ choice
           Set irq priority bits to 8.
 endchoice
 
-config SOC_QEMU_VIRT_RISCV32
-    bool "Qemu Virt Riscv32"
+config SOC_ESP32C3
+    bool "Esp32c3"
     default y
     select RISCV
-    select HAS_MIE
-    select HAS_MTIME
-    select HAS_PLIC

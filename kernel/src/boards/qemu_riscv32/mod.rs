@@ -23,12 +23,12 @@ mod config;
 use crate::{
     arch,
     arch::riscv::{local_irq_enabled, trap_entry, Context},
-    devices::clock::Clock,
     drivers::{ic::plic::Plic, msip::Msip},
     scheduler,
     support::SmpStagedInit,
     time,
 };
+use blueos_hal::clock::Clock;
 use core::sync::atomic::Ordering;
 pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 pub use crate::devices::clock::riscv_clock::QemuRiscvClock as ClockImpl;

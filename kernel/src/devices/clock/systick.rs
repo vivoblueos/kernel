@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{arch, arch::irq::IRQ_PRIORITY_FOR_SCHEDULER, devices::clock::Clock};
+use crate::{arch, arch::irq::IRQ_PRIORITY_FOR_SCHEDULER};
+use blueos_hal::clock::Clock;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use cortex_m::peripheral::{scb::SystemHandler, syst::SystClkSource, SCB, SYST};
 

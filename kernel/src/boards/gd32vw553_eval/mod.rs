@@ -25,7 +25,7 @@ use crate::{
         self,
         riscv::{local_irq_enabled, trap_entry, Context},
     },
-    devices::clock::{riscv_clock::RiscvClock, Clock},
+    devices::clock::riscv_clock::RiscvClock,
     drivers::msip::Msip,
     scheduler, time,
     time::Tick,
@@ -36,6 +36,7 @@ use alloc::{
     string::String,
 };
 use blueos_driver::pinctrl::gd32_af::{AfioMode, Gd32Alterfunc, OutputSpeed, OutputType, PullMode};
+use blueos_hal::clock::Clock;
 
 pub type ClockImpl = RiscvClock<0xD1000000, 0xD1000008, 40_000_000>;
 

@@ -86,7 +86,21 @@ impl Has8bitDataReg for Ns16550a<'static> {
 
 impl HasLineStatusReg for Ns16550a<'static> {}
 
-impl HasFifo for Ns16550a<'static> {}
+impl HasFifo for Ns16550a<'static> {
+    fn enable_fifo(&self, num: u8) -> blueos_hal::err::Result<()> {
+        todo!()
+    }
+
+    // FIXME: the current implementation is just a placeholder,
+    // we need to read the actual register to determine the status of the FIFO.
+    fn is_tx_fifo_full(&self) -> bool {
+        false
+    }
+
+    fn is_rx_fifo_empty(&self) -> bool {
+        false
+    }
+}
 
 impl HasInterruptReg for Ns16550a<'static> {
     type InterruptType = super::InterruptType;

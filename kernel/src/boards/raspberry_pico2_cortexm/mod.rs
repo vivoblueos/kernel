@@ -19,11 +19,11 @@ use crate::{
     arch::{self, irq::IrqNumber},
     boot,
     boot::INIT_BSS_DONE,
-    devices::clock::{systick, Clock},
+    devices::clock::systick,
     irq::IrqTrace,
     time,
 };
-use blueos_hal::clock_control::ClockControl;
+use blueos_hal::{clock::Clock, clock_control::ClockControl};
 use core::ptr::addr_of;
 use spin::Once;
 

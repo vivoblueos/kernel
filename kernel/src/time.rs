@@ -20,7 +20,7 @@ use blueos_kconfig::CONFIG_TICKS_PER_SECOND as TICKS_PER_SECOND;
 use core::time::Duration;
 // ClockImpl should be provided by each board.
 pub use crate::boards::ClockImpl;
-use crate::devices::clock::Clock;
+use blueos_hal::clock::Clock;
 
 #[derive(Default, Debug, PartialEq, Clone, Copy, Eq, PartialOrd, Ord)]
 pub struct Tick(pub usize);
@@ -44,7 +44,6 @@ impl Tick {
         if n == Self::MAX {
             return Self::MAX;
         }
-        let now = Self::now();
         Self(Self::now().0 + n.0)
     }
 
