@@ -20,6 +20,8 @@ RUN apt-get update \
         build-essential \
         pkg-config \
         clang-format yapf3 npm \
+        libpixman-1-0 \
+        libsdl2-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install esptool==4.7.0 --break-system-packages
 
