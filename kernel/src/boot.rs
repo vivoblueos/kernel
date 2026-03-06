@@ -156,8 +156,6 @@ extern "C" fn init() {
     }
 
     scheduler::init();
-    // FIXME: remove this after riscv64 is supported
-    #[cfg(not(target_arch = "riscv64"))]
     logger::logger_init();
     time::timer::init();
     #[cfg(kernel_async)]
