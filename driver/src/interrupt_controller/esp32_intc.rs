@@ -29,7 +29,7 @@ register_structs! {
         (0x104 => cpu_int_enable_reg: ReadWrite<u32>),
         (0x108 => _reserved1),
         (0x118 => priority_reg: [ReadWrite<u32, PRIORITY_REG::Register>; 31]),
-        (0x194 => thresh_reg: ReadWrite<u32, THRESH_REG::Register>),
+        (0x194 => threshold_reg: ReadWrite<u32, THRESHOLD_REG::Register>),
         (0x198 => @END),
     }
 }
@@ -78,7 +78,7 @@ impl Esp32Intc {
 
     pub fn set_threshold(&self, threshold: u8) {
         self.registers
-            .thresh_reg
-            .write(THRESH_REG::THRESH.val(thresh as u32));
+            .threshold_reg
+            .write(THRESHOLD_REG::THRESHOLD.val(threshold as u32));
     }
 }

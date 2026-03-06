@@ -128,10 +128,10 @@ pub(crate) fn init() {
         core::ptr::write_volatile(RTC_CNTL_WDTWRITECT_REG as *mut u32, 0);
     }
 
-    get_device!(intc).alloc_irq(SYSTIMER_TARGET0_IRQ);
-    get_device!(intc).alloc_irq(USB_SERIAL_JTAG_IRQ);
+    get_device!(intc).allocate_irq(SYSTIMER_TARGET0_IRQ);
+    get_device!(intc).allocate_irq(USB_SERIAL_JTAG_IRQ);
 
-    get_device!(intc).set_thresh(1);
+    get_device!(intc).set_threshold(1);
 
     get_device!(intc).set_priority(USB_SERIAL_JTAG_IRQ, 15);
     get_device!(intc).set_priority(SYSTIMER_TARGET0_IRQ, 15);
