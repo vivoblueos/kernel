@@ -10,4 +10,9 @@ rsource "../../kernel/src/allocator/Kconfig"
 rsource "../../kernel/src/scheduler/Kconfig"
 rsource "../../kernel/src/vfs/Kconfig"
 rsource "../../kernel/src/net/Kconfig"
-rsource "Kconfig.test"
+
+config UNITTEST_THREAD_NUM
+    int "The num of thread used by uniitest."
+    default 64
+    help
+        Set the number of thread used by unittest.
