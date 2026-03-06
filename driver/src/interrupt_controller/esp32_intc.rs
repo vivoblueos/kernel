@@ -41,7 +41,7 @@ register_bitfields! [
         PRIORITY OFFSET(0) NUMBITS(4) [],
     ],
 
-    pub THRESH_REG [
+    pub THRESHOLD_REG [
         THRESH OFFSET(0) NUMBITS(4) [],
     ],
 ];
