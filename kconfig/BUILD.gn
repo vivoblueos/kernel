@@ -25,7 +25,6 @@ _kconfig_files = [
   "//kernel/kernel/src/vfs/Kconfig",
   "//kernel/kernel/src/net/Kconfig",
   "//kernel/arch/riscv/Kconfig",
-  "config/Kconfig.test",
 ]
 
 _config_file = rebase_path("${root_gen_dir}/.config")
