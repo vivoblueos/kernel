@@ -217,12 +217,6 @@ impl HasFifo for Esp32UsbSerial {
             .is_set(EP1_CONF_REG::OUT_EP_DATA_AVAIL)
             != true
     }
-
-    fn flush(&self) {
-        USB_SERIAL_BASE
-            .ep1_conf_reg
-            .write(EP1_CONF_REG::WR_DONE.val(1));
-    }
 }
 
 impl HasInterruptReg for Esp32UsbSerial {
