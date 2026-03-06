@@ -57,7 +57,7 @@ impl Esp32Intc {
         }
     }
 
-    pub fn alloc_irq(&self, irq: Interrupt) {
+    pub fn allocate_irq(&self, irq: Interrupt) {
         let mut map_reg =
             self.registers.inner() as *const IntcRegisters as usize + irq.source_no * 4;
         unsafe {
