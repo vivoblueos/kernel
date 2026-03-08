@@ -19,8 +19,8 @@ use crate::{
     mqueue::mq_attr,
 };
 use blueos_header::syscalls::NR::{
-    Accept, Bind, Chdir, ClockGetTime, Close, Connect, FStat, Fcntl, FreeAddrinfo, Ftruncate,
-    GetAddrinfo, GetDents, Getcwd, Getsockopt, Link, Listen, Lseek, Mkdir, NanoSleep, Open, Read,
+    Accept, Bind, Chdir, ClockGetTime, ClockNanoSleep, Close, Connect, FStat, Fcntl, FreeAddrinfo,
+    Ftruncate, GetAddrinfo, GetDents, Getcwd, Getsockopt, Link, Listen, Lseek, Mkdir, Open, Read,
     Recv, Recvfrom, Recvmsg, Rmdir, Send, Sendmsg, Sendto, Setsockopt, Shutdown, Socket, Statfs,
     Unlink, Write,
 };
@@ -81,7 +81,7 @@ impl Syscall for Sys {
             return Err(Errno(-1));
         }
         // blueos is not valid for this syscall now
-        match bk_syscall!(NanoSleep, 1, 0, rqtp, rmtp) {
+        match bk_syscall!(ClockNanoSleep, 1, 0, rqtp, rmtp) {
             0 => Ok(()),
             _ => Err(Errno(-1)),
         }
