@@ -139,11 +139,3 @@ pub unsafe extern "C" fn uart0tx_handler() {
     }
     uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn handle_systick() {
-    if !ClockImpl::claim_interrupt() {
-        return;
-    }
-    crate::time::handle_clock_interrupt();
-}

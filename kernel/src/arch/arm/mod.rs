@@ -16,6 +16,8 @@ pub(crate) mod hardfault;
 pub mod irq;
 pub(crate) mod xpsr;
 use crate::{
+    arch::irq::Vector,
+    boot::_start,
     scheduler,
     support::{sideeffect, Region, RegionalObjectBuilder},
     syscalls::{dispatch_syscall, Context as ScContext},
@@ -42,6 +44,56 @@ pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
 pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 2;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
+
+#[no_mangle]
+#[linkage = "weak"]
+pub unsafe extern "C" fn bk_handle_hardfault() {
+    handle_hardfault()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn handle_systick() {
+    if !crate::boards::ClockImpl::claim_interrupt() {
+        return;
+    }
+    crate::time::handle_clock_interrupt();
+}
+
+#[used]
+#[link_section = ".exception.handlers"]
+#[no_mangle]
+pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
+
+// See https://documentation-service.arm.com/static/5ea823e69931941038df1b02?token=.
+const fn build_exception_handlers() -> [Vector; 15] {
+    let mut tbl = [Vector { reserved: 0 }; 15];
+    tbl[0] = Vector { handler: _start };
+    tbl[1] = Vector {
+        handler: handle_hardfault,
+    }; // NMI
+    tbl[2] = Vector {
+        handler: bk_handle_hardfault,
+    }; // HardFault
+    tbl[3] = Vector {
+        handler: handle_hardfault,
+    }; // MemManage
+    tbl[4] = Vector {
+        handler: handle_hardfault,
+    }; // BusFault
+    tbl[5] = Vector {
+        handler: handle_hardfault,
+    }; // UsageFault
+    tbl[10] = Vector {
+        handler: handle_svc,
+    };
+    tbl[13] = Vector {
+        handler: handle_pendsv,
+    };
+    tbl[14] = Vector {
+        handler: handle_systick,
+    };
+    tbl
+}
 
 #[macro_export]
 macro_rules! arch_bootstrap {
