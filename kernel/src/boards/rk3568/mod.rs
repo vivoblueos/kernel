@@ -38,8 +38,8 @@ pub(crate) fn init() {
 }
 
 crate::define_peripheral! {
-    (console_uart, blueos_driver::uart::ns16650::Ns16650,
-     blueos_driver::uart::ns16650::Ns16650::new(
+    (console_uart, blueos_driver::uart::ns16x50::Ns16x50,
+     blueos_driver::uart::ns16x50::Ns16x50::new(
         0xFE660000,
      )),
 }
