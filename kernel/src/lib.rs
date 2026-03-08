@@ -174,6 +174,7 @@ mod tests {
     ) {
         unsafe {
             let t = TEST_THREADS[i].assume_init_ref();
+            t.set_preempt_count(0);
             let mut w = t.lock();
             let stack = &mut TEST_THREAD_STORAGES[i].stack;
             let Some(stack) = thread::Stack::from_raw(stack.rep.as_mut_ptr(), stack.rep.len())
