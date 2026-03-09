@@ -66,6 +66,10 @@ pub unsafe extern "C" fn handle_systick() {
 #[no_mangle]
 pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
 
+unsafe extern "C" {
+    unsafe fn handle_memfault();
+}
+
 // See https://documentation-service.arm.com/static/5ea823e69931941038df1b02?token=.
 const fn build_exception_handlers() -> [Vector; 15] {
     let mut tbl = [Vector { reserved: 0 }; 15];
@@ -77,7 +81,7 @@ const fn build_exception_handlers() -> [Vector; 15] {
         handler: bk_handle_hardfault,
     }; // HardFault
     tbl[3] = Vector {
-        handler: handle_hardfault,
+        handler: handle_memfault,
     }; // MemManage
     tbl[4] = Vector {
         handler: handle_hardfault,
@@ -169,6 +173,8 @@ pub extern "C" fn reset_msp_and_start_schedule(msp: *mut u8, cont: extern "C" fn
 
 #[inline]
 pub extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
+    #[cfg(use_mpu)]
+    mpu::init_sys_stack_guard();
     unsafe { reset_msp_and_start_schedule(&mut __sys_stack_end as *mut u8, cont) }
 }
 

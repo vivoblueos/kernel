@@ -134,7 +134,7 @@ mod tests {
         mem::MaybeUninit,
         panic::PanicInfo,
         ptr,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     };
     #[cfg(use_defmt)]
     use defmt_rtt as _;
@@ -300,6 +300,74 @@ mod tests {
     #[test]
     fn test_local_irq() {
         assert!(arch::local_irq_enabled());
+    }
+
+    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    extern "C" {
+        static __sys_stack_guard_start: u8;
+    }
+
+    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    static MEMFAULT_TRIGGERED: AtomicBool = AtomicBool::new(false);
+
+    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    fn thumb_instruction_len(pc: usize) -> usize {
+        let first_halfword = unsafe { (pc as *const u16).read_volatile() };
+        if (first_halfword & 0xF800) == 0xE800 || (first_halfword & 0xF000) == 0xF000 {
+            4
+        } else {
+            2
+        }
+    }
+
+    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::IsrContext) {
+        let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
+        let cfsr = scb.cfsr.read();
+        // MMFSR is in CFSR[7:0].
+        assert_ne!(
+            cfsr & 0xff,
+            0,
+            "MemManage handler entered without MMFSR status"
+        );
+        assert_ne!(
+            cfsr & (1 << 1),
+            0,
+            "MemManage triggered but DACCVIOL is not set"
+        );
+        MEMFAULT_TRIGGERED.store(true, Ordering::Release);
+        // Clear MMFSR bits and skip the faulting instruction.
+        unsafe { scb.cfsr.write(cfsr & 0xff) };
+        ctx.pc = ctx.pc.wrapping_add(thumb_instruction_len(ctx.pc));
+    }
+
+    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[naked]
+    #[no_mangle]
+    pub unsafe extern "C" fn handle_memfault() {
+        core::arch::naked_asm!(
+            "
+            mrs r0, msp
+            tst lr, #0x04
+            beq 1f
+            mrs r0, psp
+            1:
+            b {handler}
+            ",
+            handler = sym handle_memfault_impl
+        )
+    }
+
+    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[test]
+    fn test_mpu_sys_stack_guard_write_fault() {
+        MEMFAULT_TRIGGERED.store(false, Ordering::Release);
+        let addr = unsafe { core::ptr::addr_of!(__sys_stack_guard_start) as *mut u32 };
+        unsafe { core::ptr::write_volatile(addr, 0x5A5A_A5A5) };
+        assert!(
+            MEMFAULT_TRIGGERED.load(Ordering::Acquire),
+            "MPU guard write did not trigger MemManage"
+        );
     }
 
     #[test]

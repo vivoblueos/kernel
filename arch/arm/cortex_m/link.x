@@ -23,6 +23,11 @@
 #define STACK_SIZE (CONFIG_STACK_SIZE * 1K)
 #define ROM_BASE CONFIG_FLASH_BASE_ADDRESS
 #define ROM_SIZE (CONFIG_FLASH_SIZE * 1K)
+#if defined(CONFIG_USE_MPU)
+#define STACK_GUARD_SIZE 32
+#else
+#define STACK_GUARD_SIZE 0
+#endif
 
 /* In some soc, there are extra rom to place irq vectors and boot-vector SP/PC */
 #if defined(CONFIG_ROMSTART_RELOCATION)
@@ -186,9 +191,18 @@ SECTIONS
     . = ALIGN(8);
     PROVIDE(_end = .);
     __heap_start = .;
-    . = ORIGIN(RAM) + LENGTH(RAM) - STACK_SIZE;
+    . = ORIGIN(RAM) + LENGTH(RAM) - STACK_SIZE - STACK_GUARD_SIZE;
     . = ALIGN(8);
     __heap_end = .;
+  } > RAM
+
+  .stack_guard (ORIGIN(RAM) + LENGTH(RAM) - STACK_SIZE - STACK_GUARD_SIZE) (COPY) :
+  {
+    . = ALIGN(32);
+    __sys_stack_guard_start = .;
+    . = . + STACK_GUARD_SIZE;
+    . = ALIGN(32);
+    __sys_stack_guard_end = .;
   } > RAM
 
   .stack (ORIGIN(RAM) + LENGTH(RAM) - STACK_SIZE) (COPY) :
@@ -209,5 +223,9 @@ SECTIONS
     *(.ARM.extab);
     *(.noinit);
   }
-  ASSERT(__sys_stack_start >= __heap_end, "Stack and heap overlap each other!")
+  ASSERT(__sys_stack_guard_start >= __heap_end, "Stack and heap overlap each other!")
 }
+
+EXTERN(handle_hardfault);
+PROVIDE(handle_memfault = handle_hardfault);
+

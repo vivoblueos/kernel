@@ -14,3 +14,5 @@
 
 #[cfg(mpu_v8m)]
 pub mod mpu_v8m;
+#[cfg(mpu_v8m)]
+pub use mpu_v8m::init_sys_stack_guard;
