@@ -422,8 +422,6 @@ mod tests {
         assert_eq!(counter3.load(Ordering::Relaxed), 1);
     }
 
-    // Alarm cannot be triggered on esp32c3 when the target is too old.
-    // See https://github.com/espressif/qemu/issues/69
     #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn test_timer_edge_cases() {
         // Test with zero interval.
