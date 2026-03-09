@@ -18,3 +18,8 @@ choice
         help
           Set irq priority bits to 8.
 endchoice
+
+config SOC_MPS3_AN547
+    bool "Mps3 AN547"
+    default y
+    select CORTEX_M

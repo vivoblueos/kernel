@@ -1,0 +1,21 @@
+# Cortex-M Configuration
+
+menu "Cortex-M Configuration"
+
+config USE_MPU
+    bool "MPU supports"
+    default n
+
+if USE_MPU
+    choice
+        prompt "Select MPU Type"
+        help
+          Choose one MPU type. For example, v7 for Cortex-M3, v8 for Cortex-M33
+        config MPU_V8M
+            bool "v8m mpu"
+            help
+              Select MPU_V8M
+    endchoice 
+endif
+
+endmenu

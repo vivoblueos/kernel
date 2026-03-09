@@ -24,6 +24,8 @@ use crate::{
 };
 pub(crate) use hardfault::handle_hardfault;
 pub use hardfault::panic_on_hardfault;
+#[cfg(use_mpu)]
+pub mod mpu;
 
 use core::{
     fmt,
