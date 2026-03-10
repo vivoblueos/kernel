@@ -221,7 +221,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
         // So we need to add a compensation here to make sure the target is always in the future.
         // See https://github.com/espressif/qemu/issues/69
         let now = Self::estimate_current_cycles();
-        let compensation = core::cmp::max(1, HZ / 100_00); // ~100us
+        let compensation = core::cmp::max(1, HZ / 50_00); // ~200us
         let moment = if moment < now + compensation {
             now.saturating_add(compensation)
         } else {

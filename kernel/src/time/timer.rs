@@ -422,7 +422,6 @@ mod tests {
         assert_eq!(counter3.load(Ordering::Relaxed), 1);
     }
 
-    #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn test_timer_edge_cases() {
         // Test with zero interval.
         let counter = Arc::new(AtomicUsize::new(0));
