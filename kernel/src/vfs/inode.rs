@@ -23,14 +23,14 @@ use crate::{
     },
 };
 use alloc::{string::String, sync::Arc};
-use core::{any::Any, fmt::Debug, time::Duration};
+use core::{any::Any, fmt, time::Duration};
 use log::warn;
 
 /// Filesystem inode number
 pub type InodeNo = usize;
 
 /// Inode attributes
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct InodeAttr {
     pub inode_no: InodeNo, // Index Node number
     pub size: usize,       // File size
@@ -100,6 +100,45 @@ impl InodeAttr {
     }
     pub fn set_size(&mut self, size: usize) {
         self.size = size;
+    }
+}
+
+impl fmt::Debug for InodeAttr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("InodeAttr")
+            .field("inode_no", &self.inode_no)
+            .field("size", &self.size)
+            .field("blk_size", &self.blk_size)
+            .field("blocks", &self.blocks)
+            .field(
+                "atime",
+                &format_args!(
+                    "{}.{:03}s",
+                    self.atime.as_secs(),
+                    self.atime.subsec_millis()
+                ),
+            )
+            .field(
+                "mtime",
+                &format_args!(
+                    "{}.{:03}s",
+                    self.mtime.as_secs(),
+                    self.mtime.subsec_millis()
+                ),
+            )
+            .field(
+                "ctime",
+                &format_args!(
+                    "{}.{:03}s",
+                    self.ctime.as_secs(),
+                    self.ctime.subsec_millis()
+                ),
+            )
+            .field("mode", &self.mode)
+            .field("nlinks", &self.nlinks)
+            .field("uid", &self.uid)
+            .field("gid", &self.gid)
+            .finish()
     }
 }
 
@@ -202,8 +241,8 @@ impl dyn InodeOps {
     }
 }
 
-impl Debug for dyn InodeOps {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+impl fmt::Debug for dyn InodeOps {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("InodeOps")
             .field("attr", &self.inode_attr())
             .field("fs", &self.fs())

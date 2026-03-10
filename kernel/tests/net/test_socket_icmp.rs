@@ -30,8 +30,12 @@ use core::{
 };
 use libc::{AF_INET, AF_INET6};
 use semihosting::println;
+use smoltcp::wire::IpAddress;
 
-use crate::net::{net_utils, net_utils::NetTestArgs};
+use crate::net::{
+    net_utils,
+    net_utils::{format_ip_endpoint, NetTestArgs},
+};
 
 static ICMP_THREAD_FINISH: AtomicUsize = AtomicUsize::new(0);
 fn icmp_thread(args: Arc<NetTestArgs>) {
@@ -167,7 +171,11 @@ fn icmp_thread(args: Arc<NetTestArgs>) {
                 )
             } {
                 Some(addr) => match addr.create_ip_endpoint() {
-                    Some(ep) => println!("Socket[{}] recv icmp packet from = {:#?}", sock_fd, ep),
+                    Some(ep) => println!(
+                        "Socket[{}] recv icmp packet from = {}",
+                        sock_fd,
+                        format_ip_endpoint(ep)
+                    ),
                     None => println!("Socket[{}] create ip endpoint fail", sock_fd),
                 },
                 None => {

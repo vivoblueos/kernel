@@ -303,7 +303,7 @@ pub fn recvmsg(socket: c_int, message: *mut libc::msghdr, flags: c_int) -> c_ssi
     let sockaddr_buffer_ptr = message as usize;
     // parse msghdr
     let recv_payload = Box::new(move |payload: &[u8], endpoint: IpEndpoint| -> usize {
-        log::debug!("Received packet from {}: {:?}", endpoint, payload);
+        log::debug!("Received packet from {:?}: {:?}", endpoint, payload);
 
         let Some(msghdr) =
             (unsafe { SocketMsghdr::from_ptr_mut(sockaddr_buffer_ptr as *mut libc::msghdr) })

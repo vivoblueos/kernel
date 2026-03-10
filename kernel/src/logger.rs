@@ -42,7 +42,7 @@ pub fn set_max_level(level: LogLevel) {
 pub fn logger_init() {
     static LOGGER: Logger = Logger {};
     #[cfg(debug)]
-    log::set_max_level(LevelFilter::Trace);
+    log::set_max_level(LevelFilter::Info);
     #[cfg(release)]
     log::set_max_level(LevelFilter::Warn);
     log::set_logger(&LOGGER).unwrap();

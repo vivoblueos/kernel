@@ -31,7 +31,10 @@ use core::{
 use libc::{AF_INET, AF_INET6};
 use semihosting::println;
 
-use crate::net::{net_utils, net_utils::NetTestArgs};
+use crate::net::{
+    net_utils,
+    net_utils::{format_ip_endpoint, NetTestArgs},
+};
 
 static UDP_SERVER_THREAD_FINISH: AtomicUsize = AtomicUsize::new(0);
 static UDP_CLIENT_THREAD_FINISH: AtomicUsize = AtomicUsize::new(0);
@@ -119,7 +122,13 @@ fn udp_server_thread(args: Arc<NetTestArgs>) {
                 SocketAddress::from_ptr(addr_ptr as *const libc::sockaddr, *addr_len_ptr)
             }
             .and_then(|addr| addr.create_ip_endpoint())
-            .map(|e| println!("Socket[{}] Recv UDP packet from ={:#?}", sock_fd, e))
+            .map(|e| {
+                println!(
+                    "Socket[{}] Recv UDP packet from = {}",
+                    sock_fd,
+                    format_ip_endpoint(e)
+                )
+            })
             .or_else(|| {
                 println!("Socket[{}] Recv UDP packet from no endpoint", sock_fd);
                 None
