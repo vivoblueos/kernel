@@ -56,3 +56,11 @@ config RISCV
 if RISCV
     rsource "riscv/Kconfig"
 endif
+
+config CORTEX_M
+	bool "Cortex-M"
+	default n
+
+if CORTEX_M
+	rsource "arm/cortex_m/Kconfig"
+endif

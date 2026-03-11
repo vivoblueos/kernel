@@ -229,6 +229,7 @@ pub extern "C" fn panic_on_hardfault(ctx: &IsrContext) {
 }
 
 #[naked]
+#[no_mangle]
 pub(crate) unsafe extern "C" fn handle_hardfault() {
     core::arch::naked_asm!(
         "
