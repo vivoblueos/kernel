@@ -17,7 +17,10 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
 use std::sync::atomic::{AtomicBool, Ordering};
-use syn::{parse_macro_input, Expr, ExprLit, FnArg, ItemFn, Lit, LitStr, Meta};
+use syn::{
+    parse::Parser, parse_macro_input, punctuated::Punctuated, token::Comma, Expr, ExprLit, FnArg,
+    ItemFn, Lit, LitStr, Meta,
+};
 
 static ENABLE_TEST_ONLY: AtomicBool = AtomicBool::new(false);
 static HAS_ONLY_TEST: AtomicBool = AtomicBool::new(false);
@@ -63,7 +66,11 @@ pub fn ignore(_attr: TokenStream, _item: TokenStream) -> TokenStream {
     return TokenStream::from(expanded);
 }
 
-fn generate_test_case(_attr: TokenStream, item: TokenStream) -> TokenStream {
+fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let repeat_count = match parse_repeat_count(attr) {
+        Ok(n) => n,
+        Err(e) => return e.to_compile_error().into(),
+    };
     let input = parse_macro_input!(item as ItemFn);
     let test_name = &input.sig.ident;
     let input_block = &input.block;
@@ -116,20 +123,100 @@ fn generate_test_case(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     });
 
-    let expanded = quote! {
-        #(#passthrough_attrs)*
-        #[test_case]
-        fn #test_name(#(#filtered_params),*) {
-            #[cfg(not(use_defmt))]
-            use semihosting::println;
-            #[cfg(use_defmt)]
-            use defmt::println as println;
-            #( let _ = #param_names; )*
-            #ignore_guard
-            println!("[ RUN      ] {}", stringify!(#test_name));
-            #input_block
-            println!("[       OK ] {}", stringify!(#test_name));
+    let expanded = if repeat_count == 1 {
+        quote! {
+            #(#passthrough_attrs)*
+            #[test_case]
+            fn #test_name(#(#filtered_params),*) {
+                #[cfg(not(use_defmt))]
+                use semihosting::println;
+                #[cfg(use_defmt)]
+                use defmt::println as println;
+                #( let _ = #param_names; )*
+                #ignore_guard
+                println!("[ RUN      ] {}", stringify!(#test_name));
+                #input_block
+                println!("[       OK ] {}", stringify!(#test_name));
+            }
+        }
+    } else {
+        quote! {
+            #(#passthrough_attrs)*
+            #[test_case]
+            fn #test_name(#(#filtered_params),*) {
+                #[cfg(not(use_defmt))]
+                use semihosting::println;
+                #[cfg(use_defmt)]
+                use defmt::println as println;
+                #( let _ = #param_names; )*
+                #ignore_guard
+                for __blueos_repeat_idx in 0..#repeat_count {
+                    println!(
+                        "[ RUN      ] {} [{}/{}]",
+                        stringify!(#test_name),
+                        __blueos_repeat_idx + 1,
+                        #repeat_count
+                    );
+                    #input_block
+                    println!(
+                        "[       OK ] {} [{}/{}]",
+                        stringify!(#test_name),
+                        __blueos_repeat_idx + 1,
+                        #repeat_count
+                    );
+                }
+            }
         }
     };
     expanded.into()
+}
+
+fn parse_repeat_count(attr: TokenStream) -> Result<usize, syn::Error> {
+    if attr.is_empty() {
+        return Ok(1);
+    }
+
+    let parser = Punctuated::<Meta, Comma>::parse_terminated;
+    let metas = parser.parse2(attr.into())?;
+    let mut repeat = 1usize;
+    let mut seen_repeat = false;
+
+    for meta in metas {
+        match meta {
+            Meta::NameValue(name_value) if name_value.path.is_ident("repeat") => {
+                if seen_repeat {
+                    return Err(syn::Error::new_spanned(
+                        name_value,
+                        "`repeat` can only be specified once",
+                    ));
+                }
+                let Expr::Lit(ExprLit {
+                    lit: Lit::Int(lit_int),
+                    ..
+                }) = name_value.value
+                else {
+                    return Err(syn::Error::new_spanned(
+                        name_value,
+                        "`repeat` expects an integer literal, e.g. #[test(repeat = 10)]",
+                    ));
+                };
+                let parsed = lit_int.base10_parse::<usize>()?;
+                if parsed == 0 {
+                    return Err(syn::Error::new_spanned(
+                        lit_int,
+                        "`repeat` must be greater than 0",
+                    ));
+                }
+                repeat = parsed;
+                seen_repeat = true;
+            }
+            other => {
+                return Err(syn::Error::new_spanned(
+                    other,
+                    "unsupported test attribute, expected #[test(repeat = N)]",
+                ));
+            }
+        }
+    }
+    Ok(repeat)
 }
