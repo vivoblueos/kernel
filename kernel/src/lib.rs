@@ -302,15 +302,15 @@ mod tests {
         assert!(arch::local_irq_enabled());
     }
 
-    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[cfg(mpu_stack_guard)]
     extern "C" {
         static __sys_stack_guard_start: u8;
     }
 
-    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[cfg(mpu_stack_guard)]
     static MEMFAULT_TRIGGERED: AtomicBool = AtomicBool::new(false);
 
-    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[cfg(mpu_stack_guard)]
     fn thumb_instruction_len(pc: usize) -> usize {
         let first_halfword = unsafe { (pc as *const u16).read_volatile() };
         if (first_halfword & 0xF800) == 0xE800 || (first_halfword & 0xF000) == 0xF000 {
@@ -320,7 +320,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[cfg(mpu_stack_guard)]
     extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::IsrContext) {
         let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
         let cfsr = scb.cfsr.read();
@@ -341,7 +341,7 @@ mod tests {
         ctx.pc = ctx.pc.wrapping_add(thumb_instruction_len(ctx.pc));
     }
 
-    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[cfg(mpu_stack_guard)]
     #[naked]
     #[no_mangle]
     pub unsafe extern "C" fn handle_memfault() {
@@ -358,7 +358,7 @@ mod tests {
         )
     }
 
-    #[cfg(all(cortex_m, use_mpu, mpu_v8m))]
+    #[cfg(mpu_stack_guard)]
     #[test]
     fn test_mpu_sys_stack_guard_write_fault() {
         MEMFAULT_TRIGGERED.store(false, Ordering::Release);

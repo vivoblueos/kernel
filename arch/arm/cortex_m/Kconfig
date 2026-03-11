@@ -16,6 +16,11 @@ if USE_MPU
             help
               Select MPU_V8M
     endchoice 
+
+    config MPU_STACK_GUARD
+        bool "MPU stack guard supports"
+        default n
+
 endif
 
 endmenu
