@@ -390,7 +390,10 @@ mod tests {
         let stack_base = current.stack_base();
         let stack_top = stack_base + current.stack_size();
         let guard_start = align_up(stack_base, MPU_REGION_ALIGN);
-        assert!(guard_start < stack_top, "No valid guard start in stack range");
+        assert!(
+            guard_start < stack_top,
+            "No valid guard start in stack range"
+        );
 
         MEMFAULT_TRIGGERED.store(false, Ordering::Release);
         unsafe { core::ptr::write_volatile(guard_start as *mut u32, 0xA5A5_5A5A) };
