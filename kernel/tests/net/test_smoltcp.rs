@@ -17,6 +17,7 @@
 // SPDX-LICENSE: 0BSD
 
 use super::net_utils;
+use crate::net::net_utils::format_ip_endpoint;
 use alloc::{boxed::Box, vec, vec::Vec};
 use blueos::{
     allocator, net, scheduler,
@@ -163,7 +164,7 @@ fn smoltcp_test_thread() {
             Some(Duration::ZERO) => println!("[smoltcp Tcp Socket Test]: iface resuming"),
             Some(delay) => {
                 println!(
-                    "[smoltcp Tcp Socket Test]: Inteface poll sleeping for {} ms",
+                    "[smoltcp Tcp Socket Test]: Inteface poll sleeping for {:?} ms",
                     delay
                 );
                 clock.advance(delay);
@@ -275,7 +276,10 @@ fn smoltcp_test_thread_icmp() {
 
         // send
         if icmp_socket.can_send() {
-            println!("icmp_socket.can_send addr {:#?} ", remote_addr);
+            println!(
+                "icmp_socket.can_send {} ",
+                format_ip_endpoint(remote_endpoint)
+            );
             NetworkEndian::write_i64(&mut echo_payload, clock.elapsed().total_micros());
 
             match remote_addr {
@@ -329,7 +333,10 @@ fn smoltcp_test_thread_icmp() {
             println!("icmp_socket.can_recv ");
 
             let (payload, addr) = icmp_socket.recv().unwrap();
-            println!("icmp_socket recv() addr={}", addr);
+            println!(
+                "icmp_socket recv() {} ",
+                format_ip_endpoint(remote_endpoint)
+            );
 
             match remote_addr {
                 IpAddress::Ipv4(_) => {
@@ -337,7 +344,7 @@ fn smoltcp_test_thread_icmp() {
                     let vec_payload = Vec::from(payload);
                     net_utils::println_hex(vec_payload.as_slice(), vec_payload.len());
                     let icmp_repr = Icmpv4Repr::parse(&icmp_packet, &device_caps.checksum).unwrap();
-                    println!("icmp_socket icmpv4 recv() icmp_repr={}", icmp_repr);
+                    println!("icmp_socket icmpv4 recv() icmp_repr={:?}", icmp_repr);
 
                     if let Icmpv4Repr::EchoReply { seq_no, data, .. } = icmp_repr {
                         let packet_timestamp_ms = NetworkEndian::read_i64(data);
@@ -378,10 +385,10 @@ fn smoltcp_test_thread_icmp() {
         let timestamp = clock.elapsed();
         match iface.poll_at(timestamp, &sockets) {
             Some(poll_at) if timestamp < poll_at => {
-                println!("poll_at timestamp < poll_at {}", poll_at);
+                println!("poll_at timestamp < poll_at {:?}", poll_at);
             }
             Some(v) => {
-                println!("poll_at Some({})", v);
+                println!("poll_at Some({:?})", v);
             }
             None => {
                 println!("poll_at None");

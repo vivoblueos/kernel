@@ -311,6 +311,15 @@ enum FatFileData {
     File(FatFile),
 }
 
+impl core::fmt::Debug for FatFileData {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            FatFileData::Directory(_) => write!(f, "Directory"),
+            FatFileData::File(_) => write!(f, "File"),
+        }
+    }
+}
+
 struct FatFile {
     _parent: Weak<FatInode>,
     internal_file: InternalFsLock<File>,
@@ -435,6 +444,7 @@ impl FatInode {
     }
 }
 
+#[derive(Debug)]
 struct InnerNode {
     attr: InodeAttr,
     data: FatFileData,
@@ -876,6 +886,7 @@ fn get_internal_fs_with_guard(
     internal_fs_wrapper.get()
 }
 
+#[derive(Debug)]
 struct InternalFsLock<T> {
     content: T,
     lock: Arc<Mutex<()>>,

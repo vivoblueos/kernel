@@ -414,3 +414,30 @@ pub fn print_ptr_content(addr_ptr: *const u8, len: usize) {
         println!("  [0x{:02x}]: 0x{:02x}", i, byte);
     }
 }
+
+pub fn format_ip_endpoint(ep: IpEndpoint) -> String {
+    match ep.addr {
+        IpAddress::Ipv4(ipv4) => {
+            let octets = ipv4.octets();
+            format!(
+                "{}.{}.{}.{}:{}",
+                octets[0], octets[1], octets[2], octets[3], ep.port
+            )
+        }
+        IpAddress::Ipv6(ipv6) => {
+            let segments = ipv6.segments();
+            format!(
+                "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{}",
+                segments[0],
+                segments[1],
+                segments[2],
+                segments[3],
+                segments[4],
+                segments[5],
+                segments[6],
+                segments[7],
+                ep.port
+            )
+        }
+    }
+}
