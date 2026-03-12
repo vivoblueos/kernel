@@ -321,6 +321,12 @@ mod tests {
     }
 
     #[cfg(mpu_stack_guard)]
+    #[inline]
+    const fn align_up(addr: usize, align: usize) -> usize {
+        (addr + align - 1) & !(align - 1)
+    }
+
+    #[cfg(mpu_stack_guard)]
     extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::IsrContext) {
         let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
         let cfsr = scb.cfsr.read();
@@ -367,6 +373,30 @@ mod tests {
         assert!(
             MEMFAULT_TRIGGERED.load(Ordering::Acquire),
             "MPU guard write did not trigger MemManage"
+        );
+    }
+
+    #[cfg(mpu_stack_guard)]
+    #[test]
+    fn test_mpu_thread_stack_guard_write_fault() {
+        const MPU_REGION_ALIGN: usize = 32;
+        let current = scheduler::current_thread_ref();
+        let guard_size = blueos_kconfig::CONFIG_STACK_GUARD_ALIGN_AND_SIZE as usize;
+        assert!(
+            guard_size >= MPU_REGION_ALIGN && guard_size % MPU_REGION_ALIGN == 0,
+            "Invalid stack guard size: {guard_size}"
+        );
+
+        let stack_base = current.stack_base();
+        let stack_top = stack_base + current.stack_size();
+        let guard_start = align_up(stack_base, MPU_REGION_ALIGN);
+        assert!(guard_start < stack_top, "No valid guard start in stack range");
+
+        MEMFAULT_TRIGGERED.store(false, Ordering::Release);
+        unsafe { core::ptr::write_volatile(guard_start as *mut u32, 0xA5A5_5A5A) };
+        assert!(
+            MEMFAULT_TRIGGERED.load(Ordering::Acquire),
+            "Per-thread MPU stack guard write did not trigger MemManage"
         );
     }
 
