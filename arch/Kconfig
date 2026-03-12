@@ -1,5 +1,18 @@
 # Configuration corresponding to architecture 
 
+config HAS_FPU
+	bool "FPU Supports"
+	default n
+	help
+	  FPU Supports
+
+config USE_FPU
+	bool "Enable FPU"
+	default n
+	depends on HAS_FPU
+	help
+	  Enable FPU
+
 config SRAM_SIZE
 	int "SRAM Size in kB"
 	help

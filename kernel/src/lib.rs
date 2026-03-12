@@ -670,7 +670,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_abi = "eabihf")]
+    #[cfg(use_fpu)]
     #[test]
     fn test_basic_float_add_sub() {
         let a: f32 = 1.0;
@@ -680,7 +680,7 @@ mod tests {
         assert!((a + b - c).abs() <= epsilon);
     }
 
-    #[cfg(target_abi = "eabihf")]
+    #[cfg(use_fpu)]
     #[test]
     fn test_basic_float_mul_div() {
         let a: f32 = 2.0;

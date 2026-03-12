@@ -19,7 +19,10 @@ choice
           Set irq priority bits to 8.
 endchoice
 
+# FIXME: These meta data should be automatically
+# generated from SoC-specific files, like svd.
 config SOC_MPS3_AN547
     bool "Mps3 AN547"
     default y
     select CORTEX_M
+    select HAS_FPU

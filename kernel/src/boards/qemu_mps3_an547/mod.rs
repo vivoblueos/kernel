@@ -76,6 +76,7 @@ unsafe fn copy_data() {
     INIT_BSS_DONE = true;
 }
 
+#[cfg(use_fpu)]
 unsafe fn enable_fpu() {
     const SCB_CPACR_PTR: *mut u32 = 0xE000_ED88 as *mut u32;
     let mut temp = SCB_CPACR_PTR.read_volatile();
@@ -88,7 +89,10 @@ const HZ: usize = SYSTEM_CORE_CLOCK as usize;
 pub type ClockImpl = systick::SysTickClock<TICKS_PS, HZ>;
 
 pub(crate) fn init() {
-    unsafe { enable_fpu() };
+    #[cfg(use_fpu)]
+    unsafe {
+        enable_fpu()
+    };
 
     unsafe {
         copy_data();

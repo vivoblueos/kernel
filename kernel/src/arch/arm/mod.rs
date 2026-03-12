@@ -37,9 +37,9 @@ use scheduler::ContextSwitchHookHolder;
 
 pub const EXCEPTION_LR: usize = 0xFFFFFFFD;
 // See https://developer.arm.com/documentation/100235/0100/The-Cortex-M33-Processor/Programmer-s-model/Core-registers/CONTROL-register.
-#[cfg(not(target_abi = "eabihf"))]
+#[cfg(not(use_fpu))]
 pub const CONTROL: usize = 0b10;
-#[cfg(target_abi = "eabihf")]
+#[cfg(use_fpu)]
 pub const CONTROL: usize = 0b110;
 pub const THUMB_MODE: usize = 0x01000000;
 pub const NR_SWITCH: usize = !0;
@@ -178,7 +178,7 @@ pub extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     unsafe { reset_msp_and_start_schedule(&mut __sys_stack_end as *mut u8, cont) }
 }
 
-#[cfg(not(target_abi = "eabihf"))]
+#[cfg(not(use_fpu))]
 #[repr(C, align(8))]
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Context {
@@ -203,7 +203,7 @@ pub struct Context {
     pub xpsr: usize,
 }
 
-#[cfg(target_abi = "eabihf")]
+#[cfg(use_fpu)]
 #[repr(C, align(8))]
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Context {
@@ -262,7 +262,7 @@ pub struct Context {
     pub vpr: usize,
 }
 
-#[cfg(not(target_abi = "eabihf"))]
+#[cfg(not(use_fpu))]
 #[repr(C, align(8))]
 #[derive(Default)]
 pub struct IsrContext {
@@ -277,7 +277,7 @@ pub struct IsrContext {
 }
 
 // See https://developer.arm.com/documentation/107706/0100/Exceptions-and-interrupts-overview/Stack-frames.
-#[cfg(target_abi = "eabihf")]
+#[cfg(use_fpu)]
 #[repr(C, align(8))]
 #[derive(Default)]
 pub struct IsrContext {
@@ -320,7 +320,7 @@ impl fmt::Debug for IsrContext {
         write!(f, "lr: 0x{:x} ", self.lr)?;
         write!(f, "pc: 0x{:x} ", self.pc)?;
         write!(f, "xpsr: 0x{:x} ", self.xpsr)?;
-        #[cfg(target_abi = "eabihf")]
+        #[cfg(use_fpu)]
         {
             write!(f, "fpscr: 0x{:x} ", self.fpscr)?;
             write!(f, "vpr: 0x{:x} ", self.vpr)?;
@@ -332,7 +332,7 @@ impl fmt::Debug for IsrContext {
 
 // FIXME: We need to pass a scratch register to perform saving.
 // Use r12 as scratch register now.
-#[cfg(not(target_abi = "eabihf"))]
+#[cfg(not(use_fpu))]
 macro_rules! store_callee_saved_regs {
     () => {
         "
@@ -342,7 +342,7 @@ macro_rules! store_callee_saved_regs {
     };
 }
 
-#[cfg(not(target_abi = "eabihf"))]
+#[cfg(not(use_fpu))]
 macro_rules! load_callee_saved_regs {
     () => {
         "
@@ -352,7 +352,7 @@ macro_rules! load_callee_saved_regs {
     };
 }
 
-#[cfg(target_abi = "eabihf")]
+#[cfg(use_fpu)]
 macro_rules! store_callee_saved_regs {
     () => {
         "
@@ -363,7 +363,7 @@ macro_rules! store_callee_saved_regs {
     };
 }
 
-#[cfg(target_abi = "eabihf")]
+#[cfg(use_fpu)]
 macro_rules! load_callee_saved_regs {
     () => {
         "
@@ -550,7 +550,7 @@ impl Context {
         self
     }
 
-    #[cfg(not(target_abi = "eabihf"))]
+    #[cfg(not(use_fpu))]
     #[inline]
     pub fn init(&mut self) -> &mut Self {
         self.xpsr = THUMB_MODE;
@@ -558,7 +558,7 @@ impl Context {
     }
 
     // See https://developer.arm.com/documentation/100235/0004/the-cortex-m33-peripherals/floating-point-unit/floating-point-status-control-register.
-    #[cfg(target_abi = "eabihf")]
+    #[cfg(use_fpu)]
     #[inline]
     pub fn init(&mut self) -> &mut Self {
         self.xpsr = THUMB_MODE;
@@ -727,7 +727,7 @@ mod tests {
     // See https://developer.arm.com/documentation/107706/0100/Exceptions-and-interrupts-overview/Stack-frames.
     #[test]
     fn test_abi() {
-        #[cfg(target_abi = "eabihf")]
+        #[cfg(use_fpu)]
         {
             assert_eq!(
                 core::mem::size_of::<IsrContext>(),
@@ -738,7 +738,7 @@ mod tests {
                 core::mem::size_of::<IsrContext>() + 8 * 4 + 16 * 4
             );
         }
-        #[cfg(not(target_abi = "eabihf"))]
+        #[cfg(not(use_fpu))]
         {
             assert_eq!(
                 core::mem::size_of::<IsrContext>(),

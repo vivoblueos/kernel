@@ -84,6 +84,7 @@ const TICKS_PS: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 pub type ClockImpl = systick::SysTickClock<TICKS_PS, 150_000_000usize>;
 
 pub(crate) fn init() {
+    #[cfg(use_fpu)]
     unsafe {
         const SCB_CPACR_PTR: *mut u32 = 0xE000_ED88 as *mut u32;
         const SCB_CPACR_FULL_ACCESS: u32 = 0b11;
@@ -92,6 +93,9 @@ pub(crate) fn init() {
         temp |= 0x00F00000;
         SCB_CPACR_PTR.write_volatile(temp);
         core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
+
+    unsafe {
         copy_data();
     }
     boot::init_runtime();
