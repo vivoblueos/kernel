@@ -153,6 +153,7 @@ pub unsafe extern "C" fn sync_from_lower_el1_rust(frame: *mut u64) -> u64 {
             0x00 => {
                 let el = hyper::get_current_el();
                 unsafe { early_uart_print_hex("[VIRT] Current EL:", el); }
+                unsafe { early_uart_print_hex("[EL2] ELR will return to:", *frame.add(31)); }
                 core::ptr::write_volatile(frame.add(0), 0u64);
             }
             _ => {
@@ -203,7 +204,7 @@ pub unsafe extern "C" fn irq_from_lower_el1() {
         "str x2, [sp, #256]\n",
         "mov x0, sp\n",
         "mov x19, sp\n",
-        "bl trap_irq\n",
+        "bl hyper_trap_irq\n",
         "mov sp, x19\n",
         "ldr x1, [sp, #248]\n",
         "ldr x2, [sp, #256]\n",
@@ -257,7 +258,7 @@ pub unsafe extern "C" fn fiq_from_lower_el1() {
         "str x1, [sp, #248]\n",
         "str x2, [sp, #256]\n",
         "mov x0, sp\n",
-        "bl trap_fiq\n",
+        "bl hyper_trap_fiq\n",
         "ldr x1, [sp, #248]\n",
         "msr elr_el2, x1\n",
         "ldp x0, x1, [sp, #0]\n",

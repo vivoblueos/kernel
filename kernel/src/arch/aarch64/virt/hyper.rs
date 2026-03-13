@@ -15,7 +15,7 @@
 use tock_registers::interfaces::{Readable, Writeable};
 use crate::arch::aarch64::{
     registers::hcr_el2::HCR_EL2,
-    virt::vector
+    virt::{vector, early_uart_print}
 };
 
 #[inline]
@@ -100,4 +100,5 @@ pub fn hyp_init() {
 
     let vector_base = vector::get_vector_table_addr();
     configure_vector_table(vector_base);
+    // unsafe { early_uart_print("finish hypervisor init"); }
 }

@@ -51,12 +51,12 @@ pub unsafe fn early_uart_print_hex(label: &str, val: u64) {
 
 // Temporary placeholder
 #[no_mangle]
-pub extern "C" fn trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
+pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
     0
 }
 
 #[no_mangle]
-pub extern "C" fn trap_fiq(_context: &mut crate::arch::aarch64::Context) -> usize {
+pub extern "C" fn hyper_trap_fiq(_context: &mut crate::arch::aarch64::Context) -> usize {
     0
 }
 
