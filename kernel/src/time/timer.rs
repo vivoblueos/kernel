@@ -602,7 +602,17 @@ mod tests {
         let hz = ClockImpl::hz();
         let l = 99;
         let r = 1_01;
-        assert!(diff >= l * hz / 1_00);
-        assert!(diff <= r * hz / 1_00);
+        assert!(
+            diff >= l * hz / 1_00,
+            "Timer fired too early: diff = {}, expected at least {}",
+            diff,
+            l * hz / 1_00
+        );
+        assert!(
+            diff <= r * hz / 1_00,
+            "Timer fired too late: diff = {}, expected at most {}",
+            diff,
+            r * hz / 1_00
+        );
     }
 }
