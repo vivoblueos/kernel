@@ -222,7 +222,7 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
         // See https://github.com/espressif/qemu/issues/69
         let moment = {
             let now = Self::estimate_current_cycles();
-            let compensation = core::cmp::max(1, HZ / 500); // ~5ms
+            let compensation = core::cmp::max(1, HZ / 10_000); // ~100us
             let moment = if moment < now + compensation {
                 now.saturating_add(compensation)
             } else {

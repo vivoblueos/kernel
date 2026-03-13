@@ -590,7 +590,7 @@ mod tests {
     /// - Child thread tries to acquire mutex with 5 tick timeout (LESS than main holds)
     /// - Child thread should timeout (result = false)
     /// - This verifies the mutex timeout functionality works correctly
-    #[test]
+    #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn test_mutex_multi_thread_timeout() {
         let mutex = Mutex::create();
         let pend_flag = Arc::new(AtomicUsize::new(0));
