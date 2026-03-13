@@ -19,6 +19,7 @@ pub mod cntpct_el0;
 pub mod cpacr_el1;
 pub mod daif;
 pub mod esr_el1;
+pub mod hcr_el2;
 pub mod mair_el1;
 pub mod mpidr_el1;
 pub mod sctlr_el1;
