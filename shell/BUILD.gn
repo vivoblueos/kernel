@@ -21,6 +21,7 @@ executable("shell") {
   sources = [ "src/main.rs" ]
   deps = [
     "//external/vendor/phf-0.12.1:phf",
+    "//kernel/kernel:blueos",
     "//kernel/rsrt:rsrt_std",
     "//libc",
     "//librs",

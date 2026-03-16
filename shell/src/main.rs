@@ -23,6 +23,7 @@ mod commands;
 use commands::COMMANDS;
 
 fn main() {
+    #[cfg(enable_vfs)]
     thread::Builder::new()
         .name("shell".to_string())
         .stack_size(65536)
@@ -33,6 +34,12 @@ fn main() {
         .unwrap()
         .join()
         .unwrap();
+
+    #[cfg(not(enable_vfs))]
+    {
+        extern crate blueos;
+        blueos::kprintln!("Run without vfs is not supported!");
+    }
 }
 
 fn shell_loop() {
