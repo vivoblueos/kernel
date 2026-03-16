@@ -389,13 +389,13 @@ impl Mutex {
             #[cfg(debugging_scheduler)]
             crate::trace!(
                 "Trying to get read lock of mutex {:?}, estimated R {}, W {}",
-                mutex.deref() as *const _,
+                mutex as *const _,
                 mutex.pending.reader_count(),
                 mutex.pending.writer_count(),
             );
             let read = mutex.pending.irqsave_read();
             #[cfg(debugging_scheduler)]
-            crate::trace!("Got the read lock of mutex {:?}", mutex.deref() as *const _);
+            crate::trace!("Got the read lock of mutex {:?}", mutex as *const _);
             let Some(front) = read.front() else {
                 continue;
             };
