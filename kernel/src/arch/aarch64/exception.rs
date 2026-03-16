@@ -220,7 +220,13 @@ fn show_exception(ec: u64, context: &mut Context) {
         0x17 => panic!("SMC instruction execution, when SMC is not disabled\n======== error stack ======== \n{}",context),
         0x18 => panic!("MSR, MRS, or System instruction execution, that is not reported using EC 0x00, 0x01, or 0x07\n======== error stack ======== \n{}",context),
         0x20 => panic!("Instruction Abort from a lower Exception level\n======== error stack ======== \n{}",context),
-        0x21 => panic!("Instruction Abort taken without a change in Exception level\n======== error stack ======== \n{}",context),
+        0x21 => 
+        {
+            semihosting::println!("Instruction Abort taken without a change in Exception level\n======== error stack ======== \n{}",context);
+            loop {
+                unsafe { core::arch::asm!("wfe") }
+            }
+        }
         0x22 => panic!("Misaligned PC exception\n======== error stack ======== \n{}",context),
         0x24 => panic!(" Data Abort from a lower Exception levelh\n======== error stack ======== \n{}",context),
         0x25 => panic!("Data Abort taken without a change in Exception level\n======== error stack ======== \n{}",context),
