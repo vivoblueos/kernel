@@ -114,6 +114,9 @@ macro_rules! arch_bootstrap {
 
 extern "C" fn prepare_schedule() -> usize {
     let current = scheduler::current_thread_ref();
+    // Program guard for the first thread before entering thread mode with PSP.
+    #[cfg(all(use_mpu, mpu_stack_guard))]
+    mpu::update_thread_stack_guard(current);
     current.reset_saved_sp();
     current.saved_sp()
 }

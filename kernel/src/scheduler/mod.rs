@@ -207,6 +207,10 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let next_priority = next.priority();
     let next_saved_sp = spin_until_ready_to_run(&next);
     next.clear_saved_sp();
+    // Reprogram per-thread MPU guard before restoring `next` context so the
+    // upcoming PSP run is checked against the correct stack region.
+    #[cfg(all(target_arch = "arm", use_mpu, mpu_stack_guard))]
+    arch::mpu::update_thread_stack_guard(&next);
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
     let mut old = set_current_thread(next);
