@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import("//build/templates/build_template.gni")
+import("//build/templates/set_configuration_files.gni")
 
 _kconfig_files = [
   "config/Kconfig",
@@ -28,33 +29,83 @@ _kconfig_files = [
   "//kernel/arch/arm/cortex_m/Kconfig",
 ]
 
-_config_file = rebase_path("${root_gen_dir}/.config")
-_kernel_configs = exec_script("//kernel/kconfig/src/generate_configs.py",
-                              [
-                                "--kconfig",
-                                rebase_path("config/Kconfig"),
-                                "--board",
-                                "${board}",
-                                "--build_type",
-                                "${build_type}",
-                                "--output",
-                                _config_file,
-                              ],
-                              "list lines",
-                              _kconfig_files)
+# _config_file = rebase_path("${root_gen_dir}/.config")
+# _kernel_configs = exec_script("//kernel/kconfig/src/generate_configs.py",
+#                               [
+#                                 "--kconfig",
+#                                 rebase_path("config/Kconfig"),
+#                                 "--board",
+#                                 "${board}",
+#                                 "--build_type",
+#                                 "${build_type}",
+#                                 "--output",
+#                                 _config_file,
+#                               ],
+#                               "list lines",
+#                               _kconfig_files)
+
+# action("generate_c_header") {
+#   script = "//kernel/kconfig/src/generate_c_header.py"
+#   output_headers = rebase_path("${root_gen_dir}/autoconf.h")
+#   outputs = [ "${root_gen_dir}/autoconf.h" ]
+#   inputs = _kconfig_files
+#   config_path = _config_file
+#   args = [
+#     "--config",
+#     "${config_path}",
+#     "--output_headers",
+#     "${output_headers}",
+#   ]
+# }
+
+# set_configuration_files("default_kconfig") {
+#   kconfig_path = rebase_path("config/Kconfig")
+#   inputs = _kconfig_files
+# }
+action("generate_autoconf") {
+  script = "//kernel/kconfig/src/generate_artifacts.py"
+  inputs = _kconfig_files
+  outputs = [ "${root_gen_dir}/.config" ]
+  args = [
+    "--kconfig",
+    rebase_path("config/Kconfig"),
+    "--board",
+    "${board}",
+    "--build_type",
+    "${build_type}",
+    "--output_dir",
+    rebase_path("${root_gen_dir}"),
+  ]
+}
 
 action("generate_c_header") {
   script = "//kernel/kconfig/src/generate_c_header.py"
-  output_headers = rebase_path("${root_gen_dir}/autoconf.h")
+  inputs = get_target_outputs(":generate_autoconf")
   outputs = [ "${root_gen_dir}/autoconf.h" ]
-  inputs = _kconfig_files
-  config_path = _config_file
+  config_path = rebase_path(inputs[0])
+  output = rebase_path(outputs[0])
   args = [
     "--config",
     "${config_path}",
     "--output_headers",
-    "${output_headers}",
+    "${output}",
   ]
+  deps = [ ":generate_autoconf" ]
+}
+
+action("generate_rustflags_file") {
+  script = "//kernel/kconfig/src/generate_rustflags_file.py"
+  output_rustflags_dir = rebase_path("${root_gen_dir}")
+  outputs = [ "${root_gen_dir}/rustflags.txt" ]
+  inputs = get_target_outputs(":generate_autoconf")
+  config_path = rebase_path(inputs[0])
+  args = [
+    "--config",
+    "${config_path}",
+    "--output_dir",
+    "${output_rustflags_dir}",
+  ]
+  deps = [ ":generate_autoconf" ]
 }
 
 bindgen("autoconf_header") {
@@ -64,7 +115,8 @@ bindgen("autoconf_header") {
     "core::ffi",
     "--no-layout-tests",
   ]
-  sources = get_target_outputs(":generate_c_header")
+  inputs = get_target_outputs(":generate_c_header")
+  sources = [ inputs[0] ]
   deps = [ ":generate_c_header" ]
 }
 
@@ -92,10 +144,7 @@ build_rust("blueos_kconfig") {
 
 config("kconfigs") {
   rustflags = []
-  foreach(cfg, _kernel_configs) {
-    rustflags += [
-      "--cfg",
-      cfg,
-    ]
-  }
+  inputs = get_target_outputs(":generate_rustflags_file")
+  rustflags_file = rebase_path(inputs[0])
+  rustflags += [ "@${rustflags_file}" ]
 }

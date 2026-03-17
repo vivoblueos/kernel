@@ -63,6 +63,7 @@ _shared_deps = [
   "//kernel/header:blueos_header",
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
+  "//kernel/kconfig:generate_rustflags_file",
   "//libc",
 ]
 _shared_deps += board_deps
@@ -147,6 +148,7 @@ build_rust("blueos") {
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
   public_deps = board_deps
+  public_deps += [ "//kernel/kconfig:generate_rustflags_file" ]
   public_configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
