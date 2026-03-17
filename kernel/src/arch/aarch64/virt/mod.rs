@@ -14,40 +14,7 @@
 
 pub mod hyper;
 pub mod vector;
-pub use hyper::{hyp_init, get_current_el};
-
-// PL011 UART addresses for QEMU Virt
-const UART0_DR: *mut u32 = 0x0900_0000 as *mut u32;
-const UART0_FR: *mut u32 = 0x0900_0018 as *mut u32;
-
-pub unsafe fn early_uart_putc(c: u8) {
-    core::ptr::write_volatile(UART0_DR, c as u32);
-}
-
-pub unsafe fn early_uart_print(s: &str) {
-    for c in s.bytes() {
-        early_uart_putc(c);
-    }
-    early_uart_putc(b'\r');
-    early_uart_putc(b'\n');
-}
-
-pub unsafe fn early_uart_print_hex(label: &str, val: u64) {
-    for c in label.bytes() {
-        early_uart_putc(c);
-    }
-    early_uart_putc(b':');
-    early_uart_putc(b' ');
-    early_uart_putc(b'0');
-    early_uart_putc(b'x');
-    for i in (0..16).rev() {
-        let digit = (val >> (i * 4)) & 0xF;
-        let c = if digit < 10 { b'0' + digit as u8 } else { b'a' + (digit - 10) as u8 };
-        early_uart_putc(c);
-    }
-    early_uart_putc(b'\r');
-    early_uart_putc(b'\n');
-}
+pub use hyper::{get_current_el, hyp_init};
 
 // Temporary placeholder
 #[no_mangle]

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::hyper;
 use core::arch::asm;
-use super::{early_uart_print, early_uart_print_hex, hyper};
 
 static mut PRINTED_ALIGN: bool = false;
 const VECTOR_TABLE_SIZE: usize = 2048;
@@ -148,27 +148,25 @@ pub unsafe extern "C" fn sync_from_lower_el1_rust(frame: *mut u64) -> u64 {
     // EC = 0x16 (HVC64)
     if ec == 0x16 {
         let func_id = *frame.add(0);
-        
+
         match func_id {
             0x00 => {
                 let el = hyper::get_current_el();
-                unsafe { early_uart_print_hex("[VIRT] Current EL:", el); }
-                unsafe { early_uart_print_hex("[EL2] ELR will return to:", *frame.add(31)); }
                 core::ptr::write_volatile(frame.add(0), 0u64);
             }
             _ => {
-                early_uart_print_hex("[EL2] Unknown Host HVC: ", func_id);
+                panic!("[EL2] Unknown Host HVC:{} ", func_id);
             }
-        }        
+        }
         return 1; // Resume
     }
 
     // EC = 0x07 (Access to SIMD/FP)
     if ec == 0x07 {
         asm!("msr cptr_el2, xzr");
-        return 1; 
+        return 1;
     }
-    
+
     0
 }
 
@@ -235,7 +233,7 @@ pub unsafe extern "C" fn irq_from_lower_el1() {
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn fiq_from_lower_el1() {
-     core::arch::naked_asm!(
+    core::arch::naked_asm!(
         "sub sp, sp, #272\n",
         "stp x0, x1, [sp, #0]\n",
         "stp x2, x3, [sp, #16]\n",
@@ -291,7 +289,9 @@ pub unsafe extern "C" fn serror_from_lower_el1() {
 /// Solve sync exception from lower el2 sp0.
 #[no_mangle]
 pub unsafe extern "C" fn sync_current_sp0() {
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }
 
 #[no_mangle]
@@ -303,21 +303,17 @@ pub unsafe extern "C" fn sync_current_spx() {
     asm!("mrs {}, elr_el2", out(reg) elr, options(nostack));
     asm!("mrs {}, far_el2", out(reg) far, options(nostack));
 
-    early_uart_print("[EL2] CRITICAL: Sync Exception from EL2 (SPx)!");
-    early_uart_print_hex("  ESR_EL2", esr);
-    early_uart_print_hex("  ELR_EL2", elr);
-    early_uart_print_hex("  FAR_EL2", far);
-    
     // Attempt to decode syndrome
     let ec = (esr >> 26) & 0x3F;
-    early_uart_print_hex("  Exception Class (EC)", ec);
-    
+
     // Data Abort from same EL
     if ec == 0x25 {
-        early_uart_print("[EL2] Data Abort (EL2)");
+        panic!("[EL2] Data Abort (EL2)");
     }
 
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }
 
 #[no_mangle]
@@ -330,25 +326,35 @@ pub unsafe extern "C" fn sync_current_el1() {
     asm!("mrs {}, elr_el2", out(reg) elr, options(nostack));
     asm!("mrs {}, far_el2", out(reg) far, options(nostack));
     asm!("mrs {}, spsr_el2", out(reg) spsr, options(nostack));
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sync_current_el0() {
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn irq_current() {
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn fiq_current() {
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn serror_current() {
-    loop { asm!("wfi"); }
+    loop {
+        asm!("wfi");
+    }
 }

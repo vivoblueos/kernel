@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::arch::aarch64::{registers::hcr_el2::HCR_EL2, virt::vector};
 use tock_registers::interfaces::{Readable, Writeable};
-use crate::arch::aarch64::{
-    registers::hcr_el2::HCR_EL2,
-    virt::{vector, early_uart_print}
-};
 
 #[inline]
 pub fn get_current_el() -> u64 {
@@ -71,12 +68,9 @@ pub fn read_elr_el2() -> u64 {
     elr
 }
 
-
 #[inline]
 fn configure_hcr_el2() {
-    HCR_EL2.write(
-    HCR_EL2::RW::EL1AArch64
-    );
+    HCR_EL2.write(HCR_EL2::RW::EL1AArch64);
 }
 
 #[inline]
@@ -100,5 +94,4 @@ pub fn hyp_init() {
 
     let vector_base = vector::get_vector_table_addr();
     configure_vector_table(vector_base);
-    // unsafe { early_uart_print("finish hypervisor init"); }
 }
