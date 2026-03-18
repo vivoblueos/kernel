@@ -23,31 +23,16 @@ import sys
 from kconfiglib import Kconfig, BOOL, STRING
 
 
-# def generate_configs(kconfig_path, target_name, board, build_type, output_dir, app_conf):
 def generate_configs(kconfig_path, board, build_type, output_dir):
     kconf = Kconfig(kconfig_path)
     defconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
                              "defconfig")
     if os.path.exists(defconfig):
         kconf.load_config(defconfig)
-    # if app_conf:
-    #     kconf.load_config(app_conf, replace=True)
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    # kconf.write_autoconf(os.path.join(output_dir, f"autoconf.h"))
     kconf.write_config(os.path.join(output_dir, f".config"))
-    # rustflags_file = os.path.join(output_dir, f"{target_name}_rustflags.txt")
-    # kconf.write_autoconf(os.path.join(output_dir, f"{target_name}_autoconf.h"))
-    # with open(rustflags_file, "w", encoding="utf-8") as rustflags_out:
-    #     for sym in kconf.defined_syms:
-    #         if sym.type == BOOL and sym.tri_value == 2:
-    #             rustflags_out.write(f"--cfg\n")
-    #             rustflags_out.write(f"{sym.name.lower()}\n")
-    #         elif sym.type == STRING and sym.str_value:
-    #             rustflags_out.write(f'--cfg\n')
-    #             rustflags_out.write(
-    #                 f'{sym.name.lower()}="{sym.str_value.lower()}"\n')
 
 
 if __name__ == "__main__":
@@ -56,8 +41,6 @@ if __name__ == "__main__":
     parser.add_argument("--board", help="target board")
     parser.add_argument("--build_type", help="target build_type")
     parser.add_argument("--output_dir", help="output dir path")
-    # parser.add_argument("--target_name", help="target name")
-    # parser.add_argument("--app_conf", help="app config file path", default=None)
     args = parser.parse_args()
     os.environ["BOARD"] = args.board
     os.environ["KCONFIG_DIR"] = os.path.dirname(args.kconfig)
@@ -68,8 +51,8 @@ if __name__ == "__main__":
     os.environ["KERNEL_SRC_DIR"] = os.path.abspath(kernel_src_dir)
 
     try:
-        # generate_configs(args.kconfig, args.target_name, args.board, args.build_type, args.output_dir, args.app_conf)
-        generate_configs(args.kconfig, args.board, args.build_type, args.output_dir)
+        generate_configs(args.kconfig, args.board, args.build_type,
+                         args.output_dir)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
-        sys.exit(1)   
+        sys.exit(1)
