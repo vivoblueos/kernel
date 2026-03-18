@@ -52,9 +52,9 @@ def write_rustflags_from_config(config_path, output_dir):
             elif value == "":
                 continue
             elif value.startswith('"') and value.endswith('"'):
-                 out.write(f'--cfg\n')
-                 key_lower = key[len("CONFIG_"):].lower()
-                 out.write(f'{key_lower}={value.lower()}\n')
+                out.write(f'--cfg\n')
+                key_lower = key[len("CONFIG_"):].lower()
+                out.write(f'{key_lower}={value.lower()}\n')
             else:
                 continue
 
