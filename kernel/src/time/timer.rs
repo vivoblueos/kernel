@@ -600,7 +600,7 @@ mod tests {
         );
         let end = crate::boards::ClockImpl::estimate_current_cycles();
         let diff = end - start;
-        // Accept interval [0.99, 1.05].
+        // Accept interval [0.99, 1.10].
         let hz = ClockImpl::hz();
         let l = 99;
         // FIXME: Allow wider tolerance for QEMU virtualized environments where timer
