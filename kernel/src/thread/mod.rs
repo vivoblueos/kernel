@@ -592,6 +592,7 @@ impl Thread {
     /// and trigger MemManage (for example DACCVIOL/MSTKERR); if fault handling
     /// cannot proceed, the fault may escalate to HardFault.
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
+        unsafe { self.set_state(IDLE) };
         self.stack = stack;
         // TODO: Stack sanity check.
         let maybe_sp = self.stack.top() as usize
