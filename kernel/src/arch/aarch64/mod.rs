@@ -80,7 +80,7 @@ macro_rules! enter_el1 {
         msr spsr_el2, x0
         // Set EL1 entry and enter.
         ldr x0, ={stack_start}
-        ldr x1, ={stack_end}  
+        ldr x1, ={stack_end} 
         // We reserve the top 4KB of each core's 16KB chunk for EL2.
         sub x1, x1, #0x1000
         ldr x2, ={cont}
