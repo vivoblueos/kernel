@@ -61,12 +61,6 @@ pub(crate) fn init() {
         scheduler::wait_and_then_start_schedule();
         unreachable!("Secondary cores should have jumped to the scheduler");
     }
-    STAGING.run(8, true, || {
-        let ret = hvc_call(0, 0, 0);
-        if ret != 0{
-            unreachable!("Can not switch to El2");
-        }
-    });
 
     irq::set_trigger(
         config::PL011_UART0_IRQNUM,

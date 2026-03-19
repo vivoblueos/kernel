@@ -85,6 +85,7 @@ fn configure_vector_table(vector_base: usize) {
 }
 
 // Hypervisor initialization
+#[cfg(not(CONFIG_VIRTUALIZATION))]
 pub fn hyp_init() {
     configure_hcr_el2();
     unsafe {
@@ -94,4 +95,15 @@ pub fn hyp_init() {
 
     let vector_base = vector::get_vector_table_addr();
     configure_vector_table(vector_base);
+}
+
+#[cfg(CONFIG_VIRTUALIZATION)]
+pub fn hyp_init() {
+    let hcr_val: u64 = (1 << 31) | (1 << 1);
+    write_hcr_el2(hcr_val);
+
+    unsafe {
+        core::arch::asm!("dsb sy", options(nostack));
+        core::arch::asm!("isb sy", options(nostack));
+    }
 }

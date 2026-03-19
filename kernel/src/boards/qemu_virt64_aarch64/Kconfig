@@ -1,1 +1,4 @@
 # Board specific configuration for qemu_virt64_aarch64
+config VIRTUALIZATION
+    default y
+    bool "Enable Virtualization support"
