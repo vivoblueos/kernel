@@ -23,12 +23,13 @@ import sys
 from kconfiglib import Kconfig, BOOL, STRING
 
 
-def generate_configs(kconfig_path, board, build_type, output_dir):
+def generate_configs(kconfig_path, output_dir, defconfig_files):
     kconf = Kconfig(kconfig_path)
-    defconfig = os.path.join(os.path.dirname(kconfig_path), board, build_type,
-                             "defconfig")
-    if os.path.exists(defconfig):
-        kconf.load_config(defconfig)
+    kconf.disable_override_warnings()
+    kconf.disable_redun_warnings()
+    if defconfig_files:
+        for path in defconfig_files:
+            kconf.load_config(path, replace=False)
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -41,6 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--board", help="target board")
     parser.add_argument("--build_type", help="target build_type")
     parser.add_argument("--output_dir", help="output dir path")
+    parser.add_argument("--defconfig_files", help="defconfig files")
     args = parser.parse_args()
     os.environ["BOARD"] = args.board
     os.environ["KCONFIG_DIR"] = os.path.dirname(args.kconfig)
@@ -49,10 +51,9 @@ if __name__ == "__main__":
     kernel_src_dir = os.path.join(
         os.path.dirname(os.path.dirname(kconfig_dir)), "kernel", "src")
     os.environ["KERNEL_SRC_DIR"] = os.path.abspath(kernel_src_dir)
-
+    defconfigs = args.defconfig_files.split(",")
     try:
-        generate_configs(args.kconfig, args.board, args.build_type,
-                         args.output_dir)
+        generate_configs(args.kconfig, args.output_dir, defconfigs)
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
         sys.exit(1)

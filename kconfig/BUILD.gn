@@ -16,7 +16,6 @@ import("//build/templates/build_template.gni")
 
 _kconfig_files = [
   "config/Kconfig",
-  "config/${board}/${build_type}/defconfig",
   "//kernel/arch/Kconfig",
   "//kernel/kernel/src/boards/${board}/Kconfig",
   "//kernel/kernel/src/Kconfig",
@@ -27,6 +26,7 @@ _kconfig_files = [
   "//kernel/arch/riscv/Kconfig",
   "//kernel/arch/arm/cortex_m/Kconfig",
 ]
+_kconfig_files += string_split(defconfig_files, ",")
 
 action("generate_autoconf") {
   script = "//kernel/kconfig/src/generate_artifacts.py"
@@ -39,6 +39,8 @@ action("generate_autoconf") {
     "${board}",
     "--build_type",
     "${build_type}",
+    "--defconfig_files",
+    defconfig_files,
     "--output_dir",
     rebase_path("${root_gen_dir}"),
   ]
@@ -62,6 +64,7 @@ action("generate_c_header") {
 action("generate_rustflags_file") {
   script = "//kernel/kconfig/src/generate_rustflags_file.py"
   output_rustflags_dir = rebase_path("${root_gen_dir}")
+  print("root gen: ${root_gen_dir}")
   outputs = [ "${root_gen_dir}/rustflags.txt" ]
   inputs = get_target_outputs(":generate_autoconf")
   config_path = rebase_path(inputs[0])
