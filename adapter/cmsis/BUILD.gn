@@ -32,6 +32,7 @@ build_rust("cmsis_adapter") {
   edition = "2021"
   proc_macro_deps = [ "//external/vendor/delegate-0.13.4:delegate" ]
   deps = adapter_deps
+  deps += [ "//kernel/kconfig:generate_rustflags_file" ]
   configs += [ "//kernel/kconfig:kconfigs" ]
 }
 
@@ -53,6 +54,7 @@ build_rust("cmsis_adapter_unittest") {
   deps += [
     ":cmsis_adapter",
     "//external/vendor/semihosting-0.1.20:semihosting",
+    "//kernel/kconfig:generate_rustflags_file",
   ]
   configs += [
     "//kernel/kconfig:kconfigs",
@@ -109,6 +111,7 @@ build_rust("adapter_validation") {
     ":cmsis_adapter",
     ":validation_cases",
     "//external/vendor/semihosting-0.1.20:semihosting",
+    "//kernel/kconfig:generate_rustflags_file",
 
     # in fact, validation_cases need an c library
     # "//librs:librs",
