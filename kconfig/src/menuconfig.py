@@ -26,8 +26,8 @@ import sys
 def get_kernel_src_dir(kconfig_path):
     kconfig_dir = os.path.dirname(kconfig_path)
     return os.path.abspath(
-        os.path.join(os.path.dirname(os.path.dirname(kconfig_dir)), "kernel", "src")
-    )
+        os.path.join(os.path.dirname(os.path.dirname(kconfig_dir)), "kernel",
+                     "src"))
 
 
 if __name__ == "__main__":
@@ -51,6 +51,8 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
     try:
-        subprocess.run([sys.executable, "-m", "menuconfig", kconfig_path], env=env, check=True)
+        subprocess.run([sys.executable, "-m", "menuconfig", kconfig_path],
+                       env=env,
+                       check=True)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
