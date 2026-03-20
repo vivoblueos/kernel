@@ -129,7 +129,7 @@ mod tests {
     };
     use alloc::vec::Vec;
     use blueos_header::syscalls::NR::Nop;
-    use blueos_test_macro::test;
+    use blueos_test_macro::{only_test, test};
     use core::{
         mem::MaybeUninit,
         panic::PanicInfo,
@@ -441,6 +441,9 @@ mod tests {
         pub fn increment(&self) {
             self.counter.fetch_add(1, Ordering::Relaxed);
         }
+        pub fn reset(&self) {
+            self.counter.store(0, Ordering::Relaxed);
+        }
     }
 
     static SEMA_CLEANUP_COUNTER: CleanupCounter = CleanupCounter::new();
@@ -460,6 +463,8 @@ mod tests {
 
     #[test]
     fn stress_semaphore() {
+        SEMA_CLEANUP_COUNTER.reset();
+        unsafe { SEMA_COUNTER = 0 };
         SEMA.init(1);
         reset_and_queue_test_threads(test_semaphore, Some(test_semaphore_cleanup));
         let l = unsafe { TEST_THREADS.len() };
