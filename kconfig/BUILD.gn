@@ -82,7 +82,6 @@ action("generate_c_header") {
 action("generate_rustflags_file") {
   script = "//kernel/kconfig/src/generate_rustflags_file.py"
   output_rustflags_dir = rebase_path("${root_gen_dir}")
-  print("root gen: ${root_gen_dir}")
   outputs = [ "${root_gen_dir}/rustflags.txt" ]
   inputs = get_target_outputs(":generate_autoconf")
   config_path = rebase_path(inputs[0])
