@@ -46,6 +46,24 @@ action("generate_autoconf") {
   ]
 }
 
+action("menuconfig") {
+  script = "//kernel/kconfig/src/menuconfig.py"
+  pool = "//:console($default_toolchain)"
+  inputs = _kconfig_files + get_target_outputs(":generate_autoconf")
+  outputs = [ "${root_gen_dir}/.menuconfig.stamp" ]
+  args = [
+    "--kconfig",
+    rebase_path("config/Kconfig"),
+    "--board",
+    "${board}",
+    "--build_type",
+    "${build_type}",
+    "--config",
+    rebase_path("${root_gen_dir}/.config"),
+  ]
+  deps = [ ":generate_autoconf" ]
+}
+
 action("generate_c_header") {
   script = "//kernel/kconfig/src/generate_c_header.py"
   inputs = get_target_outputs(":generate_autoconf")
