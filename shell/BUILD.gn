@@ -12,21 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/templates/reload_autoconf_and_build.gni")
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
 
-executable("shell") {
+reload_autoconf_and_build("shell") {
+  app_conf = [ "app.conf" ]
   crate_name = "shell"
   crate_type = "bin"
   sources = [ "src/main.rs" ]
   deps = [
     "//external/vendor/phf-0.12.1:phf",
-    "//kernel/kernel:blueos",
+    "//kernel/kconfig:generate_rustflags_file",
     "//kernel/rsrt:rsrt_std",
     "//libc",
     "//librs",
   ]
-  configs += [ "//build/boards/${board}:kernel_config" ]
+  configs = [
+    "//build/boards/${board}:kernel_config",
+    "//kernel/kconfig:kconfigs",
+  ]
 }
 
 gen_qemu_runner("shell_runner") {

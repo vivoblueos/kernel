@@ -22,8 +22,10 @@ use std::{
 mod commands;
 use commands::COMMANDS;
 
+#[cfg(not(enable_vfs))]
+compile_error!("Shell app requires vfs to run. Please enable vfs in Kconfig.");
+
 fn main() {
-    #[cfg(enable_vfs)]
     thread::Builder::new()
         .name("shell".to_string())
         .stack_size(65536)
@@ -34,12 +36,6 @@ fn main() {
         .unwrap()
         .join()
         .unwrap();
-
-    #[cfg(not(enable_vfs))]
-    {
-        extern crate blueos;
-        blueos::kprintln!("Run without vfs is not supported!");
-    }
 }
 
 fn shell_loop() {
