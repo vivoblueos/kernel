@@ -265,7 +265,7 @@ pub(crate) fn expire_timers(deadline: Tick) -> Option<Tick> {
     let res;
     {
         let mut w = HW_TIMERS.irqsave_lock();
-        let expired_count_ = w.expire(deadline);
+        let _expired_count = w.expire(deadline);
         w.post_expire();
         hard_deadline = w.next_deadline().unwrap_or(Tick::MAX);
         res = core::cmp::min(soft_deadline, hard_deadline);

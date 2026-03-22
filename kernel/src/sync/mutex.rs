@@ -588,7 +588,7 @@ mod tests {
     /// Test logic:
     /// - Main thread acquires mutex and holds for ~10 ticks
     /// - Child thread tries to acquire mutex with 5 tick timeout (LESS than main holds)
-    /// - Child thread should timeout (result = true)
+    /// - Child thread should timeout (result = false)
     /// - This verifies the mutex timeout functionality works correctly
     #[test]
     fn test_mutex_multi_thread_timeout() {
