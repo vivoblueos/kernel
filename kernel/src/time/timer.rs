@@ -259,12 +259,13 @@ pub fn is_active_soft_timer(iou: &Iou<'_>) -> bool {
 
 pub(crate) fn expire_timers(deadline: Tick) -> Option<Tick> {
     let _guard = EXPIRE_BARRIER.try_irqsave_lock()?;
+
     let soft_deadline = wake_up_soft_timer_worker(deadline).unwrap_or(Tick::MAX);
     let hard_deadline;
     let res;
     {
         let mut w = HW_TIMERS.irqsave_lock();
-        w.expire(deadline);
+        let _expired_count = w.expire(deadline);
         w.post_expire();
         hard_deadline = w.next_deadline().unwrap_or(Tick::MAX);
         res = core::cmp::min(soft_deadline, hard_deadline);

@@ -44,8 +44,9 @@ impl Tick {
         if n == Self::MAX {
             return Self::MAX;
         }
+
         let now = Self::now();
-        Self(Self::now().0 + n.0)
+        Self(now.0 + n.0)
     }
 
     pub fn add(&self, n: Self) -> Self {
