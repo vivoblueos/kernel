@@ -85,7 +85,7 @@ fn configure_vector_table(vector_base: usize) {
 }
 
 // Hypervisor initialization
-#[cfg(not(CONFIG_VIRTUALIZATION))]
+#[cfg(virtualization)]
 pub fn hyp_init() {
     configure_hcr_el2();
     unsafe {
@@ -97,7 +97,7 @@ pub fn hyp_init() {
     configure_vector_table(vector_base);
 }
 
-#[cfg(CONFIG_VIRTUALIZATION)]
+#[cfg(not(virtualization))]
 pub fn hyp_init() {
     let hcr_val: u64 = (1 << 31) | (1 << 1);
     write_hcr_el2(hcr_val);
