@@ -380,7 +380,7 @@ mod tests {
             tm.mode = TimerMode::Repeat(r);
             tm.callback = callback;
             iou = add_soft_timer(&mut tm).unwrap();
-            scheduler::suspend_me_until::<()>(base_deadline.add(Tick(21)), None);
+            scheduler::suspend_me_until::<()>(base_deadline.add(Tick(30)), None);
             iou = remove_soft_timer(iou).unwrap();
         });
         assert_eq!(counter.load(Ordering::Relaxed), 3);

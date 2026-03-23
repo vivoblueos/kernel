@@ -45,7 +45,7 @@ impl Tick {
             return Self::MAX;
         }
         let now = Self::now();
-        Self(Self::now().0 + n.0)
+        Self(now.0 + n.0)
     }
 
     pub fn add(&self, n: Self) -> Self {
@@ -64,8 +64,9 @@ impl Tick {
 
     pub fn now() -> Self {
         debug_assert_eq!(ClockImpl::hz() % TICKS_PER_SECOND as u64, 0);
+        // Use u128 to avoid multiplication overflow when cycles is large
         Self(
-            (ClockImpl::estimate_current_cycles() * TICKS_PER_SECOND as u64 / ClockImpl::hz())
+            (ClockImpl::estimate_current_cycles() as u128 * TICKS_PER_SECOND as u128 / ClockImpl::hz() as u128)
                 as usize,
         )
     }
@@ -81,7 +82,8 @@ impl Tick {
             ClockImpl::stop();
             return;
         }
-        ClockImpl::interrupt_at(ClockImpl::hz() * n.0 as u64 / TICKS_PER_SECOND as u64);
+        // Use u128 to avoid multiplication overflow when n is large
+        ClockImpl::interrupt_at((ClockImpl::hz() as u128 * n.0 as u128 / TICKS_PER_SECOND as u128) as u64);
     }
 }
 
@@ -108,7 +110,8 @@ pub fn now() -> Duration {
 }
 
 pub fn from_clock_cycles(cycles: u64) -> Duration {
-    let now = 1_000_000_000 * cycles / ClockImpl::hz();
+    // Use u128 to avoid multiplication overflow when cycles is large
+    let now = (cycles as u128 * 1_000_000_000u128 / ClockImpl::hz() as u128) as u64;
     Duration::from_nanos(now)
 }
 
