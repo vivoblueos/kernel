@@ -50,7 +50,7 @@ template("tm_case") {
     semihosting = true
     img = ":${_target_name}"
     qemu = qemu_exe
-    machine = machine
+    machine = qemu_machine
     qemu_args = qemu_extra_args
     net_args = qemu_net_args
     block_img = "${target_name}_block.img"
