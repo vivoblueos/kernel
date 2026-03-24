@@ -45,7 +45,7 @@ gen_qemu_runner("librs_integration_test_runner") {
   testonly = true
   img = ":librs_integration_test_image"
   qemu = "$qemu_exe"
-  machine = "$machine"
+  machine = "$qemu_machine"
   semihosting = true
   qemu_args = qemu_extra_args
   block_img = "librs_integration_test_block.img"
