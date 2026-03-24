@@ -49,7 +49,7 @@ gen_qemu_runner("loader_integration_test_runner") {
   testonly = true
   img = ":loader_integration_test"
   qemu = "$qemu_exe"
-  machine = "$machine"
+  machine = "$qemu_machine"
   semihosting = true
   qemu_args = qemu_extra_args
   block_img = "loader_integration_test_block.img"
