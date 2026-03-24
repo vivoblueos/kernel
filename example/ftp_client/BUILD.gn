@@ -40,7 +40,7 @@ gen_qemu_runner("ftp_client_example_test_runner") {
   semihosting = true
   img = ":ftp_client_example"
   qemu = qemu_exe
-  machine = machine
+  machine = qemu_machine
   qemu_args = qemu_extra_args
   net_args = qemu_net_args
   block_img = "ftp_client_example.img"

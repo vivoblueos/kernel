@@ -30,7 +30,7 @@ executable("no_std_example") {
 gen_qemu_runner("no_std_example_runner") {
   img = ":no_std_example"
   qemu = "$qemu_exe"
-  machine = "$machine"
+  machine = "$qemu_machine"
   qemu_args = qemu_extra_args
   net_args = qemu_net_args
   block_img = "no_std_example_block.img"
