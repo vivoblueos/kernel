@@ -25,7 +25,7 @@ build_rust("librs") {
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal",
-    "//libc:libc",
+    "//libc",
   ]
   configs += [ "//build/boards/${board}:kernel_config" ]
 }
@@ -42,7 +42,7 @@ build_rust("librs_swi") {
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal_swi",
-    "//libc:libc",
+    "//libc",
   ]
 
   # librs_swi will be used in apps dynamically loaded.
@@ -63,9 +63,9 @@ build_rust("librs_unittest_image") {
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/kernel:blueos",
-    "//kernel/rsrt:rsrt",
+    "//kernel/rsrt",
     "//kernel/scal:blueos_scal",
-    "//libc:libc",
+    "//libc",
   ]
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   rustflags = [ "--test" ]
@@ -76,15 +76,30 @@ run_clippy("librs_unittest_image_clippy") {
   deps = [ ":librs_unittest_image" ]
 }
 
-gen_qemu_runner("librs_unittest_runner") {
-  testonly = true
-  img = ":librs_unittest_image"
-  qemu = "$qemu_exe"
-  machine = "$qemu_machine"
-  semihosting = true
-  qemu_args = qemu_extra_args
-  block_img = "librs_unittest_block.img"
-  block_args = qemu_block_args
+if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
+  gen_esp32_qemu_runner("librs_unittest_runner") {
+    testonly = true
+    elf = ":librs_unittest_image"
+    chip = "${chip}"
+    bootloader = qemu_esp32_bootloader_bin
+    partition_table = qemu_esp32_partition_table_bin
+    qemu = "$qemu_exe"
+    machine = "$qemu_machine"
+    semihosting = true
+    qemu_args = qemu_extra_args
+    block_args = qemu_block_args
+  }
+} else {
+  gen_qemu_runner("librs_unittest_runner") {
+    testonly = true
+    img = ":librs_unittest_image"
+    qemu = "$qemu_exe"
+    machine = "$qemu_machine"
+    semihosting = true
+    qemu_args = qemu_extra_args
+    block_img = "librs_unittest_block.img"
+    block_args = qemu_block_args
+  }
 }
 
 run_qemu_check("run_librs_unittest") {
