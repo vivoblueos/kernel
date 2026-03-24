@@ -12,28 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::drivers::timer::GenericTimer;
-use blueos_hal::clock::Clock;
-pub struct GenericClock;
-
-impl Clock for GenericClock {
-    fn hz() -> u64 {
-        GenericTimer::read_cntfrq()
-    }
-
-    fn estimate_current_cycles() -> u64 {
-        GenericTimer::read_cntpct()
-    }
-
-    fn interrupt_at(moment: u64) {
-        GenericTimer::write_cntp_cval(moment);
-        // ENABLE(1) | IMASK(0) = 1
-        GenericTimer::write_cntp_ctl(1);
-    }
-
-    fn stop() {
-        GenericTimer::write_cntp_ctl(0);
-    }
-}
-
-pub type QemuGtClk = GenericClock;
+#[cfg(target_chip = "esp32c3")]
+pub mod esp32_sys_timer;

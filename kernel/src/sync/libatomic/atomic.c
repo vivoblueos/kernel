@@ -41,7 +41,10 @@
 
 typedef unsigned long uintptr_t;
 typedef long intptr_t;
+#if __STDC_VERSION__ >= 202311L
+#else
 typedef unsigned char bool;
+#endif
 typedef unsigned long size_t;
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;

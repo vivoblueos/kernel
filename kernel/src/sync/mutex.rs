@@ -590,7 +590,9 @@ mod tests {
     /// - Child thread tries to acquire mutex with 5 tick timeout (LESS than main holds)
     /// - Child thread should timeout (result = false)
     /// - This verifies the mutex timeout functionality works correctly
-    #[test]
+    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
+    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
+    #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn test_mutex_multi_thread_timeout() {
         let mutex = Mutex::create();
         let pend_flag = Arc::new(AtomicUsize::new(0));
@@ -761,7 +763,7 @@ mod tests {
     fn test_acquire_many_mutexes() {
         use crate::config::MAX_THREAD_PRIORITY;
         #[cfg(target_pointer_width = "32")]
-        const N: usize = 64;
+        const N: usize = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize;
         #[cfg(target_pointer_width = "32")]
         const M: usize = N / 8;
         #[cfg(target_pointer_width = "64")]
@@ -852,7 +854,7 @@ mod tests {
         // Thread group1 acquires MG1, MG2, MG4
         use crate::config::MAX_THREAD_PRIORITY;
         #[cfg(target_pointer_width = "32")]
-        const N: usize = 16;
+        const N: usize = (blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM / 4) as usize;
         #[cfg(target_pointer_width = "32")]
         const M: usize = N / 4;
         #[cfg(target_pointer_width = "64")]

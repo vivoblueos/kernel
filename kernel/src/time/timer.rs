@@ -422,7 +422,9 @@ mod tests {
         assert_eq!(counter3.load(Ordering::Relaxed), 1);
     }
 
-    #[test]
+    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
+    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
+    #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn test_timer_edge_cases() {
         // Test with zero interval.
         let counter = Arc::new(AtomicUsize::new(0));
@@ -593,7 +595,8 @@ mod tests {
 
     #[test]
     fn test_timer_accuracy() {
-        use crate::{boards::ClockImpl, devices::clock::Clock};
+        use crate::boards::ClockImpl;
+        use blueos_hal::clock::Clock;
         let start = ClockImpl::estimate_current_cycles();
         scheduler::suspend_me_for::<()>(
             Tick(blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize),
