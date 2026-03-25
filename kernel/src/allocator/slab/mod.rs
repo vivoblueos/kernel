@@ -445,3 +445,733 @@ impl<
         max_free
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Dynamic Slab Allocator
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Constants ───────────────────────────────────────────────────────────────
+
+#[cfg(allocator = "slab_dynamic")]
+const PAGE_MAGIC: u32 = 0x534C_4142; // "SLAB"
+
+#[cfg(allocator = "slab_dynamic")]
+const NULL_PTR: usize = 0;
+
+#[cfg(allocator = "slab_dynamic")]
+const MEMORY_PRESSURE_THRESHOLD: usize = 128 * 1024; // 128 KB
+
+#[cfg(allocator = "slab_dynamic")]
+const DEFAULT_MAX_PAGES_PER_SLAB: usize = 4;
+
+#[cfg(allocator = "slab_dynamic")]
+const DEFAULT_MAX_TOTAL_PAGES: usize = 32;
+
+// ── PageMetadata ─────────────────────────────────────────────────────────────
+
+/// Metadata embedded at the very start of each dynamically managed 4 KB page.
+///
+/// Layout (little-endian):
+///   [0..usize]       next_page    — next page in DynamicSlab page list; 0 = none
+///   [usize..+4]      page_magic   — PAGE_MAGIC when page is owned by a DynamicSlab
+///   [usize+4]        slab_index   — index into SLAB_SIZES[] (0..SLAB_ALLOCATOR_COUNT)
+///   [usize+5..+8]    _pad         — padding to keep free_blocks u32-aligned
+///   [usize+8..+12]   free_blocks  — number of free blocks currently in this page
+///   [usize+12..+16]  total_blocks — total blocks in this page (constant after init)
+///   [usize+16..+24]  free_head    — address of first free block; 0 = empty
+///
+/// Total: 24 bytes on 32-bit (usize = 4 B), 32 bytes on 64-bit (usize = 8 B).
+#[cfg(allocator = "slab_dynamic")]
+#[repr(C)]
+struct PageMetadata {
+    next_page: usize,
+    page_magic: u32,
+    slab_index: u8,
+    _pad: [u8; 3],
+    free_blocks: u32,
+    total_blocks: u32,
+    free_head: usize,
+}
+
+/// Byte offset from page base where the first allocatable block starts.
+/// Rounds `size_of::<PageMetadata>()` up to the nearest multiple of `block_size`
+/// so that every block in the page has at least `block_size`-byte alignment.
+#[cfg(allocator = "slab_dynamic")]
+fn page_data_offset(block_size: usize) -> usize {
+    let meta = core::mem::size_of::<PageMetadata>();
+    (meta + block_size - 1) / block_size * block_size
+}
+
+/// Number of allocatable blocks that fit in a single PAGE_SIZE page.
+#[cfg(allocator = "slab_dynamic")]
+fn blocks_per_page(block_size: usize) -> usize {
+    (PAGE_SIZE - page_data_offset(block_size)) / block_size
+}
+
+/// Check whether `ptr` lives inside a dynamically managed slab page.
+///
+/// Returns `Some(slab_index)` when the page's magic matches, `None` otherwise.
+/// Reads `page_magic` by raw byte offset rather than casting to `&PageMetadata`
+/// to avoid UB when the page belongs to TLSF (non-slab memory).
+///
+/// # Safety
+/// The page-aligned address is always readable in kernel context.
+#[cfg(allocator = "slab_dynamic")]
+fn ptr_is_slab(ptr: usize) -> Option<u8> {
+    let page_base = ptr & !(PAGE_SIZE - 1);
+    let magic_offset = core::mem::size_of::<usize>();
+    let index_offset = magic_offset + 4;
+    unsafe {
+        let magic = *((page_base + magic_offset) as *const u32);
+        if magic == PAGE_MAGIC {
+            Some(*((page_base + index_offset) as *const u8))
+        } else {
+            None
+        }
+    }
+}
+
+// ── DynamicSlab ──────────────────────────────────────────────────────────────
+
+#[cfg(allocator = "slab_dynamic")]
+struct DynamicSlab {
+    block_size: usize,
+    page_list_head: usize, // head of intrusive page list; 0 = no pages
+    total_blocks: usize,
+    free_blocks: usize,
+}
+
+#[cfg(allocator = "slab_dynamic")]
+impl DynamicSlab {
+    const fn new() -> Self {
+        DynamicSlab {
+            block_size: 0,
+            page_list_head: NULL_PTR,
+            total_blocks: 0,
+            free_blocks: 0,
+        }
+    }
+
+    fn set_block_size(&mut self, block_size: usize) {
+        self.block_size = block_size;
+    }
+
+    /// Format a fresh PAGE_SIZE-aligned page as a slab page and prepend to page list.
+    ///
+    /// # Safety
+    /// `page_addr` must be PAGE_SIZE-aligned and point to PAGE_SIZE writable bytes.
+    unsafe fn init_page(&mut self, page_addr: usize, slab_index: u8) {
+        let offset = page_data_offset(self.block_size);
+        let total = blocks_per_page(self.block_size);
+
+        // Build intrusive free list: each free block's first usize = addr of next free block.
+        // Traverse in reverse so the head ends up pointing at the lowest address.
+        let mut prev_free: usize = NULL_PTR;
+        for i in (0..total).rev() {
+            let block_addr = page_addr + offset + i * self.block_size;
+            *(block_addr as *mut usize) = prev_free;
+            prev_free = block_addr;
+        }
+
+        let meta = page_addr as *mut PageMetadata;
+        (*meta).next_page = self.page_list_head;
+        (*meta).page_magic = PAGE_MAGIC;
+        (*meta).slab_index = slab_index;
+        (*meta)._pad = [0u8; 3];
+        (*meta).free_blocks = total as u32;
+        (*meta).total_blocks = total as u32;
+        (*meta).free_head = if total > 0 { page_addr + offset } else { NULL_PTR };
+
+        self.page_list_head = page_addr;
+        self.total_blocks += total;
+        self.free_blocks += total;
+    }
+
+    /// Allocate one block from the first page that has free blocks.
+    /// Returns `None` if all pages are full (caller must add a new page first).
+    unsafe fn allocate_block(&mut self) -> Option<NonNull<u8>> {
+        let mut current = self.page_list_head;
+        while current != NULL_PTR {
+            let meta = current as *mut PageMetadata;
+            if (*meta).free_blocks > 0 {
+                return Some(self.pop_from_page(current));
+            }
+            current = (*meta).next_page;
+        }
+        None
+    }
+
+    /// Pop one block from the free list of the given page.
+    ///
+    /// # Safety
+    /// `page_addr` must be an active slab page with `free_blocks > 0`.
+    unsafe fn pop_from_page(&mut self, page_addr: usize) -> NonNull<u8> {
+        let meta = page_addr as *mut PageMetadata;
+        let block_addr = (*meta).free_head;
+        debug_assert_ne!(block_addr, NULL_PTR, "pop_from_page called on empty page");
+
+        let next_free = *(block_addr as *const usize);
+        (*meta).free_head = next_free;
+        (*meta).free_blocks -= 1;
+        self.free_blocks -= 1;
+
+        // Clear the next-pointer slot — block is now in use.
+        *(block_addr as *mut usize) = 0;
+
+        NonNull::new_unchecked(block_addr as *mut u8)
+    }
+
+    /// Push `ptr` back onto its page's free list.
+    ///
+    /// Returns `(page_addr, page_is_now_fully_free)`.
+    ///
+    /// # Safety
+    /// `ptr` must be a block previously allocated from this `DynamicSlab`.
+    unsafe fn free_block(&mut self, ptr: NonNull<u8>) -> (usize, bool) {
+        let ptr_addr = ptr.as_ptr() as usize;
+        let page_addr = ptr_addr & !(PAGE_SIZE - 1);
+        let meta = page_addr as *mut PageMetadata;
+
+        debug_assert_eq!((*meta).page_magic, PAGE_MAGIC);
+        debug_assert!(
+            (*meta).free_blocks < (*meta).total_blocks,
+            "double-free detected at {:p}",
+            ptr.as_ptr()
+        );
+
+        *(ptr.as_ptr() as *mut usize) = (*meta).free_head;
+        (*meta).free_head = ptr_addr;
+        (*meta).free_blocks += 1;
+        self.free_blocks += 1;
+
+        let fully_free = (*meta).free_blocks == (*meta).total_blocks;
+        (page_addr, fully_free)
+    }
+
+    /// Unlink `page_addr` from the intrusive page list and update aggregate counters.
+    ///
+    /// Clears `page_magic` so `ptr_is_slab` returns `None` for this page afterwards.
+    ///
+    /// # Safety
+    /// `page_addr` must be currently in `self`'s page list.
+    unsafe fn remove_page(&mut self, page_addr: usize) {
+        let total = (*(page_addr as *const PageMetadata)).total_blocks as usize;
+
+        if self.page_list_head == page_addr {
+            let meta = page_addr as *mut PageMetadata;
+            self.page_list_head = (*meta).next_page;
+        } else {
+            let mut prev = self.page_list_head;
+            while prev != NULL_PTR {
+                let meta = prev as *mut PageMetadata;
+                if (*meta).next_page == page_addr {
+                    let target = page_addr as *const PageMetadata;
+                    (*meta).next_page = (*target).next_page;
+                    break;
+                }
+                prev = (*meta).next_page;
+            }
+        }
+
+        self.total_blocks -= total;
+        self.free_blocks -= total;
+
+        // Invalidate magic — page is no longer managed by this slab.
+        (*(page_addr as *mut PageMetadata)).page_magic = 0;
+    }
+}
+
+// ── PagePool ─────────────────────────────────────────────────────────────────
+
+/// SLUB-style page pool: caches fully-free slab pages to reduce TLSF pressure.
+///
+/// Uses the same intrusive-list trick as `DynamicSlab`: the page's `next_page`
+/// field is reused as the pool chain pointer. `page_magic` is cleared by
+/// `DynamicSlab::remove_page` before a page enters the pool, so `ptr_is_slab`
+/// never matches pooled pages.
+#[cfg(allocator = "slab_dynamic")]
+struct PagePool {
+    pool_heads: [usize; SLAB_ALLOCATOR_COUNT],
+    page_counts: [usize; SLAB_ALLOCATOR_COUNT],
+    total_pages: usize,
+    max_pages_per_slab: usize,
+    max_total_pages: usize,
+}
+
+#[cfg(allocator = "slab_dynamic")]
+impl PagePool {
+    const fn new() -> Self {
+        PagePool {
+            pool_heads: [NULL_PTR; SLAB_ALLOCATOR_COUNT],
+            page_counts: [0; SLAB_ALLOCATOR_COUNT],
+            total_pages: 0,
+            max_pages_per_slab: DEFAULT_MAX_PAGES_PER_SLAB,
+            max_total_pages: DEFAULT_MAX_TOTAL_PAGES,
+        }
+    }
+
+    /// Try to release a fully-free page into the pool.
+    ///
+    /// Returns `false` (page rejected) when the per-slab or global cap is reached;
+    /// caller must then return the page directly to TLSF.
+    ///
+    /// # Safety
+    /// `page_addr` must be PAGE_SIZE-aligned and no longer in any `DynamicSlab`'s list.
+    unsafe fn release_page(&mut self, page_addr: usize, slab_index: usize) -> bool {
+        if self.page_counts[slab_index] >= self.max_pages_per_slab {
+            return false;
+        }
+        if self.total_pages >= self.max_total_pages {
+            return false;
+        }
+
+        // Chain page into pool list via next_page field.
+        let meta = page_addr as *mut PageMetadata;
+        (*meta).next_page = self.pool_heads[slab_index];
+        self.pool_heads[slab_index] = page_addr;
+        self.page_counts[slab_index] += 1;
+        self.total_pages += 1;
+        true
+    }
+
+    /// Take one page from the pool for `slab_index`.
+    /// Returns `None` if the pool is empty for that slab size.
+    ///
+    /// # Safety
+    /// Caller must immediately call `DynamicSlab::init_page` on the returned page.
+    unsafe fn take_page(&mut self, slab_index: usize) -> Option<usize> {
+        if self.pool_heads[slab_index] == NULL_PTR {
+            return None;
+        }
+
+        let page_addr = self.pool_heads[slab_index];
+        let meta = page_addr as *const PageMetadata;
+        self.pool_heads[slab_index] = (*meta).next_page;
+        self.page_counts[slab_index] -= 1;
+        self.total_pages -= 1;
+        Some(page_addr)
+    }
+
+    /// Reclaim up to `pages_needed` pages from the pool and return them to TLSF.
+    /// Reclaims from the largest slab size first to maximise TLSF memory recovery.
+    /// Returns the number of pages actually reclaimed.
+    ///
+    /// # Safety
+    /// `tlsf` must be the same allocator from which the pages were originally obtained.
+    unsafe fn reclaim_to_tlsf(
+        &mut self,
+        tlsf: &mut tlsf::heap::TlsfHeap,
+        pages_needed: usize,
+    ) -> usize {
+        let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+        let mut reclaimed = 0;
+        let mut idx = SLAB_ALLOCATOR_COUNT;
+
+        while reclaimed < pages_needed && idx > 0 {
+            idx -= 1;
+            while reclaimed < pages_needed && self.pool_heads[idx] != NULL_PTR {
+                let page_addr = self.pool_heads[idx];
+                let meta = page_addr as *const PageMetadata;
+                self.pool_heads[idx] = (*meta).next_page;
+                self.page_counts[idx] -= 1;
+                self.total_pages -= 1;
+
+                tlsf.deallocate(
+                    NonNull::new_unchecked(page_addr as *mut u8),
+                    layout.align(),
+                );
+                reclaimed += 1;
+            }
+        }
+        reclaimed
+    }
+}
+
+// ── DynamicSlabHeap ───────────────────────────────────────────────────────────
+
+#[cfg(allocator = "slab_dynamic")]
+pub struct DynamicSlabHeap {
+    slabs: [DynamicSlab; SLAB_ALLOCATOR_COUNT],
+    page_pool: PagePool,
+    system_allocator: tlsf::heap::TlsfHeap,
+    allocated: usize,
+    maximum: usize,
+    total: usize,
+}
+
+#[cfg(allocator = "slab_dynamic")]
+impl DynamicSlabHeap {
+    const SLAB_SIZES: [usize; SLAB_ALLOCATOR_COUNT] =
+        [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024];
+
+    pub const fn new() -> Self {
+        DynamicSlabHeap {
+            slabs: [const { DynamicSlab::new() }; SLAB_ALLOCATOR_COUNT],
+            page_pool: PagePool::new(),
+            system_allocator: tlsf::heap::TlsfHeap::new(),
+            allocated: 0,
+            maximum: 0,
+            total: 0,
+        }
+    }
+
+    /// Initialize the heap with the memory range `[start, start+size)`.
+    ///
+    /// Unlike `SlabHeap`, no memory is pre-allocated for slabs. All slab pages
+    /// are fetched lazily from TLSF on first demand.
+    ///
+    /// # Safety
+    /// `start..start+size` must be valid, exclusively owned, writable memory.
+    pub unsafe fn init(&mut self, start: usize, size: usize) {
+        let block = core::slice::from_raw_parts(start as *const u8, size);
+        self.system_allocator.insert_free_block_ptr(block.into());
+        self.total = size;
+
+        for i in 0..SLAB_ALLOCATOR_COUNT {
+            self.slabs[i].set_block_size(Self::SLAB_SIZES[i]);
+        }
+    }
+
+    // ── Allocation ─────────────────────────────────────────────────────────
+
+    /// Return the slab index for the given `(size, align)`.
+    /// Result is `SLAB_ALLOCATOR_COUNT` when no slab can satisfy the request.
+    fn layout_to_slab_index(size: usize, align: usize) -> usize {
+        let min_size = core::cmp::max(size, align);
+        // partition_point returns values in 0..=SLAB_ALLOCATOR_COUNT; no clamping needed.
+        Self::SLAB_SIZES.partition_point(|&s| s < min_size)
+    }
+
+    pub fn allocate(&mut self, layout: &Layout) -> Option<NonNull<u8>> {
+        let ptr = unsafe { self.do_allocate(layout) };
+        if ptr.is_some() {
+            self.maximum = core::cmp::max(self.maximum, self.allocated);
+            self.check_memory_pressure();
+        }
+        ptr
+    }
+
+    unsafe fn do_allocate(&mut self, layout: &Layout) -> Option<NonNull<u8>> {
+        let mut idx = Self::layout_to_slab_index(layout.size(), layout.align());
+
+        // Slab path: try from idx upward (upsearch handles alignment mismatches on small sizes).
+        while idx < SLAB_ALLOCATOR_COUNT {
+            if Self::SLAB_SIZES[idx] % layout.align() != 0 {
+                if Self::SLAB_SIZES[idx] <= SLAB_MAX_UPSEARCH_SIZE {
+                    idx += 1;
+                    continue;
+                }
+                break; // fall through to system allocator
+            }
+
+            // Ensure the slab has at least one free block; add a new page if needed.
+            if self.slabs[idx].free_blocks == 0 {
+                let page_addr = self.acquire_page(idx)?;
+                self.slabs[idx].init_page(page_addr, idx as u8);
+            }
+
+            let ptr = self.slabs[idx].allocate_block().unwrap();
+            self.allocated += Self::SLAB_SIZES[idx];
+            return Some(ptr);
+        }
+
+        // System allocator path (size > 1024 or incompatible alignment).
+        let ptr = self.system_allocator.allocate(layout)?;
+        self.allocated += used_block_hdr_for_allocation_unknown_align(ptr)
+            .unwrap()
+            .cast::<BlockHdr>()
+            .as_ref()
+            .size
+            & !SIZE_USED;
+        Some(ptr)
+    }
+
+    /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
+    unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
+        if let Some(page) = self.page_pool.take_page(slab_index) {
+            return Some(page);
+        }
+        let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+        Some(self.system_allocator.allocate(&page_layout)?.as_ptr() as usize)
+    }
+
+    // ── Deallocation ───────────────────────────────────────────────────────
+
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: &Layout) -> usize {
+        let ptr_addr = ptr.as_ptr() as usize;
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr) {
+            self.free_slab_block(ptr, slab_idx as usize)
+        } else {
+            let size = self.system_allocator.deallocate(ptr, layout.align());
+            self.allocated -= size;
+            size
+        }
+    }
+
+    pub unsafe fn deallocate_unknown_align(&mut self, ptr: NonNull<u8>) -> usize {
+        let ptr_addr = ptr.as_ptr() as usize;
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr) {
+            self.free_slab_block(ptr, slab_idx as usize)
+        } else {
+            let size = self.system_allocator.deallocate_unknown_align(ptr);
+            self.allocated -= size;
+            size
+        }
+    }
+
+    /// Free a slab block and, if the page becomes fully empty, either pool or
+    /// return the page to TLSF.
+    unsafe fn free_slab_block(&mut self, ptr: NonNull<u8>, idx: usize) -> usize {
+        let (page_addr, page_empty) = self.slabs[idx].free_block(ptr);
+        self.allocated -= Self::SLAB_SIZES[idx];
+
+        if page_empty {
+            self.slabs[idx].remove_page(page_addr);
+            if !self.page_pool.release_page(page_addr, idx) {
+                // Pool is full — return directly to TLSF.
+                let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+                self.system_allocator.deallocate(
+                    NonNull::new_unchecked(page_addr as *mut u8),
+                    page_layout.align(),
+                );
+            }
+        }
+        Self::SLAB_SIZES[idx]
+    }
+
+    // ── Reallocation ───────────────────────────────────────────────────────
+
+    pub unsafe fn reallocate(
+        &mut self,
+        ptr: NonNull<u8>,
+        new_layout: &Layout,
+    ) -> Option<NonNull<u8>> {
+        let ptr_addr = ptr.as_ptr() as usize;
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr) {
+            let idx = slab_idx as usize;
+            if new_layout.size() <= Self::SLAB_SIZES[idx] {
+                return Some(ptr); // fits in existing block
+            }
+            let new_ptr = self.allocate(new_layout)?;
+            core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), Self::SLAB_SIZES[idx]);
+            // Use deallocate_unknown_align: for slab blocks, deallocate() ignores
+            // the layout argument (routes via ptr_is_slab), so this is cleaner.
+            self.deallocate_unknown_align(ptr);
+            Some(new_ptr)
+        } else {
+            self.system_allocator.reallocate(ptr, new_layout)
+        }
+    }
+
+    pub unsafe fn reallocate_unknown_align(
+        &mut self,
+        ptr: NonNull<u8>,
+        new_size: usize,
+    ) -> Option<NonNull<u8>> {
+        let ptr_addr = ptr.as_ptr() as usize;
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr) {
+            let idx = slab_idx as usize;
+            if new_size <= Self::SLAB_SIZES[idx] {
+                return Some(ptr);
+            }
+            let new_layout =
+                Layout::from_size_align_unchecked(new_size, core::mem::size_of::<usize>());
+            let new_ptr = self.allocate(&new_layout)?;
+            core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), Self::SLAB_SIZES[idx]);
+            self.deallocate_unknown_align(ptr);
+            Some(new_ptr)
+        } else {
+            self.system_allocator.reallocate_unknown_align(ptr, new_size)
+        }
+    }
+
+    // ── Statistics ─────────────────────────────────────────────────────────
+
+    pub fn allocated(&self) -> usize {
+        self.allocated
+    }
+    pub fn maximum(&self) -> usize {
+        self.maximum
+    }
+    pub fn total(&self) -> usize {
+        self.total
+    }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
+        let ptr_addr = ptr.as_ptr() as usize;
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr) {
+            Some(Self::SLAB_SIZES[slab_idx as usize])
+        } else {
+            self.system_allocator.size_of_allocation(ptr)
+        }
+    }
+
+    pub fn get_max_free_block_size(&self) -> usize {
+        let sys_free = self.system_allocator.get_max_free_block_size();
+        for i in (0..SLAB_ALLOCATOR_COUNT).rev() {
+            if self.slabs[i].free_blocks > 0 {
+                return core::cmp::max(sys_free, Self::SLAB_SIZES[i]);
+            }
+        }
+        sys_free
+    }
+
+    // ── TLSF memory pressure ───────────────────────────────────────────────
+
+    fn check_memory_pressure(&mut self) {
+        let max_free = self.system_allocator.get_max_free_block_size();
+        if max_free < MEMORY_PRESSURE_THRESHOLD {
+            let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;
+            unsafe {
+                self.page_pool
+                    .reclaim_to_tlsf(&mut self.system_allocator, pages_needed);
+            }
+        }
+    }
+
+    // ── Manual shrink ──────────────────────────────────────────────────────
+
+    /// Walk every slab's page list and release fully-empty pages to the pool
+    /// (or directly to TLSF if the pool is full).
+    ///
+    /// Normally not needed because `deallocate` auto-shrinks on page emptying.
+    /// Useful after a bulk-free burst when you want to reclaim memory proactively.
+    pub unsafe fn shrink(&mut self) {
+        let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+
+        for i in 0..SLAB_ALLOCATOR_COUNT {
+            let mut current = self.slabs[i].page_list_head;
+            while current != NULL_PTR {
+                let meta = current as *const PageMetadata;
+                let next = (*meta).next_page; // capture before possible removal
+
+                if (*meta).free_blocks == (*meta).total_blocks {
+                    self.slabs[i].remove_page(current);
+                    if !self.page_pool.release_page(current, i) {
+                        self.system_allocator.deallocate(
+                            NonNull::new_unchecked(current as *mut u8),
+                            page_layout.align(),
+                        );
+                    }
+                }
+                current = next;
+            }
+        }
+    }
+
+    pub fn print_slab_stat(&self) {
+        kprintln!("size   pages  total  free   alloc ");
+        kprintln!("------ ------ ------ ------ ------");
+        for i in 0..SLAB_ALLOCATOR_COUNT {
+            let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
+            let pages = if bpp > 0 {
+                (self.slabs[i].total_blocks + bpp - 1) / bpp
+            } else {
+                0
+            };
+            kprintln!(
+                "{:6} {:6} {:6} {:6} {:6}",
+                Self::SLAB_SIZES[i],
+                pages,
+                self.slabs[i].total_blocks,
+                self.slabs[i].free_blocks,
+                self.slabs[i].total_blocks - self.slabs[i].free_blocks,
+            );
+        }
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(all(test, allocator = "slab_dynamic"))]
+mod dynamic_tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn page_data_offset_values() {
+        let meta = core::mem::size_of::<PageMetadata>();
+        assert_eq!(page_data_offset(8), (meta + 7) / 8 * 8);
+        assert_eq!(page_data_offset(16), (meta + 15) / 16 * 16);
+        assert_eq!(page_data_offset(32), (meta + 31) / 32 * 32);
+        // For block_size > meta: offset = block_size
+        assert_eq!(page_data_offset(64), 64);
+        assert_eq!(page_data_offset(128), 128);
+        assert_eq!(page_data_offset(1024), 1024);
+    }
+
+    #[test]
+    fn blocks_per_page_nonzero() {
+        for &bs in &[8usize, 16, 32, 64, 96, 128, 192, 256, 512, 1024] {
+            let count = blocks_per_page(bs);
+            assert!(count >= 1, "block_size={} should fit at least 1 block per page", bs);
+        }
+        let count8 = blocks_per_page(8);
+        assert!(count8 >= 100, "8-byte blocks: expected ≥100 per page, got {}", count8);
+    }
+
+    #[test]
+    fn dynamic_slab_alloc_dealloc_roundtrip() {
+        use alloc::boxed::Box;
+        let _b8: Box<[u8; 8]> = Box::new([0u8; 8]);
+        let _b16: Box<[u8; 16]> = Box::new([0u8; 16]);
+        let _b32: Box<[u8; 32]> = Box::new([0u8; 32]);
+        let _b64: Box<[u8; 64]> = Box::new([0u8; 64]);
+        let _b96: Box<[u8; 96]> = Box::new([0u8; 96]);
+        let _b128: Box<[u8; 128]> = Box::new([0u8; 128]);
+        let _b192: Box<[u8; 192]> = Box::new([0u8; 192]);
+        let _b256: Box<[u8; 256]> = Box::new([0u8; 256]);
+        let _b512: Box<[u8; 512]> = Box::new([0u8; 512]);
+        let _b1024: Box<[u8; 1024]> = Box::new([0u8; 1024]);
+    }
+
+    #[test]
+    fn dynamic_slab_expansion() {
+        use alloc::{vec, vec::Vec};
+        // Allocate enough 8-byte blocks to force page expansion.
+        // blocks_per_page(8) ≈ 508 on 64-bit; allocate 600 to cross page boundary.
+        let mut ptrs: Vec<Box<[u8; 8]>> = Vec::new();
+        for _ in 0..600 {
+            ptrs.push(Box::new([0xAA; 8]));
+        }
+        assert_eq!(ptrs[0][0], 0xAA);
+        assert_eq!(ptrs[599][0], 0xAA);
+        drop(ptrs); // should trigger page shrinkage back to pool/TLSF
+    }
+
+    #[test]
+    fn dynamic_slab_page_pool_reuse() {
+        use alloc::{vec, vec::Vec};
+        let count = 200; // well within one page for 16-byte blocks
+        let v: Vec<Box<[u8; 16]>> = (0..count).map(|_| Box::new([0u8; 16])).collect();
+        drop(v); // pages go to pool
+        // Re-allocate: should reuse pooled pages rather than fetching from TLSF.
+        let _v2: Vec<Box<[u8; 16]>> = (0..count).map(|_| Box::new([0u8; 16])).collect();
+    }
+
+    #[test]
+    fn dynamic_slab_large_falls_through_to_tlsf() {
+        use alloc::boxed::Box;
+        let _large = Box::new([0u8; 2048]);
+        let _larger = Box::new([0u8; 65536]);
+    }
+
+    #[test]
+    fn dynamic_slab_realloc_grow() {
+        let ptr = crate::allocator::malloc(16);
+        assert!(!ptr.is_null());
+        let ptr2 = crate::allocator::realloc(ptr, 256);
+        assert!(!ptr2.is_null());
+        crate::allocator::free(ptr2);
+    }
+
+    #[test]
+    fn dynamic_slab_realloc_shrink_in_place() {
+        let ptr = crate::allocator::malloc(64);
+        assert!(!ptr.is_null());
+        let ptr2 = crate::allocator::realloc(ptr, 32);
+        assert!(!ptr2.is_null());
+        crate::allocator::free(ptr2);
+    }
+}
+
