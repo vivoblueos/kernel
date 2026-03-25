@@ -25,4 +25,4 @@ config SOC_MPS2_AN385
     select CORTEX_M
 
 config NUM_IRQS
-    default 31
+    default 32

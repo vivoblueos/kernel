@@ -7,4 +7,4 @@ config SOC_GD32VW553
     select HAS_PLIC
 
 config NUM_IRQS
-    default 115
+    default 116

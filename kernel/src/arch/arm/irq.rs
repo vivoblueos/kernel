@@ -165,4 +165,4 @@ pub const INTERRUPT_TABLE_LEN: usize = 32;
 pub const INTERRUPT_TABLE_LEN: usize = 240;
 #[cfg(armv8m)]
 pub const INTERRUPT_TABLE_LEN: usize = 496;
-pub type InterruptTable = [Vector; INTERRUPT_TABLE_LEN];
+pub type InterruptTable = [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize];

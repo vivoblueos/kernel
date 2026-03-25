@@ -20,4 +20,4 @@ choice
 endchoice
 
 config NUM_IRQS
-    default 87
+    default 88
