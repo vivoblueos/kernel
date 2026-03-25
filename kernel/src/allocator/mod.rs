@@ -19,7 +19,7 @@ use alloc::alloc::Layout;
 use core::{alloc::GlobalAlloc, ptr};
 
 pub mod block;
-#[cfg(any(allocator = "tlsf", allocator = "slab"))]
+#[cfg(any(allocator = "tlsf", allocator = "slab", allocator = "slab_dynamic"))]
 mod tlsf;
 #[cfg(allocator = "tlsf")]
 pub use tlsf::heap::Heap;
@@ -35,6 +35,13 @@ mod slab;
 use slab::heap::Heap;
 #[cfg(allocator = "slab")]
 pub use slab::heap::SlabHeap;
+
+#[cfg(allocator = "slab_dynamic")]
+mod slab;
+#[cfg(allocator = "slab_dynamic")]
+use slab::heap::DynamicSlabHeap as Heap;
+#[cfg(allocator = "slab_dynamic")]
+pub use slab::heap::DynamicSlabHeap;
 
 #[derive(Default, Debug)]
 pub struct MemoryInfo {
