@@ -25,6 +25,7 @@ _kconfig_files = [
   "//kernel/kernel/src/net/Kconfig",
   "//kernel/arch/riscv/Kconfig",
   "//kernel/arch/arm/cortex_m/Kconfig",
+  "//kernel/arch/arm/arm64/Kconfig",
 ]
 _kconfig_files += string_split(defconfig_files, ",")
 

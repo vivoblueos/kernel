@@ -2,6 +2,9 @@
 
 menu "RISCV Configuration"
 
+config NUM_IRQS
+    int
+
 config HAS_PLIC
     bool "PLIC supports"
     default n

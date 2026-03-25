@@ -19,5 +19,10 @@ choice
           Set irq priority bits to 8.
 endchoice
 
+config SOC_RP2350_M33
+    bool "rp2350 m33"
+    default y
+    select CORTEX_M
+
 config NUM_IRQS
     default 52

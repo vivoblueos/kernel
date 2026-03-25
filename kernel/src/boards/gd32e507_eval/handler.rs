@@ -25,8 +25,8 @@ extern "C" {
 #[doc(hidden)]
 #[link_section = ".interrupt.handlers"]
 #[no_mangle]
-static __INTERRUPT_HANDLERS__: [Vector; 50] = {
-    let mut tbl = [Vector { reserved: 0 }; 50];
+static __INTERRUPT_HANDLERS__: InterruptTable = {
+    let mut tbl = [Vector { reserved: 0 }; INTERRUPT_TABLE_LEN];
     tbl[37] = Vector {
         handler: uart0_handler,
     }; // USART0

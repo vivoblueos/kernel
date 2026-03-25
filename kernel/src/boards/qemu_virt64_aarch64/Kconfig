@@ -1,4 +1,9 @@
 # Board specific configuration for qemu_virt64_aarch64
 
+config SOC_VIRT_AARCH64
+    bool "Virt Aarch64"
+    default y
+    select AARCH64
+
 config NUM_IRQS
     default 220
