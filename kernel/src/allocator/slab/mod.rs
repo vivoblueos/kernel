@@ -499,7 +499,7 @@ struct PageMetadata {
 #[cfg(allocator = "slab_dynamic")]
 fn page_data_offset(block_size: usize) -> usize {
     let meta = core::mem::size_of::<PageMetadata>();
-    (meta + block_size - 1) / block_size * block_size
+    meta.div_ceil(block_size) * block_size
 }
 
 /// Number of allocatable blocks that fit in a single PAGE_SIZE page.
@@ -1064,11 +1064,7 @@ impl DynamicSlabHeap {
         kprintln!("------ ------ ------ ------ ------");
         for i in 0..SLAB_ALLOCATOR_COUNT {
             let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
-            let pages = if bpp > 0 {
-                (self.slabs[i].total_blocks + bpp - 1) / bpp
-            } else {
-                0
-            };
+            let pages = self.slabs[i].total_blocks.div_ceil(bpp);
             kprintln!(
                 "{:6} {:6} {:6} {:6} {:6}",
                 Self::SLAB_SIZES[i],
@@ -1127,7 +1123,7 @@ mod dynamic_tests {
 
     #[test]
     fn dynamic_slab_expansion() {
-        use alloc::{vec, vec::Vec};
+        use alloc::{boxed::Box, vec, vec::Vec};
         // Allocate enough 8-byte blocks to force page expansion.
         // blocks_per_page(8) ≈ 508 on 64-bit; allocate 600 to cross page boundary.
         let mut ptrs: Vec<Box<[u8; 8]>> = Vec::new();
@@ -1141,7 +1137,7 @@ mod dynamic_tests {
 
     #[test]
     fn dynamic_slab_page_pool_reuse() {
-        use alloc::{vec, vec::Vec};
+        use alloc::{boxed::Box, vec, vec::Vec};
         let count = 200; // well within one page for 16-byte blocks
         let v: Vec<Box<[u8; 16]>> = (0..count).map(|_| Box::new([0u8; 16])).collect();
         drop(v); // pages go to pool
