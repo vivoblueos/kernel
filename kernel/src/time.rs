@@ -66,8 +66,8 @@ impl Tick {
         debug_assert_eq!(ClockImpl::hz() % TICKS_PER_SECOND as u64, 0);
         // Use u128 to avoid multiplication overflow when cycles is large
         Self(
-            (ClockImpl::estimate_current_cycles() as u128 * TICKS_PER_SECOND as u128 / ClockImpl::hz() as u128)
-                as usize,
+            (ClockImpl::estimate_current_cycles() as u128 * TICKS_PER_SECOND as u128
+                / ClockImpl::hz() as u128) as usize,
         )
     }
 
@@ -83,7 +83,9 @@ impl Tick {
             return;
         }
         // Use u128 to avoid multiplication overflow when n is large
-        ClockImpl::interrupt_at((ClockImpl::hz() as u128 * n.0 as u128 / TICKS_PER_SECOND as u128) as u64);
+        ClockImpl::interrupt_at(
+            (ClockImpl::hz() as u128 * n.0 as u128 / TICKS_PER_SECOND as u128) as u64,
+        );
     }
 }
 
