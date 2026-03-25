@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::{
-    arch::{self, irq::Vector},
+    arch::{self, irq::{Vector, InterruptTable, INTERRUPT_TABLE_LEN}},
     boot::_start,
     time,
 };
