@@ -949,7 +949,9 @@ impl DynamicSlabHeap {
         let ptr_addr = ptr.as_ptr() as usize;
         if let Some(slab_idx) = ptr_is_slab(ptr_addr) {
             let idx = slab_idx as usize;
-            if new_layout.size() <= Self::SLAB_SIZES[idx] {
+            if new_layout.size() <= Self::SLAB_SIZES[idx]
+                && Self::SLAB_SIZES[idx] % new_layout.align() == 0
+            {
                 return Some(ptr); // fits in existing block
             }
             let new_ptr = self.allocate(new_layout)?;
@@ -959,7 +961,21 @@ impl DynamicSlabHeap {
             self.deallocate_unknown_align(ptr);
             Some(new_ptr)
         } else {
-            self.system_allocator.reallocate(ptr, new_layout)
+            let old_size = used_block_hdr_for_allocation_unknown_align(ptr)
+                .unwrap()
+                .cast::<BlockHdr>()
+                .as_ref()
+                .size
+                & !SIZE_USED;
+            let new_ptr = self.system_allocator.reallocate(ptr, new_layout)?;
+            let new_size = used_block_hdr_for_allocation_unknown_align(new_ptr)
+                .unwrap()
+                .cast::<BlockHdr>()
+                .as_ref()
+                .size
+                & !SIZE_USED;
+            self.allocated = self.allocated - old_size + new_size;
+            Some(new_ptr)
         }
     }
 
@@ -981,7 +997,21 @@ impl DynamicSlabHeap {
             self.deallocate_unknown_align(ptr);
             Some(new_ptr)
         } else {
-            self.system_allocator.reallocate_unknown_align(ptr, new_size)
+            let old_size = used_block_hdr_for_allocation_unknown_align(ptr)
+                .unwrap()
+                .cast::<BlockHdr>()
+                .as_ref()
+                .size
+                & !SIZE_USED;
+            let new_ptr = self.system_allocator.reallocate_unknown_align(ptr, new_size)?;
+            let new_allocated = used_block_hdr_for_allocation_unknown_align(new_ptr)
+                .unwrap()
+                .cast::<BlockHdr>()
+                .as_ref()
+                .size
+                & !SIZE_USED;
+            self.allocated = self.allocated - old_size + new_allocated;
+            Some(new_ptr)
         }
     }
 
