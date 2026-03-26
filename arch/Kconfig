@@ -64,3 +64,11 @@ config CORTEX_M
 if CORTEX_M
 	rsource "arm/cortex_m/Kconfig"
 endif
+
+config AARCH64
+	bool "Arm64"
+	default n
+
+if AARCH64
+	rsource "arm/arm64/Kconfig"
+endif

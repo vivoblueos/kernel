@@ -1,1 +1,9 @@
 # Board specific configuration for rk3568
+
+config SOC_RK3568
+    bool "rk3568"
+    default y
+    select AARCH64
+
+config NUM_IRQS
+	default 240

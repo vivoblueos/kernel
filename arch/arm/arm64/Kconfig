@@ -1,0 +1,6 @@
+menu "Aarch64 Configuration"
+
+config NUM_IRQS
+    int
+
+endmenu
