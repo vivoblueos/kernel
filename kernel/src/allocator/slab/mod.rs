@@ -568,14 +568,6 @@ impl DynamicSlab {
         self.page_list_head = page_addr;
         self.total_blocks += total;
         self.free_blocks += total;
-        #[cfg(slab_debug)]
-        kprintln!(
-            "[slab_dyn] init page 0x{:x} slab_idx={} block_size={} blocks={}",
-            page_addr,
-            slab_index,
-            self.block_size,
-            total
-        );
     }
 
     /// Allocate one block from the first page that has free blocks.
@@ -817,6 +809,20 @@ impl DynamicSlabHeap {
         for i in 0..SLAB_ALLOCATOR_COUNT {
             self.slabs[i].set_block_size(Self::SLAB_SIZES[i]);
         }
+        self.prewarm_critical_slabs();
+    }
+
+    unsafe fn prewarm_critical_slabs(&mut self) {
+        const PREWARM: &[(usize, usize)] = &[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1)];
+        for &(idx, count) in PREWARM {
+            for _ in 0..count {
+                if let Some(page) = self.acquire_page(idx) {
+                    self.slabs[idx].init_page(page, idx as u8);
+                } else {
+                    return;
+                }
+            }
+        }
     }
 
     // ── Allocation ─────────────────────────────────────────────────────────
@@ -876,24 +882,13 @@ impl DynamicSlabHeap {
     /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
     unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
         if let Some(page) = self.page_pool.take_page(slab_index) {
-            #[cfg(slab_debug)]
-            kprintln!(
-                "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from pool",
-                slab_index,
-                Self::SLAB_SIZES[slab_index],
-                page
-            );
             return Some(page);
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        let page_addr = self.system_allocator.allocate(&page_layout)?.as_ptr() as usize;
-        #[cfg(slab_debug)]
-        kprintln!(
-            "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from TLSF",
-            slab_index,
-            Self::SLAB_SIZES[slab_index],
-            page_addr
-        );
+        let page_addr = match self.system_allocator.allocate(&page_layout) {
+            Some(ptr) => ptr.as_ptr() as usize,
+            None => return None,
+        };
         Some(page_addr)
     }
 
@@ -930,28 +925,10 @@ impl DynamicSlabHeap {
         if page_empty {
             self.slabs[idx].remove_page(page_addr);
             if !self.page_pool.release_page(page_addr, idx) {
-                #[cfg(slab_debug)]
-                kprintln!(
-                    "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> TLSF (pool full cap={})",
-                    idx,
-                    Self::SLAB_SIZES[idx],
-                    page_addr,
-                    self.page_pool.max_pages_per_slab
-                );
-                // Pool is full — return directly to TLSF.
                 let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
                 self.system_allocator.deallocate(
                     NonNull::new_unchecked(page_addr as *mut u8),
                     page_layout.align(),
-                );
-            } else {
-                #[cfg(slab_debug)]
-                kprintln!(
-                    "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> pool (pool_count={})",
-                    idx,
-                    Self::SLAB_SIZES[idx],
-                    page_addr,
-                    self.page_pool.page_counts[idx]
                 );
             }
         }
@@ -1073,13 +1050,6 @@ impl DynamicSlabHeap {
         let max_free = self.system_allocator.get_max_free_block_size();
         if max_free < MEMORY_PRESSURE_THRESHOLD {
             let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;
-            #[cfg(slab_debug)]
-            kprintln!(
-                "[slab_dyn] memory pressure: max_free={} threshold={} reclaiming {} pages",
-                max_free,
-                MEMORY_PRESSURE_THRESHOLD,
-                pages_needed
-            );
             unsafe {
                 self.page_pool
                     .reclaim_to_tlsf(&mut self.system_allocator, pages_needed);
