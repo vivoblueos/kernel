@@ -31,11 +31,6 @@ config SLAB_DEBUG
       Enable debug logging for SLAB allocator operations including
       page allocation, deallocation, and pool management.
 
-config SLAB_DYNAMIC_MAX_PAGES
-    int "Max pages per slab size in page pool"
-    default 4
-    depends on ALLOCATOR_SLAB_DYNAMIC
-
 config SLAB_DYNAMIC_MAX_TOTAL_PAGES
     int "Max total pages in page pool"
     default 32
