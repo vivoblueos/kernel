@@ -242,4 +242,12 @@ impl DynamicSlabHeap {
         let heap = self.heap.irqsave_lock();
         heap.print_slab_stat();
     }
+
+    /// Reclaim pages from pool to TLSF when memory pressure is detected.
+    /// Can be called by idle thread for proactive memory reclaim.
+    #[cfg(allocator = "slab_dynamic")]
+    pub fn check_memory_pressure(&self) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.check_memory_pressure();
+    }
 }

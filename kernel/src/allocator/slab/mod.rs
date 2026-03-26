@@ -839,7 +839,6 @@ impl DynamicSlabHeap {
         let ptr = unsafe { self.do_allocate(layout) };
         if ptr.is_some() {
             self.maximum = core::cmp::max(self.maximum, self.allocated);
-            self.check_memory_pressure();
         }
         ptr
     }
@@ -880,16 +879,23 @@ impl DynamicSlabHeap {
     }
 
     /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
+    /// If TLSF allocation fails, trigger memory pressure check to reclaim pages.
     unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
         if let Some(page) = self.page_pool.take_page(slab_index) {
             return Some(page);
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        let page_addr = match self.system_allocator.allocate(&page_layout) {
-            Some(ptr) => ptr.as_ptr() as usize,
-            None => return None,
-        };
-        Some(page_addr)
+        match self.system_allocator.allocate(&page_layout) {
+            Some(ptr) => Some(ptr.as_ptr() as usize),
+            None => {
+                // TLSF allocation failed, try to reclaim pages from pool
+                self.check_memory_pressure();
+                // Retry allocation after reclaim
+                self.system_allocator
+                    .allocate(&page_layout)
+                    .map(|ptr| ptr.as_ptr() as usize)
+            }
+        }
     }
 
     // ── Deallocation ───────────────────────────────────────────────────────
@@ -1046,7 +1052,9 @@ impl DynamicSlabHeap {
 
     // ── TLSF memory pressure ───────────────────────────────────────────────
 
-    fn check_memory_pressure(&mut self) {
+    /// Reclaim pages from pool to TLSF when memory pressure is detected.
+    /// Called when TLSF allocation fails or by idle thread for proactive reclaim.
+    pub fn check_memory_pressure(&mut self) {
         let max_free = self.system_allocator.get_max_free_block_size();
         if max_free < MEMORY_PRESSURE_THRESHOLD {
             let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;

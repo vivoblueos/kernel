@@ -202,6 +202,11 @@ pub const fn is_aligned(addr: usize, align: usize) -> bool {
     align_offset(addr, align) == 0
 }
 
+#[cfg(allocator = "slab_dynamic")]
+pub fn check_slab_memory_pressure() {
+    unsafe { HEAP.check_memory_pressure() };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
