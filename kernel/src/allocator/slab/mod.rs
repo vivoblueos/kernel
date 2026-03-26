@@ -589,7 +589,7 @@ impl DynamicSlab {
         self.page_list_head = page_addr;
         self.total_blocks += total;
         self.free_blocks += total;
-        #[cfg(debug_slab_dynamic)]
+        #[cfg(debug_slab)]
         kprintln!(
             "[slab_dyn] init page 0x{:x} slab_idx={} block_size={} blocks={}",
             page_addr,
@@ -897,7 +897,7 @@ impl DynamicSlabHeap {
     /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
     unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
         if let Some(page) = self.page_pool.take_page(slab_index) {
-            #[cfg(debug_slab_dynamic)]
+            #[cfg(debug_slab)]
             kprintln!(
                 "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from pool",
                 slab_index,
@@ -908,7 +908,7 @@ impl DynamicSlabHeap {
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
         let page_addr = self.system_allocator.allocate(&page_layout)?.as_ptr() as usize;
-        #[cfg(debug_slab_dynamic)]
+        #[cfg(debug_slab)]
         kprintln!(
             "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from TLSF",
             slab_index,
@@ -951,7 +951,7 @@ impl DynamicSlabHeap {
         if page_empty {
             self.slabs[idx].remove_page(page_addr);
             if !self.page_pool.release_page(page_addr, idx) {
-                #[cfg(debug_slab_dynamic)]
+                #[cfg(debug_slab)]
                 kprintln!(
                     "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> TLSF (pool full cap={})",
                     idx,
@@ -966,7 +966,7 @@ impl DynamicSlabHeap {
                     page_layout.align(),
                 );
             } else {
-                #[cfg(debug_slab_dynamic)]
+                #[cfg(debug_slab)]
                 kprintln!(
                     "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> pool (pool_count={})",
                     idx,
@@ -1094,7 +1094,7 @@ impl DynamicSlabHeap {
         let max_free = self.system_allocator.get_max_free_block_size();
         if max_free < MEMORY_PRESSURE_THRESHOLD {
             let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;
-            #[cfg(debug_slab_dynamic)]
+            #[cfg(debug_slab)]
             kprintln!(
                 "[slab_dyn] memory pressure: max_free={} threshold={} reclaiming {} pages",
                 max_free,
