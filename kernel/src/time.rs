@@ -64,11 +64,8 @@ impl Tick {
 
     pub fn now() -> Self {
         debug_assert_eq!(ClockImpl::hz() % TICKS_PER_SECOND as u64, 0);
-        // Use u128 to avoid multiplication overflow when cycles is large
-        Self(
-            (ClockImpl::estimate_current_cycles() as u128 * TICKS_PER_SECOND as u128
-                / ClockImpl::hz() as u128) as usize,
-        )
+        let cycles_per_tick = ClockImpl::hz() / TICKS_PER_SECOND as u64;
+        Self((ClockImpl::estimate_current_cycles() / cycles_per_tick) as usize)
     }
 
     pub fn interrupt_after(diff: Self) {
@@ -82,8 +79,8 @@ impl Tick {
             ClockImpl::stop();
             return;
         }
-
-        ClockImpl::interrupt_at(ClockImpl::hz() / TICKS_PER_SECOND as u64 * n.0 as u64);
+        let cycles_per_tick = ClockImpl::hz() / TICKS_PER_SECOND as u64;
+        ClockImpl::interrupt_at(cycles_per_tick * n.0 as u64);
     }
 }
 
@@ -110,9 +107,11 @@ pub fn now() -> Duration {
 }
 
 pub fn from_clock_cycles(cycles: u64) -> Duration {
-    // Use u128 to avoid multiplication overflow when cycles is large
-    let now = (cycles as u128 * 1_000_000_000u128 / ClockImpl::hz() as u128) as u64;
-    Duration::from_nanos(now)
+    let hz = ClockImpl::hz();
+    let secs = cycles / hz;
+    let sub_cycles = cycles % hz;
+    let sub_nanos = (sub_cycles * 1_000_000_000 / hz) as u32;
+    Duration::new(secs, sub_nanos)
 }
 
 pub struct ScopeTimer<'a> {
