@@ -57,20 +57,11 @@ impl Slab {
             len: 0,
             min_len: 0,
             free_block_list: SinglyLinkedList::new(),
-            #[cfg(debug_slab)]
-            start_addr: 0,
-            #[cfg(debug_slab)]
-            end_addr: 0,
         }
     }
 
     pub unsafe fn init(&mut self, start_addr: usize, count: usize, block_size: usize) {
         self.block_size = block_size;
-        #[cfg(debug_slab)]
-        {
-            self.start_addr = start_addr;
-            self.end_addr = start_addr + count * block_size;
-        }
         for i in (0..count).rev() {
             let new_block = (start_addr + i * block_size) as *mut usize;
             self.free_block_list.push(NonNull::new_unchecked(new_block));
@@ -85,12 +76,6 @@ impl Slab {
             Some(block) => {
                 self.len -= 1;
                 self.min_len = core::cmp::min(self.min_len, self.len);
-                #[cfg(debug_slab)]
-                {
-                    if (block as usize) < self.start_addr || (block as usize) >= self.end_addr {
-                        panic!("alloc ptr is not in the heap\n")
-                    }
-                }
                 let ptr = block.as_ptr();
                 // clear the magic number
                 let magic_ptr = ptr.wrapping_add(1);
@@ -110,12 +95,6 @@ impl Slab {
         // &mut FreeBlock would be undefined behavior.
         #[cfg_attr(feature = "clippy", allow(clippy::cast_ptr_alignment))]
         let ptr = ptr.as_ptr() as *mut usize;
-        #[cfg(debug_slab)]
-        {
-            if (ptr as usize) < self.start_addr || (ptr as usize) >= self.end_addr {
-                panic!("dealloc ptr is not in the heap\n")
-            }
-        }
 
         let magic_ptr = ptr.wrapping_add(1);
         if *magic_ptr == 0xdeadbeef {
@@ -589,7 +568,7 @@ impl DynamicSlab {
         self.page_list_head = page_addr;
         self.total_blocks += total;
         self.free_blocks += total;
-        #[cfg(debug_slab)]
+        #[cfg(slab_debug)]
         kprintln!(
             "[slab_dyn] init page 0x{:x} slab_idx={} block_size={} blocks={}",
             page_addr,
@@ -897,7 +876,7 @@ impl DynamicSlabHeap {
     /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
     unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
         if let Some(page) = self.page_pool.take_page(slab_index) {
-            #[cfg(debug_slab)]
+            #[cfg(slab_debug)]
             kprintln!(
                 "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from pool",
                 slab_index,
@@ -908,7 +887,7 @@ impl DynamicSlabHeap {
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
         let page_addr = self.system_allocator.allocate(&page_layout)?.as_ptr() as usize;
-        #[cfg(debug_slab)]
+        #[cfg(slab_debug)]
         kprintln!(
             "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from TLSF",
             slab_index,
@@ -951,7 +930,7 @@ impl DynamicSlabHeap {
         if page_empty {
             self.slabs[idx].remove_page(page_addr);
             if !self.page_pool.release_page(page_addr, idx) {
-                #[cfg(debug_slab)]
+                #[cfg(slab_debug)]
                 kprintln!(
                     "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> TLSF (pool full cap={})",
                     idx,
@@ -966,7 +945,7 @@ impl DynamicSlabHeap {
                     page_layout.align(),
                 );
             } else {
-                #[cfg(debug_slab)]
+                #[cfg(slab_debug)]
                 kprintln!(
                     "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> pool (pool_count={})",
                     idx,
@@ -1094,7 +1073,7 @@ impl DynamicSlabHeap {
         let max_free = self.system_allocator.get_max_free_block_size();
         if max_free < MEMORY_PRESSURE_THRESHOLD {
             let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;
-            #[cfg(debug_slab)]
+            #[cfg(slab_debug)]
             kprintln!(
                 "[slab_dyn] memory pressure: max_free={} threshold={} reclaiming {} pages",
                 max_free,
