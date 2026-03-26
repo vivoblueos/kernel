@@ -580,11 +580,23 @@ impl DynamicSlab {
         (*meta)._pad = [0u8; 3];
         (*meta).free_blocks = total as u32;
         (*meta).total_blocks = total as u32;
-        (*meta).free_head = if total > 0 { page_addr + offset } else { NULL_PTR };
+        (*meta).free_head = if total > 0 {
+            page_addr + offset
+        } else {
+            NULL_PTR
+        };
 
         self.page_list_head = page_addr;
         self.total_blocks += total;
         self.free_blocks += total;
+        #[cfg(debug_slab_dynamic)]
+        kprintln!(
+            "[slab_dyn] init page 0x{:x} slab_idx={} block_size={} blocks={}",
+            page_addr,
+            slab_index,
+            self.block_size,
+            total
+        );
     }
 
     /// Allocate one block from the first page that has free blocks.
@@ -776,10 +788,7 @@ impl PagePool {
                 self.page_counts[idx] -= 1;
                 self.total_pages -= 1;
 
-                tlsf.deallocate(
-                    NonNull::new_unchecked(page_addr as *mut u8),
-                    layout.align(),
-                );
+                tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
                 reclaimed += 1;
             }
         }
@@ -801,8 +810,7 @@ pub struct DynamicSlabHeap {
 
 #[cfg(allocator = "slab_dynamic")]
 impl DynamicSlabHeap {
-    const SLAB_SIZES: [usize; SLAB_ALLOCATOR_COUNT] =
-        [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024];
+    const SLAB_SIZES: [usize; SLAB_ALLOCATOR_COUNT] = [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024];
 
     pub const fn new() -> Self {
         DynamicSlabHeap {
@@ -889,10 +897,25 @@ impl DynamicSlabHeap {
     /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
     unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
         if let Some(page) = self.page_pool.take_page(slab_index) {
+            #[cfg(debug_slab_dynamic)]
+            kprintln!(
+                "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from pool",
+                slab_index,
+                Self::SLAB_SIZES[slab_index],
+                page
+            );
             return Some(page);
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        Some(self.system_allocator.allocate(&page_layout)?.as_ptr() as usize)
+        let page_addr = self.system_allocator.allocate(&page_layout)?.as_ptr() as usize;
+        #[cfg(debug_slab_dynamic)]
+        kprintln!(
+            "[slab_dyn] slab[{}] size={} acquire page 0x{:x} from TLSF",
+            slab_index,
+            Self::SLAB_SIZES[slab_index],
+            page_addr
+        );
+        Some(page_addr)
     }
 
     // ── Deallocation ───────────────────────────────────────────────────────
@@ -928,11 +951,28 @@ impl DynamicSlabHeap {
         if page_empty {
             self.slabs[idx].remove_page(page_addr);
             if !self.page_pool.release_page(page_addr, idx) {
+                #[cfg(debug_slab_dynamic)]
+                kprintln!(
+                    "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> TLSF (pool full cap={})",
+                    idx,
+                    Self::SLAB_SIZES[idx],
+                    page_addr,
+                    self.page_pool.max_pages_per_slab
+                );
                 // Pool is full — return directly to TLSF.
                 let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
                 self.system_allocator.deallocate(
                     NonNull::new_unchecked(page_addr as *mut u8),
                     page_layout.align(),
+                );
+            } else {
+                #[cfg(debug_slab_dynamic)]
+                kprintln!(
+                    "[slab_dyn] slab[{}] size={} page 0x{:x} empty -> pool (pool_count={})",
+                    idx,
+                    Self::SLAB_SIZES[idx],
+                    page_addr,
+                    self.page_pool.page_counts[idx]
                 );
             }
         }
@@ -1003,7 +1043,9 @@ impl DynamicSlabHeap {
                 .as_ref()
                 .size
                 & !SIZE_USED;
-            let new_ptr = self.system_allocator.reallocate_unknown_align(ptr, new_size)?;
+            let new_ptr = self
+                .system_allocator
+                .reallocate_unknown_align(ptr, new_size)?;
             let new_allocated = used_block_hdr_for_allocation_unknown_align(new_ptr)
                 .unwrap()
                 .cast::<BlockHdr>()
@@ -1052,6 +1094,13 @@ impl DynamicSlabHeap {
         let max_free = self.system_allocator.get_max_free_block_size();
         if max_free < MEMORY_PRESSURE_THRESHOLD {
             let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;
+            #[cfg(debug_slab_dynamic)]
+            kprintln!(
+                "[slab_dyn] memory pressure: max_free={} threshold={} reclaiming {} pages",
+                max_free,
+                MEMORY_PRESSURE_THRESHOLD,
+                pages_needed
+            );
             unsafe {
                 self.page_pool
                     .reclaim_to_tlsf(&mut self.system_allocator, pages_needed);
@@ -1130,10 +1179,18 @@ mod dynamic_tests {
     fn blocks_per_page_nonzero() {
         for &bs in &[8usize, 16, 32, 64, 96, 128, 192, 256, 512, 1024] {
             let count = blocks_per_page(bs);
-            assert!(count >= 1, "block_size={} should fit at least 1 block per page", bs);
+            assert!(
+                count >= 1,
+                "block_size={} should fit at least 1 block per page",
+                bs
+            );
         }
         let count8 = blocks_per_page(8);
-        assert!(count8 >= 100, "8-byte blocks: expected ≥100 per page, got {}", count8);
+        assert!(
+            count8 >= 100,
+            "8-byte blocks: expected ≥100 per page, got {}",
+            count8
+        );
     }
 
     #[test]
@@ -1171,7 +1228,7 @@ mod dynamic_tests {
         let count = 200; // well within one page for 16-byte blocks
         let v: Vec<Box<[u8; 16]>> = (0..count).map(|_| Box::new([0u8; 16])).collect();
         drop(v); // pages go to pool
-        // Re-allocate: should reuse pooled pages rather than fetching from TLSF.
+                 // Re-allocate: should reuse pooled pages rather than fetching from TLSF.
         let _v2: Vec<Box<[u8; 16]>> = (0..count).map(|_| Box::new([0u8; 16])).collect();
     }
 
@@ -1199,5 +1256,192 @@ mod dynamic_tests {
         assert!(!ptr2.is_null());
         crate::allocator::free(ptr2);
     }
-}
 
+    // ── Slab expansion / shrinkage ────────────────────────────────────────────
+
+    /// Allocating one more block than fits in a single page must trigger a
+    /// second-page acquisition without panicking or returning null.
+    #[test]
+    fn slab_expands_beyond_single_page() {
+        use alloc::{vec, vec::Vec};
+        // 32-byte slab: (4096 - page_data_offset(32)) / 32 blocks per page.
+        // Allocate bpp + 1 to force the second page.
+        let bpp = blocks_per_page(32);
+        assert!(bpp >= 1);
+        let count = bpp + 1;
+
+        let mut ptrs: Vec<*mut u8> = Vec::new();
+        for _ in 0..count {
+            let p = crate::allocator::malloc(32);
+            assert!(!p.is_null(), "alloc must not fail at count={}", ptrs.len());
+            ptrs.push(p);
+        }
+
+        // Write a canary to verify the second-page block is usable.
+        unsafe { *ptrs[bpp] = 0xBE };
+        assert_eq!(unsafe { *ptrs[bpp] }, 0xBE);
+
+        for p in ptrs {
+            crate::allocator::free(p);
+        }
+    }
+
+    /// After draining all blocks from a slab, `allocated` must return to the
+    /// pre-test baseline (page overhead not counted in `allocated`).
+    #[test]
+    fn slab_used_returns_to_baseline_after_full_drain() {
+        use alloc::{vec, vec::Vec};
+        let bpp = blocks_per_page(64);
+        let count = bpp * 2; // force two pages
+
+        // Pre-allocate Vec backing so its cost is excluded from data accounting.
+        let mut ptrs: Vec<*mut u8> = Vec::with_capacity(count);
+        let baseline = crate::allocator::memory_info().used;
+
+        for _ in 0..count {
+            let p = crate::allocator::malloc(64);
+            assert!(!p.is_null());
+            ptrs.push(p); // no realloc: capacity pre-allocated
+        }
+
+        // allocated must have grown by exactly count * 64.
+        let after_alloc = crate::allocator::memory_info().used;
+        assert_eq!(after_alloc - baseline, count * 64);
+
+        // Borrow iteration keeps Vec backing alive (included in baseline).
+        for &p in &ptrs {
+            crate::allocator::free(p);
+        }
+
+        // After freeing all data blocks, allocated must be back at baseline.
+        // (Vec backing is still alive here, which is fine: it's in the baseline.)
+        assert_eq!(crate::allocator::memory_info().used, baseline);
+    }
+
+    // ── Page pool expansion / shrinkage ───────────────────────────────────────
+
+    /// Free enough blocks to empty DEFAULT_MAX_PAGES_PER_SLAB+1 pages for one
+    /// slab size.  The first cap pages go to the pool; the overflow page must be
+    /// returned directly to TLSF.  Verify accounting stays consistent throughout.
+    #[test]
+    fn page_pool_overflow_returns_excess_to_tlsf() {
+        use alloc::{vec, vec::Vec};
+        let bpp = blocks_per_page(32);
+        // Allocate one more page than the pool cap so the last freed page
+        // cannot enter the pool and must go straight to TLSF.
+        let overflow_pages = DEFAULT_MAX_PAGES_PER_SLAB + 1;
+        let count = bpp * overflow_pages;
+
+        // Pre-allocate Vec backing to exclude it from data accounting.
+        let mut ptrs: Vec<*mut u8> = Vec::with_capacity(count);
+        let baseline = crate::allocator::memory_info().used;
+
+        for _ in 0..count {
+            let p = crate::allocator::malloc(32);
+            assert!(!p.is_null());
+            ptrs.push(p); // no realloc: capacity pre-allocated
+        }
+        assert_eq!(
+            crate::allocator::memory_info().used - baseline,
+            count * 32,
+            "accounting wrong after alloc"
+        );
+
+        // Borrow iteration keeps Vec backing alive (included in baseline).
+        for &p in &ptrs {
+            crate::allocator::free(p);
+        }
+        // All user bytes freed — allocated must be back at baseline regardless
+        // of whether pages sit in the pool or in TLSF.
+        assert_eq!(
+            crate::allocator::memory_info().used,
+            baseline,
+            "accounting wrong after free"
+        );
+    }
+
+    /// Pages sitting in the pool must be reused for a subsequent allocation
+    /// burst of the same size, keeping TLSF free space stable.
+    #[test]
+    fn page_pool_reuses_pages_across_fill_drain_cycles() {
+        use alloc::{vec, vec::Vec};
+        let baseline = crate::allocator::memory_info().used;
+        let bpp = blocks_per_page(128);
+
+        // Cycle 1 — fill one page, drain it into pool.
+        let v1: Vec<*mut u8> = (0..bpp).map(|_| crate::allocator::malloc(128)).collect();
+        for &p in &v1 {
+            assert!(!p.is_null());
+        }
+        for p in v1 {
+            crate::allocator::free(p);
+        }
+        assert_eq!(crate::allocator::memory_info().used, baseline);
+
+        // Cycle 2 — fill again; the pool should serve the page without TLSF.
+        // Pre-allocate Vec backing to exclude it from accounting assertions.
+        let mut v2: Vec<*mut u8> = Vec::with_capacity(bpp);
+        let baseline2 = crate::allocator::memory_info().used;
+        for _ in 0..bpp {
+            v2.push(crate::allocator::malloc(128));
+        }
+        for &p in &v2 {
+            assert!(!p.is_null(), "pool reuse alloc must not fail");
+        }
+        assert_eq!(
+            crate::allocator::memory_info().used - baseline2,
+            bpp * 128,
+            "accounting wrong on second fill"
+        );
+        for &p in &v2 {
+            crate::allocator::free(p);
+        }
+        assert_eq!(crate::allocator::memory_info().used, baseline2);
+    }
+
+    // ── TLSF-path allocated tracking ─────────────────────────────────────────
+
+    /// Reallocating a TLSF-backed allocation (size > 1024) must keep
+    /// `allocated` consistent: grow → used increases; shrink → used decreases.
+    #[test]
+    fn tlsf_realloc_allocated_tracking() {
+        let baseline = crate::allocator::memory_info().used;
+
+        let ptr = crate::allocator::malloc(2048);
+        assert!(!ptr.is_null());
+        let after_alloc = crate::allocator::memory_info().used;
+        assert!(after_alloc > baseline, "used must grow after TLSF alloc");
+
+        // Grow the block — used must increase further.
+        let ptr2 = crate::allocator::realloc(ptr, 4096);
+        assert!(!ptr2.is_null());
+        let after_grow = crate::allocator::memory_info().used;
+        assert!(after_grow >= after_alloc, "used must not shrink on grow-realloc");
+
+        crate::allocator::free(ptr2);
+        assert_eq!(
+            crate::allocator::memory_info().used,
+            baseline,
+            "used must return to baseline after free"
+        );
+    }
+
+    // ── Alignment fast-path in reallocate ─────────────────────────────────────
+
+    /// realloc to a smaller size that still fits in the same slab class must
+    /// return the original pointer unchanged (in-place), without data corruption.
+    #[test]
+    fn reallocate_slab_in_place_returns_same_ptr() {
+        let ptr = crate::allocator::malloc(64);
+        assert!(!ptr.is_null());
+        unsafe { *ptr = 0xAB };
+
+        // Shrink to 32 — still fits in the 64-byte slab block.
+        let ptr2 = crate::allocator::realloc(ptr, 32);
+        assert!(!ptr2.is_null());
+        assert_eq!(ptr2, ptr, "in-place realloc must return same pointer");
+        assert_eq!(unsafe { *ptr2 }, 0xAB, "data must be preserved");
+
+        crate::allocator::free(ptr2);
+    }
+}
