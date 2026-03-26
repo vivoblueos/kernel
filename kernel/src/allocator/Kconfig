@@ -23,6 +23,14 @@ config ALLOCATOR
     default "llff" if ALLOCATOR_LLFF
     default "buddy" if ALLOCATOR_BUDDY
 
+config SLAB_DEBUG
+    bool "Enable SLAB allocator debug logging"
+    default n
+    depends on ALLOCATOR_SLAB || ALLOCATOR_SLAB_DYNAMIC
+    help
+      Enable debug logging for SLAB allocator operations including
+      page allocation, deallocation, and pool management.
+
 config SLAB_DYNAMIC_MAX_PAGES
     int "Max pages per slab size in page pool"
     default 4
