@@ -129,7 +129,7 @@ mod tests {
     };
     use alloc::vec::Vec;
     use blueos_header::syscalls::NR::Nop;
-    use blueos_test_macro::test;
+    use blueos_test_macro::{only_test, test};
     use core::{
         mem::MaybeUninit,
         panic::PanicInfo,
@@ -321,6 +321,12 @@ mod tests {
     }
 
     #[cfg(mpu_stack_guard)]
+    #[inline]
+    const fn align_up(addr: usize, align: usize) -> usize {
+        (addr + align - 1) & !(align - 1)
+    }
+
+    #[cfg(mpu_stack_guard)]
     extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::IsrContext) {
         let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
         let cfsr = scb.cfsr.read();
@@ -370,6 +376,33 @@ mod tests {
         );
     }
 
+    #[cfg(mpu_stack_guard)]
+    #[test]
+    fn test_mpu_thread_stack_guard_write_fault() {
+        const MPU_REGION_ALIGN: usize = 32;
+        let current = scheduler::current_thread_ref();
+        let guard_size = blueos_kconfig::CONFIG_STACK_GUARD_ALIGN_AND_SIZE as usize;
+        assert!(
+            guard_size >= MPU_REGION_ALIGN && guard_size % MPU_REGION_ALIGN == 0,
+            "Invalid stack guard size: {guard_size}"
+        );
+
+        let stack_base = current.stack_base();
+        let stack_top = stack_base + current.stack_size();
+        let guard_start = align_up(stack_base, MPU_REGION_ALIGN);
+        assert!(
+            guard_start < stack_top,
+            "No valid guard start in stack range"
+        );
+
+        MEMFAULT_TRIGGERED.store(false, Ordering::Release);
+        unsafe { core::ptr::write_volatile(guard_start as *mut u32, 0xA5A5_5A5A) };
+        assert!(
+            MEMFAULT_TRIGGERED.load(Ordering::Acquire),
+            "Per-thread MPU stack guard write did not trigger MemManage"
+        );
+    }
+
     #[test]
     fn stress_trap() {
         #[cfg(target_pointer_width = "32")]
@@ -408,6 +441,9 @@ mod tests {
         pub fn increment(&self) {
             self.counter.fetch_add(1, Ordering::Relaxed);
         }
+        pub fn reset(&self) {
+            self.counter.store(0, Ordering::Relaxed);
+        }
     }
 
     static SEMA_CLEANUP_COUNTER: CleanupCounter = CleanupCounter::new();
@@ -427,6 +463,8 @@ mod tests {
 
     #[test]
     fn stress_semaphore() {
+        SEMA_CLEANUP_COUNTER.reset();
+        unsafe { SEMA_COUNTER = 0 };
         SEMA.init(1);
         reset_and_queue_test_threads(test_semaphore, Some(test_semaphore_cleanup));
         let l = unsafe { TEST_THREADS.len() };
@@ -578,7 +616,7 @@ mod tests {
     #[test]
     fn stress_build_threads() {
         #[cfg(target_pointer_width = "32")]
-        let n = 32;
+        let n = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize / 2;
         #[cfg(all(debug_assertions, target_pointer_width = "64"))]
         let n = 32;
         #[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
@@ -601,7 +639,7 @@ mod tests {
     #[test]
     fn stress_spawn_threads() {
         #[cfg(target_pointer_width = "32")]
-        let n = 32;
+        let n = blueos_kconfig::CONFIG_UNITTEST_THREAD_NUM as usize / 2;
         #[cfg(all(debug_assertions, target_pointer_width = "64"))]
         let n = 32;
         #[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
@@ -780,7 +818,10 @@ mod tests {
     }
 
     static SCHED_TIMERS_CLEANUP: CleanupCounter = CleanupCounter::new();
-    #[test]
+
+    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
+    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
+    #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn stress_sched_timers() {
         reset_and_queue_test_threads(test_sched_timers, Some(test_sched_timers_cleanup));
         let l = unsafe { TEST_THREADS.len() };

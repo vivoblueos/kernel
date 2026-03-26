@@ -20,6 +20,7 @@ pub mod err;
 use core::num::NonZeroUsize;
 
 use err::Result;
+pub mod clock;
 pub mod clock_control;
 pub mod i2c;
 pub mod pinctrl;
@@ -146,15 +147,9 @@ pub trait HasInterruptReg {
 /// such as UART, SPI, I2C, and other communication interfaces.
 ///
 pub trait HasFifo {
-    fn enable_fifo(&self, num: u8) -> Result<()> {
-        Ok(())
-    }
-    fn is_tx_fifo_full(&self) -> bool {
-        false
-    }
-    fn is_rx_fifo_empty(&self) -> bool {
-        false
-    }
+    fn enable_fifo(&self, num: u8) -> Result<()>;
+    fn is_tx_fifo_full(&self) -> bool;
+    fn is_rx_fifo_empty(&self) -> bool;
 }
 
 /// Status register operations trait

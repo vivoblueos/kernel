@@ -132,10 +132,13 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
 pub fn calloc(count: usize, size: usize) -> *mut u8 {
     let required_size = count * size;
     const ALIGN: usize = core::mem::size_of::<usize>();
-    let layout = Layout::from_size_align(required_size, ALIGN).unwrap();
-    if let Some(alloc_ptr) = HEAP.alloc(layout) {
-        unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
-        alloc_ptr.as_ptr()
+    if let Ok(layout) = Layout::from_size_align(required_size, ALIGN) {
+        if let Some(alloc_ptr) = HEAP.alloc(layout) {
+            unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
+            alloc_ptr.as_ptr()
+        } else {
+            ptr::null_mut()
+        }
     } else {
         ptr::null_mut()
     }

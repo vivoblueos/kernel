@@ -2,3 +2,11 @@
 config VIRTUALIZATION
     default y
     bool "Enable Virtualization support"
+
+config SOC_VIRT_AARCH64
+    bool "Virt Aarch64"
+    default y
+    select AARCH64
+
+config NUM_IRQS
+    default 220

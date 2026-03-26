@@ -159,10 +159,5 @@ pub union Vector {
 ///
 /// The interrupt vector table must be properly aligned and contain valid function pointers
 /// for all used interrupt vectors. Incorrect configuration may lead to undefined behavior.
-#[cfg(armv6m)]
-pub const INTERRUPT_TABLE_LEN: usize = 32;
-#[cfg(any(armv7m, armv7em))]
-pub const INTERRUPT_TABLE_LEN: usize = 240;
-#[cfg(armv8m)]
-pub const INTERRUPT_TABLE_LEN: usize = 496;
-pub type InterruptTable = [Vector; INTERRUPT_TABLE_LEN];
+pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
+pub type InterruptTable = [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize];

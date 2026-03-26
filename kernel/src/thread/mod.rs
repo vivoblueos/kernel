@@ -575,7 +575,24 @@ impl Thread {
         saved_sp - core::mem::size_of::<Context>()
     }
 
+    /// High address
+    /// ------------------------------ <--- stack.top() == allocated buffer end
+    /// | optional align gap (0..A)  |
+    /// ------------------------------
+    /// | Context for current thread |
+    /// ------------------------------ <--- saved_sp (initial SP)
+    /// |       stack region         |     (stack grows down)
+    /// |           ...              |
+    /// ------------------------------ <--- guard upper bound (if enabled)
+    /// | stack guard region         |     (optional, usually no-access)
+    /// ------------------------------ <--- stack.base()
+    /// Low address
+    /// FIXME: If an exception happens when SP is very close to (or already inside)
+    /// the guard, hardware exception stacking (cortex-m) may touch this no-access region
+    /// and trigger MemManage (for example DACCVIOL/MSTKERR); if fault handling
+    /// cannot proceed, the fault may escalate to HardFault.
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
+        unsafe { self.set_state(IDLE) };
         self.stack = stack;
         // TODO: Stack sanity check.
         let maybe_sp = self.stack.top() as usize

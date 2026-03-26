@@ -18,6 +18,8 @@ use cortex_m::peripheral::{MPU, SCB};
 const MPU_CTRL_ENABLE: u32 = 1 << 0;
 const MPU_CTRL_PRIVDEFENA: u32 = 1 << 2;
 const MPU_REGION_GUARD: u32 = 0;
+const MPU_REGION_THREAD_GUARD: u32 = 1;
+const MPU_REGION_ALIGN: usize = 32;
 const MPU_RBAR_XN: u32 = 1 << 0;
 // AP=0b10: privileged read-only, unprivileged no access.
 const MPU_RBAR_AP_PRIV_RO: u32 = 0b10 << 1;
@@ -47,6 +49,11 @@ fn encode_rlar(end: usize) -> u32 {
     (((end - 1) as u32) & !0x1f) | MPU_RLAR_REGION_ENABLE
 }
 
+#[inline]
+const fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
+}
+
 pub fn init_sys_stack_guard() {
     let guard_start = addr_of!(__sys_stack_guard_start) as usize;
     let guard_end = addr_of!(__sys_stack_guard_end) as usize;
@@ -73,5 +80,38 @@ pub fn init_sys_stack_guard() {
     let mut shcsr = scb.shcsr.read();
     shcsr |= SCB_SHCSR_MEMFAULTENA;
     unsafe { scb.shcsr.write(shcsr) };
+    barrier();
+}
+
+#[cfg(mpu_stack_guard)]
+#[inline]
+pub fn update_thread_stack_guard(next: &crate::thread::Thread) {
+    let guard_size = blueos_kconfig::CONFIG_STACK_GUARD_ALIGN_AND_SIZE as usize;
+    debug_assert!(guard_size % MPU_REGION_ALIGN == 0);
+    debug_assert!(guard_size >= MPU_REGION_ALIGN);
+
+    let stack_base = next.stack_base();
+    let stack_top = stack_base.saturating_add(next.stack_size());
+    debug_assert!(stack_top > stack_base);
+
+    // MPU RBAR/RLAR requires 32-byte alignment. Align up so we never
+    // protect bytes below stack_base().
+    let guard_start = align_up(stack_base, MPU_REGION_ALIGN);
+    debug_assert!(guard_start < stack_top);
+    debug_assert!(guard_start >= stack_base);
+
+    let guard_end = guard_start.saturating_add(guard_size);
+    debug_assert!(guard_end > guard_start);
+    debug_assert!(guard_end < stack_top);
+
+    debug_assert_eq!(guard_start & (MPU_REGION_ALIGN - 1), 0);
+    debug_assert_eq!(guard_end & (MPU_REGION_ALIGN - 1), 0);
+
+    let mpu = unsafe { &*MPU::PTR };
+    unsafe {
+        mpu.rnr.write(MPU_REGION_THREAD_GUARD);
+        mpu.rbar.write(encode_rbar(guard_start));
+        mpu.rlar.write(encode_rlar(guard_end));
+    }
     barrier();
 }

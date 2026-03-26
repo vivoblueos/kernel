@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{devices::clock::Clock, drivers::timer::GenericTimer};
-
+use crate::drivers::timer::GenericTimer;
+use blueos_hal::clock::Clock;
 pub struct GenericClock;
 
 impl Clock for GenericClock {

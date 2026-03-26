@@ -18,3 +18,11 @@ choice
         help
           Set irq priority bits to 8.
 endchoice
+
+config SOC_GD32E507Z
+    bool "Gd32e507z"
+    default y
+    select CORTEX_M
+
+config NUM_IRQS
+    default 88

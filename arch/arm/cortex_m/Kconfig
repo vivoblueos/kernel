@@ -2,6 +2,9 @@
 
 menu "Cortex-M Configuration"
 
+config NUM_IRQS
+    int
+
 config USE_MPU
     bool "MPU supports"
     default n
@@ -20,6 +23,14 @@ if USE_MPU
     config MPU_STACK_GUARD
         bool "MPU stack guard supports"
         default n
+
+if MPU_STACK_GUARD
+    config STACK_GUARD_ALIGN_AND_SIZE
+        hex "Stack guard align and size"
+        default 0x40 if MPU_V8M
+        help
+          The align and size of Stack guard
+endif
 
 endif
 

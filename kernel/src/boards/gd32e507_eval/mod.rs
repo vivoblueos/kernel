@@ -21,6 +21,7 @@ use crate::{
 };
 use alloc::sync::Arc;
 use blueos_driver::pinctrl::gd32_afio::*;
+use blueos_hal::clock::Clock;
 use blueos_infra::tinyarc::TinyArc;
 use core::ptr::addr_of;
 use spin::Once;
