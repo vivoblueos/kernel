@@ -496,9 +496,6 @@ mod tests {
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
-    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
-    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
-    #[cfg_attr(not(target_chip = "esp32c3"), test)]
     fn test_message_multi_thread() {
         let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()));
 
