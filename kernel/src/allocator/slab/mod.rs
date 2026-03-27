@@ -23,7 +23,10 @@ use crate::{
     },
     kprintln,
 };
-use blueos_infra::list::singly_linked_list::SinglyLinkedList;
+use blueos_infra::{
+    impl_simple_intrusive_adapter,
+    list::{singly_linked_list::SinglyLinkedList, typed_ilist::{List, ListHead}},
+};
 use core::{alloc::Layout, mem, ptr, ptr::NonNull};
 
 pub mod heap;
@@ -448,19 +451,24 @@ const DEFAULT_MAX_TOTAL_PAGES: usize = 32;
 /// Metadata embedded at the very start of each dynamically managed 4 KB page.
 ///
 /// Layout (little-endian):
-///   [0..usize]       next_page    — next page in DynamicSlab page list; 0 = none
-///   [usize..+4]      page_magic   — PAGE_MAGIC when page is owned by a DynamicSlab
-///   [usize+4]        slab_index   — index into SLAB_SIZES[] (0..SLAB_ALLOCATOR_COUNT)
-///   [usize+5..+8]    _pad         — padding to keep free_blocks u32-aligned
-///   [usize+8..+12]   free_blocks  — number of free blocks currently in this page
-///   [usize+12..+16]  total_blocks — total blocks in this page (constant after init)
-///   [usize+16..+24]  free_head    — address of first free block; 0 = empty
-///
-/// Total: 24 bytes on 32-bit (usize = 4 B), 32 bytes on 64-bit (usize = 8 B).
+///   [0..ListHead]    list_node    — intrusive doubly-linked list node
+///   [ListHead..+4]   page_magic   — PAGE_MAGIC when page is owned by a DynamicSlab
+///   [ListHead+4]     slab_index   — index into SLAB_SIZES[] (0..SLAB_ALLOCATOR_COUNT)
+///   [ListHead+5..+8] _pad         — padding to keep free_blocks u32-aligned
+///   [ListHead+8..+12] free_blocks — number of free blocks currently in this page
+///   [ListHead+12..+16] total_blocks — total blocks in this page (constant after init)
+///   [ListHead+16..+24] free_head  — address of first free block; 0 = empty
+#[cfg(allocator = "slab_dynamic")]
+type PageListNode = ListHead<PageMetadata, PageAdapter>;
+#[cfg(allocator = "slab_dynamic")]
+type PageList = List<PageMetadata, PageAdapter>;
+#[cfg(allocator = "slab_dynamic")]
+impl_simple_intrusive_adapter!(PageAdapter, PageMetadata, list_node);
+
 #[cfg(allocator = "slab_dynamic")]
 #[repr(C)]
 struct PageMetadata {
-    next_page: usize,
+    list_node: PageListNode,
     page_magic: u32,
     slab_index: u8,
     _pad: [u8; 3],
@@ -495,7 +503,8 @@ fn blocks_per_page(block_size: usize) -> usize {
 #[cfg(allocator = "slab_dynamic")]
 fn ptr_is_slab(ptr: usize) -> Option<u8> {
     let page_base = ptr & !(PAGE_SIZE - 1);
-    let magic_offset = core::mem::size_of::<usize>();
+    let list_node_size = core::mem::size_of::<PageListNode>();
+    let magic_offset = list_node_size;
     let index_offset = magic_offset + 4;
     unsafe {
         let magic = *((page_base + magic_offset) as *const u32);
@@ -512,7 +521,7 @@ fn ptr_is_slab(ptr: usize) -> Option<u8> {
 #[cfg(allocator = "slab_dynamic")]
 struct DynamicSlab {
     block_size: usize,
-    page_list: SinglyLinkedList<usize>,
+    page_list: PageList,
     total_blocks: usize,
     free_blocks: usize,
 }
@@ -522,7 +531,7 @@ impl DynamicSlab {
     const fn new() -> Self {
         DynamicSlab {
             block_size: 0,
-            page_list: SinglyLinkedList::new(),
+            page_list: PageList::new(),
             total_blocks: 0,
             free_blocks: 0,
         }
@@ -550,7 +559,7 @@ impl DynamicSlab {
         }
 
         let meta = page_addr as *mut PageMetadata;
-        (*meta).next_page = NULL_PTR; // Will be set by SinglyLinkedList
+        (*meta).list_node = PageListNode::new();
         (*meta).page_magic = PAGE_MAGIC;
         (*meta).slab_index = slab_index;
         (*meta)._pad = [0u8; 3];
@@ -562,8 +571,7 @@ impl DynamicSlab {
             NULL_PTR
         };
 
-        self.page_list
-            .push(NonNull::new_unchecked(page_addr as *mut usize));
+        self.page_list.push(&mut *meta);
         self.total_blocks += total;
         self.free_blocks += total;
     }
@@ -571,10 +579,9 @@ impl DynamicSlab {
     /// Add an already-initialized page back to this slab (from PagePool).
     /// The page must have been previously initialized for this slab type and be fully free.
     unsafe fn add_page(&mut self, page_addr: usize) {
-        let meta = &*(page_addr as *const PageMetadata);
+        let meta = &mut *(page_addr as *mut PageMetadata);
         debug_assert_eq!(meta.free_blocks, meta.total_blocks, "Page from pool must be fully free");
-        self.page_list
-            .push(NonNull::new_unchecked(page_addr as *mut usize));
+        self.page_list.push(meta);
         self.total_blocks += meta.total_blocks as usize;
         self.free_blocks += meta.total_blocks as usize;
     }
@@ -582,10 +589,9 @@ impl DynamicSlab {
     /// Allocate one block from the first page that has free blocks.
     /// Returns `None` if all pages are full (caller must add a new page first).
     unsafe fn allocate_block(&mut self) -> Option<NonNull<u8>> {
-        for page_ptr in self.page_list.iter() {
-            let page_addr = page_ptr.as_ptr() as usize;
-            let meta = page_addr as *mut PageMetadata;
-            if (*meta).free_blocks > 0 {
+        for meta in self.page_list.iter_mut() {
+            if meta.free_blocks > 0 {
+                let page_addr = meta as *const PageMetadata as usize;
                 return Some(self.pop_from_page(page_addr));
             }
         }
@@ -646,43 +652,27 @@ impl DynamicSlab {
     /// # Safety
     /// `page_addr` must be currently in `self`'s page list.
     unsafe fn remove_page(&mut self, page_addr: usize) {
-        let total = (*(page_addr as *const PageMetadata)).total_blocks as usize;
+        let meta = &mut *(page_addr as *mut PageMetadata);
+        let total = meta.total_blocks as usize;
 
-        // Manually remove from SinglyLinkedList
-        let mut new_list = SinglyLinkedList::new();
-        while let Some(page_ptr) = self.page_list.pop() {
-            let addr = page_ptr.as_ptr() as usize;
-            if addr != page_addr {
-                new_list.push(page_ptr);
-            }
-        }
-        // Reverse back (pop reverses order)
-        while let Some(page_ptr) = new_list.pop() {
-            self.page_list.push(page_ptr);
-        }
+        // O(1) removal using doubly-linked list
+        ListHead::detach(&mut meta.list_node);
 
         self.total_blocks -= total;
         self.free_blocks -= total;
 
         // Invalidate magic — page is no longer managed by this slab.
-        (*(page_addr as *mut PageMetadata)).page_magic = 0;
+        meta.page_magic = 0;
     }
 }
 
 // ── PagePool ─────────────────────────────────────────────────────────────────
 
-/// Page node stored in page header for pool
-#[cfg(allocator = "slab_dynamic")]
-#[repr(C)]
-struct PageNode {
-    slab_index: u8,
-}
-
 /// SLUB-style page pool: caches fully-free slab pages to reduce TLSF pressure.
 /// Uses per-slab intrusive linked lists for O(1) same-type page reuse.
 #[cfg(allocator = "slab_dynamic")]
 struct PagePool {
-    lists: [SinglyLinkedList<usize>; SLAB_ALLOCATOR_COUNT],
+    lists: [PageList; SLAB_ALLOCATOR_COUNT],
     total_pages: usize,
     max_total_pages: usize,
 }
@@ -692,16 +682,16 @@ impl PagePool {
     const fn new() -> Self {
         PagePool {
             lists: [
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
-                SinglyLinkedList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
+                PageList::new(),
             ],
             total_pages: 0,
             max_total_pages: DEFAULT_MAX_TOTAL_PAGES,
@@ -725,12 +715,9 @@ impl PagePool {
             return;
         }
 
-        // Store slab_index in page header
-        let node = &mut *(page_addr as *mut PageNode);
-        node.slab_index = slab_index as u8;
-
-        self.lists[slab_index]
-            .push(NonNull::new_unchecked(page_addr as *mut usize));
+        let meta = &mut *(page_addr as *mut PageMetadata);
+        meta.slab_index = slab_index as u8;
+        self.lists[slab_index].push(meta);
         self.total_pages += 1;
     }
 
@@ -741,16 +728,20 @@ impl PagePool {
     /// Returns (page_addr, needs_init): needs_init=true if page is from different slab type
     unsafe fn take_page(&mut self, slab_index: usize) -> Option<(usize, bool)> {
         // Try same slab_index first - no init needed
-        if let Some(page_ptr) = self.lists[slab_index].pop() {
+        if let Some(meta) = self.lists[slab_index].iter_mut().next() {
+            let addr = meta as *mut PageMetadata as usize;
+            ListHead::detach(&mut meta.list_node);
             self.total_pages -= 1;
-            return Some((page_ptr.as_ptr() as usize, false));
+            return Some((addr, false));
         }
 
         // Fallback: take from any other slab - needs reinit
         for list in &mut self.lists {
-            if let Some(page_ptr) = list.pop() {
+            if let Some(meta) = list.iter_mut().next() {
+                let addr = meta as *mut PageMetadata as usize;
+                ListHead::detach(&mut meta.list_node);
                 self.total_pages -= 1;
-                return Some((page_ptr.as_ptr() as usize, true));
+                return Some((addr, true));
             }
         }
 
@@ -772,8 +763,9 @@ impl PagePool {
         while reclaimed < pages_needed {
             let mut found = false;
             for list in &mut self.lists {
-                if let Some(page_ptr) = list.pop() {
-                    let page_addr = page_ptr.as_ptr() as usize;
+                if let Some(meta) = list.iter_mut().next() {
+                    let page_addr = meta as *mut PageMetadata as usize;
+                    ListHead::detach(&mut meta.list_node);
                     tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
                     self.total_pages -= 1;
                     reclaimed += 1;
@@ -830,6 +822,8 @@ impl DynamicSlabHeap {
 
         for i in 0..SLAB_ALLOCATOR_COUNT {
             self.slabs[i].set_block_size(Self::SLAB_SIZES[i]);
+            self.slabs[i].page_list.init();
+            self.page_pool.lists[i].init();
         }
         self.prewarm_critical_slabs();
     }
@@ -1090,7 +1084,7 @@ impl DynamicSlabHeap {
             // Collect pages to remove (can't modify while iterating)
             let mut to_remove = alloc::vec::Vec::new();
             for page_ptr in self.slabs[i].page_list.iter() {
-                let page_addr = page_ptr.as_ptr() as usize;
+                let page_addr = page_ptr as *const PageMetadata as usize;
                 let meta = page_addr as *const PageMetadata;
                 if (*meta).free_blocks == (*meta).total_blocks {
                     to_remove.push(page_addr);
