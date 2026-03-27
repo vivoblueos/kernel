@@ -496,6 +496,7 @@ mod tests {
         assert_eq!(result, Err(code::ETIMEDOUT));
     }
 
+    #[test]
     fn test_message_multi_thread() {
         let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()));
 
