@@ -28,6 +28,7 @@ SECTIONS
         KEEP(*(.text._startup_el1))
         KEEP(*(.text.vector_table))
         KEEP(*(.text._exception))
+        KEEP(*(.text.hyper_vector_table))
         *(.text*)
         __text_end = .;
     } > DRAM :text

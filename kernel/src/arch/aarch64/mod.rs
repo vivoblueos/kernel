@@ -19,6 +19,7 @@ pub mod irq;
 pub(crate) mod psci;
 pub(crate) mod registers;
 pub(crate) mod vector;
+pub(crate) mod virt;
 
 use crate::{arch::registers::mpidr_el1::MPIDR_EL1, scheduler};
 use core::{
@@ -64,15 +65,24 @@ macro_rules! enter_el1 {
         msr     cnthctl_el2, x0
         msr     cntvoff_el2, xzr
         // Enable AArch64 in EL1.
-        mov x0, #(1 << 31)
-        orr x0, x0, #(1 << 1)
-        msr hcr_el2, x0
+        // Calculate per-core stack offset
+        ldr x1, ={stack_end}
+        mrs x9, mpidr_el1
+        and x9, x9, #0xff
+        lsl x9, x9, #14
+        sub x1, x1, x9
+        mov sp, x1
+        msr sp_el1, x1
+        // Enable to switch into EL2.
+        bl {virt_init}
         // Set EL1 sp and mask daif in EL2.
         mov x0, #0x3C5
         msr spsr_el2, x0
         // Set EL1 entry and enter.
         ldr x0, ={stack_start}
-        ldr x1, ={stack_end}
+        ldr x1, ={stack_end} 
+        // We reserve the top 4KB of each core's 16KB chunk for EL2.
+        sub x1, x1, #0x1000
         ldr x2, ={cont}
         adr x3, {entry}
         msr elr_el2, x3
@@ -87,6 +97,7 @@ macro_rules! arch_bootstrap {
         core::arch::naked_asm!(
             $crate::enter_el1!(),
             entry = sym $crate::arch::aarch64::init,
+            virt_init = sym $crate::arch::aarch64::virt::virt_init,
             stack_start = sym $stack_start,
             stack_end = sym $stack_end,
             cont = sym $cont,

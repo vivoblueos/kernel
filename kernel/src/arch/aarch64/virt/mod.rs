@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod cntfrq_el0;
-pub mod cntp_ctl_el0;
-pub mod cntp_tval_el0;
-pub mod cntpct_el0;
-pub mod cpacr_el1;
-pub mod daif;
-pub mod esr_el1;
-pub mod hcr_el2;
-pub mod mair_el1;
-pub mod mpidr_el1;
-pub mod sctlr_el1;
-pub mod spsel;
-pub mod tcr_el1;
-pub mod ttbr0_el1;
-pub mod ttbr1_el1;
-pub mod vbar_el1;
+pub mod hyper;
+pub mod vector;
+pub use hyper::{get_current_el, hyp_init};
+
+// Temporary placeholder
+#[no_mangle]
+pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn hyper_trap_fiq(_context: &mut crate::arch::aarch64::Context) -> usize {
+    0
+}
+
+pub fn virt_init() {
+    hyp_init();
+}
