@@ -19,7 +19,6 @@ use crate::{
         irq,
         irq::{IrqHandler, IrqTrigger, Priority},
         registers::cntfrq_el0::CNTFRQ_EL0,
-        psci::hvc_call
     },
     error::Error,
     irq::IrqTrace,
