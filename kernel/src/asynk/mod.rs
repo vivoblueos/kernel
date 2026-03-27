@@ -136,6 +136,10 @@ fn poll_inner() {
                 let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
                 debug_assert_eq!(ok, Ok(()));
             }
+
+            // In SMP case, task might be dropped immediately after being detached,
+            // so we need to drop the lock before detaching.
+            drop(l);
             // If we detach the task what ever it's ready or
             // pending, it would be edge-level triggered. Now
             // we're using level-trigger mode conservatively.

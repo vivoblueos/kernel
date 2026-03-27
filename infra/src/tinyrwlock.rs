@@ -665,11 +665,28 @@ impl<'rwlock, T: ?Sized> RwLockWriteGuard<'rwlock, T> {
     /// ```
     #[inline]
     pub fn downgrade(self) -> RwLockReadGuard<'rwlock, T> {
+        crate::semihosting::println!(
+            "[downgrade] lock={:p} state_before={:?}",
+            self.lock,
+            self.lock.load(Ordering::Relaxed)
+        );
+
         // Reserve the read guard for ourselves
         acquire_reader(self.lock);
 
+        crate::semihosting::println!(
+            "[downgrade] lock={:p} state_after_acquire={:?}",
+            self.lock,
+            self.lock.load(Ordering::Relaxed)
+        );
+
         let lock = self.lock;
         let data = self.data;
+
+        crate::semihosting::println!(
+            "[downgrade] lock={:p} before_drop",
+            lock
+        );
 
         // Dropping self removes the UPGRADED bit
         mem::drop(self);
@@ -792,6 +809,14 @@ impl<T: ?Sized> Drop for RwLockUpgradableGuard<'_, T> {
 
 impl<T: ?Sized> Drop for RwLockWriteGuard<'_, T> {
     fn drop(&mut self) {
+        let state = self.lock.load(Ordering::Relaxed);
+        crate::semihosting::println!(
+            "[WriteGuard::drop] lock={:p} state={:?} WRITER_bit={:?}",
+            self.lock,
+            state,
+            state & WRITER
+        );
+
         debug_assert_eq!(self.lock.load(Ordering::Relaxed) & WRITER, WRITER);
 
         // Writer is responsible for clearing both WRITER and UPGRADED bits.
