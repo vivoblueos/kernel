@@ -243,12 +243,18 @@ mod tests {
         {
             semihosting::println!("{}", info);
             semihosting::println!("Oops: {}", info.message());
+            let mem_info = allocator::memory_info();
+            semihosting::println!("Memory: total={} used={} max={}", mem_info.total, mem_info.used, mem_info.max_used);
+            #[cfg(allocator = "slab_dynamic")]
+            allocator::print_slab_stat();
         }
 
         #[cfg(use_defmt)]
         {
             defmt::error!("{}", defmt::Display2Format(info));
             defmt::error!("Oops: {}", defmt::Display2Format(&info.message()));
+            let mem_info = allocator::memory_info();
+            defmt::error!("Memory: total={} used={} max={}", mem_info.total, mem_info.used, mem_info.max_used);
         }
         loop {}
     }
@@ -843,14 +849,13 @@ mod tests {
         let mut current_used = 0;
 
         // Allocate memory in chunks
-        for _ in 0..1000 {
+        for iter in 0..1000 {
             for &size in &sizes {
                 // Check if we're using too much memory
                 if current_used > test_size / 2 {
                     // Release some allocations to make room
                     while !allocations.is_empty() && current_used > test_size / 4 {
                         allocations.pop();
-                        scheduler::relinquish_me();
                     }
                 }
 

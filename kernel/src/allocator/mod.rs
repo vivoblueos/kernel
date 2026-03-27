@@ -64,6 +64,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         HEAP.dealloc(ptr, layout);
     }
+
+    unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+        HEAP.realloc(ptr, old_layout, new_size)
+            .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+    }
 }
 
 impl KernelAllocator {
@@ -205,6 +210,11 @@ pub const fn is_aligned(addr: usize, align: usize) -> bool {
 #[cfg(allocator = "slab_dynamic")]
 pub fn check_slab_memory_pressure() {
     unsafe { HEAP.check_memory_pressure() };
+}
+
+#[cfg(allocator = "slab_dynamic")]
+pub fn print_slab_stat() {
+    unsafe { HEAP.print_slab_stat() };
 }
 
 #[cfg(test)]

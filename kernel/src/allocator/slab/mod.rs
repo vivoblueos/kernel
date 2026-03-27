@@ -568,6 +568,17 @@ impl DynamicSlab {
         self.free_blocks += total;
     }
 
+    /// Add an already-initialized page back to this slab (from PagePool).
+    /// The page must have been previously initialized for this slab type and be fully free.
+    unsafe fn add_page(&mut self, page_addr: usize) {
+        let meta = &*(page_addr as *const PageMetadata);
+        debug_assert_eq!(meta.free_blocks, meta.total_blocks, "Page from pool must be fully free");
+        self.page_list
+            .push(NonNull::new_unchecked(page_addr as *mut usize));
+        self.total_blocks += meta.total_blocks as usize;
+        self.free_blocks += meta.total_blocks as usize;
+    }
+
     /// Allocate one block from the first page that has free blocks.
     /// Returns `None` if all pages are full (caller must add a new page first).
     unsafe fn allocate_block(&mut self) -> Option<NonNull<u8>> {
@@ -668,10 +679,10 @@ struct PageNode {
 }
 
 /// SLUB-style page pool: caches fully-free slab pages to reduce TLSF pressure.
-/// Uses intrusive linked list, no per-slab limits.
+/// Uses per-slab intrusive linked lists for O(1) same-type page reuse.
 #[cfg(allocator = "slab_dynamic")]
 struct PagePool {
-    list: SinglyLinkedList<usize>,
+    lists: [SinglyLinkedList<usize>; SLAB_ALLOCATOR_COUNT],
     total_pages: usize,
     max_total_pages: usize,
 }
@@ -680,7 +691,18 @@ struct PagePool {
 impl PagePool {
     const fn new() -> Self {
         PagePool {
-            list: SinglyLinkedList::new(),
+            lists: [
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+                SinglyLinkedList::new(),
+            ],
             total_pages: 0,
             max_total_pages: DEFAULT_MAX_TOTAL_PAGES,
         }
@@ -690,34 +712,49 @@ impl PagePool {
     ///
     /// # Safety
     /// `page_addr` must be PAGE_SIZE-aligned and no longer in any `DynamicSlab`'s list.
-    unsafe fn release_page(&mut self, page_addr: usize, slab_index: usize) -> bool {
+    unsafe fn release_page(
+        &mut self,
+        page_addr: usize,
+        slab_index: usize,
+        tlsf: &mut tlsf::heap::TlsfHeap,
+    ) {
         if self.total_pages >= self.max_total_pages {
-            return false;
+            // Pool full, release directly to TLSF
+            let layout = Layout::from_size_align_unchecked(PAGE_SIZE, PAGE_SIZE);
+            tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
+            return;
         }
 
         // Store slab_index in page header
         let node = &mut *(page_addr as *mut PageNode);
         node.slab_index = slab_index as u8;
 
-        self.list
+        self.lists[slab_index]
             .push(NonNull::new_unchecked(page_addr as *mut usize));
         self.total_pages += 1;
-        true
     }
 
     /// Take one page from the pool, preferring same slab_index.
     ///
     /// # Safety
     /// Caller must immediately call `DynamicSlab::init_page` on the returned page.
-    unsafe fn take_page(&mut self, slab_index: usize) -> Option<usize> {
-        // Simple strategy: just pop from head
-        // TODO: optimize to prefer same slab_index
-        if let Some(page_ptr) = self.list.pop() {
+    /// Returns (page_addr, needs_init): needs_init=true if page is from different slab type
+    unsafe fn take_page(&mut self, slab_index: usize) -> Option<(usize, bool)> {
+        // Try same slab_index first - no init needed
+        if let Some(page_ptr) = self.lists[slab_index].pop() {
             self.total_pages -= 1;
-            Some(page_ptr.as_ptr() as usize)
-        } else {
-            None
+            return Some((page_ptr.as_ptr() as usize, false));
         }
+
+        // Fallback: take from any other slab - needs reinit
+        for list in &mut self.lists {
+            if let Some(page_ptr) = list.pop() {
+                self.total_pages -= 1;
+                return Some((page_ptr.as_ptr() as usize, true));
+            }
+        }
+
+        None
     }
 
     /// Reclaim up to `pages_needed` pages from the pool and return them to TLSF.
@@ -733,12 +770,18 @@ impl PagePool {
         let mut reclaimed = 0;
 
         while reclaimed < pages_needed {
-            if let Some(page_ptr) = self.list.pop() {
-                let page_addr = page_ptr.as_ptr() as usize;
-                tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
-                self.total_pages -= 1;
-                reclaimed += 1;
-            } else {
+            let mut found = false;
+            for list in &mut self.lists {
+                if let Some(page_ptr) = list.pop() {
+                    let page_addr = page_ptr.as_ptr() as usize;
+                    tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
+                    self.total_pages -= 1;
+                    reclaimed += 1;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
                 break;
             }
         }
@@ -795,7 +838,7 @@ impl DynamicSlabHeap {
         const PREWARM: &[(usize, usize)] = &[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1)];
         for &(idx, count) in PREWARM {
             for _ in 0..count {
-                if let Some(page) = self.acquire_page(idx) {
+                if let Some((page, _needs_init)) = self.acquire_page(idx) {
                     self.slabs[idx].init_page(page, idx as u8);
                 } else {
                     return;
@@ -837,8 +880,13 @@ impl DynamicSlabHeap {
 
             // Ensure the slab has at least one free block; add a new page if needed.
             if self.slabs[idx].free_blocks == 0 {
-                let page_addr = self.acquire_page(idx)?;
-                self.slabs[idx].init_page(page_addr, idx as u8);
+                if let Some((page_addr, _needs_init)) = self.acquire_page(idx) {
+                    // Always reinit to ensure consistency
+                    self.slabs[idx].init_page(page_addr, idx as u8);
+                } else {
+                    // Cannot acquire page, fallback to TLSF for this allocation
+                    break;
+                }
             }
 
             let ptr = self.slabs[idx].allocate_block().unwrap();
@@ -858,23 +906,13 @@ impl DynamicSlabHeap {
     }
 
     /// Obtain a fresh PAGE_SIZE page: first try the pool, then TLSF.
-    /// If TLSF allocation fails, trigger memory pressure check to reclaim pages.
-    unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<usize> {
-        if let Some(page) = self.page_pool.take_page(slab_index) {
-            return Some(page);
+    /// Returns (page_addr, needs_init): needs_init=false if page is already initialized for this slab.
+    unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<(usize, bool)> {
+        if let Some((page, needs_init)) = self.page_pool.take_page(slab_index) {
+            return Some((page, needs_init));
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        match self.system_allocator.allocate(&page_layout) {
-            Some(ptr) => Some(ptr.as_ptr() as usize),
-            None => {
-                // TLSF allocation failed, try to reclaim pages from pool
-                self.check_memory_pressure();
-                // Retry allocation after reclaim
-                self.system_allocator
-                    .allocate(&page_layout)
-                    .map(|ptr| ptr.as_ptr() as usize)
-            }
-        }
+        self.system_allocator.allocate(&page_layout).map(|ptr| (ptr.as_ptr() as usize, true))
     }
 
     // ── Deallocation ───────────────────────────────────────────────────────
@@ -909,13 +947,7 @@ impl DynamicSlabHeap {
 
         if page_empty {
             self.slabs[idx].remove_page(page_addr);
-            if !self.page_pool.release_page(page_addr, idx) {
-                let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-                self.system_allocator.deallocate(
-                    NonNull::new_unchecked(page_addr as *mut u8),
-                    page_layout.align(),
-                );
-            }
+            self.page_pool.release_page(page_addr, idx, &mut self.system_allocator);
         }
         Self::SLAB_SIZES[idx]
     }
@@ -1068,31 +1100,38 @@ impl DynamicSlabHeap {
             // Remove collected pages
             for page_addr in to_remove {
                 self.slabs[i].remove_page(page_addr);
-                if !self.page_pool.release_page(page_addr, i) {
-                    self.system_allocator.deallocate(
-                        NonNull::new_unchecked(page_addr as *mut u8),
-                        page_layout.align(),
-                    );
-                }
+                self.page_pool.release_page(page_addr, i, &mut self.system_allocator);
             }
         }
     }
 
     pub fn print_slab_stat(&self) {
+        // Collect data first to avoid holding lock during print
+        let mut data = [(0usize, 0usize, 0usize, 0usize); SLAB_ALLOCATOR_COUNT];
+        let (pool_total, pool_max) = {
+            for (i, item) in data.iter_mut().enumerate() {
+                let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
+                let pages = self.slabs[i].total_blocks.div_ceil(bpp);
+                *item = (
+                    Self::SLAB_SIZES[i],
+                    pages,
+                    self.slabs[i].total_blocks,
+                    self.slabs[i].free_blocks,
+                );
+            }
+            (self.page_pool.total_pages, self.page_pool.max_total_pages)
+        };
+
+        // Print without holding lock
         kprintln!("size   pages  total  free   alloc ");
         kprintln!("------ ------ ------ ------ ------");
-        for i in 0..SLAB_ALLOCATOR_COUNT {
-            let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
-            let pages = self.slabs[i].total_blocks.div_ceil(bpp);
+        for (size, pages, total, free) in data {
             kprintln!(
                 "{:6} {:6} {:6} {:6} {:6}",
-                Self::SLAB_SIZES[i],
-                pages,
-                self.slabs[i].total_blocks,
-                self.slabs[i].free_blocks,
-                self.slabs[i].total_blocks - self.slabs[i].free_blocks,
+                size, pages, total, free, total - free
             );
         }
+        kprintln!("PagePool: {}/{}", pool_total, pool_max);
     }
 }
 
