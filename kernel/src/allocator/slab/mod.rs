@@ -562,7 +562,8 @@ impl DynamicSlab {
             NULL_PTR
         };
 
-        self.page_list.push(NonNull::new_unchecked(page_addr as *mut usize));
+        self.page_list
+            .push(NonNull::new_unchecked(page_addr as *mut usize));
         self.total_blocks += total;
         self.free_blocks += total;
     }
@@ -698,7 +699,8 @@ impl PagePool {
         let node = &mut *(page_addr as *mut PageNode);
         node.slab_index = slab_index as u8;
 
-        self.list.push(NonNull::new_unchecked(page_addr as *mut usize));
+        self.list
+            .push(NonNull::new_unchecked(page_addr as *mut usize));
         self.total_pages += 1;
         true
     }
@@ -1352,7 +1354,10 @@ mod dynamic_tests {
         let ptr2 = crate::allocator::realloc(ptr, 4096);
         assert!(!ptr2.is_null());
         let after_grow = crate::allocator::memory_info().used;
-        assert!(after_grow >= after_alloc, "used must not shrink on grow-realloc");
+        assert!(
+            after_grow >= after_alloc,
+            "used must not shrink on grow-realloc"
+        );
 
         crate::allocator::free(ptr2);
         assert_eq!(
