@@ -25,7 +25,10 @@ use crate::{
 };
 use blueos_infra::{
     impl_simple_intrusive_adapter,
-    list::{singly_linked_list::SinglyLinkedList, typed_ilist::{List, ListHead}},
+    list::{
+        singly_linked_list::SinglyLinkedList,
+        typed_ilist::{List, ListHead},
+    },
 };
 use core::{alloc::Layout, mem, ptr, ptr::NonNull};
 
@@ -580,7 +583,10 @@ impl DynamicSlab {
     /// The page must have been previously initialized for this slab type and be fully free.
     unsafe fn add_page(&mut self, page_addr: usize) {
         let meta = &mut *(page_addr as *mut PageMetadata);
-        debug_assert_eq!(meta.free_blocks, meta.total_blocks, "Page from pool must be fully free");
+        debug_assert_eq!(
+            meta.free_blocks, meta.total_blocks,
+            "Page from pool must be fully free"
+        );
         self.page_list.push(meta);
         self.total_blocks += meta.total_blocks as usize;
         self.free_blocks += meta.total_blocks as usize;
@@ -906,7 +912,9 @@ impl DynamicSlabHeap {
             return Some((page, needs_init));
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        self.system_allocator.allocate(&page_layout).map(|ptr| (ptr.as_ptr() as usize, true))
+        self.system_allocator
+            .allocate(&page_layout)
+            .map(|ptr| (ptr.as_ptr() as usize, true))
     }
 
     // ── Deallocation ───────────────────────────────────────────────────────
@@ -941,7 +949,8 @@ impl DynamicSlabHeap {
 
         if page_empty {
             self.slabs[idx].remove_page(page_addr);
-            self.page_pool.release_page(page_addr, idx, &mut self.system_allocator);
+            self.page_pool
+                .release_page(page_addr, idx, &mut self.system_allocator);
         }
         Self::SLAB_SIZES[idx]
     }
@@ -1074,7 +1083,8 @@ impl DynamicSlabHeap {
     /// Used in tests for accurate memory leak detection.
     pub fn reclaim_page_pool(&mut self) {
         unsafe {
-            self.page_pool.reclaim_to_tlsf(&mut self.system_allocator, usize::MAX);
+            self.page_pool
+                .reclaim_to_tlsf(&mut self.system_allocator, usize::MAX);
         }
     }
 
@@ -1102,7 +1112,8 @@ impl DynamicSlabHeap {
             // Remove collected pages
             for page_addr in to_remove {
                 self.slabs[i].remove_page(page_addr);
-                self.page_pool.release_page(page_addr, i, &mut self.system_allocator);
+                self.page_pool
+                    .release_page(page_addr, i, &mut self.system_allocator);
             }
         }
     }
@@ -1130,7 +1141,11 @@ impl DynamicSlabHeap {
         for (size, pages, total, free) in data {
             kprintln!(
                 "{:6} {:6} {:6} {:6} {:6}",
-                size, pages, total, free, total - free
+                size,
+                pages,
+                total,
+                free,
+                total - free
             );
         }
         kprintln!("PagePool: {}/{}", pool_total, pool_max);
