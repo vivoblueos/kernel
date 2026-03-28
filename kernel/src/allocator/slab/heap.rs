@@ -250,7 +250,11 @@ impl DynamicSlabHeap {
         let (pool_total, pool_max) = {
             let heap = self.heap.irqsave_lock();
             for (i, item) in data.iter_mut().enumerate() {
-                *item = (heap.slabs[i].block_size, heap.slabs[i].total_blocks, heap.slabs[i].free_blocks);
+                *item = (
+                    heap.slabs[i].block_size,
+                    heap.slabs[i].total_blocks,
+                    heap.slabs[i].free_blocks,
+                );
             }
             (heap.page_pool.total_pages, heap.page_pool.max_total_pages)
         };

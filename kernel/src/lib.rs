@@ -245,7 +245,12 @@ mod tests {
             semihosting::println!("{}", info);
             semihosting::println!("Oops: {}", info.message());
             let mem_info = allocator::memory_info();
-            semihosting::println!("Memory: total={} used={} max={}", mem_info.total, mem_info.used, mem_info.max_used);
+            semihosting::println!(
+                "Memory: total={} used={} max={}",
+                mem_info.total,
+                mem_info.used,
+                mem_info.max_used
+            );
             #[cfg(allocator = "slab_dynamic")]
             allocator::print_slab_stat();
         }
@@ -255,7 +260,12 @@ mod tests {
             defmt::error!("{}", defmt::Display2Format(info));
             defmt::error!("Oops: {}", defmt::Display2Format(&info.message()));
             let mem_info = allocator::memory_info();
-            defmt::error!("Memory: total={} used={} max={}", mem_info.total, mem_info.used, mem_info.max_used);
+            defmt::error!(
+                "Memory: total={} used={} max={}",
+                mem_info.total,
+                mem_info.used,
+                mem_info.max_used
+            );
         }
         loop {}
     }
