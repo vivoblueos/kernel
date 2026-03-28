@@ -217,6 +217,11 @@ pub fn print_slab_stat() {
     unsafe { HEAP.print_slab_stat() };
 }
 
+#[cfg(allocator = "slab_dynamic")]
+pub fn reclaim_page_pool() {
+    unsafe { HEAP.reclaim_page_pool() };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -262,6 +262,14 @@ impl DynamicSlabHeap {
         crate::kprintln!("PagePool: {}/{}", pool_total, pool_max);
     }
 
+    /// Reclaim all pages from page pool back to TLSF.
+    /// Used in tests for accurate memory leak detection.
+    #[cfg(allocator = "slab_dynamic")]
+    pub fn reclaim_page_pool(&self) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.reclaim_page_pool();
+    }
+
     /// Reclaim pages from pool to TLSF when memory pressure is detected.
     /// Can be called by idle thread for proactive memory reclaim.
     #[cfg(allocator = "slab_dynamic")]

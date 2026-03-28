@@ -445,10 +445,6 @@ pub extern "C" fn schedule() -> ! {
     arch::enable_local_irq();
     debug_assert!(arch::local_irq_enabled());
     loop {
-        #[cfg(allocator = "slab_dynamic")]
-        {
-            allocator::check_slab_memory_pressure();
-        }
         yield_me();
         idle::get_idle_hook()();
     }
