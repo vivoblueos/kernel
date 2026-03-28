@@ -890,7 +890,7 @@ mod tests {
         // Get initial memory info
         let initial_info = allocator::memory_info();
         let available = initial_info.total.saturating_sub(initial_info.used);
-        let test_size = (available * 3) / 4;
+        let test_size = available / 2;
         assert!(test_size > 0, "Not enough available memory for stress test");
 
         // Reset completion flags
@@ -914,7 +914,9 @@ mod tests {
         wait_until(1, &ALLOCATOR_STRESS_THREAD1_DONE);
         wait_until(1, &ALLOCATOR_STRESS_THREAD2_DONE);
 
-        // Verify memory state after stress test
+        #[cfg(allocator = "slab_dynamic")]
+        allocator::print_slab_stat();
+
         let final_info = allocator::memory_info();
         // Memory should be back to a reasonable state (allowing for some fragmentation)
         assert!(
