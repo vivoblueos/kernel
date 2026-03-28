@@ -900,7 +900,7 @@ mod tests {
         // Get initial memory info
         let initial_info = allocator::memory_info();
         let available = initial_info.total.saturating_sub(initial_info.used);
-        let test_size = available / 2;
+        let test_size = (available * 3) / 4;
         assert!(test_size > 0, "Not enough available memory for stress test");
 
         // Reset completion flags
