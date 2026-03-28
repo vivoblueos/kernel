@@ -212,7 +212,7 @@ pub fn check_slab_memory_pressure() {
     unsafe { HEAP.check_memory_pressure() };
 }
 
-#[cfg(allocator = "slab_dynamic")]
+#[cfg(any(allocator = "slab", allocator = "slab_dynamic"))]
 pub fn print_slab_stat() {
     unsafe { HEAP.print_slab_stat() };
 }

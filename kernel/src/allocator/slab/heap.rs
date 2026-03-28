@@ -245,25 +245,8 @@ impl DynamicSlabHeap {
     }
 
     pub fn print_slab_stat(&self) {
-        // Collect data without holding lock
-        let mut data = [(0usize, 0usize, 0usize); 10];
-        let (pool_total, pool_max) = {
-            let heap = self.heap.irqsave_lock();
-            for (i, item) in data.iter_mut().enumerate() {
-                *item = (
-                    heap.slabs[i].block_size,
-                    heap.slabs[i].total_blocks,
-                    heap.slabs[i].free_blocks,
-                );
-            }
-            (heap.page_pool.total_pages, heap.page_pool.max_total_pages)
-        };
-        // Print without lock
-        crate::kprintln!("size   total  free");
-        for (size, total, free) in data {
-            crate::kprintln!("{:6} {:6} {:6}", size, total, free);
-        }
-        crate::kprintln!("PagePool: {}/{}", pool_total, pool_max);
+        let heap = self.heap.irqsave_lock();
+        heap.print_slab_stat();
     }
 
     /// Reclaim all pages from page pool back to TLSF.

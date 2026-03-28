@@ -242,7 +242,9 @@ impl<
                     && Self::SLAB_SIZES[allocator_index] % layout.align() == 0
                 {
                     ptr = self.slab_allocator[allocator_index].allocate(layout);
-                    self.allocated += Self::SLAB_SIZES[allocator_index];
+                    if ptr.is_some() {
+                        self.allocated += Self::SLAB_SIZES[allocator_index];
+                    }
                 } else if Self::SLAB_SIZES[allocator_index] <= SLAB_MAX_UPSEARCH_SIZE {
                     allocator_index += 1;
                 } else {
@@ -279,11 +281,13 @@ impl<
         let allocator_index = self.ptr_to_allocator(ptr.as_ptr() as usize);
         if allocator_index >= SLAB_ALLOCATOR_COUNT {
             let size = self.system_allocator.deallocate(ptr, layout.align());
-            self.allocated -= size;
+            self.allocated = self.allocated.saturating_sub(size);
             size
         } else {
             self.slab_allocator[allocator_index].deallocate(ptr);
-            self.allocated -= Self::SLAB_SIZES[allocator_index];
+            self.allocated = self
+                .allocated
+                .saturating_sub(Self::SLAB_SIZES[allocator_index]);
             Self::SLAB_SIZES[allocator_index]
         }
     }
@@ -292,11 +296,13 @@ impl<
         let allocator_index = self.ptr_to_allocator(ptr.as_ptr() as usize);
         if allocator_index >= SLAB_ALLOCATOR_COUNT {
             let size = self.system_allocator.deallocate_unknown_align(ptr);
-            self.allocated -= size;
+            self.allocated = self.allocated.saturating_sub(size);
             size
         } else {
             self.slab_allocator[allocator_index].deallocate(ptr);
-            self.allocated -= Self::SLAB_SIZES[allocator_index];
+            self.allocated = self
+                .allocated
+                .saturating_sub(Self::SLAB_SIZES[allocator_index]);
             Self::SLAB_SIZES[allocator_index]
         }
     }
