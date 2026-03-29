@@ -718,12 +718,13 @@ impl PagePool {
         &mut self,
         page_addr: usize,
         slab_index: usize,
-        tlsf: &mut tlsf::heap::TlsfHeap,
+        system_allocator: &mut tlsf::heap::TlsfHeap,
     ) {
         if self.total_pages >= self.max_total_pages {
-            // Pool full, release directly to TLSF
+            // Pool full, release directly to system
             let layout = Layout::from_size_align_unchecked(PAGE_SIZE, PAGE_SIZE);
-            tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
+            system_allocator
+                .deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
             return;
         }
 
@@ -760,13 +761,13 @@ impl PagePool {
         None
     }
 
-    /// Reclaim up to `pages_needed` pages from the pool and return them to TLSF.
+    /// Reclaim up to `pages_needed` pages from the pool and return them to system.
     ///
     /// # Safety
-    /// `tlsf` must be the same allocator from which the pages were originally obtained.
-    unsafe fn reclaim_to_tlsf(
+    /// `system` must be the same allocator from which the pages were originally obtained.
+    unsafe fn reclaim_to_system(
         &mut self,
-        tlsf: &mut tlsf::heap::TlsfHeap,
+        system_allocator: &mut tlsf::heap::TlsfHeap,
         pages_needed: usize,
     ) -> usize {
         let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
@@ -778,7 +779,8 @@ impl PagePool {
                 if let Some(meta) = list.iter_mut().next() {
                     let page_addr = meta as *mut PageMetadata as usize;
                     ListHead::detach(&mut meta.list_node);
-                    tlsf.deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
+                    system_allocator
+                        .deallocate(NonNull::new_unchecked(page_addr as *mut u8), layout.align());
                     self.total_pages -= 1;
                     reclaimed += 1;
                     found = true;
@@ -890,7 +892,7 @@ impl DynamicSlabHeap {
                     // Always reinit to ensure consistency
                     self.slabs[idx].init_page(page_addr, idx as u8);
                 } else {
-                    // Cannot acquire page, fallback to TLSF for this allocation
+                    // Cannot acquire page, fallback to system for this allocation
                     break;
                 }
             }
@@ -1080,7 +1082,7 @@ impl DynamicSlabHeap {
             let pages_needed = (MEMORY_PRESSURE_THRESHOLD - max_free) / PAGE_SIZE + 1;
             unsafe {
                 self.page_pool
-                    .reclaim_to_tlsf(&mut self.system_allocator, pages_needed);
+                    .reclaim_to_system(&mut self.system_allocator, pages_needed);
             }
         }
     }
@@ -1090,71 +1092,33 @@ impl DynamicSlabHeap {
     pub fn reclaim_page_pool(&mut self) {
         unsafe {
             self.page_pool
-                .reclaim_to_tlsf(&mut self.system_allocator, usize::MAX);
+                .reclaim_to_system(&mut self.system_allocator, usize::MAX);
         }
     }
 
-    // ── Manual shrink ──────────────────────────────────────────────────────
-
-    /// Walk every slab's page list and release fully-empty pages to the pool
-    /// (or directly to TLSF if the pool is full).
-    ///
-    /// Normally not needed because `deallocate` auto-shrinks on page emptying.
-    /// Useful after a bulk-free burst when you want to reclaim memory proactively.
-    pub unsafe fn shrink(&mut self) {
-        let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-
-        for i in 0..SLAB_ALLOCATOR_COUNT {
-            // Collect pages to remove (can't modify while iterating)
-            let mut to_remove = alloc::vec::Vec::new();
-            for page_ptr in self.slabs[i].page_list.iter() {
-                let page_addr = page_ptr as *const PageMetadata as usize;
-                let meta = page_addr as *const PageMetadata;
-                if (*meta).free_blocks == (*meta).total_blocks {
-                    to_remove.push(page_addr);
-                }
-            }
-
-            // Remove collected pages
-            for page_addr in to_remove {
-                self.slabs[i].remove_page(page_addr);
-                self.page_pool
-                    .release_page(page_addr, i, &mut self.system_allocator);
-            }
-        }
-    }
-
-    pub fn print_slab_stat(&self) {
-        // Collect data first to avoid holding lock during print
+    pub fn get_slab_stat(
+        &self,
+    ) -> (
+        [(usize, usize, usize, usize); SLAB_ALLOCATOR_COUNT],
+        usize,
+        usize,
+    ) {
         let mut data = [(0usize, 0usize, 0usize, 0usize); SLAB_ALLOCATOR_COUNT];
-        let (pool_total, pool_max) = {
-            for (i, item) in data.iter_mut().enumerate() {
-                let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
-                let pages = self.slabs[i].total_blocks.div_ceil(bpp);
-                *item = (
-                    Self::SLAB_SIZES[i],
-                    pages,
-                    self.slabs[i].total_blocks,
-                    self.slabs[i].free_blocks,
-                );
-            }
-            (self.page_pool.total_pages, self.page_pool.max_total_pages)
-        };
-
-        // Print without holding lock
-        kprintln!("size   pages  total  free   alloc ");
-        kprintln!("------ ------ ------ ------ ------");
-        for (size, pages, total, free) in data {
-            kprintln!(
-                "{:6} {:6} {:6} {:6} {:6}",
-                size,
+        for (i, item) in data.iter_mut().enumerate() {
+            let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
+            let pages = self.slabs[i].total_blocks.div_ceil(bpp);
+            *item = (
+                Self::SLAB_SIZES[i],
                 pages,
-                total,
-                free,
-                total - free
+                self.slabs[i].total_blocks,
+                self.slabs[i].free_blocks,
             );
         }
-        kprintln!("PagePool: {}/{}", pool_total, pool_max);
+        (
+            data,
+            self.page_pool.total_pages,
+            self.page_pool.max_total_pages,
+        )
     }
 }
 

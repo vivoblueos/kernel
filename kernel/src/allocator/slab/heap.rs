@@ -245,8 +245,26 @@ impl DynamicSlabHeap {
     }
 
     pub fn print_slab_stat(&self) {
-        let heap = self.heap.irqsave_lock();
-        heap.print_slab_stat();
+        use crate::kprintln;
+
+        let (data, pool_total, pool_max) = {
+            let heap = self.heap.irqsave_lock();
+            heap.get_slab_stat()
+        };
+
+        kprintln!("size   pages  total  free   alloc ");
+        kprintln!("------ ------ ------ ------ ------");
+        for (size, pages, total, free) in data {
+            kprintln!(
+                "{:6} {:6} {:6} {:6} {:6}",
+                size,
+                pages,
+                total,
+                free,
+                total - free
+            );
+        }
+        kprintln!("PagePool: {}/{}", pool_total, pool_max);
     }
 
     /// Reclaim all pages from page pool back to TLSF.
