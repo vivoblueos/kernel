@@ -13,7 +13,6 @@
 // limitations under the License.
 
 pub mod config;
-mod handlers;
 use crate::{
     arch,
     boards::config::{
@@ -85,6 +84,10 @@ pub(crate) fn init() {
     unsafe { boot::init_heap() };
     arch::irq::init();
     ClockImpl::init();
+    unsafe {
+        arch::irq::register_raw_isr(UART0RX_IRQn, uart0rx_handler);
+        arch::irq::register_raw_isr(UART0TX_IRQn, uart0tx_handler);
+    }
     arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::Normal);
     arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
 }
@@ -101,8 +104,7 @@ crate::define_peripheral! {
      )}),
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn uart0rx_handler() {
+unsafe extern "C" fn uart0rx_handler() {
     let _trace = IrqTrace::new(UART0RX_IRQn);
     let uart = get_device!(console_uart);
     if let Some(handler) = unsafe {
@@ -115,8 +117,7 @@ pub unsafe extern "C" fn uart0rx_handler() {
     uart.clear_interrupt(blueos_driver::uart::InterruptType::Rx);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn uart0tx_handler() {
+unsafe extern "C" fn uart0tx_handler() {
     let _trace = IrqTrace::new(UART0TX_IRQn);
     let uart = get_device!(console_uart);
     if let Some(handler) = unsafe {

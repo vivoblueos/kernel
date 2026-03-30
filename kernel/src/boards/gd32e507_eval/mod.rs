@@ -13,7 +13,6 @@
 // limitations under the License.
 
 mod config;
-mod handler;
 
 use crate::{
     arch, arch::irq::IrqNumber, boot, boot::INIT_BSS_DONE, devices::clock::systick, irq::IrqTrace,
@@ -84,6 +83,9 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
+    unsafe {
+        arch::irq::register_raw_isr(config::USBFS_IRQn, uart0_handler);
+    }
     arch::irq::enable_irq_with_priority(config::USBFS_IRQn, arch::irq::Priority::Normal);
     ClockImpl::init();
 }
@@ -123,8 +125,7 @@ crate::define_pin_states! {
     )
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn uart0_handler() {
+unsafe extern "C" fn uart0_handler() {
     let _trace = IrqTrace::new(config::USBFS_IRQn);
     use blueos_hal::HasInterruptReg;
     let uart = get_device!(console_uart);
