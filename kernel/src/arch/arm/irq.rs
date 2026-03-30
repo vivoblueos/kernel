@@ -147,11 +147,10 @@ extern "C" fn _generic_isr_handler() {
         .checked_sub(16)
         .expect("Invalid ISR index, IPSR value: {ipsr:#X}");
 
-    unsafe {
-        ISR_DESC[isr_index as usize]
-            .as_ref()
-            .expect("No ISR descriptor found for the current interrupt {isr_index}")
-            .service_isr();
+    if let Some(isr_desc) = unsafe { ISR_DESC[isr_index as usize].as_ref() } {
+        isr_desc.service_isr();
+    } else {
+        // FIXME: If the ISR is not explicitly registered, what should be done?
     }
 
     #[cfg(round_robin)]
