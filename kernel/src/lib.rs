@@ -852,16 +852,15 @@ mod tests {
         let test_size = core::cmp::min(available * 3 / 4, MAX_TEST_HEAP_SIZE);
 
         // Test with different allocation sizes
-        let sizes = [32, 64, 128, 256, 512, 1024, 2048, 4096];
-        let mut allocations: Vec<Vec<u8>> = Vec::with_capacity(4 * 1000);
+        let sizes = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
+        let mut allocations: Vec<Vec<u8>> = Vec::new();
         let mut current_used = 0;
 
         // Allocate memory in chunks
         for _iter in 0..1000 {
             for &size in &sizes {
                 // More aggressive memory management
-                if current_used > test_size / 3 {
-                    // Release ALL allocations to reduce fragmentation
+                if current_used > test_size / 2 {
                     allocations.clear();
                     current_used = 0;
                 }
