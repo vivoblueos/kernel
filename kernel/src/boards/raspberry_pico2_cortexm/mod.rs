@@ -13,7 +13,6 @@
 // limitations under the License.
 
 mod block;
-mod handler;
 
 use crate::{
     arch::{self, irq::IrqNumber},
@@ -99,6 +98,9 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
+    unsafe {
+        arch::irq::register_raw_isr(UART0_IRQN, uart0_handler);
+    }
     arch::irq::enable_irq_with_priority(UART0_IRQN, arch::irq::Priority::Normal);
     ClockImpl::init();
 }
@@ -141,7 +143,6 @@ crate::define_bus! {
     )
 }
 
-#[no_mangle]
 pub unsafe extern "C" fn uart0_handler() {
     use blueos_hal::HasInterruptReg;
     let _trace = IrqTrace::new(UART0_IRQN);
