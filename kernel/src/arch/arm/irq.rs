@@ -147,7 +147,12 @@ extern "C" fn _generic_isr_handler() {
         .checked_sub(16)
         .expect("Invalid ISR index, IPSR value: {ipsr:#X}");
 
-    // ISR_DESC[isr_index as usize].as_ref()s
+    unsafe {
+        ISR_DESC[isr_index as usize]
+            .as_ref()
+            .expect("No ISR descriptor found for the current interrupt {isr_index}")
+            .service_isr();
+    }
 
     #[cfg(round_robin)]
     {
