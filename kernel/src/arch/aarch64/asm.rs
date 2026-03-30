@@ -48,13 +48,6 @@ pub fn wait_for_event() {
 }
 
 #[inline]
-pub fn sys_reset() -> ! {
-    loop {
-        // TBD
-    }
-}
-
-#[inline]
 pub fn isb() {
     // SAFETY: This doesn't access memory in any way.
     unsafe {

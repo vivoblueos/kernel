@@ -17,6 +17,7 @@ use crate::arch::aarch64::{
     asm::DsbOptions,
     registers::{mair_el1::*, sctlr_el1::*, tcr_el1::*, ttbr0_el1::TTBR0_EL1},
 };
+use core::sync::atomic::{AtomicBool, Ordering};
 use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 
 #[repr(u64)]
@@ -150,7 +151,10 @@ impl PageEntry {
     }
 }
 
+// This page table must be available before `init_runtime()` clears `.bss`,
+// because we may set up EL1 MMU state while still running in EL2.
 #[used]
+#[link_section = ".data"]
 static mut TABLE_MANAGER: PageTableManager = PageTableManager::new();
 
 #[repr(C, align(4096))]
@@ -163,21 +167,44 @@ impl PageTableManager {
 
     fn init() {
         let table = unsafe { &mut TABLE_MANAGER };
-        // 1 GiB of device memory.
-        table.0[0].set(0x0, MemAttributes::Device);
-        // 1 GiB of normal memory.
-        table.0[1].set(0x40080000, MemAttributes::Normal);
+        for &base in crate::boards::MMU_L1_DEVICE_BASES {
+            let index = (base >> 30) as usize;
+            let _ = table.0[index].set(base, MemAttributes::Device);
+        }
+        for &base in crate::boards::MMU_L1_NORMAL_BASES {
+            let index = (base >> 30) as usize;
+            let _ = table.0[index].set(base, MemAttributes::Normal);
+        }
     }
 }
 
+// Indicate whether the page table initialization is done.
+static PAGETABLE_INIT_DONE: AtomicBool = AtomicBool::new(false);
+
 pub fn enable_mmu() {
-    PageTableManager::init();
+    // Only allow CPU0 to initialize the page table, other cores wait
+    let cpu_id = crate::arch::current_cpu_id();
+    if cpu_id == 0 {
+        PageTableManager::init();
+        PAGETABLE_INIT_DONE.store(true, Ordering::Release);
+        // Wake up all cores waiting on wfe
+        unsafe {
+            core::arch::asm!("sev", options(nostack, nomem));
+        }
+    } else {
+        // Wait for CPU0 to finish page table initialization.
+        while !PAGETABLE_INIT_DONE.load(Ordering::Acquire) {
+            unsafe {
+                core::arch::asm!("wfe", options(nostack, nomem));
+            }
+        }
+    }
     // Set physical table base addr.
     unsafe {
         core::arch::asm!(
             "adrp {temp}, {tbl}",
             "msr ttbr0_el1, {temp}",
-            temp = reg(out) _,
+            temp = out(reg) _,
             tbl = sym TABLE_MANAGER,
             options(nostack, nomem)
         )

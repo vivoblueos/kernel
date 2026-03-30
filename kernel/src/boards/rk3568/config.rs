@@ -22,3 +22,5 @@ pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
 pub const PSCI_BASE: u32 = 0x84000000;
 pub const GICD: usize = 0xfd400000;
 pub const GICR: usize = 0xfd460000;
+pub const MMU_L1_NORMAL_BASES: &[u64] = &[0x0, 0x4000_0000];
+pub const MMU_L1_DEVICE_BASES: &[u64] = &[0xc000_0000];
