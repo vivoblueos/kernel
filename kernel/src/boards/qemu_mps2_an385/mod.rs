@@ -79,6 +79,7 @@ pub type ClockImpl = systick::SysTickClock<TICKS_PS, HZ>;
 pub(crate) fn init() {
     unsafe {
         copy_data();
+        arch::irq::init_interrupt_registry();
     }
     boot::init_runtime();
     unsafe { boot::init_heap() };

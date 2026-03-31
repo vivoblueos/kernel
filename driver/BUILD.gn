@@ -24,6 +24,7 @@ build_rust("blueos_driver") {
            "//external/vendor/tock-registers-0.9.0:tock_registers",
            "//external/vendor/zerocopy-0.8.27:zerocopy",
            "//kernel/hal:blueos_hal",
+           "//kernel/macro:blueos_macro",
          ] + board_deps
 
   features = []

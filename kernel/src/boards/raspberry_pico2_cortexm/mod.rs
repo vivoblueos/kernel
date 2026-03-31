@@ -92,6 +92,7 @@ pub(crate) fn init() {
         SCB_CPACR_PTR.write_volatile(temp);
         core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
         copy_data();
+        arch::irq::init_interrupt_registry();
     }
     boot::init_runtime();
     blueos_driver::clock_control::rpi_pico::RpiPicoClockControl::init();

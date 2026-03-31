@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use blueos_hal::isr::{IsrDesc, IsrReg};
 use cortex_m::{interrupt::InterruptNumber, peripheral::scb::SystemHandler, Peripherals};
 
 #[cfg(irq_priority_bits_2)]
@@ -161,18 +162,30 @@ extern "C" fn _generic_isr_handler() {
     }
 }
 
-pub trait IsrDesc: Sync + 'static {
-    fn service_isr(&self);
-}
-
 static mut ISR_DESC: [Option<&dyn IsrDesc>; INTERRUPT_TABLE_LEN] = [None; INTERRUPT_TABLE_LEN];
 
-/// Safety: ISR_DESC only be read in the interrupt handler, and only be written in the register_swi_isr,
-/// which is called in the init process while irq is disabled, so it's safe to use unsafe to write it.
-/// Be careful to call register_swi_isr in the init process while irq is disabled, otherwise it may cause race condition.
-pub fn register_swi_isr(irq: IrqNumber, desc: &'static dyn IsrDesc) {
+/// Safety: ISR_DESC only be read in the interrupt handler,
+/// and only be written in the boot process early, so it's
+/// safe to use unsafe to write it.
+pub fn init_interrupt_registry() {
+    extern "C" {
+        static __isr_array_start: usize;
+        static __isr_array_end: usize;
+    }
+
     unsafe {
-        ISR_DESC[irq.0 as usize] = Some(desc);
+        let mut p = core::ptr::addr_of!(__isr_array_start);
+        while p < core::ptr::addr_of!(__isr_array_end) {
+            let r = &*(p as *const IsrReg);
+            assert!(
+                r.no < INTERRUPT_TABLE_LEN,
+                "ISR number {} exceeds the maximum limit {}",
+                r.no,
+                INTERRUPT_TABLE_LEN
+            );
+            ISR_DESC[r.no] = Some(r.desc);
+            p = p.add(1);
+        }
     }
 }
 
