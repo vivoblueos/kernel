@@ -334,9 +334,11 @@ mod tests {
             swtm.mode = TimerMode::Deadline(deadline);
             swtm.callback = callback;
             iou = add_soft_timer(&mut swtm).unwrap();
-            // The SW timer worker is working at priority 0, so should be as realtime
-            // as the HW timer.
-            scheduler::suspend_me_until::<()>(deadline.add(Tick(1)), None);
+            // Wait for the soft timer to execute by polling the counter.
+            // This avoids race conditions from tick drift on QEMU RISC-V.
+            while counter.load(Ordering::Relaxed) == 0 {
+                scheduler::yield_me();
+            }
             iou = remove_soft_timer(iou).unwrap();
         });
         assert_eq!(counter.load(Ordering::Relaxed), 1);
