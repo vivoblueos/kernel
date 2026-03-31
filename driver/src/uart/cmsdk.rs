@@ -247,7 +247,8 @@ impl HasInterruptReg for Cmsdk {
 
     fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
         unsafe {
-            *self.intr_handler.get() = Some(handler);
+            *CMSDK_RX_ISR.handler.get() = Some(handler);
+            *CMSDK_TX_ISR.handler.get() = Some(handler);
         }
     }
 
@@ -268,4 +269,34 @@ impl PlatPeri for Cmsdk {
             CTRL::RXIRQEN::CLEAR + CTRL::RXEN::CLEAR + CTRL::TXIRQEN::CLEAR + CTRL::TXEN::CLEAR,
         );
     }
+}
+
+struct CmsdkRxIsr {
+    registers: *mut Registers,
+    handler: UnsafeCell<Option<&'static dyn Fn()>>,
+}
+
+unsafe impl Sync for CmsdkRxIsr {}
+
+struct CmsdkTxIsr {
+    handler: UnsafeCell<Option<&'static dyn Fn()>>,
+}
+
+unsafe impl Sync for CmsdkTxIsr {}
+
+#[blueos_macro::interrupt(no = 33)]
+static CMSDK_RX_ISR: CmsdkRxIsr = CmsdkRxIsr {
+    handler: UnsafeCell::new(None),
+};
+#[blueos_macro::interrupt(no = 34)]
+static CMSDK_TX_ISR: CmsdkTxIsr = CmsdkTxIsr {
+    handler: UnsafeCell::new(None),
+};
+
+impl blueos_hal::isr::IsrDesc for CmsdkRxIsr {
+    fn service_isr(&self) {}
+}
+
+impl blueos_hal::isr::IsrDesc for CmsdkTxIsr {
+    fn service_isr(&self) {}
 }
