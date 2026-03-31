@@ -34,6 +34,21 @@ pub fn current_board_mod(_item: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Defines an interrupt service routine (ISR) and registers it to the specified interrupt number.
+///
+/// EXAMPLE:
+/// ```
+/// struct RxIsr;
+///
+/// #[blueos_macro::interrupt(no = 1)]
+/// static RX_ISR: RxIsr = RxIsr;
+///
+/// impl blueos_hal::isr::IsrDesc for RxIsr {
+///    fn service_isr(&self) {
+///       // ISR implementation
+///   }
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn interrupt(attr: TokenStream, item: TokenStream) -> TokenStream {
     let no = match parse_interrupt_no(attr) {
