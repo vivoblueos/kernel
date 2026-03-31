@@ -76,7 +76,10 @@ const HZ: usize = config::PLL_SYS_FREQ as usize;
 pub type ClockImpl = systick::SysTickClock<TICKS_PS, HZ>;
 
 pub(crate) fn init() {
-    unsafe { copy_data() };
+    unsafe {
+        copy_data();
+        arch::irq::init_interrupt_registry();
+    };
     boot::init_runtime();
     use blueos_hal::clock_control::ClockControl;
     blueos_driver::clock_control::gd32_clock_control::Gd32ClockControl::init();
