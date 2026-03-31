@@ -2,6 +2,9 @@
 
 menu "Cortex-M Configuration"
 
+config NUM_IRQS
+    int
+
 config USE_MPU
     bool "MPU supports"
     default n

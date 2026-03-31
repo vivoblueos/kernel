@@ -21,12 +21,12 @@ use crate::{
         memory_map, UART0RX_IRQn, UART0TX_IRQn, SYSTEM_CORE_CLOCK, UART0RX_IRQ_N, UART0TX_IRQ_N,
     },
     boot,
-    devices::clock::{systick, Clock},
+    devices::clock::systick,
     error::Error,
     irq::IrqTrace,
     time,
 };
-use blueos_hal::HasInterruptReg;
+use blueos_hal::{clock::Clock, HasInterruptReg};
 use boot::INIT_BSS_DONE;
 use core::ptr::addr_of;
 

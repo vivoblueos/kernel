@@ -53,6 +53,10 @@ impl<T> StaticRef<T> {
             ptr: NonNull::new_unchecked(ptr.cast_mut()),
         }
     }
+
+    pub fn inner(&self) -> *const T {
+        self.ptr.as_ptr()
+    }
 }
 
 impl<T> Clone for StaticRef<T> {

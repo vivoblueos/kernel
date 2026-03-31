@@ -184,3 +184,18 @@ unsafe extern "C" fn psci_call(
     );
     ret
 }
+
+#[inline]
+pub fn hvc_call(func_id: u64, arg1: u64, arg2: u64) -> u64 {
+    let result: u64;
+    unsafe {
+        core::arch::asm!(
+            "hvc #0",
+            inout("x0") func_id => result,
+            in("x1") arg1,
+            in("x2") arg2,
+            options(nostack)
+        );
+    }
+    result
+}
