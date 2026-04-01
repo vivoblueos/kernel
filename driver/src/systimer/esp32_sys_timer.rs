@@ -222,16 +222,16 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
         // Fixme: Alarm cannot be triggered on esp32c3 when the target is too old on the qemu.
         // So we need to add a compensation here to make sure the target is always in the future.
         // See https://github.com/espressif/qemu/issues/69
-        let moment = {
-            let now = Self::estimate_current_cycles();
-            let compensation = core::cmp::max(1, HZ / 2_00); // ~5ms
-            let moment = if moment < now + compensation {
-                now.saturating_add(compensation)
-            } else {
-                moment
-            };
-            moment
-        };
+        // let moment = {
+        //     let now = Self::estimate_current_cycles();
+        //     let compensation = core::cmp::max(1, HZ / 2_00); // ~5ms
+        //     let moment = if moment < now + compensation {
+        //         now.saturating_add(compensation)
+        //     } else {
+        //         moment
+        //     };
+        //     moment
+        // };
         Self::set_comparator_enable(false);
         Self::clear_interrupt();
         Self::registers()
