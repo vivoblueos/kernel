@@ -192,7 +192,9 @@ impl<const BASE_ADDR: usize, const HZ: u64> Clock for Esp32SysTimer<BASE_ADDR, H
     // FIXME: A stress test should be added to verify whether this API is stalled in multi-task.
     fn estimate_current_cycles() -> u64 {
         Self::registers().unit0_op.modify(UNIT_OP::UPDATE::SET);
-        while !Self::registers().unit0_op.is_set(UNIT_OP::VALUE_VALID) {}
+        while !Self::registers().unit0_op.is_set(UNIT_OP::VALUE_VALID) {
+            Self::registers().unit0_op.modify(UNIT_OP::UPDATE::SET);
+        }
 
         let mut lo_prev = Self::registers()
             .unit0_value_lo
