@@ -67,15 +67,16 @@ RUN curl -L -o yamlfmt.tar.gz https://github.com/google/yamlfmt/releases/downloa
     && rm yamlfmt.tar.gz
 
 # Install esp32 QEMU.
-RUN curl -L -o qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20250817/qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz \
-    && tar -xvf qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz -C /opt \
-    && rm qemu-riscv32-softmmu-esp_develop_9.2.2_20250817-x86_64-linux-gnu.tar.xz
-WORKDIR /opt/qemu/bin
+RUN mkdir -p /opt/qemu
+RUN curl -L -o esp32-qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/esp32-qemu-2026_04_02_03_47.tar.xz \
+    && tar xf esp32-qemu.tar.xz -C /opt/qemu \
+    && rm esp32-qemu.tar.xz
+WORKDIR /opt/qemu/usr/local/bin
 RUN mv qemu-system-riscv32 qemu-esp32-riscv32
-ENV PATH="/opt/qemu/bin:${PATH}"
+ENV PATH="/opt/qemu/usr/local/bin:${PATH}"
 
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
-RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 \
+RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 --locked \
     && curl -L -o cbindgen https://github.com/mozilla/cbindgen/releases/download/0.29.0/cbindgen-ubuntu22.04 \
     && chmod a+x cbindgen \
     && mv cbindgen /opt/sysroot/usr/local/bin
