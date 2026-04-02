@@ -590,9 +590,7 @@ mod tests {
     /// - Child thread tries to acquire mutex with 5 tick timeout (LESS than main holds)
     /// - Child thread should timeout (result = false)
     /// - This verifies the mutex timeout functionality works correctly
-    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
-    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
-    #[cfg_attr(not(target_chip = "esp32c3"), test)]
+    #[test]
     fn test_mutex_multi_thread_timeout() {
         let mutex = Mutex::create();
         let pend_flag = Arc::new(AtomicUsize::new(0));
