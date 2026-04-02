@@ -424,9 +424,7 @@ mod tests {
         assert_eq!(counter3.load(Ordering::Relaxed), 1);
     }
 
-    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
-    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
-    #[cfg_attr(not(target_chip = "esp32c3"), test)]
+    #[test]
     fn test_timer_edge_cases() {
         // Test with zero interval.
         let counter = Arc::new(AtomicUsize::new(0));

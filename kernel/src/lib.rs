@@ -819,9 +819,7 @@ mod tests {
 
     static SCHED_TIMERS_CLEANUP: CleanupCounter = CleanupCounter::new();
 
-    // FIXME: This test is unstable on esp32c3 qemu, we need to investigate it later.
-    // Cannot trigger counter interrupt occasionally, which is necessary for timeout.
-    #[cfg_attr(not(target_chip = "esp32c3"), test)]
+    #[test]
     fn stress_sched_timers() {
         reset_and_queue_test_threads(test_sched_timers, Some(test_sched_timers_cleanup));
         let l = unsafe { TEST_THREADS.len() };
