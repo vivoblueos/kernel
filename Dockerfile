@@ -80,7 +80,7 @@ ENV PATH="/opt/qemu/usr/local/bin:${PATH}"
 RUN qemu-esp32-riscv32 -h
 
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
-RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 \
+RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 --locked \
     && curl -L -o cbindgen https://github.com/mozilla/cbindgen/releases/download/0.29.0/cbindgen-ubuntu22.04 \
     && chmod a+x cbindgen \
     && mv cbindgen /opt/sysroot/usr/local/bin
