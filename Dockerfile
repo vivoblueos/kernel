@@ -77,7 +77,6 @@ RUN curl -L -o esp32-qemu.tar.xz https://github.com/vivoblueos/toolchain/release
 WORKDIR /opt/qemu/usr/local/bin
 RUN mv qemu-system-riscv32 qemu-esp32-riscv32
 ENV PATH="/opt/qemu/usr/local/bin:${PATH}"
-RUN qemu-esp32-riscv32 -h
 
 # Install bindgen and cbindgen to /opt/sysroot/usr/local/bin
 RUN CARGO_INSTALL_ROOT=/opt/sysroot/usr/local cargo install bindgen-cli@0.72.1 --locked \
