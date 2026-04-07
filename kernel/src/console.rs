@@ -32,6 +32,9 @@ macro_rules! kprintln {
     });
 }
 
+/// Provides a way to print messages before the console device is initialized.
+/// It directly writes to the UART registers, so it can be used in the early
+/// stage of the kernel initialization.
 #[macro_export]
 macro_rules! kearly_println {
     ($fmt:expr) => ({
