@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    devices::console::{get_console, get_early_uart},
-    support::DisableInterruptGuard,
-};
+use crate::{devices::console::get_console, support::DisableInterruptGuard};
 use core::{fmt, str};
 
 #[macro_export]
