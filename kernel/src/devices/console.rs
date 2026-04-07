@@ -28,8 +28,3 @@ pub fn init_console(device: Arc<dyn Device>) -> Result<(), ErrorKind> {
 pub fn get_console() -> Arc<dyn Device> {
     CONSOLE.get().unwrap().clone()
 }
-
-#[allow(unconditional_recursion)]
-pub fn get_early_uart() -> &'static SpinLock<dyn UartOps> {
-    get_early_uart()
-}

@@ -98,10 +98,6 @@ impl UartOps for DumbUart {
     fn clear_tx_interrupt(&mut self) {}
 }
 
-pub(crate) fn get_early_uart<'a>() -> &'a SpinLock<dyn UartOps> {
-    &DUMB_UART0
-}
-
 static DUMB_SERIAL0: Once<Arc<dyn Device>> = Once::new();
 
 pub(crate) fn get_serial0() -> &'static Arc<dyn Device> {
