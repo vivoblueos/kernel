@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::devices::console::{get_console, get_early_uart};
+use crate::{
+    devices::console::{get_console, get_early_uart},
+    support::DisableInterruptGuard,
+};
 use core::{fmt, str};
 
 #[macro_export]
@@ -54,8 +57,12 @@ impl fmt::Write for Console {
 pub struct EarlyConsole;
 impl fmt::Write for EarlyConsole {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let mut uart = get_early_uart().lock();
-        let _ = uart.write_str(s);
+        use blueos_hal::Has8bitDataReg;
+        let _guard = DisableInterruptGuard::new();
+        let uart = crate::boards::get_device!(console_uart);
+        for byte in s.as_bytes() {
+            uart.write_data8(*byte);
+        }
         Ok(())
     }
 }
