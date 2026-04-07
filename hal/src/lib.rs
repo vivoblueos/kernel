@@ -91,9 +91,7 @@ pub trait HasLineStatusReg {
     ///
     /// This method is typically used to ensure the bus is idle before starting
     /// a new transmission, preventing data corruption or transmission conflicts.
-    fn is_bus_busy(&self) -> bool {
-        false
-    }
+    fn is_bus_busy(&self) -> bool;
 }
 
 /// 8-bit data register operations trait
