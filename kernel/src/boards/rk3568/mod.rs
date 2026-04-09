@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod config;
+pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
 
 use crate::{arch, error::Error, sync::SpinLock, time};
 use blueos_kconfig::CONFIG_NUM_CORES;

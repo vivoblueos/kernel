@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// pub(crate) mod asm;
-// pub(crate) mod mmu;
+pub(crate) mod asm;
 mod exception;
 pub mod irq;
+pub(crate) mod mmu;
 pub(crate) mod psci;
 pub(crate) mod registers;
 pub(crate) mod vector;
@@ -51,6 +51,11 @@ macro_rules! enable_interrupt {
     };
 }
 
+// Temporary stack used during early boot (before MMU is enabled).
+#[repr(C, align(16))]
+pub struct TempBootStack([u8; 4096]);
+pub static mut TEMP_BOOT_STACK: TempBootStack = TempBootStack([0u8; 4096]);
+
 #[macro_export]
 macro_rules! enter_el1 {
     () => {
@@ -78,6 +83,11 @@ macro_rules! enter_el1 {
         // Set EL1 sp and mask daif in EL2.
         mov x0, #0x3C5
         msr spsr_el2, x0
+        // Enable EL1 MMU while still in EL2.
+        ldr x4, ={tmp_stack}
+        add x4, x4, #0x1000
+        mov sp, x4
+        bl {enable_mmu}
         // Set EL1 entry and enter.
         ldr x0, ={stack_start}
         ldr x1, ={stack_end} 
@@ -98,6 +108,8 @@ macro_rules! arch_bootstrap {
             $crate::enter_el1!(),
             entry = sym $crate::arch::aarch64::init,
             virt_init = sym $crate::arch::aarch64::virt::virt_init,
+            enable_mmu = sym $crate::arch::aarch64::mmu::enable_mmu,
+            tmp_stack = sym $crate::arch::aarch64::TEMP_BOOT_STACK,
             stack_start = sym $stack_start,
             stack_end = sym $stack_end,
             cont = sym $cont,
