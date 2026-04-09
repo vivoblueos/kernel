@@ -65,7 +65,7 @@ pub trait BinInteger:
     /// Return the position of the least significant set bit since the position
     /// `start`.
     ///
-    /// Retruns `Self::BITS` if none was found.
+    /// Returns `Self::BITS` if none was found.
     fn bit_scan_forward(&self, start: u32) -> u32;
 
     /// Slice a part of its binary representation as `u32`.

@@ -187,7 +187,7 @@ impl PosixSocket for IcmpSocket<'static> {
     fn sendmsg(
         &mut self,
         remote_endpoint: IpEndpoint,
-        identifer: Option<u16>,
+        identifier: Option<u16>,
         packet_len: usize,
         f: FnSendMsg,
         is_nonblocking: bool,
@@ -205,16 +205,16 @@ impl PosixSocket for IcmpSocket<'static> {
         let is_shutdown = self.is_shutdown.clone();
         self.with(|socket, _| {
             if !socket.is_open() {
-                match identifer {
-                    Some(identifer) => {
-                        log::debug!("Icmp socket bind identifier={}", identifer);
+                match identifier {
+                    Some(identifier) => {
+                        log::debug!("Icmp socket bind identifier={}", identifier);
                         socket
-                            .bind(icmp::Endpoint::Ident(identifer))
+                            .bind(icmp::Endpoint::Ident(identifier))
                             .map_err(SocketError::SmoltcpIcmpBindError)?
                     }
                     None => {
                         log::debug!("Icmp socket is not open and find no identifier");
-                        return Err(SocketError::InvalidState("find no identifer".into()));
+                        return Err(SocketError::InvalidState("find no identifier".into()));
                     }
                 }
             }
@@ -231,7 +231,7 @@ impl PosixSocket for IcmpSocket<'static> {
                         let wait_operation = Operation::SendMsg {
                             socket_fd,
                             remote_endpoint,
-                            identifer,
+                            identifier,
                             packet_len,
                             f,
                             is_nonblocking,

@@ -240,7 +240,7 @@ impl PosixSocket for TcpSocket<'static> {
     fn sendmsg(
         &mut self,
         _remote_endpoint: IpEndpoint,
-        _identifer: Option<u16>,
+        _identifier: Option<u16>,
         _packet_len: usize,
         _f: FnSendMsg,
         _is_nonblocking: bool,

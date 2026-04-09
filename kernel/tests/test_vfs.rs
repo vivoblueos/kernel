@@ -726,7 +726,7 @@ fn create_connected_sockets() -> (i32, i32) {
     assert!(client_fd >= 0, "Failed to create client socket");
     println!("Client socket created successfully with FD {}", client_fd);
 
-    // Strat connecting
+    // Start connecting
     let ip_addr = "127.0.0.1"; // Replace with actual IP address
     let port = 2345;
     let server_addr = net_utils::create_ipv4_sockaddr(ip_addr, port);

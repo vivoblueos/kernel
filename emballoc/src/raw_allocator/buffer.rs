@@ -37,7 +37,7 @@ impl<const N: usize> Buffer<N> {
     /// Create a new buffer.
     ///
     /// This buffer will be uninitialized except for the first few bytes: the
-    /// firs `HEADER_SIZE` bytes are initialized to zero. The caller must
+    /// first `HEADER_SIZE` bytes are initialized to zero. The caller must
     /// subsequently call [`Buffer::ensure_initialization()`] to initialize the
     /// first bytes as the header. This header is a free [`Entry`] with the size
     /// of the remaining buffer.

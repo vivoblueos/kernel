@@ -78,7 +78,7 @@ impl EventFlags {
             if event_mode.contains(EventFlagsMode::ANY)
                 && (event_mask & flags != 0 || event_mask == 0)
             {
-                // set event_flags_mask as recived event.
+                // set event_flags_mask as received event.
                 thread.lock().set_event_flags_mask(event_mask & flags);
                 need_wake = true;
             } else if event_mode.contains(EventFlagsMode::ALL) && event_mask & flags == event_mask {

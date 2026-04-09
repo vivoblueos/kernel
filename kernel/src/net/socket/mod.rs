@@ -72,7 +72,7 @@ pub trait PosixSocket {
     fn sendmsg(
         &mut self,
         remote_endpoint: IpEndpoint,
-        identifer: Option<u16>,
+        identifier: Option<u16>,
         packet_len: usize,
         f: FnSendMsg,
         is_nonblocking: bool,

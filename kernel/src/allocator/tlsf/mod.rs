@@ -1144,7 +1144,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         let grow_by = new_size - old_size;
         let next_phys_block = block.as_ref().common.next_phys_block();
 
-        // If we removed this block, there would be a continous free space of
+        // If we removed this block, there would be a continuous free space of
         // `moving_clearance` bytes, which is followed by `moving_clearance_end`
         let mut moving_clearance = old_size;
         let mut moving_clearance_end = next_phys_block;

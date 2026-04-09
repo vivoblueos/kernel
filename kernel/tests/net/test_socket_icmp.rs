@@ -115,8 +115,8 @@ fn icmp_thread(args: Arc<NetTestArgs>) {
         false
     });
 
-    // Warnning!!! Sleep for at least 1s when using ipv6 with Midum::Ethernet,
-    //    while smoltcp neigbor cache has limit on access rate.
+    // Warning!!! Sleep for at least 1s when using ipv6 with Midum::Ethernet,
+    //    while smoltcp neighbor cache has limit on access rate.
 
     // Create recv address buffer
     let mut sockaddr_storage: libc::sockaddr_storage = unsafe { core::mem::zeroed() };

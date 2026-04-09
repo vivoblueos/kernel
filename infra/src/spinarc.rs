@@ -378,7 +378,7 @@ impl<T> Iterator for VerIter<T> {
 
 pub(crate) struct Ilist<T: Sized> {
     // FIXME: We can use only one sentinel node if our IlistNode impl
-    // is aliasing awared.
+    // is aliasing aware.
     head: SpinArc<IlistNode<T>>,
     tail: SpinArc<IlistNode<T>>,
 }

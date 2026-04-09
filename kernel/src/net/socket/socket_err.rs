@@ -40,16 +40,16 @@ pub enum SocketError {
     #[error("Smoltcp interface no available")]
     InterfaceNoAvailable,
 
-    #[error("unsupport socket type {0} for operation {1}")]
+    #[error("unsupported socket type {0} for operation {1}")]
     UnsupportedSocketTypeForOperation(SocketType, String),
 
-    #[error("Unsupport socket domain {0}")]
+    #[error("Unsupported socket domain {0}")]
     UnsupportedSocketDomain(i32),
 
-    #[error("Unsupport socket type {0}")]
+    #[error("Unsupported socket type {0}")]
     UnsupportedSocketType(i32),
 
-    #[error("Unsupport socket protocol {0}")]
+    #[error("Unsupported socket protocol {0}")]
     UnsupportedSocketProtocol(i32),
 
     #[error("Invalid params : {0} for operation {1}")]

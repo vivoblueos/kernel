@@ -244,12 +244,12 @@ where
                             .poll_delay(Instant::from_millis(millis_i64))
                         {
                             Some(Duration::ZERO) => {
-                                log::debug!("[NetworkManager]: Inteface resuming");
+                                log::debug!("[NetworkManager]: Interface resuming");
                                 // Do next poll immediately
                                 0
                             }
                             Some(delay) => {
-                                log::debug!("[NetworkManager]: Inteface poll delay for {}", delay);
+                                log::debug!("[NetworkManager]: Interface poll delay for {}", delay);
                                 // Do next poll after delay.millis()
                                 delay.millis()
                             }

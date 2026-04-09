@@ -226,7 +226,7 @@ pub struct Thread {
     // Thread1:
     // - Lock this thread
     // - Iterate over acquired mutexes
-    // - Lock mutex's spinlcok
+    // - Lock mutex's spinlock
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
     signal_context: Option<Box<SignalContext>>,

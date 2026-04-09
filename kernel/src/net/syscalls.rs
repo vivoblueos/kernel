@@ -216,7 +216,7 @@ pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_s
     // Get packet len
     let packet_len = msghdr.packet_len();
 
-    let identifer = msghdr.parse_icmp_identifier();
+    let identifier = msghdr.parse_icmp_identifier();
 
     let iov_buffer_ptr = msghdr.msg_iov as usize;
     let iov_buffer_len = msghdr.msg_iovlen;
@@ -231,7 +231,7 @@ pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_s
     });
 
     connection
-        .sendmsg(remote_endpoint, identifer, packet_len, send_payload)
+        .sendmsg(remote_endpoint, identifier, packet_len, send_payload)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
         .unwrap_or(-1)
 }

@@ -18,7 +18,7 @@ use blueos_loader as loader;
 use librs::pthread;
 use semihosting::{io::Read, println};
 
-mod test_everyting {
+mod test_everything {
     use super::*;
     use alloc::vec::Vec;
     use blueos_test_macro::test;
