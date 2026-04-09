@@ -63,7 +63,7 @@ pub fn cpu_off(psci_base: u32) {
 //
 // # Arguments
 //
-// * `target_cpu` - This parameter contains a copy of the affinity fields of the MPIDR registe.
+// * `target_cpu` - This parameter contains a copy of the affinity fields of the MPIDR register.
 //     If the calling Exception level is using AArch64, the format is:
 //        - Bits[40:63]: Must be zero
 //        - Bits[32:39] Aff3: Match Aff3 of target core MPIDR
@@ -119,7 +119,7 @@ pub fn affinity_info(
 //
 // # Arguments
 //
-// * `target_cpu` - This parameter contains a copy of the affinity fields of the MPIDR registe.
+// * `target_cpu` - This parameter contains a copy of the affinity fields of the MPIDR register.
 pub fn migrate(psci_base: u32, target_cpu: usize) {
     let func_id = psci_base + (PsciFuncName::Migrate as u32);
     unsafe {

@@ -49,7 +49,7 @@ pub enum ConnectionError {
     #[error("Posix error : {0}")]
     PosixError(Error),
 
-    #[error("Socket opertion error : {0}")]
+    #[error("Socket operation error : {0}")]
     SocketOperationError(SocketError),
 }
 

@@ -47,7 +47,7 @@ pub struct Dcache {
     name_and_parent: RwLock<Option<(String, Weak<Dcache>)>>,
     children: RwLock<BTreeMap<String, Arc<Dcache>>>,
     // When a child path becomes a mount point of other fs, it will be cached here
-    overrided_children: RwLock<Option<BTreeMap<String, Arc<Dcache>>>>,
+    overridden_children: RwLock<Option<BTreeMap<String, Arc<Dcache>>>>,
     // use to set parent in children
     this: Weak<Dcache>,
     is_mount_point: AtomicBool,
@@ -62,7 +62,7 @@ impl Dcache {
             children: RwLock::new(BTreeMap::new()),
             this: weak_self.clone(),
             is_mount_point: AtomicBool::new(false),
-            overrided_children: RwLock::new(None),
+            overridden_children: RwLock::new(None),
         })
     }
 
@@ -73,7 +73,7 @@ impl Dcache {
             children: RwLock::new(BTreeMap::new()),
             this: weak_self.clone(),
             is_mount_point: AtomicBool::new(false),
-            overrided_children: RwLock::new(None),
+            overridden_children: RwLock::new(None),
         })
     }
 
@@ -398,14 +398,14 @@ impl Dcache {
 
     fn add_mount_point(&self, name: String, mount_point: Arc<Dcache>) -> Result<(), Error> {
         trace!("Add mount point: {} , {:?}", name, mount_point);
-        let mut overrided_children = self.overrided_children.write();
-        if overrided_children.is_none() {
-            *overrided_children = Some(BTreeMap::new());
+        let mut overridden_children = self.overridden_children.write();
+        if overridden_children.is_none() {
+            *overridden_children = Some(BTreeMap::new());
         }
         let mut children = self.children.write();
-        if let Some(overrided_child) = children.remove(&name) {
-            if let Some(overrided_children) = overrided_children.as_mut() {
-                overrided_children.insert(overrided_child.name(), overrided_child);
+        if let Some(overridden_child) = children.remove(&name) {
+            if let Some(overridden_children) = overridden_children.as_mut() {
+                overridden_children.insert(overridden_child.name(), overridden_child);
             }
         }
 
@@ -421,15 +421,15 @@ impl Dcache {
             children.remove(&name).unwrap()
         );
 
-        let mut overrided_children = self.overrided_children.write();
-        let overrided_point = overrided_children.as_mut().unwrap().remove(&name);
-        if let Some(overrided_point) = overrided_point {
+        let mut overridden_children = self.overridden_children.write();
+        let overridden_point = overridden_children.as_mut().unwrap().remove(&name);
+        if let Some(overridden_point) = overridden_point {
             trace!(
-                "Reinsert overrided directory: {} , {:?}",
+                "Reinsert overridden directory: {} , {:?}",
                 name,
-                overrided_point
+                overridden_point
             );
-            children.insert(name, overrided_point);
+            children.insert(name, overridden_point);
         }
 
         Ok(())

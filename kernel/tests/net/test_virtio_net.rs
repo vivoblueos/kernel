@@ -23,7 +23,7 @@
 //!   console.log('Client connected!');
 //!
 //!   socket.on('data', (data) => {
-//!     console.log(`Recived from client: ${data.toString()}`);
+//!     console.log(`Received from client: ${data.toString()}`);
 //!     socket.write('Hello from Server!'); // Reply to client
 //!   });
 //!

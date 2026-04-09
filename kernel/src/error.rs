@@ -19,7 +19,7 @@ pub mod code {
     use libc;
     pub const EOK: super::Error = super::Error(0);
     pub const TRUE: super::Error = super::Error(1);
-    pub const FLASE: super::Error = super::Error(0);
+    pub const FALSE: super::Error = super::Error(0);
     pub const ERROR: super::Error = super::Error(-255);
     pub const ETIMEDOUT: super::Error = super::Error(-libc::ETIMEDOUT);
     pub const ENOSPC: super::Error = super::Error(-libc::ENOSPC);
@@ -50,7 +50,7 @@ pub mod code {
     pub const ENOTTY: super::Error = super::Error(-libc::ENOTTY);
 }
 
-const UNKNOW_STR: &CStr = c"EUNKNOW ";
+const UNKNOW_STR: &CStr = c"EUNKNOWN ";
 const EOK_STR: &CStr = c"OK  ";
 const ERROR_STR: &CStr = c"ERROR  ";
 const ETIMEDOUT_STR: &CStr = c"Timedout  ";

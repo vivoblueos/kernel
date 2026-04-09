@@ -292,7 +292,7 @@ impl Connection {
     pub fn sendmsg(
         &self,
         remote_endpoint: IpEndpoint,
-        identifer: Option<u16>,
+        identifier: Option<u16>,
         packet_len: usize,
         f: FnSendMsg,
     ) -> ConnectionResult {
@@ -300,7 +300,7 @@ impl Connection {
         let sendmsg_task = Operation::SendMsg {
             socket_fd: self.socket_fd,
             remote_endpoint,
-            identifer,
+            identifier,
             packet_len,
             f,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
@@ -549,7 +549,7 @@ impl Connection {
                 Operation::SendMsg {
                     socket_fd,
                     remote_endpoint,
-                    identifer,
+                    identifier,
                     packet_len,
                     f,
                     is_nonblocking,
@@ -570,7 +570,7 @@ impl Connection {
                             let mut posix_socket = posix_socket.borrow_mut();
                             let result = posix_socket.sendmsg(
                                 remote_endpoint,
-                                identifer,
+                                identifier,
                                 packet_len,
                                 f,
                                 is_nonblocking,
@@ -893,7 +893,7 @@ pub enum Operation {
     SendMsg {
         socket_fd: SocketFd,
         remote_endpoint: IpEndpoint,
-        identifer: Option<u16>,
+        identifier: Option<u16>,
         packet_len: usize,
         f: FnSendMsg,
         is_nonblocking: bool,

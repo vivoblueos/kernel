@@ -202,7 +202,7 @@ extern "C" fn trap_fiq(context: &mut Context) -> usize {
 
 fn show_exception(ec: u64, context: &mut Context) {
     match ec {
-        0x00 => panic!("Unknow reason Exceptions\n======== error stack ======== \n{}",context),
+        0x00 => panic!("Unknown reason Exceptions\n======== error stack ======== \n{}",context),
         0x01 => panic!("WFI or WFE instruction\n======== error stack ======== \n{}",context),
         0x03 => panic!("MCR or MRC access to CP15a that is not reported using EC 0x00\n======== error stack ======== \n{}",context),
         0x04 => panic!("MCRR or MRRC access to CP15a that is not reported using EC 0x00\n======== error stack ======== \n{}",context),

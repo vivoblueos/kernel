@@ -45,7 +45,7 @@ impl<T> StaticRef<T> {
     ///
     /// ## Safety
     ///
-    /// - `ptr` must be aligned, non-null, and dereferencable as `T`.
+    /// - `ptr` must be aligned, non-null, and dereferenceable as `T`.
     /// - `*ptr` must be valid for the program duration.
     pub const unsafe fn new(ptr: *const T) -> StaticRef<T> {
         // SAFETY: `ptr` is non-null as promised by the caller.
@@ -70,7 +70,7 @@ impl<T> Copy for StaticRef<T> {}
 impl<T> Deref for StaticRef<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        // SAFETY: `ptr` is aligned and dereferencable for the program duration
+        // SAFETY: `ptr` is aligned and dereferenceable for the program duration
         // as promised by the caller of `StaticRef::new`.
         unsafe { self.ptr.as_ref() }
     }

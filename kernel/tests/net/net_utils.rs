@@ -340,7 +340,7 @@ pub fn create_icmpv4_echo_packet() -> (*mut u8, usize) {
         0x08, // type     : u8    ICMPv4 ECHO = 8
         0x00, // code     : u8
         0x8e, 0xfe, // checksum : u16
-        0x02, 0x2b, // identifer: u16   BigEndian , ident   = 0x22b
+        0x02, 0x2b, // identifier: u16   BigEndian , ident   = 0x22b
         0x00, 0x00, // sequence : u16   BinEndian , seq_no  = 0
         0xaa, 0x00, 0x00, 0xff, // data : Vec<u8>
     ];
@@ -354,7 +354,7 @@ pub fn create_icmpv6_echo_packet() -> (*mut u8, usize) {
         0x80, // type     : u8    ICMPv6 ECHO = 0x80
         0x00, // code     : u8
         0x19, 0xb3, // checksum : u16
-        0x12, 0x34, // identifer: u16   BigEndian , ident   = 0x1234
+        0x12, 0x34, // identifier: u16   BigEndian , ident   = 0x1234
         0xab, 0xcd, // sequence : u16   BinEndian , seq_no  = 0
         0xaa, 0x00, 0x00, 0xff, // data : Vec<u8>
     ];

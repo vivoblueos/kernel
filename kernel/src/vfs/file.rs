@@ -183,7 +183,7 @@ pub trait FileOps: Send + Sync + Any {
     fn set_flags(&self, flags: OpenFlags);
 }
 
-// system file hander
+// system file handler
 #[derive(Debug)]
 pub struct File {
     dcache: Arc<Dcache>,

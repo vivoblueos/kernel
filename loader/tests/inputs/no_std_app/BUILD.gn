@@ -15,7 +15,7 @@
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
 
-build_rust("everyting") {
+build_rust("everything") {
   testonly = true
   crate_type = "bin"
   sources = [ "src/main.rs" ]
@@ -44,9 +44,9 @@ build_rust("everyting") {
   }
 }
 
-postlink_action("gen_everyting_elf_path_symbol") {
+postlink_action("gen_everything_elf_path_symbol") {
   testonly = true
-  exe = ":everyting"
+  exe = ":everything"
   script = "//kernel/loader/tests/scripts/gen_path_symbol.py"
   outfile = "${target_gen_dir}/${target_name}.c"
   args = [
@@ -58,6 +58,6 @@ postlink_action("gen_everyting_elf_path_symbol") {
 
 static_library("everything_elf_path") {
   testonly = true
-  deps = [ ":gen_everyting_elf_path_symbol" ]
-  sources = get_target_outputs(":gen_everyting_elf_path_symbol")
+  deps = [ ":gen_everything_elf_path_symbol" ]
+  sources = get_target_outputs(":gen_everything_elf_path_symbol")
 }

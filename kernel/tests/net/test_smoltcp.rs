@@ -164,7 +164,7 @@ fn smoltcp_test_thread() {
             Some(Duration::ZERO) => println!("[smoltcp Tcp Socket Test]: iface resuming"),
             Some(delay) => {
                 println!(
-                    "[smoltcp Tcp Socket Test]: Inteface poll sleeping for {:?} ms",
+                    "[smoltcp Tcp Socket Test]: Interface poll sleeping for {:?} ms",
                     delay
                 );
                 clock.advance(delay);
@@ -230,7 +230,7 @@ fn smoltcp_test_thread_icmp() {
         0x08, // type     : u8    ECHO = 8
         0x00, // code     : u8
         0x8e, 0xfe, // checksum : u16
-        0x02, 0x2b, // identifer: u16   BigEndian , ident   = 0x22b
+        0x02, 0x2b, // identifier: u16   BigEndian , ident   = 0x22b
         0x00, 0x00, // sequence : u16   BinEndian , seq_no  = 0
         0xaa, 0x00, 0x00, 0xff, // data : Vec<u8>
     ];
@@ -349,7 +349,7 @@ fn smoltcp_test_thread_icmp() {
                     if let Icmpv4Repr::EchoReply { seq_no, data, .. } = icmp_repr {
                         let packet_timestamp_ms = NetworkEndian::read_i64(data);
                         println!(
-                            "recived ipv4 from network : {} bytes from {}: icmp_seq={}",
+                            "received ipv4 from network : {} bytes from {}: icmp_seq={}",
                             data.len(),
                             remote_addr,
                             seq_no
@@ -371,7 +371,7 @@ fn smoltcp_test_thread_icmp() {
                     if let Icmpv6Repr::EchoReply { seq_no, data, .. } = icmp_repr {
                         let packet_timestamp_ms = NetworkEndian::read_i64(data);
                         println!(
-                            "recived ipv6 from network : {} bytes from {}: icmp_seq={}",
+                            "received ipv6 from network : {} bytes from {}: icmp_seq={}",
                             data.len(),
                             remote_addr,
                             seq_no
