@@ -312,7 +312,7 @@ impl Context {
         self
     }
 
-    // We are following C-ABI, since Rust ABI is not stablized.
+    // We are following C-ABI, since Rust ABI is not stabilized.
     // FIXME: rustc miscompiles it if inlined.
     #[inline(never)]
     pub(crate) fn set_return_address(&mut self, lr: usize) -> &mut Self {

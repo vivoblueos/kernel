@@ -232,12 +232,12 @@ fn test_multiple_open(path_prefix: String) {
 
 #[test]
 fn test_directory_tree() {
-    println!("[VFS Test DirctoryTree] Test the tmpfs mounted at /");
+    println!("[VFS Test DirectoryTree] Test the tmpfs mounted at /");
     test_directory_tree(String::from("/"));
 
     #[cfg(virtio)]
     {
-        println!("[VFS Test DirctoryTree] Test the fatfs mounted at /fat");
+        println!("[VFS Test DirectoryTree] Test the fatfs mounted at /fat");
         test_directory_tree(String::from("/fat/"));
     }
 }
@@ -257,7 +257,7 @@ fn test_directory_tree(path_prefix: String) {
     let result = mkdir(root_dir.as_ptr() as *const c_char, 0o755);
     assert!(
         result >= 0,
-        "[VFS Test DirctoryTree]: Failed to create root test directory"
+        "[VFS Test DirectoryTree]: Failed to create root test directory"
     );
 
     // Create subdirectory dir1
@@ -268,7 +268,7 @@ fn test_directory_tree(path_prefix: String) {
     if result < 0 {
         rmdir(root_dir.as_ptr() as *const c_char);
         unreachable!(
-            "[VFS Test DirctoryTree]: Failed to create directory dir1: {}",
+            "[VFS Test DirectoryTree]: Failed to create directory dir1: {}",
             result
         );
     }
@@ -282,7 +282,7 @@ fn test_directory_tree(path_prefix: String) {
         rmdir(dir1.as_ptr() as *const c_char);
         rmdir(root_dir.as_ptr() as *const c_char);
         unreachable!(
-            "[VFS Test DirctoryTree]: Failed to create directory dir2: {}",
+            "[VFS Test DirectoryTree]: Failed to create directory dir2: {}",
             result
         );
     }
@@ -297,7 +297,7 @@ fn test_directory_tree(path_prefix: String) {
         rmdir(dir2.as_ptr() as *const c_char);
         rmdir(root_dir.as_ptr() as *const c_char);
         unreachable!(
-            "[VFS Test DirctoryTree]: Failed to create directory subdir1: {}",
+            "[VFS Test DirectoryTree]: Failed to create directory subdir1: {}",
             result
         );
     }
@@ -313,7 +313,7 @@ fn test_directory_tree(path_prefix: String) {
         rmdir(dir2.as_ptr() as *const c_char);
         rmdir(root_dir.as_ptr() as *const c_char);
         unreachable!(
-            "[VFS Test DirctoryTree]: Failed to create test file: {}",
+            "[VFS Test DirectoryTree]: Failed to create test file: {}",
             fd
         );
     }
@@ -321,14 +321,14 @@ fn test_directory_tree(path_prefix: String) {
 
     // Verify directory structure
     println!(
-        "[VFS Test DirctoryTree] Verify {}",
+        "[VFS Test DirectoryTree] Verify {}",
         root_dir.to_str().unwrap()
     );
     match verify_directory(root_dir.as_ptr() as *const c_char) {
         Ok(_) => {}
         Err(err) => {
             unreachable!(
-                "[VFS Test DirctoryTree]:  Verification failed with error {}",
+                "[VFS Test DirectoryTree]:  Verification failed with error {}",
                 err
             );
         }
@@ -357,14 +357,14 @@ fn test_directory_tree(path_prefix: String) {
 
     // Verify directory structure
     println!(
-        "[VFS Test DirctoryTree] Verify {}",
+        "[VFS Test DirectoryTree] Verify {}",
         root_dir.to_str().unwrap()
     );
     match verify_directory(root_dir.as_ptr() as *const c_char) {
         Ok(_) => {}
         Err(err) => {
             unreachable!(
-                "[VFS Test DirctoryTree]:  Verification failed with error {}",
+                "[VFS Test DirectoryTree]:  Verification failed with error {}",
                 err
             );
         }
@@ -375,7 +375,7 @@ fn verify_directory(path: *const c_char) -> Result<(), c_int> {
     let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap() };
     let dir = open(path, O_RDONLY, 0o755);
     if dir < 0 {
-        println!("[VFS Test DirctoryTree] open fail,  fd: {}", dir);
+        println!("[VFS Test DirectoryTree] open fail,  fd: {}", dir);
         return Err(-ENOSYS);
     };
     let mut buf = [0u8; 256];
@@ -393,7 +393,7 @@ fn verify_directory(path: *const c_char) -> Result<(), c_int> {
         let _ = write!(dir_full_path, "{}/{}", path_str, name);
         if entry.type_() == DirentType::Dir {
             println!(
-                "\t[VFS Test DirctoryTree]: Found directory: {}, {}, {}",
+                "\t[VFS Test DirectoryTree]: Found directory: {}, {}, {}",
                 entry.ino(),
                 entry.off(),
                 dir_full_path
@@ -407,7 +407,7 @@ fn verify_directory(path: *const c_char) -> Result<(), c_int> {
             }
         } else {
             println!(
-                "\t[VFS Test DirctoryTree]: Found file     : {}, {}, {}",
+                "\t[VFS Test DirectoryTree]: Found file     : {}, {}, {}",
                 entry.ino(),
                 entry.off(),
                 dir_full_path

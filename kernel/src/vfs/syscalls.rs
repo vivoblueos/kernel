@@ -1036,14 +1036,14 @@ mod tests {
             if entry.type_() == DirentType::Dir {
                 #[cfg(not(use_defmt))]
                 println!(
-                    "[VFS Test DirctoryTree]: Found directory: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found directory: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
                 );
                 #[cfg(use_defmt)]
                 println!(
-                    "[VFS Test DirctoryTree]: Found directory: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found directory: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
@@ -1051,14 +1051,14 @@ mod tests {
             } else {
                 #[cfg(not(use_defmt))]
                 println!(
-                    "[VFS Test DirctoryTree]: Found file: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found file: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
                 );
                 #[cfg(use_defmt)]
                 println!(
-                    "[VFS Test DirctoryTree]: Found file: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found file: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
@@ -1086,14 +1086,14 @@ mod tests {
             if entry.type_() == DirentType::Dir {
                 #[cfg(not(use_defmt))]
                 println!(
-                    "[VFS Test DirctoryTree]: Found directory: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found directory: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
                 );
                 #[cfg(use_defmt)]
                 println!(
-                    "[VFS Test DirctoryTree]: Found directory: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found directory: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
@@ -1101,14 +1101,14 @@ mod tests {
             } else {
                 #[cfg(not(use_defmt))]
                 println!(
-                    "[VFS Test DirctoryTree]: Found file: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found file: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     entry.name().unwrap().to_string_lossy()
                 );
                 #[cfg(use_defmt)]
                 println!(
-                    "[VFS Test DirctoryTree]: Found file: {} {} {}",
+                    "[VFS Test DirectoryTree]: Found file: {} {} {}",
                     entry.ino(),
                     entry.off(),
                     defmt::Display2Format(&entry.name().unwrap().to_string_lossy())
