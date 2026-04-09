@@ -23,7 +23,8 @@ RUN apt-get update \
         libpixman-1-0 \
         libsdl2-dev \
     && rm -rf /var/lib/apt/lists/*
-RUN pip3 install esptool==4.7.0 --break-system-packages
+RUN pip3 install esptool==4.7.0 --break-system-packages \
+    && pip3 install devicetree --break-system-packages
 
 # Install Arm GNU toolchain (ARM Cortex-M)
 RUN curl -L -o arm-toolchain.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz \
