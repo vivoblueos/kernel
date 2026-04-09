@@ -211,7 +211,7 @@ impl Mutex {
         // `this_lock` should guarantee `promote_priority_to` happens-before
         // `recover_priority`. That's to say, when we are seeing the owner of
         // this mutex after spinlock this mutex, the owner hasn't run `post` yet
-        // and `recover_priority` is anticipated. This should also appply to
+        // and `recover_priority` is anticipated. This should also apply to
         // others.
         //
         // Imagine we have a mutex chain, ( => stands for 'owned by', -> stands
@@ -242,7 +242,7 @@ impl Mutex {
                 break;
             };
             if Arc::is(this_mutex, other_mutex_ref) {
-                panic!("Cycle mutex deteced!");
+                panic!("Cycle mutex detected!");
             }
             other_lock = Some(other_mutex_ref.pending.irqsave_lock());
             let Some(other_lock_ref) = &mut other_lock else {

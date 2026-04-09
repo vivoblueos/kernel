@@ -173,7 +173,7 @@ pub(crate) fn spin_until_ready_to_run(t: &Thread) -> usize {
     saved_sp
 }
 
-// Must use next's thread's stack or system stack to exeucte this function.
+// Must use next's thread's stack or system stack to execute this function.
 // We assume this hook is invoked with local irq disabled.
 pub(crate) extern "C" fn save_context_finish_hook(
     hook: &mut ContextSwitchHookHolder,

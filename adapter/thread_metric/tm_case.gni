@@ -22,7 +22,7 @@ template("tm_case") {
   static_library("${target_name}_c") {
     sources = _sources
 
-    # Default is 30 in source code, too long for inpsecting immediate result.
+    # Default is 30 in source code, too long for inspecting immediate result.
     cflags = [ "-DTM_TEST_DURATION=2" ]
     configs += [ "//build/boards/${board}:kernel_config" ]
     deps = board_deps

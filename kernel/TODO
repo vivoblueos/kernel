@@ -9,7 +9,7 @@ it's not enough for validating functionalities. We might introduce
 - Build PIC toolchains, so that we can build static PIE with dynamic relocation
   entries.
 
-- Stablize ELF module loader.
+- Stabilize ELF module loader.
 
 - Support dynamic kernel modules.
 

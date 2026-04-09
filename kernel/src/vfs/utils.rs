@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Enumeration of possible methods to seek within an I/O object. some as [`std::io::SeekFrom`].
+/// Enumeration of possible methods to seek within an I/O object. same as [`std::io::SeekFrom`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SeekFrom {
     /// Sets the offset to the provided number of bytes. as SEEK_SET.

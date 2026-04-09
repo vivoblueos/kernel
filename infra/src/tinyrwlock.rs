@@ -29,7 +29,7 @@ use core::{
     sync::atomic::Ordering,
 };
 
-// For embedded deivces, we want to achieve low memory footprint, use
+// For embedded devices, we want to achieve low memory footprint, use
 // smaller type rather than usize.
 #[cfg(target_pointer_width = "32")]
 type Usize = u8;
@@ -177,7 +177,7 @@ impl<T> RwLock<T> {
         let RwLock { data, .. } = self;
         data.into_inner()
     }
-    /// Returns a mutable pointer to the underying data.
+    /// Returns a mutable pointer to the underlying data.
     ///
     /// This is mostly meant to be used for applications which require manual unlocking, but where
     /// storing both the lock and the pointer to the inner data gets inefficient.

@@ -72,7 +72,7 @@ fn test_futex_thread_wait() {
     // Wake up the waiting thread
     match atomic_wake(&TEST_FUTEX_WAIT, 1) {
         Ok(c) => {
-            // FIXME: aarch64 not suport timeout yet
+            // FIXME: aarch64 not support timeout yet
             #[cfg(aarch64)]
             scheduler::yield_me();
             if c == 1 {

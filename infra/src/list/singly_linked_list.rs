@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(l.size(), n);
     }
 
-    // This test indicates the List should implement Drop trait itself to destory.
+    // This test indicates the List should implement Drop trait itself to destroy.
     // Or the destruction procedure will hit stackoverflow, since the boxes are
     // destroyed recursively.
     #[bench]

@@ -95,12 +95,12 @@ impl FatFileSystem {
                 Ok(fs) => fs,
                 Err(_) => {
                     warn!(
-                        "[FatFileSystem] Faild to construct internal fs, format it and try again."
+                        "[FatFileSystem] Failed to construct internal fs, format it and try again."
                     );
                     fatfs::format_volume(&mut storage, format_opts)
                         .expect("[FatFileSystem] Format volume fail.");
                     fatfs::FileSystem::new(storage, fatfs::FsOptions::new())
-                        .expect("[FatFileSystem] Faild to construct internal fs again")
+                        .expect("[FatFileSystem] Failed to construct internal fs again")
                 }
             }
         });
@@ -186,7 +186,7 @@ impl FatFileSystem {
             }
             debug!("[FatFileSystem] build_dcache: Find a entry {}", name);
             let inode = if e.is_dir() {
-                // Use defalut permission 0o755 for dir
+                // Use default permission 0o755 for dir
                 let mode = InodeMode::from(0o755);
                 let child_dir = e.to_dir();
                 let inode = FatInode::new_dir(
@@ -209,7 +209,7 @@ impl FatFileSystem {
                 self.build_dcache(child_dir, child_dcache)?;
                 inode
             } else if e.is_file() {
-                // Use defalut permission 0o644 for regular file
+                // Use default permission 0o644 for regular file
                 let mode: InodeMode = InodeMode::from(0o644);
                 let child_file = e.to_file();
                 let inode = FatInode::new_file(
@@ -231,7 +231,7 @@ impl FatFileSystem {
                 )?;
                 inode
             } else {
-                error!("[FatFileSystem] build_dcache: Unkonwn entry type.");
+                error!("[FatFileSystem] build_dcache: Unknown entry type.");
                 return Err(code::ENOTSUP);
             };
             {
