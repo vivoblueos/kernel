@@ -176,6 +176,10 @@ impl HasInterruptReg for Ns16x50 {
         }
     }
 
+    fn disable_interrupt(&self, intr: Self::InterruptType) {}
+
+    fn enable_interrupt(&self, intr: Self::InterruptType) {}
+
     fn get_interrupt(&self) -> Self::InterruptType {
         todo!()
     }

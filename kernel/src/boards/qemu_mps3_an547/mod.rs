@@ -25,6 +25,7 @@ use crate::{
     irq::IrqTrace,
     time,
 };
+use blueos_driver::uart::cmsdk::{CmsdkRxIsr, CmsdkTxIsr};
 use blueos_hal::{clock::Clock, HasInterruptReg};
 use boot::INIT_BSS_DONE;
 use core::ptr::addr_of;
@@ -98,11 +99,11 @@ pub(crate) fn init() {
     arch::irq::init();
     ClockImpl::init();
     unsafe {
-        arch::irq::register_raw_isr(UART0RX_IRQn, uart0rx_handler);
-        arch::irq::register_raw_isr(UART0TX_IRQn, uart0tx_handler);
+        // arch::irq::register_raw_isr(UART0RX_IRQn, uart0rx_handler);
+        // arch::irq::register_raw_isr(UART0TX_IRQn, uart0tx_handler);
     }
-    arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::Normal);
-    arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
+    arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::High);
+    arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::High);
 }
 
 crate::define_peripheral! {
@@ -142,3 +143,11 @@ unsafe extern "C" fn uart0tx_handler() {
     }
     uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
 }
+
+#[blueos_macro::interrupt(no = 33)]
+static CMSDK_RX_ISR: CmsdkRxIsr = CmsdkRxIsr {};
+
+#[blueos_macro::interrupt(no = 34)]
+static CMSDK_TX_ISR: CmsdkTxIsr = CmsdkTxIsr {
+    handler: &crate::drivers::serial::Serial::xmitchars,
+};

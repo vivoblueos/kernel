@@ -246,10 +246,10 @@ impl HasInterruptReg for Cmsdk {
     }
 
     fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        unsafe {
-            *CMSDK_RX_ISR.handler.get() = Some(handler);
-            *CMSDK_TX_ISR.handler.get() = Some(handler);
-        }
+        // unsafe {
+        //     *CMSDK_RX_ISR.handler.get() = Some(handler);
+        //     *CMSDK_TX_ISR.handler.get() = Some(handler);
+        // }
     }
 
     fn get_irq_nums(&self) -> &[u32] {
@@ -271,32 +271,26 @@ impl PlatPeri for Cmsdk {
     }
 }
 
-struct CmsdkRxIsr {
-    registers: *mut Registers,
-    handler: UnsafeCell<Option<&'static dyn Fn()>>,
-}
+pub struct CmsdkRxIsr {}
 
+/// Safety: CmsdkRxIsr only been modified in interrupt context
+/// So it is safe when the core is single-core.
 unsafe impl Sync for CmsdkRxIsr {}
 
-struct CmsdkTxIsr {
-    handler: UnsafeCell<Option<&'static dyn Fn()>>,
+pub struct CmsdkTxIsr {
+    pub handler: &'static dyn Fn(),
 }
 
+/// Safety: CmsdkTxIsr only been modified in interrupt context
+/// So it is safe when the core is single-core.
 unsafe impl Sync for CmsdkTxIsr {}
-
-#[blueos_macro::interrupt(no = 33)]
-static CMSDK_RX_ISR: CmsdkRxIsr = CmsdkRxIsr {
-    handler: UnsafeCell::new(None),
-};
-#[blueos_macro::interrupt(no = 34)]
-static CMSDK_TX_ISR: CmsdkTxIsr = CmsdkTxIsr {
-    handler: UnsafeCell::new(None),
-};
 
 impl blueos_hal::isr::IsrDesc for CmsdkRxIsr {
     fn service_isr(&self) {}
 }
 
 impl blueos_hal::isr::IsrDesc for CmsdkTxIsr {
-    fn service_isr(&self) {}
+    fn service_isr(&self) {
+        (self.handler)();
+    }
 }

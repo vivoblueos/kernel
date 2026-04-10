@@ -123,6 +123,12 @@ extern "C" fn init() {
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
 
+    let test_c = "hello world!!\r\n";
+    for c in test_c.as_bytes() {
+        crate::drivers::serial::SERIAL.send_char(*c);
+    }
+    loop {}
+
     #[cfg(use_bme280)]
     {
         if let Ok(block_i2c) = BlockI2c::new(crate::boards::get_device!(i2c0)) {

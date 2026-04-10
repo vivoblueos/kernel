@@ -73,19 +73,11 @@ pub fn interrupt(attr: TokenStream, item: TokenStream) -> TokenStream {
     quote! {
         #item_static
 
-        const _: () = {
-            #[repr(C)]
-            struct __BlueOsInterruptReg {
-                no: usize,
-                desc: &'static dyn ::blueos_hal::isr::IsrDesc,
-            }
-
-            #[used]
-            #[unsafe(link_section = #section)]
-            static #reg_ident: blueos_hal::isr::IsrReg = blueos_hal::isr::IsrReg {
-                no: #no,
-                desc: &#ident as &'static dyn ::blueos_hal::isr::IsrDesc,
-            };
+        #[used]
+        #[unsafe(link_section = #section)]
+        static #reg_ident: blueos_hal::isr::IsrReg = blueos_hal::isr::IsrReg {
+            no: #no,
+            desc: &#ident as &'static dyn ::blueos_hal::isr::IsrDesc,
         };
     }
     .into()

@@ -19,6 +19,7 @@ use crate::devices::bus::{Bus, BusInterface};
 pub(crate) mod ic;
 pub(crate) mod msip;
 pub(crate) mod sensor;
+pub(crate) mod serial;
 pub(crate) mod timer;
 
 /// use c-compatible error type

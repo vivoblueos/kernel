@@ -126,14 +126,14 @@ pub trait Has8bitDataReg {
 /// NOTE: this trait is unstable and may change in future releases.
 pub trait HasInterruptReg {
     type InterruptType;
-    fn enable_interrupt(&self, intr: Self::InterruptType) {}
-    fn disable_interrupt(&self, intr: Self::InterruptType) {}
+    fn enable_interrupt(&self, intr: Self::InterruptType);
+    fn disable_interrupt(&self, intr: Self::InterruptType);
     fn get_interrupt(&self) -> Self::InterruptType;
 
     // FIXME: dyn trait object may is not efficient enough
     fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {}
 
-    fn clear_interrupt(&self, intr: Self::InterruptType) {}
+    fn clear_interrupt(&self, intr: Self::InterruptType);
     fn get_irq_nums(&self) -> &[u32] {
         &[]
     }

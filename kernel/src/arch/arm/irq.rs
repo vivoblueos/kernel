@@ -184,7 +184,7 @@ pub fn init_interrupt_registry() {
                 INTERRUPT_TABLE_LEN
             );
             ISR_DESC[r.no] = Some(r.desc);
-            p = p.add(1);
+            p = (p as *const IsrReg).offset(1) as *const usize;
         }
     }
 }
