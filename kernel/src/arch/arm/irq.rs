@@ -183,7 +183,8 @@ pub fn init_interrupt_registry() {
                 r.no,
                 INTERRUPT_TABLE_LEN
             );
-            ISR_DESC[r.no] = Some(r.desc);
+            // ISR_DESC[r.no] = Some(r.desc);
+            crate::kearly_println!("Registering ISR number {} at address {:p}", r.no, r.desc);
             p = (p as *const IsrReg).offset(1) as *const usize;
         }
     }

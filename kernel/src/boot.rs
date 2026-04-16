@@ -123,11 +123,21 @@ extern "C" fn init() {
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
 
-    let test_c = "hello world!!\r\n";
-    for c in test_c.as_bytes() {
-        crate::drivers::serial::SERIAL.send_char(*c);
-    }
-    loop {}
+    arch::irq::init_interrupt_registry();
+
+    // For qemu_mps3_an547 boot-stage testing, unmask global IRQs before the loop below.
+    // #[cfg(target_arch = "arm")]
+    // unsafe {
+    //     core::arch::asm!("cpsie i", options(nomem, nostack, preserves_flags));
+    // }
+
+    // let test_c = "hello world!!\r\n";
+    // for c in test_c.as_bytes() {
+    //     crate::drivers::serial::SERIAL.send_char(*c);
+    // }
+
+    // crate::kearly_println!("Initialization complete, jumping to schedule loop...");
+    // loop {}
 
     #[cfg(use_bme280)]
     {

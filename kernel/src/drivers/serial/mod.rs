@@ -91,9 +91,9 @@ impl Serial {
                 .set((SERIAL.tx_end.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE);
         }
 
-        if SERIAL.tx_head.get() == SERIAL.tx_end.get() {
-            SERIAL.dev.disable_interrupt(InterruptType::Tx);
-        }
+        // if SERIAL.tx_head.get() == SERIAL.tx_end.get() {
+        //     SERIAL.dev.disable_interrupt(InterruptType::Tx);
+        // }
     }
 
     pub fn recvchars() {}
