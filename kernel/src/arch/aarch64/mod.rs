@@ -71,13 +71,15 @@ macro_rules! enter_el1 {
         msr     cntvoff_el2, xzr
         // Enable AArch64 in EL1.
         // Calculate per-core stack offset
+        // We reserve the top 4KB of each core's 16KB chunk for EL2.
         ldr x1, ={stack_end}
         mrs x9, mpidr_el1
         and x9, x9, #0xff
         lsl x9, x9, #14
         sub x1, x1, x9
-        mov sp, x1
-        msr sp_el1, x1
+        mov x19, x1
+        sub x2, x1, #0x1000
+        msr sp_el1, x2
         // Enable to switch into EL2.
         bl {virt_init}
         // Set EL1 sp and mask daif in EL2.
@@ -88,11 +90,9 @@ macro_rules! enter_el1 {
         add x4, x4, #0x1000
         mov sp, x4
         bl {enable_mmu}
+        mov sp, x19
         // Set EL1 entry and enter.
         ldr x0, ={stack_start}
-        ldr x1, ={stack_end} 
-        // We reserve the top 4KB of each core's 16KB chunk for EL2.
-        sub x1, x1, #0x1000
         ldr x2, ={cont}
         adr x3, {entry}
         msr elr_el2, x3
