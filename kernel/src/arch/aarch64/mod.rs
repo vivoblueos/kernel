@@ -77,6 +77,7 @@ macro_rules! enter_el1 {
         and x9, x9, #0xff
         lsl x9, x9, #14
         sub x1, x1, x9
+        mov sp, x1
         mov x19, x1
         sub x2, x1, #0x1000
         msr sp_el1, x2
