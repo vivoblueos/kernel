@@ -109,34 +109,23 @@ pub fn dump_to_slice(out: &mut [u8]) -> usize {
         return off;
     }
 
-    buffer::with_ring(|rb| {
-        if rb.len == 0 {
-            return;
+    buffer::for_each_committed(|rec| {
+        if !(put_u64(out, &mut off, rec.header.ts_ns)
+            && put_u16(out, &mut off, rec.header.event_id)
+            && put_u16(out, &mut off, rec.header.cpu_id)
+            && put_u32(out, &mut off, rec.header.tid)
+            && put_u8(out, &mut off, rec.header.phase)
+            && put_u8(out, &mut off, rec.header.flags)
+            && put_u16(out, &mut off, rec.header.payload_len))
+        {
+            return false;
         }
-        let start = if rb.len < buffer::RECORD_CAPACITY {
-            0
-        } else {
-            rb.write_idx
-        };
-        for i in 0..rb.len {
-            let idx = (start + i) % buffer::RECORD_CAPACITY;
-            let rec = rb.records[idx];
-            if !(put_u64(out, &mut off, rec.header.ts_ns)
-                && put_u16(out, &mut off, rec.header.event_id)
-                && put_u16(out, &mut off, rec.header.cpu_id)
-                && put_u32(out, &mut off, rec.header.tid)
-                && put_u8(out, &mut off, rec.header.phase)
-                && put_u8(out, &mut off, rec.header.flags)
-                && put_u16(out, &mut off, rec.header.payload_len))
-            {
-                break;
-            }
-            for datum in rec.data {
-                if !put_u64(out, &mut off, datum as u64) {
-                    return;
-                }
+        for datum in rec.data {
+            if !put_u64(out, &mut off, datum as u64) {
+                return false;
             }
         }
+        true
     });
     off
 }

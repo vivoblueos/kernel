@@ -13,58 +13,98 @@
 // limitations under the License.
 
 use super::event::EventRecord;
-use spin::Mutex;
+use core::{
+    cell::UnsafeCell,
+    cmp,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 pub const RECORD_CAPACITY: usize = 512;
+const NUM_CPUS: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
+const INVALID_SEQ: usize = usize::MAX;
 
-#[derive(Clone, Copy)]
-pub struct RingBuffer {
-    pub records: [EventRecord; RECORD_CAPACITY],
-    pub write_idx: usize,
-    pub len: usize,
-    pub dropped: usize,
+struct Slot {
+    record: UnsafeCell<EventRecord>,
+    commit_seq: AtomicUsize,
 }
 
-impl RingBuffer {
-    pub const fn new() -> Self {
+impl Slot {
+    const fn new() -> Self {
         Self {
-            records: [EventRecord::empty(); RECORD_CAPACITY],
-            write_idx: 0,
-            len: 0,
-            dropped: 0,
+            record: UnsafeCell::new(EventRecord::empty()),
+            commit_seq: AtomicUsize::new(INVALID_SEQ),
         }
     }
 }
 
-static RING: Mutex<RingBuffer> = Mutex::new(RingBuffer::new());
+// SAFETY: Slot concurrent access is coordinated by commit sequence atomics.
+unsafe impl Sync for Slot {}
+
+struct CpuRing {
+    write_seq: AtomicUsize,
+    slots: [Slot; RECORD_CAPACITY],
+}
+
+impl CpuRing {
+    const fn new() -> Self {
+        Self {
+            write_seq: AtomicUsize::new(0),
+            slots: [const { Slot::new() }; RECORD_CAPACITY],
+        }
+    }
+
+    fn init(&self) {
+        self.write_seq.store(0, Ordering::Relaxed);
+        for slot in &self.slots {
+            slot.commit_seq.store(INVALID_SEQ, Ordering::Relaxed);
+        }
+    }
+}
+
+static RINGS: [CpuRing; NUM_CPUS] = [const { CpuRing::new() }; NUM_CPUS];
 
 pub fn init() {
-    let mut w = RING.lock();
-    // Avoid constructing a large RingBuffer temporary on the stack.
-    // For 32-bit targets this structure is ~18KB and can overflow early
-    // boot stacks (e.g. 8KB on qemu_mps2_an385).
-    w.write_idx = 0;
-    w.len = 0;
-    w.dropped = 0;
+    for ring in &RINGS {
+        ring.init();
+    }
 }
 
 // Returns true if an old record was overwritten.
 pub fn push(record: EventRecord) -> bool {
-    let mut w = RING.lock();
-    let mut overwritten = false;
-    if w.len == RECORD_CAPACITY {
-        w.dropped = w.dropped.saturating_add(1);
-        overwritten = true;
-    } else {
-        w.len += 1;
-    }
-    let idx = w.write_idx;
-    w.records[idx] = record;
-    w.write_idx = (idx + 1) % RECORD_CAPACITY;
-    overwritten
+    let cpu_id = crate::arch::current_cpu_id();
+    let ring = &RINGS[cpu_id];
+
+    // Reserve a slot lock-free. This is safe under IRQ and SMP because each
+    // writer gets a unique sequence number.
+    let seq = ring.write_seq.fetch_add(1, Ordering::Relaxed);
+    let idx = seq % RECORD_CAPACITY;
+    let slot = &ring.slots[idx];
+    // SAFETY: this slot is uniquely owned by `seq` until commit_seq is set.
+    unsafe { *slot.record.get() = record };
+    // Publish the record after write is complete.
+    slot.commit_seq.store(seq, Ordering::Release);
+
+    seq >= RECORD_CAPACITY
 }
 
-pub fn with_ring<R>(f: impl FnOnce(&RingBuffer) -> R) -> R {
-    let w = RING.lock();
-    f(&w)
+pub fn for_each_committed(mut f: impl FnMut(EventRecord) -> bool) {
+    for ring in &RINGS {
+        // Snapshot writer progress for this CPU ring.
+        let end_seq = ring.write_seq.load(Ordering::Acquire);
+        let span = cmp::min(end_seq, RECORD_CAPACITY);
+        let start_seq = end_seq - span;
+        for seq in start_seq..end_seq {
+            let idx = seq % RECORD_CAPACITY;
+            let slot = &ring.slots[idx];
+            // A slot belongs to this sequence only when commit_seq matches.
+            if slot.commit_seq.load(Ordering::Acquire) != seq {
+                continue;
+            }
+            // SAFETY: commit_seq == seq guarantees a fully published record.
+            let record = unsafe { *slot.record.get() };
+            if !f(record) {
+                return;
+            }
+        }
+    }
 }
