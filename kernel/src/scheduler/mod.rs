@@ -365,7 +365,12 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
         current_thread_id()
     );
     let old = current_thread_ref();
-    crate::trace_event!(record_thread_block(Thread::id(old) as u32, 1, 0, deadline.0));
+    crate::trace_event!(record_thread_block(
+        Thread::id(old) as u32,
+        1,
+        0,
+        deadline.0
+    ));
     let current_idle = idle::current_idle_thread_ref();
     debug_assert_ne!(Thread::id(old), Thread::id(current_idle));
     let next = next_ready_thread().map_or_else(|| unsafe { Arc::clone_from(current_idle) }, |v| v);

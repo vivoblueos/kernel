@@ -16,6 +16,8 @@
 use crate::asynk;
 #[cfg(enable_net)]
 use crate::net;
+#[cfg(tracing)]
+use crate::tracing;
 #[cfg(enable_vfs)]
 use crate::vfs;
 use crate::{
@@ -33,8 +35,6 @@ use crate::{
     sync::SpinLock,
     thread, time,
 };
-#[cfg(tracing)]
-use crate::tracing;
 use alloc::{string::String, sync::Arc};
 use blueos_driver::uart::UartConfig;
 use blueos_hal::{Configuration, PlatPeri};

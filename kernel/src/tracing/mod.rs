@@ -117,7 +117,12 @@ pub fn record_sched_switch(
         EventId::SchedSwitch,
         EventPhase::Instant,
         next_tid,
-        [prev_tid as usize, next_tid as usize, prev_prio, (next_prio << 16) | prev_state],
+        [
+            prev_tid as usize,
+            next_tid as usize,
+            prev_prio,
+            (next_prio << 16) | prev_state,
+        ],
     );
 }
 
