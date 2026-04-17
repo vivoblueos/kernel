@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(tracing)]
-
 use blueos::{
     allocator,
     tracing::{self, event::EventId, TraceConfig},
@@ -161,7 +159,7 @@ fn test_tracing_records_real_system_events() {
     let stopped = tracing::stats();
     assert!(!stopped.enabled);
     assert!(
-        stopped.total_events >= before_stop_total + 1,
+        stopped.total_events > before_stop_total,
         "TraceStop should be recorded when stopping"
     );
 
