@@ -33,6 +33,8 @@ use crate::{
     sync::SpinLock,
     thread, time,
 };
+#[cfg(tracing)]
+use crate::tracing;
 use alloc::{string::String, sync::Arc};
 use blueos_driver::uart::UartConfig;
 use blueos_hal::{Configuration, PlatPeri};
@@ -157,6 +159,8 @@ extern "C" fn init() {
 
     scheduler::init();
     logger::logger_init();
+    #[cfg(tracing)]
+    tracing::init();
     time::timer::init();
     #[cfg(kernel_async)]
     asynk::init();

@@ -417,8 +417,10 @@ extern "C" fn syscall_handler(ctx: &mut Context) {
         nr: ctx.r7,
         args: [ctx.r0, ctx.r1, ctx.r2, ctx.r3, ctx.r4, ctx.r5],
     };
+    crate::trace_event!(record_sys_enter(sc.nr, sc.args[0], sc.args[1], sc.args[2]));
     // r0 should contain the return value.
     ctx.r0 = dispatch_syscall(&sc);
+    crate::trace_event!(record_sys_exit(sc.nr, ctx.r0 as isize, 0));
 }
 
 #[naked]

@@ -145,6 +145,12 @@ impl Builder {
         {
             let _ = crate::vfs::trace_thread_create(thread.clone());
         }
+        crate::trace_event!(record_thread_create(
+            Thread::id(&thread) as u32,
+            0,
+            self.priority as usize,
+            0
+        ));
 
         thread
     }

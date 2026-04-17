@@ -80,6 +80,8 @@ pub mod sync;
 pub mod syscall_handlers;
 pub mod thread;
 pub mod time;
+#[cfg(tracing)]
+pub mod tracing;
 pub mod types;
 #[cfg(enable_vfs)]
 pub mod vfs;
@@ -110,6 +112,16 @@ macro_rules! trace {
         semihosting::eprintln!($($tt)*);
         drop(l);
         drop(dig);
+    }};
+}
+
+#[macro_export]
+macro_rules! trace_event {
+    ($func:ident ( $($arg:expr),* $(,)? )) => {{
+        #[cfg(tracing)]
+        {
+            $crate::tracing::$func($($arg),*);
+        }
     }};
 }
 
