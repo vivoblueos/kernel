@@ -7,21 +7,21 @@ ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-u
 # Install system packages
 RUN apt-get update \
     && apt-get install -y \
-        git \
-        clang lld \
-        python3-kconfiglib \
-        python3-pip \
-        ninja-build \
-        generate-ninja \
-        curl \
-        libfdt-dev \
-        libslirp-dev \
-        libglib2.0-dev \
-        build-essential \
-        pkg-config \
-        clang-format yapf3 npm \
-        libpixman-1-0 \
-        libsdl2-dev \
+    git \
+    clang lld \
+    python3-kconfiglib \
+    python3-pip \
+    ninja-build \
+    generate-ninja \
+    curl \
+    libfdt-dev \
+    libslirp-dev \
+    libglib2.0-dev \
+    build-essential \
+    pkg-config \
+    clang-format yapf3 npm \
+    libpixman-1-0 \
+    libsdl2-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install esptool==4.7.0 --break-system-packages
 
@@ -68,7 +68,7 @@ RUN curl -L -o yamlfmt.tar.gz https://github.com/google/yamlfmt/releases/downloa
 
 # Install esp32 QEMU.
 RUN mkdir -p /opt/qemu
-RUN curl -L -o esp32-qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/esp32-qemu-2026_04_02_03_47.tar.xz \
+RUN curl -L -o esp32-qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.1/esp32-qemu-2026_04_21_10_06.tar.xz \
     && tar xf esp32-qemu.tar.xz -C /opt/qemu \
     && rm esp32-qemu.tar.xz
 WORKDIR /opt/qemu/usr/local/bin
