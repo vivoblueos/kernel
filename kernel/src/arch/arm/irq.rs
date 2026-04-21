@@ -156,9 +156,15 @@ extern "C" fn _generic_isr_handler() {
 
     #[cfg(round_robin)]
     {
-        // If the scheduler is preemptive, trigger PendSV to perform
-        // a context switch after handling the current interrupt.
-        cortex_m::peripheral::SCB::set_pendsv();
+        use core::intrinsics::likely;
+
+        use crate::scheduler::is_schedule_ready;
+
+        if likely(is_schedule_ready()) {
+            // If the scheduler is preemptive, trigger PendSV to perform
+            // a context switch after handling the current interrupt.
+            cortex_m::peripheral::SCB::set_pendsv();
+        }
     }
 }
 
@@ -183,8 +189,7 @@ pub fn init_interrupt_registry() {
                 r.no,
                 INTERRUPT_TABLE_LEN
             );
-            // ISR_DESC[r.no] = Some(r.desc);
-            crate::kearly_println!("Registering ISR number {} at address {:p}", r.no, r.desc);
+            ISR_DESC[r.no] = Some(r.desc);
             p = (p as *const IsrReg).offset(1) as *const usize;
         }
     }

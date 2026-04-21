@@ -97,10 +97,7 @@ pub(crate) fn init() {
     unsafe { boot::init_heap() };
     arch::irq::init();
     ClockImpl::init();
-    unsafe {
-        // arch::irq::register_raw_isr(UART0RX_IRQn, uart0rx_handler);
-        // arch::irq::register_raw_isr(UART0TX_IRQn, uart0tx_handler);
-    }
+
     arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::High);
     arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::High);
 }
@@ -144,9 +141,11 @@ unsafe extern "C" fn uart0tx_handler() {
 }
 
 #[blueos_macro::interrupt(no = 33)]
-static CMSDK_RX_ISR: CmsdkRxIsr = CmsdkRxIsr {};
+static CMSDK_RX_ISR: CmsdkRxIsr<{ memory_map::UART0_BASE_S as usize }> =
+    CmsdkRxIsr::<{ memory_map::UART0_BASE_S as usize }> {};
 
 #[blueos_macro::interrupt(no = 34)]
-static CMSDK_TX_ISR: CmsdkTxIsr = CmsdkTxIsr {
-    handler: &crate::drivers::serial::Serial::xmitchars,
-};
+pub static CMSDK_TX_ISR: CmsdkTxIsr<{ memory_map::UART0_BASE_S as usize }> =
+    CmsdkTxIsr::<{ memory_map::UART0_BASE_S as usize }> {
+        handler: &crate::drivers::serial::Serial::xmitchars,
+    };

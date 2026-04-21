@@ -49,7 +49,23 @@ pub(crate) static SERIAL: Serial = Serial {
 };
 
 impl Serial {
-    pub fn send_char(&self, c: u8) -> Result<(), Error> {
+    pub fn send_buffer(&self, buf: &[u8], block: bool) -> Result<usize, Error> {
+        let mut sent = 0;
+        for c in buf {
+            match self.send_char(*c) {
+                Ok(()) => sent += 1,
+                Err(Error::EAGAIN) if block => {
+                    // FIXME: If blocking, wait for space in TX FIFO
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        self.dev.enable_interrupt(InterruptType::Tx);
+        Self::xmitchars();
+        Ok(sent)
+    }
+
+    fn send_char(&self, c: u8) -> Result<(), Error> {
         if is_in_irq() || !crate::arch::local_irq_enabled() {
             // If local interrupt is disabled, we are in critical section, and we can't sleep.
             // So we just try to send the character directly, and if the tx fifo is full, we drop the character.
@@ -67,11 +83,17 @@ impl Serial {
                 let _lock = self.tx_lock.write();
                 self.dev.disable_interrupt(InterruptType::Tx);
                 // Safety: tx_buffer cann't be accessed by other thread until the lock is released.
-                let tx_next = self.tx_head.get() % CONFIG_SERIAL_TX_FIFO_SIZE;
+                let tx_next = (self.tx_head.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE;
                 if (tx_next != self.tx_end.get()) {
-                    self.tx_buffer.borrow_mut()[tx_next as usize] = c;
+                    self.tx_buffer.borrow_mut()[self.tx_head.get() as usize] = c;
                     self.tx_head.set(tx_next);
-                    self.dev.enable_interrupt(InterruptType::Tx);
+
+                    // Kick TX once in process context so TX flow can start even if
+                    // enabling TX interrupt alone doesn't immediately raise an interrupt.
+                    Self::xmitchars();
+                    if self.tx_head.get() != self.tx_end.get() {
+                        self.dev.enable_interrupt(InterruptType::Tx);
+                    }
                     return Ok(());
                 } else {
                     self.dev.enable_interrupt(InterruptType::Tx);
@@ -81,7 +103,21 @@ impl Serial {
         }
     }
 
+    /// # Safety
+    /// `xmitchars` has no internal lock and relies on external serialization.
+    ///
+    /// The current valid call sites are:
+    /// 1. TX IRQ handler path.
+    /// 2. `send_char` path, where TX interrupt is disabled before queue updates.
+    ///
+    /// Under this single-core usage model, there is no real concurrent access
+    /// to `tx_head`/`tx_end`/`tx_buffer`. Do not call this function from any
+    /// other path unless synchronization rules are revisited.
     pub fn xmitchars() {
+        use blueos_hal::HasInterruptReg;
+
+        let mut nbytes = 0u16;
+
         while (SERIAL.tx_head.get() != SERIAL.tx_end.get()) && !SERIAL.dev.is_tx_fifo_full() {
             SERIAL
                 .dev
@@ -89,11 +125,17 @@ impl Serial {
             SERIAL
                 .tx_end
                 .set((SERIAL.tx_end.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE);
+            nbytes += 1;
         }
 
-        // if SERIAL.tx_head.get() == SERIAL.tx_end.get() {
-        //     SERIAL.dev.disable_interrupt(InterruptType::Tx);
-        // }
+        if SERIAL.tx_head.get() == SERIAL.tx_end.get() {
+            SERIAL.dev.disable_interrupt(InterruptType::Tx);
+        }
+
+        if nbytes > 0 {
+            // FIXME: We should notify some semaphore here to wake up
+            // the thread waiting for tx buffer to be empty.
+        }
     }
 
     pub fn recvchars() {}
