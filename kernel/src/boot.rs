@@ -132,9 +132,7 @@ extern "C" fn init() {
     }
 
     let test_c = "hello world!!\r\n";
-    for c in test_c.as_bytes() {
-        crate::drivers::serial::SERIAL.send_char(*c);
-    }
+    crate::drivers::serial::Serial::send_bytes(test_c.as_bytes(), false);
 
     crate::kearly_println!("Initialization complete, jumping to schedule loop...");
     loop {}

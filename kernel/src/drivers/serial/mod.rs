@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::cell::{Cell, RefCell};
+use core::{
+    cell::{Cell, RefCell},
+    sync::atomic::AtomicUsize,
+};
 
 use crate::{
     error::{code, Error},
     irq::is_in_irq,
-    sync::{Semaphore, SpinLock},
+    support::DisableInterruptGuard,
+    sync::{atomic_wait::atomic_wait, atomic_wake, Semaphore, SpinLock},
 };
 use blueos_driver::uart::{InterruptType, UartConfig, UartCtrlStatus};
 use blueos_infra::tinyrwlock::RwLock;
@@ -29,9 +33,11 @@ pub struct Serial {
     tx_end: Cell<u32>,
     tx_head: Cell<u32>,
     tx_lock: RwLock<()>,
+    tx_futex: AtomicUsize,
     rx_buffer: [u8; CONFIG_SERIAL_RX_FIFO_SIZE as usize],
     rx_head: u32,
     rx_end: u32,
+    critical_section_guard: SpinLock<()>,
 }
 
 /// Safety:
@@ -43,98 +49,122 @@ pub(crate) static SERIAL: Serial = Serial {
     tx_end: Cell::new(0),
     tx_head: Cell::new(0),
     tx_lock: RwLock::new(()),
+    tx_futex: AtomicUsize::new(0),
     rx_buffer: [0; CONFIG_SERIAL_RX_FIFO_SIZE as usize],
     rx_head: 0,
     rx_end: 0,
+    critical_section_guard: SpinLock::new(()),
 };
 
 impl Serial {
-    pub fn send_buffer(&self, buf: &[u8], block: bool) -> Result<usize, Error> {
-        let mut sent = 0;
-        for c in buf {
-            match self.send_char(*c) {
-                Ok(()) => sent += 1,
-                Err(Error::EAGAIN) if block => {
-                    // FIXME: If blocking, wait for space in TX FIFO
-                }
-                Err(e) => return Err(e),
+    pub fn send_bytes(bytes: &[u8], blocking: bool) -> Result<usize, Error> {
+        if is_in_irq() {
+            // same behavior as kearly_printkln!
+            let _lock = SERIAL.critical_section_guard.irqsave_lock();
+            for &b in bytes {
+                SERIAL.send_byte_polling(b);
             }
+            Ok(bytes.len())
+        } else {
+            let mut nbytes = 0;
+            let _spinlock = SERIAL.tx_lock.write();
+            SERIAL.dev.disable_interrupt(InterruptType::Tx);
+            'e: for &b in bytes {
+                match SERIAL.send_byte_fifo(b) {
+                    Ok(()) => {
+                        nbytes += 1;
+                    }
+                    Err(e) => match e.to_errno() {
+                        e if e == code::EAGAIN.to_errno() && blocking => {
+                            'i: loop {
+                                // If the FIFO is full and we're in blocking mode, we need to
+                                // trigger the TX interrupt to start sending out the data in FIFO.
+                                SERIAL.trigger_tx_interrupt();
+                                // Then we wait for the TX buffer to have space. In a real implementation,
+                                // we would likely want to wait on a semaphore that gets signaled in the
+                                // TX interrupt handler when space is available.
+                                atomic_wait(&SERIAL.tx_futex, 0, crate::time::Tick::MAX);
+                                match SERIAL.send_byte_fifo(b) {
+                                    Ok(()) => break 'i,
+                                    Err(e) => match e.to_errno() {
+                                        e if e == code::EAGAIN.to_errno() => continue 'i,
+                                        _ => break 'e,
+                                    },
+                                }
+                            }
+                            nbytes += 1;
+                        }
+                        _ => {
+                            // For any other error, we just stop sending
+                            // and return the number of bytes sent so far.
+                            break;
+                        }
+                    },
+                }
+            }
+            SERIAL.trigger_tx_interrupt();
+            Ok(nbytes)
         }
-        self.dev.enable_interrupt(InterruptType::Tx);
-        Self::xmitchars();
-        Ok(sent)
     }
 
-    fn send_char(&self, c: u8) -> Result<(), Error> {
-        if is_in_irq() || !crate::arch::local_irq_enabled() {
-            // If local interrupt is disabled, we are in critical section, and we can't sleep.
-            // So we just try to send the character directly, and if the tx fifo is full, we drop the character.
-            // if !self.dev.is_tx_fifo_full() {
-            //     self.dev.write_data8(c);
-            //     return Ok(());
-            // } else {
-            //     return Err(code::EAGAIN);
-            // }
-            while self.dev.is_tx_fifo_full() {}
-            self.dev.write_data8(c);
+    #[inline(always)]
+    fn send_byte_polling(&self, c: u8) {
+        while self.dev.is_tx_fifo_full() {}
+        self.dev.write_data8(c);
+    }
+
+    #[inline(always)]
+    fn send_byte_fifo(&self, c: u8) -> Result<(), Error> {
+        let tx_next = (self.tx_head.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE;
+        if tx_next != self.tx_end.get() {
+            self.tx_buffer.borrow_mut()[self.tx_head.get() as usize] = c;
+            self.tx_head.set(tx_next);
             Ok(())
         } else {
-            loop {
-                let _lock = self.tx_lock.write();
-                self.dev.disable_interrupt(InterruptType::Tx);
-                // Safety: tx_buffer cann't be accessed by other thread until the lock is released.
-                let tx_next = (self.tx_head.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE;
-                if (tx_next != self.tx_end.get()) {
-                    self.tx_buffer.borrow_mut()[self.tx_head.get() as usize] = c;
-                    self.tx_head.set(tx_next);
-
-                    // Kick TX once in process context so TX flow can start even if
-                    // enabling TX interrupt alone doesn't immediately raise an interrupt.
-                    Self::xmitchars();
-                    if self.tx_head.get() != self.tx_end.get() {
-                        self.dev.enable_interrupt(InterruptType::Tx);
-                    }
-                    return Ok(());
-                } else {
-                    self.dev.enable_interrupt(InterruptType::Tx);
-                    return Err(code::EAGAIN);
-                }
-            }
+            return Err(code::EAGAIN);
         }
     }
 
-    /// # Safety
-    /// `xmitchars` has no internal lock and relies on external serialization.
-    ///
-    /// The current valid call sites are:
-    /// 1. TX IRQ handler path.
-    /// 2. `send_char` path, where TX interrupt is disabled before queue updates.
-    ///
-    /// Under this single-core usage model, there is no real concurrent access
-    /// to `tx_head`/`tx_end`/`tx_buffer`. Do not call this function from any
-    /// other path unless synchronization rules are revisited.
+    #[inline(always)]
+    fn trigger_tx_interrupt(&self) {
+        let _lock = self.critical_section_guard.irqsave_lock();
+        self.dev.enable_interrupt(InterruptType::Tx);
+        // FIXME: In the certain SoCs that TX is an edge interrupt. It only fires
+        // on a state change of TX buffer from full to empty. So, we need to
+        // trigger the interrupt manually here to get interrupt processing going,
+        // as there is no previous. But it's not common in MCU where TX is usually
+        // a level interrupt, active for as long as TX buffer is empty. So we should
+        // consider to make this behavior configurable in the future.
+        Self::xmitchars();
+    }
+
     pub fn xmitchars() {
         use blueos_hal::HasInterruptReg;
 
-        let mut nbytes = 0u16;
+        #[cfg(smp)]
+        static CRITICAL_SECTION: SpinLock<()> = SpinLock::new(());
+        #[cfg(smp)]
+        let _lock = CRITICAL_SECTION.irqsave_lock();
 
-        while (SERIAL.tx_head.get() != SERIAL.tx_end.get()) && !SERIAL.dev.is_tx_fifo_full() {
+        let sent = if (SERIAL.tx_head.get() != SERIAL.tx_end.get()) && !SERIAL.dev.is_tx_fifo_full()
+        {
             SERIAL
                 .dev
                 .write_data8(SERIAL.tx_buffer.borrow()[SERIAL.tx_end.get() as usize]);
             SERIAL
                 .tx_end
                 .set((SERIAL.tx_end.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE);
-            nbytes += 1;
-        }
+            true
+        } else {
+            false
+        };
 
         if SERIAL.tx_head.get() == SERIAL.tx_end.get() {
             SERIAL.dev.disable_interrupt(InterruptType::Tx);
         }
 
-        if nbytes > 0 {
-            // FIXME: We should notify some semaphore here to wake up
-            // the thread waiting for tx buffer to be empty.
+        if sent {
+            atomic_wake(&SERIAL.tx_futex, 1);
         }
     }
 

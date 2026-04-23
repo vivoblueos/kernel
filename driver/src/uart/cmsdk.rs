@@ -197,10 +197,14 @@ impl HasInterruptReg for Cmsdk {
     fn enable_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                self.registers().CTRL.modify(CTRL::TXIRQEN::SET);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::TXIRQEN::SET + CTRL::TXORIRQEN::SET);
             }
             super::InterruptType::Rx => {
-                self.registers().CTRL.modify(CTRL::RXIRQEN::SET);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::RXIRQEN::SET + CTRL::RXORIRQEN::SET);
             }
             _ => {}
         }
@@ -209,10 +213,14 @@ impl HasInterruptReg for Cmsdk {
     fn disable_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                self.registers().CTRL.modify(CTRL::TXIRQEN::CLEAR);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::TXIRQEN::CLEAR + CTRL::TXORIRQEN::CLEAR);
             }
             super::InterruptType::Rx => {
-                self.registers().CTRL.modify(CTRL::RXIRQEN::CLEAR);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::RXIRQEN::CLEAR + CTRL::RXORIRQEN::CLEAR);
             }
             _ => {}
         }
@@ -221,10 +229,14 @@ impl HasInterruptReg for Cmsdk {
     fn clear_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                self.registers().INTSTATUS.modify(INTSTATUS::TXIRQ::SET);
+                self.registers()
+                    .INTSTATUS
+                    .modify(INTSTATUS::TXIRQ::SET + INTSTATUS::TXORIRQ::SET);
             }
             super::InterruptType::Rx => {
-                self.registers().INTSTATUS.modify(INTSTATUS::RXIRQ::SET);
+                self.registers()
+                    .INTSTATUS
+                    .modify(INTSTATUS::RXIRQ::SET + INTSTATUS::RXORIRQ::SET);
             }
             _ => {
                 let status = self.registers().INTSTATUS.get();
@@ -278,7 +290,7 @@ pub struct CmsdkRxIsr<const DEVICE_ADDRESS: usize> {}
 unsafe impl<const DEVICE_ADDRESS: usize> Sync for CmsdkRxIsr<DEVICE_ADDRESS> {}
 
 pub struct CmsdkTxIsr<const DEVICE_ADDRESS: usize> {
-    pub handler: &'static dyn Fn(),
+    pub handler: Option<fn()>,
 }
 
 /// Safety: CmsdkTxIsr only been modified in interrupt context
@@ -302,6 +314,8 @@ impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkTxIsr<DEVICE
                 .INTSTATUS
                 .modify(INTSTATUS::TXIRQ::SET);
         }
-        (self.handler)();
+        if let Some(handler) = self.handler {
+            (handler)();
+        }
     }
 }

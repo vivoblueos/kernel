@@ -98,8 +98,8 @@ pub(crate) fn init() {
     arch::irq::init();
     ClockImpl::init();
 
-    arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::High);
-    arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::High);
+    arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::Normal);
+    arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
 }
 
 crate::define_peripheral! {
@@ -147,5 +147,5 @@ static CMSDK_RX_ISR: CmsdkRxIsr<{ memory_map::UART0_BASE_S as usize }> =
 #[blueos_macro::interrupt(no = 34)]
 pub static CMSDK_TX_ISR: CmsdkTxIsr<{ memory_map::UART0_BASE_S as usize }> =
     CmsdkTxIsr::<{ memory_map::UART0_BASE_S as usize }> {
-        handler: &crate::drivers::serial::Serial::xmitchars,
+        handler: Some(crate::drivers::serial::Serial::xmitchars),
     };
