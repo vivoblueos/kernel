@@ -15,7 +15,7 @@
 // SPDX-FileCopyrightText: Copyright 2023-2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use core::cell::UnsafeCell;
+use core::{cell::UnsafeCell, ptr::NonNull};
 
 use blueos_hal::{
     uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
@@ -283,14 +283,18 @@ impl PlatPeri for Cmsdk {
     }
 }
 
-pub struct CmsdkRxIsr<const DEVICE_ADDRESS: usize> {}
+pub struct CmsdkRxIsr<const DEVICE_ADDRESS: usize> {
+    pub data: NonNull<()>,
+    pub handler: Option<fn(*mut ())>,
+}
 
 /// Safety: CmsdkRxIsr only been modified in interrupt context
 /// So it is safe when the core is single-core.
 unsafe impl<const DEVICE_ADDRESS: usize> Sync for CmsdkRxIsr<DEVICE_ADDRESS> {}
 
 pub struct CmsdkTxIsr<const DEVICE_ADDRESS: usize> {
-    pub handler: Option<fn()>,
+    pub data: NonNull<()>,
+    pub handler: Option<fn(*mut ())>,
 }
 
 /// Safety: CmsdkTxIsr only been modified in interrupt context
@@ -304,6 +308,9 @@ impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkRxIsr<DEVICE
                 .INTSTATUS
                 .modify(INTSTATUS::RXIRQ::SET);
         }
+        if let Some(handler) = self.handler {
+            (handler)(self.data.as_ptr());
+        }
     }
 }
 
@@ -315,7 +322,7 @@ impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkTxIsr<DEVICE
                 .modify(INTSTATUS::TXIRQ::SET);
         }
         if let Some(handler) = self.handler {
-            (handler)();
+            (handler)(self.data.as_ptr());
         }
     }
 }

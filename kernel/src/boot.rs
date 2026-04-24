@@ -108,34 +108,17 @@ extern "C" fn init() {
     uart.configure(&UartConfig::default()).unwrap();
     uart.enable();
 
-    SERIAL0.call_once(|| {
-        Arc::new(Serial::new(
-            0,
-            Termios::default(),
-            Arc::new(SpinLock::new(UartDevice::new(crate::boards::get_device!(
-                console_uart
-            )))),
-        ))
-    });
-    DeviceManager::get().register_device(String::from("ttyS0"), get_serial(0).clone());
-    match console::init_console(Tty::init(get_serial(0).clone()).clone()) {
+    DeviceManager::get().register_device(
+        String::from("ttyS0"),
+        Tty::init(&crate::drivers::serial::TTY_SERIAL, Termios::default()),
+    );
+    match console::init_console(Tty::init(
+        &crate::drivers::serial::TTY_SERIAL,
+        Termios::default(),
+    )) {
         Ok(_) => {}
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
-
-    arch::irq::init_interrupt_registry();
-
-    // For qemu_mps3_an547 boot-stage testing, unmask global IRQs before the loop below.
-    #[cfg(target_arch = "arm")]
-    unsafe {
-        core::arch::asm!("cpsie i", options(nomem, nostack, preserves_flags));
-    }
-
-    let test_c = "hello world!!\r\n";
-    crate::drivers::serial::Serial::send_bytes(test_c.as_bytes(), false);
-
-    crate::kearly_println!("Initialization complete, jumping to schedule loop...");
-    loop {}
 
     #[cfg(use_bme280)]
     {

@@ -28,7 +28,7 @@ use crate::{
 use blueos_driver::uart::cmsdk::{CmsdkRxIsr, CmsdkTxIsr};
 use blueos_hal::{clock::Clock, HasInterruptReg};
 use boot::INIT_BSS_DONE;
-use core::ptr::addr_of;
+use core::ptr::{addr_of, NonNull};
 
 #[repr(C)]
 struct CopyTable {
@@ -92,6 +92,7 @@ pub(crate) fn init() {
 
     unsafe {
         copy_data();
+        arch::irq::init_interrupt_registry();
     }
     boot::init_runtime();
     unsafe { boot::init_heap() };
@@ -142,10 +143,14 @@ unsafe extern "C" fn uart0tx_handler() {
 
 #[blueos_macro::interrupt(no = 33)]
 static CMSDK_RX_ISR: CmsdkRxIsr<{ memory_map::UART0_BASE_S as usize }> =
-    CmsdkRxIsr::<{ memory_map::UART0_BASE_S as usize }> {};
+    CmsdkRxIsr::<{ memory_map::UART0_BASE_S as usize }> {
+        data: unsafe { NonNull::new_unchecked(addr_of!(crate::drivers::serial::TTY_SERIAL) as *mut ()) },
+        handler: Some(crate::drivers::serial::Serial::recvchars),
+    };
 
 #[blueos_macro::interrupt(no = 34)]
 pub static CMSDK_TX_ISR: CmsdkTxIsr<{ memory_map::UART0_BASE_S as usize }> =
     CmsdkTxIsr::<{ memory_map::UART0_BASE_S as usize }> {
+        data: unsafe { NonNull::new_unchecked(addr_of!(crate::drivers::serial::TTY_SERIAL) as *mut ()) },
         handler: Some(crate::drivers::serial::Serial::xmitchars),
     };

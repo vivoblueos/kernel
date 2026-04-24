@@ -271,6 +271,7 @@ impl Serial {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn handle_tcxonc(&self, action: c_int) -> Result<(), ErrorKind> {
         match action {
             TCOOFF => {

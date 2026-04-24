@@ -20,12 +20,11 @@ use crate::{
     },
     boot,
     devices::clock::systick,
-    error::Error,
-    irq::IrqTrace,
-    time,
 };
-use blueos_hal::{clock::Clock, HasInterruptReg};
+use blueos_driver::uart::cmsdk::{CmsdkRxIsr, CmsdkTxIsr};
+use blueos_hal::clock::Clock;
 use boot::INIT_BSS_DONE;
+use core::ptr::{addr_of, NonNull};
 
 #[repr(C)]
 struct CopyTable {
@@ -85,10 +84,7 @@ pub(crate) fn init() {
     unsafe { boot::init_heap() };
     arch::irq::init();
     ClockImpl::init();
-    unsafe {
-        arch::irq::register_raw_isr(UART0RX_IRQn, uart0rx_handler);
-        arch::irq::register_raw_isr(UART0TX_IRQn, uart0tx_handler);
-    }
+
     arch::irq::enable_irq_with_priority(UART0RX_IRQn, arch::irq::Priority::Normal);
     arch::irq::enable_irq_with_priority(UART0TX_IRQn, arch::irq::Priority::Normal);
 }
@@ -105,28 +101,20 @@ crate::define_peripheral! {
      )}),
 }
 
-unsafe extern "C" fn uart0rx_handler() {
-    let _trace = IrqTrace::new(UART0RX_IRQn);
-    let uart = get_device!(console_uart);
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
+#[blueos_macro::interrupt(no = 0)]
+static CMSDK_RX_ISR: CmsdkRxIsr<{ memory_map::UART0_BASE as usize }> =
+    CmsdkRxIsr::<{ memory_map::UART0_BASE as usize }> {
+        data: unsafe {
+            NonNull::new_unchecked(addr_of!(crate::drivers::serial::TTY_SERIAL) as *mut ())
+        },
+        handler: Some(crate::drivers::serial::Serial::recvchars),
+    };
 
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-    uart.clear_interrupt(blueos_driver::uart::InterruptType::Rx);
-}
-
-unsafe extern "C" fn uart0tx_handler() {
-    let _trace = IrqTrace::new(UART0TX_IRQn);
-    let uart = get_device!(console_uart);
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-    uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
-}
+#[blueos_macro::interrupt(no = 1)]
+pub static CMSDK_TX_ISR: CmsdkTxIsr<{ memory_map::UART0_BASE as usize }> =
+    CmsdkTxIsr::<{ memory_map::UART0_BASE as usize }> {
+        data: unsafe {
+            NonNull::new_unchecked(addr_of!(crate::drivers::serial::TTY_SERIAL) as *mut ())
+        },
+        handler: Some(crate::drivers::serial::Serial::xmitchars),
+    };
