@@ -68,7 +68,7 @@ RUN curl -L -o yamlfmt.tar.gz https://github.com/google/yamlfmt/releases/downloa
 
 # Install esp32 QEMU.
 RUN mkdir -p /opt/qemu
-RUN curl -L -o esp32-qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/esp32-qemu-2026_04_02_03_47.tar.xz \
+RUN curl -L -o esp32-qemu.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.1/esp32-qemu-2026_04_21_10_06.tar.xz \
     && tar xf esp32-qemu.tar.xz -C /opt/qemu \
     && rm esp32-qemu.tar.xz
 WORKDIR /opt/qemu/usr/local/bin
