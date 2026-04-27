@@ -69,11 +69,7 @@ impl FdManager {
 
     /// Duplicate file descriptor
     pub fn dup_fd(&mut self, fd: c_int, minfd: c_int, close_on_exec: bool) -> Result<c_int, Error> {
-        if fd < 0 || fd as usize >= self.fds.len() {
-            return Err(code::EBADF);
-        }
-
-        let Some(file) = self.fds[fd as usize].as_ref().cloned() else {
+        let Some(file) = self.get_file_ops(fd) else {
             return Err(code::EBADF);
         };
 
