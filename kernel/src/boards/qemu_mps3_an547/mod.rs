@@ -142,15 +142,19 @@ unsafe extern "C" fn uart0tx_handler() {
 }
 
 #[blueos_macro::interrupt(no = 33)]
-static CMSDK_RX_ISR: CmsdkRxIsr<{ memory_map::UART0_BASE_S as usize }> =
-    CmsdkRxIsr::<{ memory_map::UART0_BASE_S as usize }> {
-        data: unsafe { NonNull::new_unchecked(addr_of!(crate::drivers::serial::TTY_SERIAL) as *mut ()) },
-        handler: Some(crate::drivers::serial::Serial::recvchars),
-    };
+static CMSDK_RX_ISR: CmsdkRxIsr<
+    { memory_map::UART0_BASE_S as usize },
+    crate::drivers::serial::Serial,
+> = CmsdkRxIsr::<{ memory_map::UART0_BASE_S as usize }, _> {
+    data: &crate::drivers::serial::TTY_SERIAL,
+    handler: Some(crate::drivers::serial::Serial::recvchars),
+};
 
 #[blueos_macro::interrupt(no = 34)]
-pub static CMSDK_TX_ISR: CmsdkTxIsr<{ memory_map::UART0_BASE_S as usize }> =
-    CmsdkTxIsr::<{ memory_map::UART0_BASE_S as usize }> {
-        data: unsafe { NonNull::new_unchecked(addr_of!(crate::drivers::serial::TTY_SERIAL) as *mut ()) },
-        handler: Some(crate::drivers::serial::Serial::xmitchars),
-    };
+pub static CMSDK_TX_ISR: CmsdkTxIsr<
+    { memory_map::UART0_BASE_S as usize },
+    crate::drivers::serial::Serial,
+> = CmsdkTxIsr::<{ memory_map::UART0_BASE_S as usize }, _> {
+    data: &crate::drivers::serial::TTY_SERIAL,
+    handler: Some(crate::drivers::serial::Serial::xmitchars),
+};

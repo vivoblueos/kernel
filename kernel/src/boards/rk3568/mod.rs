@@ -19,8 +19,9 @@ use crate::{arch, error::Error, sync::SpinLock, time};
 use blueos_kconfig::CONFIG_NUM_CORES;
 use core::sync::atomic::Ordering;
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::GenericClock;
-use crate::arch::irq::IrqHandler;
 use alloc::boxed::Box;
+use blueos_driver::uart::arm_pl011::ArmPl011Isr;
+use blueos_hal::isr::IsrDesc;
 
 pub(crate) fn init() {
     crate::boot::init_runtime();
@@ -48,8 +49,8 @@ crate::define_peripheral! {
 crate::define_pin_states!(None);
 
 pub struct TimerIrq;
-impl IrqHandler for TimerIrq {
-    fn handle(&mut self) {
+impl IsrDesc for TimerIrq {
+    fn service_isr(&self) {
         crate::time::handle_clock_interrupt();
     }
 }

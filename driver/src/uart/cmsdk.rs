@@ -283,25 +283,27 @@ impl PlatPeri for Cmsdk {
     }
 }
 
-pub struct CmsdkRxIsr<const DEVICE_ADDRESS: usize> {
-    pub data: NonNull<()>,
-    pub handler: Option<fn(*mut ())>,
+pub struct CmsdkRxIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub handler: Option<fn(&T)>,
 }
 
 /// Safety: CmsdkRxIsr only been modified in interrupt context
 /// So it is safe when the core is single-core.
-unsafe impl<const DEVICE_ADDRESS: usize> Sync for CmsdkRxIsr<DEVICE_ADDRESS> {}
+unsafe impl<const DEVICE_ADDRESS: usize, T: Sync> Sync for CmsdkRxIsr<DEVICE_ADDRESS, T> {}
 
-pub struct CmsdkTxIsr<const DEVICE_ADDRESS: usize> {
-    pub data: NonNull<()>,
-    pub handler: Option<fn(*mut ())>,
+pub struct CmsdkTxIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub handler: Option<fn(&T)>,
 }
 
 /// Safety: CmsdkTxIsr only been modified in interrupt context
 /// So it is safe when the core is single-core.
-unsafe impl<const DEVICE_ADDRESS: usize> Sync for CmsdkTxIsr<DEVICE_ADDRESS> {}
+unsafe impl<const DEVICE_ADDRESS: usize, T: Sync> Sync for CmsdkTxIsr<DEVICE_ADDRESS, T> {}
 
-impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkRxIsr<DEVICE_ADDRESS> {
+impl<const DEVICE_ADDRESS: usize, T: Sync> blueos_hal::isr::IsrDesc
+    for CmsdkRxIsr<DEVICE_ADDRESS, T>
+{
     fn service_isr(&self) {
         unsafe {
             &(*(DEVICE_ADDRESS as *mut Registers))
@@ -309,12 +311,14 @@ impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkRxIsr<DEVICE
                 .modify(INTSTATUS::RXIRQ::SET);
         }
         if let Some(handler) = self.handler {
-            (handler)(self.data.as_ptr());
+            (handler)(self.data);
         }
     }
 }
 
-impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkTxIsr<DEVICE_ADDRESS> {
+impl<const DEVICE_ADDRESS: usize, T: Sync> blueos_hal::isr::IsrDesc
+    for CmsdkTxIsr<DEVICE_ADDRESS, T>
+{
     fn service_isr(&self) {
         unsafe {
             &(*(DEVICE_ADDRESS as *mut Registers))
@@ -322,7 +326,7 @@ impl<const DEVICE_ADDRESS: usize> blueos_hal::isr::IsrDesc for CmsdkTxIsr<DEVICE
                 .modify(INTSTATUS::TXIRQ::SET);
         }
         if let Some(handler) = self.handler {
-            (handler)(self.data.as_ptr());
+            (handler)(self.data);
         }
     }
 }

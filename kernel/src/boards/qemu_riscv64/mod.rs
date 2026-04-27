@@ -46,6 +46,8 @@ fn init_vector_table() {
     }
 }
 
+/// FIXME: The serial port of qemu_riscv32 is not working until
+/// we finish the handle_irq function.
 pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
     PLIC.complete(cpu_id, PLIC.claim(cpu_id))

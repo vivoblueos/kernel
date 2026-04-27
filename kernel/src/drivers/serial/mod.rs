@@ -22,7 +22,7 @@ use crate::{
     error::code,
     irq::is_in_irq,
     kearly_println,
-    scheduler::{self, is_schedule_ready, yield_me, InsertToEnd},
+    scheduler::{self, is_schedule_ready, yield_me},
     support::DisableInterruptGuard,
     sync::{atomic_wait, atomic_wake, SpinLock},
     time::{self, Tick},
@@ -34,6 +34,7 @@ use embedded_io::ErrorKind;
 use libc::{TCIFLUSH, TCIOFF, TCIOFLUSH, TCION, TCOFLUSH, TCOOFF, TCOON};
 
 const DEFAULT_BREAK_DURATION_MS: usize = 250;
+const DEFAULT_TX_DRAIN_TIMEOUT_MS: usize = 5000;
 
 pub struct Serial {
     dev: &'static dyn blueos_hal::uart::Uart<UartConfig, (), InterruptType, UartCtrlStatus>,
@@ -82,7 +83,17 @@ pub static TTY_SERIAL: Serial = Serial {
 impl Serial {
     pub fn send_bytes(&self, bytes: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         if is_in_irq() {
-            // same behavior as kearly_printkln!
+            // Caution: logging in IRQ context can extend interrupt-off latency.
+            //
+            // We intentionally use polling here (same behavior as `kearly_printkln!`) instead
+            // of waiting for TX IRQ progress:
+            // 1) some IRQ contexts run with interrupts masked;
+            // 2) current IRQ priority may be higher than UART TX IRQ, so TX handler cannot run.
+            //
+            // In those cases, relying on TX interrupt-driven drain may stall forever. Polling
+            // guarantees forward progress for emergency logs, but callers should keep IRQ logs
+            // short and infrequent.
+            #[cfg(smp)]
             let _lock = self.critical_section_guard.irqsave_lock();
             for &b in bytes {
                 self.send_byte_polling(b);
@@ -102,10 +113,10 @@ impl Serial {
                     }
                     Err(ErrorKind::OutOfMemory) => {
                         if !is_nonblocking {
+                            #[cfg(smp)]
+                            drop(_lock);
                             'i: loop {
                                 let tx_seq = self.tx_futex.load(Ordering::Acquire);
-                                #[cfg(smp)]
-                                drop(_lock);
                                 // If the FIFO is full and we're in blocking mode, we need to
                                 // trigger the TX interrupt to start sending out the data in FIFO.
                                 self.trigger_tx_interrupt();
@@ -229,7 +240,7 @@ impl Serial {
         }
         if duration == 0 {
             // send break signal
-            self.wait_for_tx_empty()?;
+            self.wait_for_tx_drain_complete()?;
             let lock = self.critical_section_guard.irqsave_lock();
             self.dev
                 .set_break_signal(true)
@@ -245,14 +256,51 @@ impl Serial {
                 .set_break_signal(false)
                 .map_err(|_| ErrorKind::Other)
         } else {
-            self.wait_for_tx_empty()
+            self.wait_for_tx_drain_complete()
         }
     }
 
+    /// Wait until software TX ring becomes empty.
+    ///
+    /// This does not guarantee UART shift register/FIFO are fully drained.
+    ///
+    /// To avoid unbounded waits when TX progress is broken, this returns
+    /// `ErrorKind::TimedOut` after a bounded timeout.
     pub fn wait_for_tx_empty(&self) -> Result<(), ErrorKind> {
+        let start = Tick::now();
+        let timeout = Tick::from_millis(DEFAULT_TX_DRAIN_TIMEOUT_MS as u64);
         loop {
             if self.is_tx_empty() {
                 break;
+            }
+            if Tick::now().since(start) >= timeout {
+                return Err(ErrorKind::TimedOut);
+            }
+            if is_schedule_ready() {
+                yield_me();
+            }
+        }
+        Ok(())
+    }
+
+    /// Wait until both software TX queue and hardware transmitter are drained.
+    ///
+    /// Use this for TCSETSW/TCSETSF/TCSBRK-like semantics.
+    ///
+    /// Returns `ErrorKind::TimedOut` if hardware never reaches idle state.
+    pub fn wait_for_tx_drain_complete(&self) -> Result<(), ErrorKind> {
+        self.wait_for_tx_empty()?;
+        let start = Tick::now();
+        let timeout = Tick::from_millis(DEFAULT_TX_DRAIN_TIMEOUT_MS as u64);
+        loop {
+            if !self.dev.is_bus_busy() {
+                break;
+            }
+            if Tick::now().since(start) >= timeout {
+                return Err(ErrorKind::TimedOut);
+            }
+            if is_schedule_ready() {
+                yield_me();
             }
         }
         Ok(())
@@ -296,7 +344,7 @@ impl Serial {
             self.tx_head.set(tx_next);
             Ok(())
         } else {
-            return Err(ErrorKind::OutOfMemory);
+            Err(ErrorKind::OutOfMemory)
         }
     }
 
@@ -380,33 +428,31 @@ impl Serial {
     }
 
     /// only be used in irq handler
-    pub(crate) fn xmitchars(data: *mut ()) {
+    pub(crate) fn xmitchars(&self) {
         use blueos_hal::HasInterruptReg;
-        let dev = unsafe { &*(data as *const Self) };
-        #[cfg(smp)]
-        let _lock = dev.critical_section_guard.irqsave_lock();
 
-        dev.consumer_byte();
+        #[cfg(smp)]
+        let _lock = self.critical_section_guard.irqsave_lock();
+
+        self.consumer_byte();
     }
 
     /// only be used in irq handler
-    pub(crate) fn recvchars(data: *mut ()) {
-        let dev = unsafe { &*(data as *const Self) };
-
+    pub(crate) fn recvchars(&self) {
         #[cfg(smp)]
-        let _lock = dev.critical_section_guard.irqsave_lock();
+        let _lock = self.critical_section_guard.irqsave_lock();
 
         let mut nbytes = 0;
-        while (!dev.dev.is_rx_fifo_empty()) {
-            let nexthead = (dev.rx_head.get() + 1) % CONFIG_SERIAL_RX_FIFO_SIZE;
+        while (!self.dev.is_rx_fifo_empty()) {
+            let nexthead = (self.rx_head.get() + 1) % CONFIG_SERIAL_RX_FIFO_SIZE;
 
-            match dev.dev.read_data8() {
+            match self.dev.read_data8() {
                 Ok(c) => {
                     // If the RX buffer is full, we just drop the incoming data.
                     // It's necessary to trigger next irq.
-                    if (nexthead != dev.rx_end.get()) {
-                        dev.rx_buffer.borrow_mut()[dev.rx_head.get() as usize] = c;
-                        dev.rx_head.set(nexthead);
+                    if (nexthead != self.rx_end.get()) {
+                        self.rx_buffer.borrow_mut()[self.rx_head.get() as usize] = c;
+                        self.rx_head.set(nexthead);
                     }
                 }
                 Err(e) => {
@@ -415,15 +461,15 @@ impl Serial {
             }
         }
 
-        if (dev.rx_head.get() >= dev.rx_end.get()) {
-            nbytes = (dev.rx_head.get() - dev.rx_end.get()) as usize;
+        if (self.rx_head.get() >= self.rx_end.get()) {
+            nbytes = (self.rx_head.get() - self.rx_end.get()) as usize;
         } else {
-            nbytes = (CONFIG_SERIAL_RX_FIFO_SIZE - dev.rx_end.get() + dev.rx_head.get()) as usize;
+            nbytes = (CONFIG_SERIAL_RX_FIFO_SIZE - self.rx_end.get() + self.rx_head.get()) as usize;
         }
 
         if nbytes > 0 {
-            dev.rx_futex.fetch_add(1, Ordering::Release);
-            let _ = atomic_wake(&dev.rx_futex, 1);
+            self.rx_futex.fetch_add(1, Ordering::Release);
+            let _ = atomic_wake(&self.rx_futex, 1);
         }
     }
 
@@ -440,11 +486,33 @@ impl Serial {
         Ok(())
     }
 
+    pub fn reconfigure(&self, config: UartConfig) -> Result<(), ErrorKind> {
+        let _lock = self.critical_section_guard.irqsave_lock();
+        self.dev
+            .configure(&config)
+            .map_err(|_| ErrorKind::InvalidData)?;
+
+        if self.owner_cnts.get() > 0 {
+            self.dev.enable();
+            self.dev.enable_interrupt(InterruptType::Rx);
+            if self.tx_head.get() != self.tx_end.get() {
+                self.dev.enable_interrupt(InterruptType::Tx);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn close(&self) -> Result<(), ErrorKind> {
         let _lock = self.critical_section_guard.irqsave_lock();
-        if self.owner_cnts.get() > 0 {
-            self.owner_cnts.set(self.owner_cnts.get() - 1);
-        } else {
+        let owners = self.owner_cnts.get();
+        if owners <= 0 {
+            return Ok(());
+        }
+
+        let remaining = owners - 1;
+        self.owner_cnts.set(remaining);
+        if remaining == 0 {
             self.dev.disable_interrupt(InterruptType::Rx);
             self.dev.disable_interrupt(InterruptType::Tx);
             self.dev.disable();

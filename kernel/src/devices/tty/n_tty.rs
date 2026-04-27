@@ -14,10 +14,7 @@
 
 use crate::{
     devices::{
-        tty::{
-            serial,
-            termios::{CcIndex, Cflags, Iflags, Oflags, Termios},
-        },
+        tty::termios::{CcIndex, Cflags, Iflags, Oflags, Termios},
         Device, DeviceClass, DeviceId, DeviceRequest,
     },
     drivers::serial::Serial,
@@ -27,9 +24,7 @@ use blueos_driver::uart::{DataBits, UartConfig};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use embedded_io::ErrorKind;
 use libc::{c_int, TCFLSH, TCGETS, TCIFLUSH, TCSBRK, TCSETS, TCSETSF, TCSETSW, TCXONC};
-use spin::{Mutex, Once};
-
-// static TTY: Once<Arc<Tty>> = Once::new();
+use spin::Mutex;
 
 enum SpecKey {
     Up,
@@ -79,6 +74,38 @@ impl Tty {
         self.dev.send_bytes(b"\x1b[2K", !is_blocking)?;
         Ok(())
     }
+
+    fn try_drain_committed_line(&self, line_buf: &mut [u8], out_buf: &mut [u8]) -> Option<usize> {
+        let pending_len = self.cursor.load(Ordering::Relaxed);
+        if pending_len == 0 || pending_len > line_buf.len() || line_buf[pending_len - 1] != b'\n' {
+            return None;
+        }
+
+        let copy_len = core::cmp::min(pending_len, out_buf.len());
+        out_buf[..copy_len].copy_from_slice(&line_buf[..copy_len]);
+
+        if copy_len < pending_len {
+            line_buf.copy_within(copy_len..pending_len, 0);
+            line_buf[pending_len - copy_len..pending_len].fill(0);
+            self.cursor
+                .store(pending_len - copy_len, Ordering::Relaxed);
+        } else {
+            line_buf.fill(0);
+            self.cursor.store(0, Ordering::Relaxed);
+        }
+
+        Some(copy_len)
+    }
+
+    fn apply_termios_atomically(&self, termios: Termios) -> Result<(), ErrorKind> {
+        let uart_config = convert_termios_to_uart_config(&termios);
+        let mut termios_guard = self.termios.lock();
+        // Keep software termios and hardware UART update in one critical section so
+        // concurrent ioctl readers/writers don't observe an intermediate state.
+        self.dev.reconfigure(uart_config)?;
+        *termios_guard = termios;
+        Ok(())
+    }
 }
 
 unsafe fn load_user_termios(ptr: *const Termios) -> Result<Termios, ErrorKind> {
@@ -97,7 +124,7 @@ unsafe fn store_user_termios(ptr: *mut Termios, termios: &Termios) -> Result<(),
 }
 
 fn convert_termios_to_uart_config(termios: &Termios) -> UartConfig {
-    let config = UartConfig {
+    UartConfig {
         baudrate: termios.getospeed(),
         data_bits: if termios.cflag.contains(Cflags::CSIZE_8) {
             DataBits::DataBits8
@@ -121,8 +148,7 @@ fn convert_termios_to_uart_config(termios: &Termios) -> UartConfig {
             blueos_driver::uart::StopBits::DataBits1
         },
         flow_ctrl: blueos_driver::uart::FlowCtrl::None,
-    };
-    config
+    }
 }
 
 impl Device for Tty {
@@ -149,11 +175,22 @@ impl Device for Tty {
     }
 
     fn read(&self, _pos: u64, buf: &mut [u8], is_blocking: bool) -> Result<usize, ErrorKind> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
         let mut line_buf = self.line_buf.lock();
         let termios = *self.termios.lock();
         let map_crlf = termios.iflag.contains(Iflags::ICRNL);
+        // Reserve one byte for '\n' on line commit in canonical input path.
+        let line_capacity = line_buf.len().saturating_sub(1);
         let erase_char = termios.cc[CcIndex::Verase as usize];
         let kill_char = termios.cc[CcIndex::Vkill as usize];
+
+        if let Some(drained) = self.try_drain_committed_line(&mut line_buf[..], buf) {
+            return Ok(drained);
+        }
+
         // handle special characters
         if let Some(key) = &*self.spec_key.lock() {
             let history_cursor = self.history_cursor.load(Ordering::Relaxed);
@@ -198,14 +235,15 @@ impl Device for Tty {
                 if map_crlf && ch == b'\r' {
                     self.dev.send_bytes(b"\r\n", false)?;
                     line_buf[cursor] = b'\n';
-                    buf[..cursor + 1].copy_from_slice(&line_buf[..cursor + 1]);
                     let command = String::from_utf8_lossy(&line_buf[..cursor]).into_owned();
                     if !command.is_empty() {
                         self.add_history(&command);
                     }
-                    line_buf.fill(0);
-                    self.cursor.store(0, Ordering::Relaxed);
-                    return Ok(cursor + 1);
+                    self.cursor.store(cursor + 1, Ordering::Relaxed);
+                    if let Some(drained) = self.try_drain_committed_line(&mut line_buf[..], buf) {
+                        return Ok(drained);
+                    }
+                    return Ok(0);
                 }
                 if erase_char == ch {
                     if cursor > 0 {
@@ -249,6 +287,10 @@ impl Device for Tty {
                     }
                 }
                 i += 1;
+                if cursor >= line_capacity {
+                    // Drop extra input when line buffer is full to avoid OOB write.
+                    continue;
+                }
                 line_buf[cursor] = ch;
                 let _ = self.cursor.fetch_add(1, Ordering::Relaxed);
                 self.dev.send_bytes(&[ch], false);
@@ -289,21 +331,18 @@ impl Device for Tty {
             }
             TCSETS => {
                 let termios = unsafe { load_user_termios(arg as *const Termios)? };
-                *self.termios.lock() = termios;
-                Ok(())
+                self.apply_termios_atomically(termios)
             }
             TCSETSW => {
                 let termios = unsafe { load_user_termios(arg as *const Termios)? };
-                self.dev.wait_for_tx_empty()?;
-                *self.termios.lock() = termios;
-                Ok(())
+                self.dev.wait_for_tx_drain_complete()?;
+                self.apply_termios_atomically(termios)
             }
             TCSETSF => {
                 let termios = unsafe { load_user_termios(arg as *const Termios)? };
-                self.dev.wait_for_tx_empty()?;
+                self.dev.wait_for_tx_drain_complete()?;
                 self.dev.handle_tcflsh(TCIFLUSH)?;
-                *self.termios.lock() = termios;
-                Ok(())
+                self.apply_termios_atomically(termios)
             }
             TCFLSH => self.dev.handle_tcflsh(arg as c_int),
             TCXONC => {

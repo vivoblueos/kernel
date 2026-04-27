@@ -22,6 +22,7 @@ use crate::{
     irq::IrqTrace,
     time,
 };
+use blueos_driver::uart::arm_pl011::ArmPl011Isr;
 use blueos_hal::{clock::Clock, clock_control::ClockControl};
 use core::ptr::addr_of;
 use spin::Once;
@@ -99,9 +100,6 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
-    unsafe {
-        arch::irq::register_raw_isr(UART0_IRQN, uart0_handler);
-    }
     arch::irq::enable_irq_with_priority(UART0_IRQN, arch::irq::Priority::Normal);
     ClockImpl::init();
 }
@@ -144,17 +142,10 @@ crate::define_bus! {
     )
 }
 
-pub unsafe extern "C" fn uart0_handler() {
-    use blueos_hal::HasInterruptReg;
-    let _trace = IrqTrace::new(UART0_IRQN);
-    let uart = get_device!(console_uart);
-    let intr = uart.get_interrupt();
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-    uart.clear_interrupt(intr);
-}
+#[blueos_macro::interrupt(no = 33)]
+static ARM_PL011_ISR: ArmPl011Isr<0x40070000, crate::drivers::serial::Serial> =
+    ArmPl011Isr::<0x40070000, _> {
+        data: &crate::drivers::serial::TTY_SERIAL,
+        tx_isr: Some(crate::drivers::serial::Serial::xmitchars),
+        rx_isr: Some(crate::drivers::serial::Serial::recvchars),
+    };

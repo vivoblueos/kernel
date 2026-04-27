@@ -18,6 +18,7 @@ use crate::{arch::current_cpu_id, sync::SpinLock};
 use alloc::boxed::Box;
 pub use arm_gic::Trigger as IrqTrigger;
 use arm_gic::{gicv3::*, IntId};
+use blueos_hal::isr::IsrDesc;
 use spin::Once;
 use tock_registers::interfaces::Readable;
 
@@ -97,7 +98,7 @@ pub const INTERRUPT_TABLE_LEN: usize = 1024;
 
 pub struct IrqContext {
     pub irq: IrqNumber,
-    pub handler: Box<dyn IrqHandler>,
+    pub handler: Box<dyn IsrDesc>,
 }
 
 impl core::fmt::Display for IrqContext {
@@ -106,12 +107,8 @@ impl core::fmt::Display for IrqContext {
     }
 }
 
-pub trait IrqHandler: Send + Sync {
-    fn handle(&mut self);
-}
-
 impl IrqContext {
-    fn new(irq: IrqNumber, handler: Box<dyn IrqHandler>) -> Self {
+    fn new(irq: IrqNumber, handler: Box<dyn IsrDesc>) -> Self {
         Self { irq, handler }
     }
 }
@@ -133,7 +130,7 @@ impl IrqManager {
     fn register_handler(
         &mut self,
         irq: IrqNumber,
-        handler: Box<dyn IrqHandler>,
+        handler: Box<dyn IsrDesc>,
     ) -> Result<(), &'static str> {
         if u32::from(irq) >= INTERRUPT_TABLE_LEN as u32 {
             return Err("IRQ number out of range");
@@ -144,7 +141,7 @@ impl IrqManager {
 
     fn trigger_irq(&mut self, irq: IrqNumber) -> Result<(), &'static str> {
         if let Some(context) = &mut self.contexts[usize::from(irq)] {
-            context.handler.handle();
+            context.handler.service_isr();
             return Ok(());
         }
         Err("handler not found")
@@ -152,7 +149,7 @@ impl IrqManager {
 }
 
 // Register interrupt handler
-pub fn register_handler(irq: IrqNumber, handler: Box<dyn IrqHandler>) -> Result<(), &'static str> {
+pub fn register_handler(irq: IrqNumber, handler: Box<dyn IsrDesc>) -> Result<(), &'static str> {
     IRQ_MANAGER.lock().register_handler(irq, handler)
 }
 

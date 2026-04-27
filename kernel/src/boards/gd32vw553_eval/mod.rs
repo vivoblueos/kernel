@@ -75,6 +75,8 @@ pub fn current_cpu_cycles() -> u64 {
     ((hi as u64) << 32) + lo as u64
 }
 
+/// FIXME: The serial port of gd32vw553_eval is not working until
+/// we finish the handle_irq function.
 pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     todo!()
 }

@@ -18,6 +18,7 @@ use crate::uart::{DataBits, Parity, StopBits};
 use bitflags::bitflags;
 use blueos_hal::{
     err::{HalError, Result},
+    isr::IsrDesc,
     uart::Uart,
     Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
 };
@@ -552,4 +553,47 @@ fn calculate_baud_rate_divisor(baud_rate: u32, sysclk: u32) -> Result<(u32, u32)
     }
 
     Ok((ibrd, fbrd))
+}
+
+pub struct ArmPl011Isr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub tx_isr: Option<fn(&T)>,
+    pub rx_isr: Option<fn(&T)>,
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> ArmPl011Isr<DEVICE_ADDRESS, T> {
+    pub const fn new(data: &'static T, tx_isr: Option<fn(&T)>, rx_isr: Option<fn(&T)>) -> Self {
+        ArmPl011Isr {
+            data,
+            tx_isr,
+            rx_isr,
+        }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for ArmPl011Isr<DEVICE_ADDRESS, T> {
+    fn service_isr(&self) {
+        unsafe {
+            let mut reg = unsafe {
+                UniqueMmioPointer::new(NonNull::new(DEVICE_ADDRESS as *mut PL011Registers).unwrap())
+            };
+            let regs = &mut reg;
+
+            let mis = field_used_by_inner!(regs, uartmis).read();
+
+            if mis.contains(Interrupts::RXI) {
+                field_used_by_inner!(regs, uarticr).write(Interrupts::RXI);
+                if let Some(rx_handler) = self.rx_isr {
+                    rx_handler(self.data);
+                }
+            }
+
+            if mis.contains(Interrupts::TXI) {
+                field_used_by_inner!(regs, uarticr).write(Interrupts::TXI);
+                if let Some(tx_handler) = self.tx_isr {
+                    tx_handler(self.data);
+                }
+            }
+        }
+    }
 }

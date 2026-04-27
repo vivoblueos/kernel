@@ -22,11 +22,7 @@ use crate::{
     allocator, arch, boards,
     devices::{
         console,
-        tty::{
-            n_tty::Tty,
-            serial::{uart::UartDevice, Serial},
-            termios::Termios,
-        },
+        tty::{n_tty::Tty, termios::Termios},
         DeviceManager,
     },
     logger, scheduler,
@@ -79,18 +75,8 @@ use crate::{
     drivers::InitDriver,
 };
 
-static SERIAL0: Once<Arc<Serial>> = Once::new();
 #[cfg(use_bme280)]
 static I2C0_BUS: Once<Arc<Bus<crate::boards::get_bus_ty!(i2c0_bus)>>> = Once::new();
-
-pub fn get_serial(index: u32) -> &'static Arc<Serial> {
-    match index {
-        0 => SERIAL0
-            .get()
-            .expect("uart_init must be called before get_serial"),
-        _ => panic!("unsupported SERIAL number"),
-    }
-}
 
 fn init_pin_states<P: blueos_hal::pinctrl::AlterFuncPin>(pin_states: &[&P]) {
     for pin_state in pin_states {
@@ -108,14 +94,9 @@ extern "C" fn init() {
     uart.configure(&UartConfig::default()).unwrap();
     uart.enable();
 
-    DeviceManager::get().register_device(
-        String::from("ttyS0"),
-        Tty::init(&crate::drivers::serial::TTY_SERIAL, Termios::default()),
-    );
-    match console::init_console(Tty::init(
-        &crate::drivers::serial::TTY_SERIAL,
-        Termios::default(),
-    )) {
+    let tty0 = Tty::init(&crate::drivers::serial::TTY_SERIAL, Termios::default());
+    DeviceManager::get().register_device(String::from("ttyS0"), tty0.clone());
+    match console::init_console(tty0.clone()) {
         Ok(_) => {}
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
