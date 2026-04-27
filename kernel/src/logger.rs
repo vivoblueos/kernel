@@ -19,13 +19,23 @@ static LOGGER_MUTEX: SpinLock<()> = SpinLock::new(());
 
 struct Logger;
 
+#[cfg(log_level_off)]
+const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Off;
+#[cfg(log_level_error)]
+const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Error;
+#[cfg(log_level_warn)]
+const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Warn;
+#[cfg(log_level_info)]
+const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Info;
+#[cfg(log_level_debug)]
+const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Debug;
+#[cfg(log_level_trace)]
+const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Trace;
+
 /// log init
 pub fn logger_init() {
     static LOGGER: Logger = Logger {};
-    #[cfg(debug)]
-    log::set_max_level(LevelFilter::Info);
-    #[cfg(release)]
-    log::set_max_level(LevelFilter::Warn);
+    log::set_max_level(DEFAULT_LOG_LEVEL);
     log::set_logger(&LOGGER).unwrap();
 }
 
