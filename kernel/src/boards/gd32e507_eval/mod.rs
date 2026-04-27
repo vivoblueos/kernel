@@ -19,7 +19,7 @@ use crate::{
     sync::SpinLock, time,
 };
 use alloc::sync::Arc;
-use blueos_driver::pinctrl::gd32_afio::*;
+use blueos_driver::{pinctrl::gd32_afio::*, uart::gd32e5x_uart::Gd32e5xUartIsr};
 use blueos_hal::clock::Clock;
 use blueos_infra::tinyarc::TinyArc;
 use core::ptr::addr_of;
@@ -86,9 +86,6 @@ pub(crate) fn init() {
 
     unsafe { boot::init_heap() };
     arch::irq::init();
-    unsafe {
-        arch::irq::register_raw_isr(config::USBFS_IRQn, uart0_handler);
-    }
     arch::irq::enable_irq_with_priority(config::USBFS_IRQn, arch::irq::Priority::Normal);
     ClockImpl::init();
 }
@@ -128,15 +125,10 @@ crate::define_pin_states! {
     )
 }
 
-unsafe extern "C" fn uart0_handler() {
-    let _trace = IrqTrace::new(config::USBFS_IRQn);
-    use blueos_hal::HasInterruptReg;
-    let uart = get_device!(console_uart);
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-}
+#[blueos_macro::interrupt(no = 37)]
+static UART0_ISR: Gd32e5xUartIsr<0x4001_3800, crate::drivers::serial::Serial> =
+    Gd32e5xUartIsr::<0x4001_3800, _> {
+        data: &crate::drivers::serial::TTY_SERIAL,
+        tx_isr: Some(crate::drivers::serial::Serial::xmitchars),
+        rx_isr: Some(crate::drivers::serial::Serial::recvchars),
+    };

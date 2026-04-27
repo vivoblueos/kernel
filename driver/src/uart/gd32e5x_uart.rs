@@ -14,8 +14,8 @@
 
 use crate::uart::{DataBits, Parity, StopBits};
 use blueos_hal::{
-    reset::ResetCtrl, uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg,
-    HasLineStatusReg, PlatPeri,
+    isr::IsrDesc, reset::ResetCtrl, uart::Uart, Configuration, Has8bitDataReg, HasFifo,
+    HasInterruptReg, HasLineStatusReg, PlatPeri,
 };
 use core::cell::UnsafeCell;
 use gd32e5::gd32e507::usart0;
@@ -243,5 +243,43 @@ impl PlatPeri for Gd32e5xUart {
         self.regs()
             .ctl0()
             .modify(|_, w| w.uen().clear_bit().ten().clear_bit().ren().clear_bit());
+    }
+}
+
+pub struct Gd32e5xUartIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub tx_isr: Option<fn(&T)>,
+    pub rx_isr: Option<fn(&T)>,
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> Gd32e5xUartIsr<DEVICE_ADDRESS, T> {
+    pub const fn new(data: &'static T, tx_isr: Option<fn(&T)>, rx_isr: Option<fn(&T)>) -> Self {
+        Self {
+            data,
+            tx_isr,
+            rx_isr,
+        }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Gd32e5xUartIsr<DEVICE_ADDRESS, T> {
+    fn service_isr(&self) {
+        let uart = unsafe { &*(DEVICE_ADDRESS as *const Gd32e5xUart) };
+        let intr = uart.get_interrupt();
+        match intr {
+            super::InterruptType::Rx => {
+                uart.clear_interrupt(intr);
+                if let Some(rx_isr) = self.rx_isr {
+                    rx_isr(self.data);
+                }
+            }
+            super::InterruptType::Tx => {
+                uart.clear_interrupt(intr);
+                if let Some(tx_isr) = self.tx_isr {
+                    tx_isr(self.data);
+                }
+            }
+            _ => {}
+        }
     }
 }
