@@ -19,25 +19,6 @@ static LOGGER_MUTEX: SpinLock<()> = SpinLock::new(());
 
 struct Logger;
 
-pub enum LogLevel {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-///set max log level
-pub fn set_max_level(level: LogLevel) {
-    match level {
-        LogLevel::Trace => log::set_max_level(LevelFilter::Trace),
-        LogLevel::Debug => log::set_max_level(LevelFilter::Debug),
-        LogLevel::Info => log::set_max_level(LevelFilter::Info),
-        LogLevel::Warn => log::set_max_level(LevelFilter::Warn),
-        LogLevel::Error => log::set_max_level(LevelFilter::Error),
-    }
-}
-
 /// log init
 pub fn logger_init() {
     static LOGGER: Logger = Logger {};
