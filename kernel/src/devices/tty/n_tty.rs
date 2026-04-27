@@ -87,8 +87,7 @@ impl Tty {
         if copy_len < pending_len {
             line_buf.copy_within(copy_len..pending_len, 0);
             line_buf[pending_len - copy_len..pending_len].fill(0);
-            self.cursor
-                .store(pending_len - copy_len, Ordering::Relaxed);
+            self.cursor.store(pending_len - copy_len, Ordering::Relaxed);
         } else {
             line_buf.fill(0);
             self.cursor.store(0, Ordering::Relaxed);

@@ -143,8 +143,7 @@ register_structs! {
 const USB_SERIAL_BASE: StaticRef<Registers> =
     unsafe { StaticRef::new(0x6004_3000 as *const Registers) };
 
-pub struct Esp32UsbSerial {
-}
+pub struct Esp32UsbSerial {}
 
 unsafe impl Send for Esp32UsbSerial {}
 unsafe impl Sync for Esp32UsbSerial {}
