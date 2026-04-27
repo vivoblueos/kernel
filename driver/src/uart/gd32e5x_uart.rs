@@ -17,7 +17,6 @@ use blueos_hal::{
     isr::IsrDesc, reset::ResetCtrl, uart::Uart, Configuration, Has8bitDataReg, HasFifo,
     HasInterruptReg, HasLineStatusReg, PlatPeri,
 };
-use core::cell::UnsafeCell;
 use gd32e5::gd32e507::usart0;
 
 pub struct Gd32e5xUart {
@@ -25,7 +24,6 @@ pub struct Gd32e5xUart {
     // but the situation may be different for other UART peripherals
     inner: u32,
     clk: u32,
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
     reset_id: u32,
     reset: &'static dyn ResetCtrl,
 }
@@ -111,7 +109,6 @@ impl Gd32e5xUart {
         Gd32e5xUart {
             inner: uart,
             clk,
-            intr_handler: UnsafeCell::new(None),
             reset_id,
             reset,
         }
@@ -218,12 +215,6 @@ impl HasInterruptReg for Gd32e5xUart {
             super::InterruptType::Tx
         } else {
             super::InterruptType::Unknown
-        }
-    }
-
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        unsafe {
-            *self.intr_handler.get() = Some(handler);
         }
     }
 

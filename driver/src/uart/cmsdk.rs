@@ -15,7 +15,7 @@
 // SPDX-FileCopyrightText: Copyright 2023-2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use core::{cell::UnsafeCell, ptr::NonNull};
+use core::ptr::NonNull;
 
 use blueos_hal::{
     uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
@@ -107,7 +107,6 @@ register_structs! {
 pub struct Cmsdk {
     registers: *mut Registers,
     clk: u32,
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
     irq_nums: [u32; 2],
 }
 
@@ -116,7 +115,6 @@ impl Cmsdk {
         Cmsdk {
             registers: base_addr as *mut Registers,
             clk,
-            intr_handler: UnsafeCell::new(None),
             irq_nums: [tx_irq, rx_irq],
         }
     }
@@ -255,13 +253,6 @@ impl HasInterruptReg for Cmsdk {
         } else {
             super::InterruptType::Unknown
         }
-    }
-
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        // unsafe {
-        //     *CMSDK_RX_ISR.handler.get() = Some(handler);
-        //     *CMSDK_TX_ISR.handler.get() = Some(handler);
-        // }
     }
 
     fn get_irq_nums(&self) -> &[u32] {

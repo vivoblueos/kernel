@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::cell::UnsafeCell;
-
 use crate::static_ref::StaticRef;
 use blueos_hal::{
     isr::IsrDesc, uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg,
@@ -146,7 +144,6 @@ const USB_SERIAL_BASE: StaticRef<Registers> =
     unsafe { StaticRef::new(0x6004_3000 as *const Registers) };
 
 pub struct Esp32UsbSerial {
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
 }
 
 unsafe impl Send for Esp32UsbSerial {}
@@ -154,9 +151,7 @@ unsafe impl Sync for Esp32UsbSerial {}
 
 impl Esp32UsbSerial {
     pub const fn new() -> Self {
-        Self {
-            intr_handler: UnsafeCell::new(None),
-        }
+        Self {}
     }
 }
 
@@ -286,12 +281,6 @@ impl HasInterruptReg for Esp32UsbSerial {
             (true, false) => super::InterruptType::Rx,
             (false, true) => super::InterruptType::Tx,
             _ => super::InterruptType::Unknown,
-        }
-    }
-
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        unsafe {
-            *self.intr_handler.get() = Some(handler);
         }
     }
 

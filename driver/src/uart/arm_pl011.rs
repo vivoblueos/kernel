@@ -272,7 +272,6 @@ impl Identification {
 pub struct ArmPl011<'a> {
     pub regs: UnsafeCell<UniqueMmioPointer<'a, PL011Registers>>,
     pub sysclk: u32,
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
     pub reset_ctrl: Option<(&'static dyn blueos_hal::reset::ResetCtrlWithDone, u32)>,
 }
 
@@ -287,7 +286,6 @@ impl ArmPl011<'_> {
                 UniqueMmioPointer::new(NonNull::new(base_addr as *mut PL011Registers).unwrap())
             }),
             sysclk,
-            intr_handler: UnsafeCell::new(None),
             reset_ctrl,
         }
     }
@@ -500,11 +498,6 @@ impl HasInterruptReg for ArmPl011<'static> {
         } else {
             super::InterruptType::Unknown
         }
-    }
-
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        let intr_handler_cell = unsafe { &mut *self.intr_handler.get() };
-        *intr_handler_cell = Some(handler);
     }
 
     fn get_irq_nums(&self) -> &[u32] {

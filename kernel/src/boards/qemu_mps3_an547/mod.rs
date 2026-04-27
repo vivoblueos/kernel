@@ -22,13 +22,12 @@ use crate::{
     boot,
     devices::clock::systick,
     error::Error,
-    irq::IrqTrace,
     time,
 };
 use blueos_driver::uart::cmsdk::{CmsdkRxIsr, CmsdkTxIsr};
-use blueos_hal::{clock::Clock, HasInterruptReg};
+use blueos_hal::clock::Clock;
 use boot::INIT_BSS_DONE;
-use core::ptr::{addr_of, NonNull};
+use core::ptr::addr_of;
 
 #[repr(C)]
 struct CopyTable {
@@ -114,32 +113,6 @@ crate::define_peripheral! {
 }
 
 crate::define_pin_states!(None);
-
-unsafe extern "C" fn uart0rx_handler() {
-    let _trace = IrqTrace::new(UART0RX_IRQn);
-    let uart = get_device!(console_uart);
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-    uart.clear_interrupt(blueos_driver::uart::InterruptType::Rx);
-}
-
-unsafe extern "C" fn uart0tx_handler() {
-    let _trace = IrqTrace::new(UART0TX_IRQn);
-    let uart = get_device!(console_uart);
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-    uart.clear_interrupt(blueos_driver::uart::InterruptType::Tx);
-}
 
 #[blueos_macro::interrupt(no = 33)]
 static CMSDK_RX_ISR: CmsdkRxIsr<

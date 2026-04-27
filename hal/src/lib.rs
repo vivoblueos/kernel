@@ -130,9 +130,6 @@ pub trait HasInterruptReg {
     fn disable_interrupt(&self, intr: Self::InterruptType);
     fn get_interrupt(&self) -> Self::InterruptType;
 
-    // FIXME: dyn trait object may is not efficient enough
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {}
-
     fn clear_interrupt(&self, intr: Self::InterruptType);
     fn get_irq_nums(&self) -> &[u32] {
         &[]

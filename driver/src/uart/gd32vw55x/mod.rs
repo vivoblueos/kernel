@@ -292,8 +292,6 @@ impl HasInterruptReg for Gd32vw55xUart {
         super::InterruptType::Unknown
     }
 
-    fn set_interrupt_handler(&self, _handler: &'static dyn Fn()) {}
-
     fn get_irq_nums(&self) -> &[u32] {
         &[]
     }
