@@ -5,7 +5,7 @@ STACK_SIZE = 128 * 1024;
 
 MEMORY
 {
-	DRAM : ORIGIN = 0x40280000, LENGTH = 32M
+	DRAM : ORIGIN = 0x40280000, LENGTH = 256M
 }
 
 PHDRS
@@ -80,7 +80,7 @@ SECTIONS
 
     . = ALIGN(4096);
     __heap_start = .;
-    . += 0x800000;
+    . += 128M;
     __heap_end = .;
     _end = .;
 }

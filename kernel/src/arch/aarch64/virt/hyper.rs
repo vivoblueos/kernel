@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::arch::aarch64::{registers::hcr_el2::HCR_EL2, virt::vector};
+use crate::arch::aarch64::{
+    registers::hcr_el2::HCR_EL2,
+    registers::sctlr_el2::SCTLR_EL2,
+    registers::spsr_el2::SPSR_EL2,
+    virt::vector,
+    virt::mmu_el2
+};
 use tock_registers::interfaces::{Readable, Writeable};
 
 #[inline]
@@ -74,6 +80,32 @@ fn configure_hcr_el2() {
 }
 
 #[inline]
+pub fn read_spsr_el2() -> u64 {
+    let spsr: u64;
+    unsafe {
+        core::arch::asm!("mrs {}, spsr_el2", out(reg) spsr);
+    }
+    spsr
+}
+
+#[inline]
+pub fn configure_hcr_el2_for_guest() {
+    // Identity map 128MB of RAM starting from 0x4400_0000 so the Guest can run in-place
+    super::mmu_s2::init_stage2(0x4400_0000, 0x1000_0000); 
+    HCR_EL2.write(
+        HCR_EL2::VM::Enable
+            + HCR_EL2::RW::EL1AArch64
+            + HCR_EL2::IMO::EL2Handled
+            + HCR_EL2::FMO::EL2Handled
+            + HCR_EL2::AMO::EL2Handled
+            +HCR_EL2::TSC::Trap
+    );
+    unsafe {
+        core::arch::asm!("isb");
+    }
+}
+
+#[inline]
 fn configure_vector_table(vector_base: usize) {
     unsafe {
         core::arch::asm!(
@@ -84,10 +116,58 @@ fn configure_vector_table(vector_base: usize) {
     }
 }
 
+#[inline]
+fn configure_sctlr_el2() {
+    SCTLR_EL2.write(
+        SCTLR_EL2::M::Enable
+            + SCTLR_EL2::C::Cacheable
+            + SCTLR_EL2::I::Cacheable
+    );
+}
+
+#[inline]
+fn configure_timer_el2() {
+    // CNTHCTL_EL2: control register for EL2 access to the physical timer and counter registers
+    // Bit 0: EL1PCTEN (don't trap EL1 access to the physical counter)
+    // Bit 1: EL1PCEN (don't trap EL1 access to the physical timer)
+    let cnthctl: u64 = 0x3;
+    unsafe {
+        core::arch::asm!("msr CNTHCTL_EL2, {}", in(reg) cnthctl);
+    }
+    
+    // CNTVOFF_EL2: virtual timer offset register
+    let cntvoff: u64 = 0;
+    unsafe {
+        core::arch::asm!("msr CNTVOFF_EL2, {}", in(reg) cntvoff);
+    }
+}
+
+#[inline]
+pub fn shutdown_guest() {
+    HCR_EL2.write(
+        HCR_EL2::RW::EL1AArch64
+            + HCR_EL2::SWIO::Set
+    );
+    unsafe {
+        // Disable vGIC CPU interface to restore normal physical IRQ handling
+        let mut ich_hcr: u64;
+        core::arch::asm!(
+            "mrs {tmp}, ich_hcr_el2",
+            "bic {tmp}, {tmp}, #1",
+            "msr ich_hcr_el2, {tmp}",
+            "isb",
+            tmp = out(reg) ich_hcr,
+            options(nostack)
+        );
+    }
+}
+
 // Hypervisor initialization
 #[cfg(virtualization)]
 pub fn hyp_init() {
     configure_hcr_el2();
+    configure_timer_el2();
+    mmu_el2::enable_el2_mmu();
     unsafe {
         core::arch::asm!("dsb sy", options(nostack));
         core::arch::asm!("isb sy", options(nostack));
@@ -105,5 +185,27 @@ pub fn hyp_init() {
     unsafe {
         core::arch::asm!("dsb sy", options(nostack));
         core::arch::asm!("isb sy", options(nostack));
+    }
+}
+
+// For GuestOS
+#[inline]
+pub fn enter_guest(entry: usize, dtb_addr: usize, pstate: u64) {
+    unsafe {
+        core::arch::asm!(
+            "msr elr_el2, {entry}",
+            "msr spsr_el2, {pstate}",
+            "mov x0, {dtb}",
+            "mov x1, xzr",
+            "mov x2, xzr",
+            "mov x3, xzr",
+            "dsb sy",
+            "isb sy",
+            "eret",
+            entry = in(reg) entry as u64,
+            pstate = in(reg) pstate,
+            dtb = in(reg) dtb_addr as u64,
+            options(noreturn)
+        );
     }
 }
