@@ -28,7 +28,8 @@ use crate::{
     support::SmpStagedInit,
     time,
 };
-use blueos_hal::clock::Clock;
+use blueos_driver::uart::ns16x50::Ns16x50Isr;
+use blueos_hal::{clock::Clock, isr::IsrDesc};
 use core::sync::atomic::Ordering;
 pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 pub use crate::devices::clock::riscv_clock::QemuRiscvClock as ClockImpl;
@@ -50,7 +51,14 @@ fn init_vector_table() {
 /// we finish the handle_irq function.
 pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
-    PLIC.complete(cpu_id, PLIC.claim(cpu_id))
+    let irq = PLIC.claim(cpu_id);
+    match irq {
+        10 => {
+            UART0_ISR.service_isr();
+        }
+        _ => {}
+    }
+    PLIC.complete(cpu_id, irq)
 }
 
 static STAGING: SmpStagedInit = SmpStagedInit::new();
@@ -100,3 +108,12 @@ pub(crate) fn send_ipi(hart: usize) {
 pub(crate) fn clear_ipi(hart: usize) {
     MyMsip::clear_ipi(hart)
 }
+
+static UART0_ISR: Ns16x50Isr<
+    { config::NS16550_UART0_BASE as usize },
+    crate::drivers::serial::Serial,
+> = Ns16x50Isr::new(
+    &crate::drivers::serial::TTY_SERIAL,
+    Some(crate::drivers::serial::Serial::xmitchars),
+    Some(crate::drivers::serial::Serial::recvchars),
+);
