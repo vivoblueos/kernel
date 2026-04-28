@@ -52,11 +52,8 @@ fn init_vector_table() {
 pub(crate) fn handle_plic_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let cpu_id = arch::current_cpu_id();
     let irq = PLIC.claim(cpu_id);
-    match irq {
-        10 => {
-            UART0_ISR.service_isr();
-        }
-        _ => {}
+    if irq == 10 {
+        UART0_ISR.service_isr();
     }
     PLIC.complete(cpu_id, irq)
 }
