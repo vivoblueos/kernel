@@ -87,8 +87,16 @@ pub fn malloc(size: usize) -> *mut u8 {
     }
     const ALIGN: usize = core::mem::size_of::<usize>();
     let layout = Layout::from_size_align(size, ALIGN).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    let ptr = HEAP
+        .alloc(layout)
+        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr());
+    #[cfg(tracing)]
+    if ptr.is_null() {
+        crate::trace_event!(record_mm_alloc_fail(size, ALIGN, 0));
+    } else {
+        crate::trace_event!(record_mm_alloc(ptr as usize, size, ALIGN, 0));
+    }
+    ptr
 }
 
 /// Free previously allocated memory pointed by ptr.
@@ -100,6 +108,7 @@ pub fn free(ptr: *mut u8) {
     if core::intrinsics::unlikely(ptr.is_null()) {
         return;
     }
+    crate::trace_event!(record_mm_free(ptr as usize, 0, 0));
     unsafe { HEAP.deallocate_unknown_align(ptr) };
 }
 
@@ -117,10 +126,19 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
     if ptr.is_null() {
         return malloc(newsize);
     }
-    unsafe {
+    let new_ptr = unsafe {
         HEAP.realloc_unknown_align(ptr, newsize)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+    };
+    if new_ptr.is_null() {
+        crate::trace_event!(record_mm_alloc_fail(newsize, 0, 0));
+    } else {
+        crate::trace_event!(record_mm_alloc(new_ptr as usize, newsize, 0, 0));
+        if new_ptr != ptr {
+            crate::trace_event!(record_mm_free(ptr as usize, 0, 0));
+        }
     }
+    new_ptr
 }
 
 /// Allocates memory for an array of elements and initializes all bytes in this block to zero.
@@ -156,8 +174,16 @@ pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
     }
 
     let layout = Layout::from_size_align(size, align).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    let ptr = HEAP
+        .alloc(layout)
+        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr());
+    #[cfg(tracing)]
+    if ptr.is_null() {
+        crate::trace_event!(record_mm_alloc_fail(size, align, 0));
+    } else {
+        crate::trace_event!(record_mm_alloc(ptr as usize, size, align, 0));
+    }
+    ptr
 }
 
 /// Deallocates memory that was allocated using `malloc_align`.
@@ -169,6 +195,7 @@ pub fn free_align(ptr: *mut u8, align: usize) {
     if ptr.is_null() {
         return;
     }
+    crate::trace_event!(record_mm_free(ptr as usize, 0, 0));
     unsafe {
         let layout = Layout::from_size_align_unchecked(0, align);
         HEAP.dealloc(ptr, layout);

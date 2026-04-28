@@ -214,6 +214,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
     let mut old = set_current_thread(next);
+    crate::trace_event!(record_sched_switch(
+        Thread::id(&old) as u32,
+        next_id as u32,
+        old.priority() as usize,
+        next_priority as usize,
+        old.state() as usize,
+    ));
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
@@ -276,6 +283,7 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
 
 pub fn retire_me() -> ! {
     let retiring = current_thread_ref();
+    crate::trace_event!(record_thread_exit(Thread::id(retiring) as u32, 0));
     #[cfg(procfs)]
     {
         let _ = crate::vfs::trace_thread_close(unsafe { Arc::clone_from(retiring) });
@@ -357,6 +365,12 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
         current_thread_id()
     );
     let old = current_thread_ref();
+    crate::trace_event!(record_thread_block(
+        Thread::id(old) as u32,
+        1,
+        0,
+        deadline.0
+    ));
     let current_idle = idle::current_idle_thread_ref();
     debug_assert_ne!(Thread::id(old), Thread::id(current_idle));
     let next = next_ready_thread().map_or_else(|| unsafe { Arc::clone_from(current_idle) }, |v| v);

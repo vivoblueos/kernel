@@ -16,6 +16,8 @@
 use crate::asynk;
 #[cfg(enable_net)]
 use crate::net;
+#[cfg(tracing)]
+use crate::tracing;
 #[cfg(enable_vfs)]
 use crate::vfs;
 use crate::{
@@ -135,6 +137,8 @@ extern "C" fn init() {
 
     scheduler::init();
     logger::logger_init();
+    #[cfg(tracing)]
+    tracing::init();
     time::timer::init();
     #[cfg(kernel_async)]
     asynk::init();
