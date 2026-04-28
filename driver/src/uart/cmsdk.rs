@@ -15,7 +15,7 @@
 // SPDX-FileCopyrightText: Copyright 2023-2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use core::cell::UnsafeCell;
+use core::ptr::NonNull;
 
 use blueos_hal::{
     uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
@@ -107,7 +107,6 @@ register_structs! {
 pub struct Cmsdk {
     registers: *mut Registers,
     clk: u32,
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
     irq_nums: [u32; 2],
 }
 
@@ -116,7 +115,6 @@ impl Cmsdk {
         Cmsdk {
             registers: base_addr as *mut Registers,
             clk,
-            intr_handler: UnsafeCell::new(None),
             irq_nums: [tx_irq, rx_irq],
         }
     }
@@ -197,10 +195,14 @@ impl HasInterruptReg for Cmsdk {
     fn enable_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                self.registers().CTRL.modify(CTRL::TXIRQEN::SET);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::TXIRQEN::SET + CTRL::TXORIRQEN::SET);
             }
             super::InterruptType::Rx => {
-                self.registers().CTRL.modify(CTRL::RXIRQEN::SET);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::RXIRQEN::SET + CTRL::RXORIRQEN::SET);
             }
             _ => {}
         }
@@ -209,10 +211,14 @@ impl HasInterruptReg for Cmsdk {
     fn disable_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                self.registers().CTRL.modify(CTRL::TXIRQEN::CLEAR);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::TXIRQEN::CLEAR + CTRL::TXORIRQEN::CLEAR);
             }
             super::InterruptType::Rx => {
-                self.registers().CTRL.modify(CTRL::RXIRQEN::CLEAR);
+                self.registers()
+                    .CTRL
+                    .modify(CTRL::RXIRQEN::CLEAR + CTRL::RXORIRQEN::CLEAR);
             }
             _ => {}
         }
@@ -221,10 +227,14 @@ impl HasInterruptReg for Cmsdk {
     fn clear_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                self.registers().INTSTATUS.modify(INTSTATUS::TXIRQ::SET);
+                self.registers()
+                    .INTSTATUS
+                    .modify(INTSTATUS::TXIRQ::SET + INTSTATUS::TXORIRQ::SET);
             }
             super::InterruptType::Rx => {
-                self.registers().INTSTATUS.modify(INTSTATUS::RXIRQ::SET);
+                self.registers()
+                    .INTSTATUS
+                    .modify(INTSTATUS::RXIRQ::SET + INTSTATUS::RXORIRQ::SET);
             }
             _ => {
                 let status = self.registers().INTSTATUS.get();
@@ -245,12 +255,6 @@ impl HasInterruptReg for Cmsdk {
         }
     }
 
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        unsafe {
-            *self.intr_handler.get() = Some(handler);
-        }
-    }
-
     fn get_irq_nums(&self) -> &[u32] {
         &self.irq_nums
     }
@@ -267,5 +271,53 @@ impl PlatPeri for Cmsdk {
         self.registers().CTRL.modify(
             CTRL::RXIRQEN::CLEAR + CTRL::RXEN::CLEAR + CTRL::TXIRQEN::CLEAR + CTRL::TXEN::CLEAR,
         );
+    }
+}
+
+pub struct CmsdkRxIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub handler: Option<fn(&T)>,
+}
+
+/// Safety: CmsdkRxIsr only been modified in interrupt context
+/// So it is safe when the core is single-core.
+unsafe impl<const DEVICE_ADDRESS: usize, T: Sync> Sync for CmsdkRxIsr<DEVICE_ADDRESS, T> {}
+
+pub struct CmsdkTxIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub handler: Option<fn(&T)>,
+}
+
+/// Safety: CmsdkTxIsr only been modified in interrupt context
+/// So it is safe when the core is single-core.
+unsafe impl<const DEVICE_ADDRESS: usize, T: Sync> Sync for CmsdkTxIsr<DEVICE_ADDRESS, T> {}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> blueos_hal::isr::IsrDesc
+    for CmsdkRxIsr<DEVICE_ADDRESS, T>
+{
+    fn service_isr(&self) {
+        unsafe {
+            &(*(DEVICE_ADDRESS as *mut Registers))
+                .INTSTATUS
+                .modify(INTSTATUS::RXIRQ::SET);
+        }
+        if let Some(handler) = self.handler {
+            (handler)(self.data);
+        }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> blueos_hal::isr::IsrDesc
+    for CmsdkTxIsr<DEVICE_ADDRESS, T>
+{
+    fn service_isr(&self) {
+        unsafe {
+            &(*(DEVICE_ADDRESS as *mut Registers))
+                .INTSTATUS
+                .modify(INTSTATUS::TXIRQ::SET);
+        }
+        if let Some(handler) = self.handler {
+            (handler)(self.data);
+        }
     }
 }

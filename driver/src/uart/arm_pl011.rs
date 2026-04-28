@@ -18,6 +18,7 @@ use crate::uart::{DataBits, Parity, StopBits};
 use bitflags::bitflags;
 use blueos_hal::{
     err::{HalError, Result},
+    isr::IsrDesc,
     uart::Uart,
     Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
 };
@@ -271,7 +272,6 @@ impl Identification {
 pub struct ArmPl011<'a> {
     pub regs: UnsafeCell<UniqueMmioPointer<'a, PL011Registers>>,
     pub sysclk: u32,
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
     pub reset_ctrl: Option<(&'static dyn blueos_hal::reset::ResetCtrlWithDone, u32)>,
 }
 
@@ -286,7 +286,6 @@ impl ArmPl011<'_> {
                 UniqueMmioPointer::new(NonNull::new(base_addr as *mut PL011Registers).unwrap())
             }),
             sysclk,
-            intr_handler: UnsafeCell::new(None),
             reset_ctrl,
         }
     }
@@ -501,11 +500,6 @@ impl HasInterruptReg for ArmPl011<'static> {
         }
     }
 
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        let intr_handler_cell = unsafe { &mut *self.intr_handler.get() };
-        *intr_handler_cell = Some(handler);
-    }
-
     fn get_irq_nums(&self) -> &[u32] {
         &[]
     }
@@ -552,4 +546,47 @@ fn calculate_baud_rate_divisor(baud_rate: u32, sysclk: u32) -> Result<(u32, u32)
     }
 
     Ok((ibrd, fbrd))
+}
+
+pub struct ArmPl011Isr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub tx_isr: Option<fn(&T)>,
+    pub rx_isr: Option<fn(&T)>,
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> ArmPl011Isr<DEVICE_ADDRESS, T> {
+    pub const fn new(data: &'static T, tx_isr: Option<fn(&T)>, rx_isr: Option<fn(&T)>) -> Self {
+        ArmPl011Isr {
+            data,
+            tx_isr,
+            rx_isr,
+        }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for ArmPl011Isr<DEVICE_ADDRESS, T> {
+    fn service_isr(&self) {
+        unsafe {
+            let mut reg = unsafe {
+                UniqueMmioPointer::new(NonNull::new(DEVICE_ADDRESS as *mut PL011Registers).unwrap())
+            };
+            let regs = &mut reg;
+
+            let mis = field_used_by_inner!(regs, uartmis).read();
+
+            if mis.contains(Interrupts::RXI) {
+                field_used_by_inner!(regs, uarticr).write(Interrupts::RXI);
+                if let Some(rx_handler) = self.rx_isr {
+                    rx_handler(self.data);
+                }
+            }
+
+            if mis.contains(Interrupts::TXI) {
+                field_used_by_inner!(regs, uarticr).write(Interrupts::TXI);
+                if let Some(tx_handler) = self.tx_isr {
+                    tx_handler(self.data);
+                }
+            }
+        }
+    }
 }

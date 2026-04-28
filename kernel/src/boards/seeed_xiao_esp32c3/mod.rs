@@ -18,8 +18,9 @@ use crate::{
     arch::riscv::{local_irq_enabled, trap_entry, Context},
     scheduler, time,
 };
-use blueos_driver::interrupt_controller::Interrupt;
-use blueos_hal::Has8bitDataReg;
+use blueos_driver::{interrupt_controller::Interrupt, uart::esp32_usb_serial::Esp32UsbSerialIsr};
+use blueos_hal::{isr::IsrDesc, Has8bitDataReg};
+
 // FIXME: Only support unit0 for now
 pub type ClockImpl =
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer<0x6002_3000, 16_000_000>;
@@ -95,7 +96,7 @@ pub(crate) fn handle_intc_irq(ctx: &Context, mcause: usize, mtval: usize) {
             crate::time::handle_clock_interrupt();
         }
         USB_SERIAL_JTAG_INT_NUM => {
-            usb_serial_jtag_interrupt_handler();
+            ESP32_USB_SERIAL_ISR.service_isr();
         }
         _ => {}
     }
@@ -154,16 +155,9 @@ pub(crate) fn send_ipi(_hart: usize) {}
 #[inline(always)]
 pub(crate) fn clear_ipi(_hart: usize) {}
 
-pub fn usb_serial_jtag_interrupt_handler() {
-    use blueos_hal::HasInterruptReg;
-    let uart = get_device!(console_uart);
-    let intr = uart.get_interrupt();
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-    uart.clear_interrupt(intr);
-}
+static ESP32_USB_SERIAL_ISR: Esp32UsbSerialIsr<0x6004_3000, crate::drivers::serial::Serial> =
+    Esp32UsbSerialIsr::<0x6004_3000, _> {
+        data: &crate::drivers::serial::TTY_SERIAL,
+        tx_isr: Some(crate::drivers::serial::Serial::xmitchars),
+        rx_isr: Some(crate::drivers::serial::Serial::recvchars),
+    };

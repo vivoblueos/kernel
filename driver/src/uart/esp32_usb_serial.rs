@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::cell::UnsafeCell;
-
 use crate::static_ref::StaticRef;
 use blueos_hal::{
-    uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg, HasLineStatusReg, PlatPeri,
+    isr::IsrDesc, uart::Uart, Configuration, Has8bitDataReg, HasFifo, HasInterruptReg,
+    HasLineStatusReg, PlatPeri,
 };
 use tock_registers::{
     interfaces::{ReadWriteable, Readable, Writeable},
@@ -144,18 +143,14 @@ register_structs! {
 const USB_SERIAL_BASE: StaticRef<Registers> =
     unsafe { StaticRef::new(0x6004_3000 as *const Registers) };
 
-pub struct Esp32UsbSerial {
-    pub intr_handler: UnsafeCell<Option<&'static dyn Fn()>>,
-}
+pub struct Esp32UsbSerial {}
 
 unsafe impl Send for Esp32UsbSerial {}
 unsafe impl Sync for Esp32UsbSerial {}
 
 impl Esp32UsbSerial {
     pub const fn new() -> Self {
-        Self {
-            intr_handler: UnsafeCell::new(None),
-        }
+        Self {}
     }
 }
 
@@ -288,12 +283,6 @@ impl HasInterruptReg for Esp32UsbSerial {
         }
     }
 
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        unsafe {
-            *self.intr_handler.get() = Some(handler);
-        }
-    }
-
     fn get_irq_nums(&self) -> &[u32] {
         &[]
     }
@@ -302,3 +291,41 @@ impl HasInterruptReg for Esp32UsbSerial {
 impl PlatPeri for Esp32UsbSerial {}
 
 impl Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus> for Esp32UsbSerial {}
+
+pub struct Esp32UsbSerialIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
+    pub data: &'static T,
+    pub rx_isr: Option<fn(&T)>,
+    pub tx_isr: Option<fn(&T)>,
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
+    pub const fn new(data: &'static T, rx_isr: Option<fn(&T)>, tx_isr: Option<fn(&T)>) -> Self {
+        Self {
+            data,
+            rx_isr,
+            tx_isr,
+        }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
+    fn service_isr(&self) {
+        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial) };
+        let intr = uart.get_interrupt();
+        match intr {
+            super::InterruptType::Rx => {
+                uart.clear_interrupt(intr);
+                if let Some(rx_isr) = self.rx_isr {
+                    rx_isr(self.data);
+                }
+            }
+            super::InterruptType::Tx => {
+                uart.clear_interrupt(intr);
+                if let Some(tx_isr) = self.tx_isr {
+                    tx_isr(self.data);
+                }
+            }
+            _ => {}
+        }
+    }
+}

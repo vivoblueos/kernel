@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//       http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,26 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    arch::{
-        self,
-        irq::{InterruptTable, Vector, INTERRUPT_TABLE_LEN},
-    },
-    boot::_start,
-    time,
-};
-
-extern "C" {
-    fn uart0_handler();
+pub trait IsrDesc: Sync + 'static {
+    fn service_isr(&self);
 }
 
-#[doc(hidden)]
-#[link_section = ".interrupt.handlers"]
-#[no_mangle]
-static __INTERRUPT_HANDLERS__: InterruptTable = {
-    let mut tbl = [Vector { reserved: 0 }; INTERRUPT_TABLE_LEN];
-    tbl[37] = Vector {
-        handler: uart0_handler,
-    }; // USART0
-    tbl
-};
+#[repr(C)]
+pub struct IsrReg {
+    pub no: usize,
+    pub desc: &'static dyn IsrDesc,
+}

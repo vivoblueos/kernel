@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use blueos_hal::isr::{IsrDesc, IsrReg};
 use cortex_m::{interrupt::InterruptNumber, peripheral::scb::SystemHandler, Peripherals};
 
 #[cfg(irq_priority_bits_2)]
@@ -114,50 +115,94 @@ pub union Vector {
     pub reserved: usize,
 }
 
+pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
+
 /// Interrupt vector table configuration for ARM Cortex-M processors.
 ///
-/// Users must define their own `__INTERRUPTS` based on their specific device requirements.
-/// The interrupt vector table should be placed in the `.vector_table.interrupts` section.
-///
-/// # Example
-///
-/// ```rust
-///
-/// #[used]
-/// #[link_section = ".interrupt.vectors"]
-/// #[no_mangle]
-/// pub static __INTERRUPT_HANDLERS__: InterruptTable = {
-///     let mut tbl = [Vector { reserved: 0 }; INTERRUPT_TABLE_LEN];
-///     tbl[0] = Vector {
-///         handler: uart0rx_handler,
-///     };
-///     tbl[1] = Vector {
-///         handler: uart0tx_handler,
-///     };
-///     tbl[2] = Vector {
-///         handler: uart1rx_handler,
-///     };
-///     tbl
-/// };
-///
-/// // Declare external interrupt handlers
-/// extern "C" {
-///     fn uart0rx_handler();
-///     fn uart0tx_handler();
-///     fn uart1rx_handler();
-/// }
-/// ```
-///
-/// # Architecture-specific Details
-///
-/// Maximum number of device-specific interrupts for different ARM Cortex-M architectures:
-/// - ARMv6-M: 32 interrupts
-/// - ARMv7-M/ARMv7E-M: 240 interrupts
-/// - ARMv8-M: 496 interrupts
+/// There are two types of ISRs, one is the RAW type, which is no different
+/// from general interrupt service handling. The other is the more flexible
+/// SWI type. SWI type interrupt service handling implements the trait object
+/// IsrDesc. For some complex processing scenarios, consider using IsrDesc
+/// to encapsulate relevant data, such as Shared ISR, Async ISR, Nested ISR,
+/// and so on.
 ///
 /// # Safety
 ///
 /// The interrupt vector table must be properly aligned and contain valid function pointers
 /// for all used interrupt vectors. Incorrect configuration may lead to undefined behavior.
-pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
-pub type InterruptTable = [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize];
+#[used]
+#[link_section = ".interrupt.handlers"]
+static mut __INTERRUPT_HANDLERS__: [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize] = [Vector {
+    handler: _generic_isr_handler,
+};
+    INTERRUPT_TABLE_LEN];
+
+extern "C" fn _generic_isr_handler() {
+    use cortex_m::peripheral::NVIC;
+    // Get the current ISR index from the IPSR register
+    let ipsr: u32;
+    unsafe {
+        core::arch::asm!("mrs {}, ipsr", out(reg) ipsr, options(nomem, nostack, preserves_flags));
+    }
+    let isr_index = (ipsr & 0x1FF)
+        .checked_sub(16)
+        .expect("Invalid ISR index, IPSR value: {ipsr:#X}");
+
+    if let Some(isr_desc) = unsafe { ISR_DESC[isr_index as usize].as_ref() } {
+        isr_desc.service_isr();
+    } else {
+        // FIXME: If the ISR is not explicitly registered, what should be done?
+    }
+
+    #[cfg(round_robin)]
+    {
+        use core::intrinsics::likely;
+
+        use crate::scheduler::is_schedule_ready;
+
+        if likely(is_schedule_ready()) {
+            // If the scheduler is preemptive, trigger PendSV to perform
+            // a context switch after handling the current interrupt.
+            cortex_m::peripheral::SCB::set_pendsv();
+        }
+    }
+}
+
+static mut ISR_DESC: [Option<&dyn IsrDesc>; INTERRUPT_TABLE_LEN] = [None; INTERRUPT_TABLE_LEN];
+
+/// Safety: ISR_DESC only be read in the interrupt handler,
+/// and only be written in the boot process early, so it's
+/// safe to use unsafe to write it.
+pub fn init_interrupt_registry() {
+    extern "C" {
+        static __isr_array_start: usize;
+        static __isr_array_end: usize;
+    }
+
+    unsafe {
+        let mut p = core::ptr::addr_of!(__isr_array_start);
+        while p < core::ptr::addr_of!(__isr_array_end) {
+            let r = &*(p as *const IsrReg);
+            assert!(
+                r.no < INTERRUPT_TABLE_LEN,
+                "ISR number {} exceeds the maximum limit {}",
+                r.no,
+                INTERRUPT_TABLE_LEN
+            );
+            ISR_DESC[r.no] = Some(r.desc);
+            p = (p as *const IsrReg).offset(1) as *const usize;
+        }
+    }
+}
+
+/// This function is used to register the raw interrupt handler for the given irq number.
+/// The handler should be defined in the assembly file, and the caller should ensure that
+/// the handler is properly defined and linked. This function is unsafe because it allows
+/// registering a raw interrupt handler, which may lead to undefined behavior if not used
+/// correctly.
+/// Safety: race condition may occur if this function is called while the corresponding
+/// interrupt is enabled and can be triggered, so the caller should ensure that the interrupt
+/// is disabled before calling this function, and enable it after the handler is registered.
+pub unsafe fn register_raw_isr(irq: IrqNumber, handler: unsafe extern "C" fn()) {
+    __INTERRUPT_HANDLERS__[irq.0 as usize] = Vector { handler };
+}

@@ -13,14 +13,14 @@
 // limitations under the License.
 
 mod config;
-pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
-
 use crate::{arch, error::Error, sync::SpinLock, time};
+use blueos_driver::uart::ns16x50::Ns16x50Isr;
 use blueos_kconfig::CONFIG_NUM_CORES;
+pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
 use core::sync::atomic::Ordering;
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::GenericClock;
-use crate::arch::irq::IrqHandler;
 use alloc::boxed::Box;
+use blueos_hal::isr::IsrDesc;
 
 pub(crate) fn init() {
     crate::boot::init_runtime();
@@ -35,6 +35,14 @@ pub(crate) fn init() {
         )
     };
     arch::irq::cpu_init();
+    let _ = arch::irq::register_handler(
+        config::PL011_UART0_IRQNUM,
+        Box::new(Ns16x50Isr::<{ config::PL011_UART0_BASE as usize }, _>::new(
+            &crate::drivers::serial::TTY_SERIAL,
+            Some(crate::drivers::serial::Serial::xmitchars),
+            Some(crate::drivers::serial::Serial::recvchars),
+        )),
+    );
     let _ = arch::irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {}));
 }
 
@@ -48,8 +56,8 @@ crate::define_peripheral! {
 crate::define_pin_states!(None);
 
 pub struct TimerIrq;
-impl IrqHandler for TimerIrq {
-    fn handle(&mut self) {
+impl IsrDesc for TimerIrq {
+    fn service_isr(&self) {
         crate::time::handle_clock_interrupt();
     }
 }

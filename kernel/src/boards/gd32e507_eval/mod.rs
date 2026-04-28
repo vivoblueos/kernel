@@ -13,14 +13,13 @@
 // limitations under the License.
 
 mod config;
-mod handler;
 
 use crate::{
     arch, arch::irq::IrqNumber, boot, boot::INIT_BSS_DONE, devices::clock::systick, irq::IrqTrace,
     sync::SpinLock, time,
 };
 use alloc::sync::Arc;
-use blueos_driver::pinctrl::gd32_afio::*;
+use blueos_driver::{pinctrl::gd32_afio::*, uart::gd32e5x_uart::Gd32e5xUartIsr};
 use blueos_hal::clock::Clock;
 use blueos_infra::tinyarc::TinyArc;
 use core::ptr::addr_of;
@@ -77,7 +76,10 @@ const HZ: usize = config::PLL_SYS_FREQ as usize;
 pub type ClockImpl = systick::SysTickClock<TICKS_PS, HZ>;
 
 pub(crate) fn init() {
-    unsafe { copy_data() };
+    unsafe {
+        copy_data();
+        arch::irq::init_interrupt_registry();
+    };
     boot::init_runtime();
     use blueos_hal::clock_control::ClockControl;
     blueos_driver::clock_control::gd32_clock_control::Gd32ClockControl::init();
@@ -123,16 +125,10 @@ crate::define_pin_states! {
     )
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn uart0_handler() {
-    let _trace = IrqTrace::new(config::USBFS_IRQn);
-    use blueos_hal::HasInterruptReg;
-    let uart = get_device!(console_uart);
-    if let Some(handler) = unsafe {
-        let intr_handler_cell = &*uart.intr_handler.get();
-
-        intr_handler_cell.as_ref()
-    } {
-        handler();
-    }
-}
+#[blueos_macro::interrupt(no = 37)]
+static UART0_ISR: Gd32e5xUartIsr<0x4001_3800, crate::drivers::serial::Serial> =
+    Gd32e5xUartIsr::<0x4001_3800, _> {
+        data: &crate::drivers::serial::TTY_SERIAL,
+        tx_isr: Some(crate::drivers::serial::Serial::xmitchars),
+        rx_isr: Some(crate::drivers::serial::Serial::recvchars),
+    };

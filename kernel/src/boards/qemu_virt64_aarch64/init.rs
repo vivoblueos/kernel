@@ -17,7 +17,7 @@ use crate::{
     arch,
     arch::{
         irq,
-        irq::{IrqHandler, IrqTrigger, Priority},
+        irq::{IrqTrigger, Priority},
         registers::cntfrq_el0::CNTFRQ_EL0,
     },
     error::Error,
@@ -27,7 +27,8 @@ use crate::{
     time,
 };
 use alloc::boxed::Box;
-use blueos_hal::HasInterruptReg;
+use blueos_driver::uart::arm_pl011::ArmPl011Isr;
+use blueos_hal::{isr::IsrDesc, HasInterruptReg};
 use core::sync::atomic::Ordering;
 use tock_registers::interfaces::Readable;
 static STAGING: SmpStagedInit = SmpStagedInit::new();
@@ -66,7 +67,16 @@ pub(crate) fn init() {
         arch::current_cpu_id(),
         irq::IrqTrigger::Level,
     );
-    let _ = irq::register_handler(config::PL011_UART0_IRQNUM, Box::new(Serial0Irq {}));
+    let _ = irq::register_handler(
+        config::PL011_UART0_IRQNUM,
+        Box::new(
+            ArmPl011Isr::<{ config::PL011_UART0_BASE as usize }, _>::new(
+                &crate::drivers::serial::TTY_SERIAL,
+                Some(crate::drivers::serial::Serial::xmitchars),
+                Some(crate::drivers::serial::Serial::recvchars),
+            ),
+        ),
+    );
     let _ = irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {}));
 }
 
@@ -83,23 +93,9 @@ pub const DRAM_BASE: u64 = 0x4000_0000;
 
 crate::define_pin_states!(None);
 
-pub struct Serial0Irq {}
-impl IrqHandler for Serial0Irq {
-    fn handle(&mut self) {
-        let _trace = IrqTrace::new(config::PL011_UART0_IRQNUM);
-        let uart = get_device!(console_uart);
-        if let Some(handler) = unsafe {
-            let intr_handler_cell = &*uart.intr_handler.get();
-            intr_handler_cell.as_ref()
-        } {
-            handler();
-        }
-    }
-}
-
 pub struct TimerIrq;
-impl IrqHandler for TimerIrq {
-    fn handle(&mut self) {
+impl IsrDesc for TimerIrq {
+    fn service_isr(&self) {
         crate::time::handle_clock_interrupt();
     }
 }

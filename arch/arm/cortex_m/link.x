@@ -160,6 +160,12 @@ SECTIONS
     PROVIDE_HIDDEN (__bk_app_array_end = .);
 
     . = ALIGN(4);
+    PROVIDE_HIDDEN(__isr_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.isr.reg.*)))
+    KEEP(*(.isr.reg))
+    PROVIDE_HIDDEN(__isr_array_end = .);
+
+    . = ALIGN(4);
     __start___llvm_prf_cnts = .;
     KEEP(*(__llvm_prf_cnts))
     __stop___llvm_prf_cnts = .;

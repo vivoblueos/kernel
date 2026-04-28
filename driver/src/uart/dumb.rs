@@ -83,10 +83,6 @@ impl HasInterruptReg for DumbUart {
         super::InterruptType::Unknown
     }
 
-    fn set_interrupt_handler(&self, handler: &'static dyn Fn()) {
-        let _ = handler;
-    }
-
     fn get_irq_nums(&self) -> &[u32] {
         &[]
     }
