@@ -716,6 +716,15 @@ mod tests {
         }
     }
 
+    async fn yield_now() {
+        asynk::yield_now().await;
+    }
+
+    #[test]
+    fn test_yield_now() {
+        asynk::block_on(yield_now());
+    }
+
     #[cfg(target_abi = "eabihf")]
     #[test]
     fn test_basic_float_add_sub() {
