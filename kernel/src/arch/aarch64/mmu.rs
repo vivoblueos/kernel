@@ -15,10 +15,33 @@
 use crate::arch::aarch64::{
     asm,
     asm::DsbOptions,
-    registers::{mair_el1::*, sctlr_el1::*, tcr_el1::*, ttbr0_el1::TTBR0_EL1},
+    registers::{
+        mair_el1::*, sctlr_el1::*, tcr_el1::*, ttbr0_el1::TTBR0_EL1, ttbr1_el1::TTBR1_EL1,
+    },
 };
 use core::sync::atomic::{AtomicBool, Ordering};
 use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
+
+const L1_BLOCK_SIZE: u64 = 1 << 30;
+const EL1_LINEARMAP_BLOCK_COUNT: usize = 4;
+const KERNEL_VA_BITS: u64 = 39;
+const KERNEL_TCR_TSZ: u64 = u64::BITS as u64 - KERNEL_VA_BITS;
+#[cfg(target_board = "qemu_virt64_aarch64")]
+pub(crate) const KERNEL_VIRT_START: u64 = u64::MAX << KERNEL_VA_BITS;
+#[cfg(not(target_board = "qemu_virt64_aarch64"))]
+pub(crate) const KERNEL_VIRT_START: u64 = 0;
+
+pub const fn kernel_virt_to_phys(addr: usize) -> usize {
+    if addr >= KERNEL_VIRT_START as usize {
+        addr - KERNEL_VIRT_START as usize
+    } else {
+        addr
+    }
+}
+
+pub const fn kernel_phys_to_virt(addr: u64) -> u64 {
+    KERNEL_VIRT_START + addr
+}
 
 #[repr(u64)]
 #[derive(Debug, Clone, Copy)]
@@ -157,6 +180,10 @@ impl PageEntry {
 #[link_section = ".data"]
 static mut TABLE_MANAGER: PageTableManager = PageTableManager::new();
 
+#[used]
+#[link_section = ".data"]
+static mut LINEARMAP_MANAGER: PageTableManager = PageTableManager::new();
+
 #[repr(C, align(4096))]
 pub struct PageTableManager([PageEntry; 512]);
 
@@ -176,28 +203,25 @@ impl PageTableManager {
             let _ = table.0[index].set(base, MemAttributes::Normal);
         }
     }
+
+    fn init_linearmap() {
+        let table = unsafe { &mut LINEARMAP_MANAGER };
+        for &base in crate::boards::MMU_L1_DEVICE_BASES {
+            let index = (base >> 30) as usize;
+            let _ = table.0[index].set(base, MemAttributes::Device);
+        }
+        for &base in crate::boards::MMU_L1_NORMAL_BASES {
+            let index = (base >> 30) as usize;
+            let _ = table.0[index].set(base, MemAttributes::Normal);
+        }
+    }
 }
 
-// Indicate whether the page table initialization is done.
-static PAGETABLE_INIT_DONE: AtomicBool = AtomicBool::new(false);
-
-pub fn enable_mmu() {
+pub fn enable_el1_mmu() {
     // Only allow CPU0 to initialize the page table, other cores wait
     let cpu_id = crate::arch::current_cpu_id();
     if cpu_id == 0 {
         PageTableManager::init();
-        PAGETABLE_INIT_DONE.store(true, Ordering::Release);
-        // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
-    } else {
-        // Wait for CPU0 to finish page table initialization.
-        while !PAGETABLE_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
-        }
     }
     // Set physical table base addr.
     unsafe {
@@ -225,7 +249,7 @@ pub fn enable_mmu() {
             + TCR_EL1::IRGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::DisableTTBR1Walks
             + TCR_EL1::EPD0::EnableTTBR0Walks
-            + TCR_EL1::T0SZ.val(25),
+            + TCR_EL1::T0SZ.val(KERNEL_TCR_TSZ),
     );
     // Clear tlb.
     asm::tlbi_all();
@@ -238,5 +262,27 @@ pub fn enable_mmu() {
             + SCTLR_EL1::I::Cacheable
             + SCTLR_EL1::SA::Enable,
     );
+    asm::isb_sy();
+}
+
+pub fn el1_add_linearmap() {
+    let cpu_id = crate::arch::current_cpu_id();
+    if cpu_id == 0 {
+        PageTableManager::init_linearmap();
+    }
+
+    TTBR1_EL1.set(core::ptr::addr_of!(LINEARMAP_MANAGER) as u64);
+
+    TCR_EL1.modify(
+        TCR_EL1::TG1::KiB_4
+            + TCR_EL1::SH1::InnerShareable
+            + TCR_EL1::ORGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
+            + TCR_EL1::IRGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
+            + TCR_EL1::EPD1::EnableTTBR1Walks
+            + TCR_EL1::T1SZ.val(KERNEL_TCR_TSZ),
+    );
+
+    asm::tlbi_all();
+    asm::dsb(DsbOptions::Sys);
     asm::isb_sy();
 }

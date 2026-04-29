@@ -73,6 +73,8 @@ macro_rules! enter_el1 {
         // Calculate per-core stack offset
         // We reserve the top 4KB of each core's 16KB chunk for EL2.
         ldr x1, ={stack_end}
+        ldr x12, ={kernel_virt_start}
+        sub x1, x1, x12
         mrs x9, mpidr_el1
         and x9, x9, #0xff
         lsl x9, x9, #14
@@ -81,20 +83,28 @@ macro_rules! enter_el1 {
         mov x19, x1
         sub x2, x1, #0x1000
         msr sp_el1, x2
-        // Enable to switch into EL2.
-        bl {virt_init}
+        // // Enable to switch into EL2.
+        // bl {virt_init}
+        // Enable AArch64 in EL1.
+        mov x3, #(1 << 31)
+        msr hcr_el2, x3
         // Set EL1 sp and mask daif in EL2.
         mov x0, #0x3C5
         msr spsr_el2, x0
         // Enable EL1 MMU while still in EL2.
         ldr x4, ={tmp_stack}
+        ldr x12, ={kernel_virt_start}
+        sub x4, x4, x12
         add x4, x4, #0x1000
         mov sp, x4
-        bl {enable_mmu}
+        bl {enable_el1_mmu}
+        bl {el1_add_linearmap}
         mov sp, x19
         // Set EL1 entry and enter.
         ldr x0, ={stack_start}
+        ldr x1, ={stack_end}
         ldr x2, ={cont}
+        // adr is PC-relative
         adr x3, {entry}
         msr elr_el2, x3
         eret
@@ -107,9 +117,11 @@ macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
             $crate::enter_el1!(),
-            entry = sym $crate::arch::aarch64::init,
+            entry = sym $crate::arch::aarch64::jump_to_high_va,
             virt_init = sym $crate::arch::aarch64::virt::virt_init,
-            enable_mmu = sym $crate::arch::aarch64::mmu::enable_mmu,
+            enable_el1_mmu = sym $crate::arch::aarch64::mmu::enable_el1_mmu,
+            el1_add_linearmap = sym $crate::arch::aarch64::mmu::el1_add_linearmap,
+            kernel_virt_start = const $crate::arch::aarch64::mmu::KERNEL_VIRT_START,
             tmp_stack = sym $crate::arch::aarch64::TEMP_BOOT_STACK,
             stack_start = sym $stack_start,
             stack_end = sym $stack_end,
@@ -447,14 +459,36 @@ pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHo
 }
 
 #[naked]
+pub(crate) extern "C" fn jump_to_high_va() -> ! {
+    unsafe {
+        core::arch::naked_asm!(
+            "
+                ldr x16, ={init}
+                br x16
+            ",
+            init = sym crate::arch::aarch64::init,
+        )
+    }
+}
+
+#[naked]
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
         core::arch::naked_asm!(
             "
+                // set sp
                 mrs x8, mpidr_el1
                 and x8, x8, #0Xff
                 lsl x8, x8, #14
                 sub sp, x1, x8 
+                // clear ttbr0_el1
+                msr ttbr0_el1, xzr
+                dsb ish
+                isb
+                tlbi vmalle1
+                dsb ish
+                isb
+                // branch to a far address
                 br x2
             "
         )
@@ -544,8 +578,9 @@ pub extern "C" fn pend_switch_context() {}
 
 pub fn secondary_cpu_setup(psci_base: u32) {
     atomic::fence(Ordering::SeqCst);
+    let secondary_entry = mmu::kernel_virt_to_phys(crate::boot::_start as usize);
     for i in 1..blueos_kconfig::CONFIG_NUM_CORES {
-        psci::cpu_on(psci_base, i as usize, crate::boot::_start as usize, 0);
+        psci::cpu_on(psci_base, i as usize, secondary_entry, 0);
     }
 }
 
