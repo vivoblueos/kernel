@@ -18,6 +18,7 @@ use crate::{
     arch::{
         irq,
         irq::{IrqTrigger, Priority},
+        mmu,
         registers::cntfrq_el0::CNTFRQ_EL0,
     },
     error::Error,
@@ -89,7 +90,7 @@ crate::define_peripheral! {
      )),
 }
 
-pub const DRAM_BASE: u64 = 0x4000_0000;
+pub const DRAM_BASE: u64 = mmu::kernel_phys_to_virt(0x4000_0000);
 
 crate::define_pin_states!(None);
 
