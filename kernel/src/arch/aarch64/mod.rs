@@ -496,22 +496,20 @@ pub(crate) extern "C" fn jump_to_high_va() -> ! {
 #[naked]
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
-        core::arch::naked_asm!(
-            concat!(
-                "
+        core::arch::naked_asm!(concat!(
+            "
                 // set sp
                 mrs x8, mpidr_el1
                 and x8, x8, #0Xff
                 lsl x8, x8, #14
                 sub sp, x1, x8 
                 ",
-                clear_ttbr0_el1!(),
-                "
+            clear_ttbr0_el1!(),
+            "
                 // branch to a far address
                 br x2
                 "
-            )
-        )
+        ))
     }
 }
 
