@@ -51,8 +51,8 @@
 #![cfg_attr(test, test_runner(tests::kernel_unittest_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "run_kernel_unittests")]
 
-//#[cfg(test)]
-//blueos_test_macro::test_only!();
+// #[cfg(test)]
+// blueos_test_macro::test_only!();
 
 extern crate alloc;
 pub mod allocator;
@@ -243,12 +243,26 @@ mod tests {
         {
             semihosting::println!("{}", info);
             semihosting::println!("Oops: {}", info.message());
+            let mem_info = allocator::memory_info();
+            semihosting::println!(
+                "Memory: total={} used={} max={}",
+                mem_info.total,
+                mem_info.used,
+                mem_info.max_used
+            );
         }
 
         #[cfg(use_defmt)]
         {
             defmt::error!("{}", defmt::Display2Format(info));
             defmt::error!("Oops: {}", defmt::Display2Format(&info.message()));
+            let mem_info = allocator::memory_info();
+            defmt::error!(
+                "Memory: total={} used={} max={}",
+                mem_info.total,
+                mem_info.used,
+                mem_info.max_used
+            );
         }
         loop {}
     }
@@ -844,23 +858,19 @@ mod tests {
         let test_size = core::cmp::min(available * 3 / 4, MAX_TEST_HEAP_SIZE);
 
         // Test with different allocation sizes
-        let sizes = [32, 64, 128, 256, 512, 1024, 2048, 4096];
+        let sizes = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
         let mut allocations: Vec<Vec<u8>> = Vec::new();
         let mut current_used = 0;
 
         // Allocate memory in chunks
-        for _ in 0..1000 {
+        for _iter in 0..1000 {
             for &size in &sizes {
-                // Check if we're using too much memory
+                // More aggressive memory management
                 if current_used > test_size / 2 {
-                    // Release some allocations to make room
-                    while !allocations.is_empty() && current_used > test_size / 4 {
-                        allocations.pop();
-                        scheduler::relinquish_me();
-                    }
+                    allocations.clear();
+                    current_used = 0;
                 }
 
-                // Allocate memory using Vec
                 let vec = alloc::vec::Vec::<u8>::with_capacity(size);
                 allocations.push(vec);
                 current_used += size;
@@ -915,7 +925,11 @@ mod tests {
         wait_until(1, &ALLOCATOR_STRESS_THREAD1_DONE);
         wait_until(1, &ALLOCATOR_STRESS_THREAD2_DONE);
 
-        // Verify memory state after stress test
+        #[cfg(allocator = "slab_dynamic")]
+        {
+            allocator::reclaim_page_pool();
+        }
+
         let final_info = allocator::memory_info();
         // Memory should be back to a reasonable state (allowing for some fragmentation)
         assert!(

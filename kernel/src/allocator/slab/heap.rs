@@ -134,8 +134,14 @@ impl<
     }
 
     pub fn print_slab_stat(&self) {
-        let heap = self.heap.irqsave_lock();
-        heap.print_slab_stat();
+        // Static slab doesn't support detailed stats, just print basic info
+        let (total, used);
+        {
+            let heap = self.heap.irqsave_lock();
+            total = heap.total();
+            used = heap.allocated();
+        }
+        crate::kprintln!("Slab: total={} used={}", total, used);
     }
 
     pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> usize {
@@ -146,5 +152,134 @@ impl<
     pub fn get_max_free_block_size(&self) -> usize {
         let heap = self.heap.irqsave_lock();
         heap.get_max_free_block_size()
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DynamicSlabHeap — SpinLock wrapper (mirrors SlabHeap pattern above)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[cfg(allocator = "slab_dynamic")]
+use super::DynamicSlabHeap as DynHeap;
+
+#[cfg(allocator = "slab_dynamic")]
+pub struct DynamicSlabHeap {
+    heap: SpinLock<DynHeap>,
+}
+
+#[cfg(allocator = "slab_dynamic")]
+impl DynamicSlabHeap {
+    pub const fn new() -> Self {
+        DynamicSlabHeap {
+            heap: SpinLock::new(DynHeap::new()),
+        }
+    }
+
+    /// # Safety
+    /// `start_addr..start_addr+size` must be valid, exclusively owned, writable memory.
+    pub unsafe fn init(&self, start_addr: usize, size: usize) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.init(start_addr, size);
+    }
+
+    pub fn alloc(&self, layout: Layout) -> Option<NonNull<u8>> {
+        let mut heap = self.heap.irqsave_lock();
+        heap.allocate(&layout)
+    }
+
+    /// # Safety
+    /// `ptr` must have been returned by `alloc` on this heap.
+    pub unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.deallocate(NonNull::new_unchecked(ptr), &layout);
+    }
+
+    /// # Safety
+    /// `ptr` must have been returned by `alloc` on this heap.
+    pub unsafe fn deallocate_unknown_align(&self, ptr: *mut u8) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.deallocate_unknown_align(NonNull::new_unchecked(ptr));
+    }
+
+    /// # Safety
+    /// `ptr` must have been returned by `alloc` on this heap.
+    pub unsafe fn realloc(
+        &self,
+        ptr: *mut u8,
+        layout: Layout,
+        new_size: usize,
+    ) -> Option<NonNull<u8>> {
+        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
+        let mut heap = self.heap.irqsave_lock();
+        heap.reallocate(NonNull::new_unchecked(ptr), &new_layout)
+    }
+
+    /// # Safety
+    /// `ptr` must have been returned by `alloc` on this heap.
+    pub unsafe fn realloc_unknown_align(
+        &self,
+        ptr: *mut u8,
+        new_size: usize,
+    ) -> Option<NonNull<u8>> {
+        let mut heap = self.heap.irqsave_lock();
+        heap.reallocate_unknown_align(NonNull::new_unchecked(ptr), new_size)
+    }
+
+    pub fn memory_info(&self) -> crate::allocator::MemoryInfo {
+        let heap = self.heap.irqsave_lock();
+        crate::allocator::MemoryInfo {
+            total: heap.total(),
+            used: heap.allocated(),
+            max_used: heap.maximum(),
+        }
+    }
+
+    pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> usize {
+        let heap = self.heap.irqsave_lock();
+        heap.size_of_allocation(ptr).unwrap_or(0)
+    }
+
+    pub fn get_max_free_block_size(&self) -> usize {
+        let heap = self.heap.irqsave_lock();
+        heap.get_max_free_block_size()
+    }
+
+    pub fn print_slab_stat(&self) {
+        use crate::kprintln;
+
+        let (data, pool_total, pool_max) = {
+            let heap = self.heap.irqsave_lock();
+            heap.get_slab_stat()
+        };
+
+        kprintln!("size   pages  total  free   alloc ");
+        kprintln!("------ ------ ------ ------ ------");
+        for (size, pages, total, free) in data {
+            kprintln!(
+                "{:6} {:6} {:6} {:6} {:6}",
+                size,
+                pages,
+                total,
+                free,
+                total - free
+            );
+        }
+        kprintln!("PagePool: {}/{}", pool_total, pool_max);
+    }
+
+    /// Reclaim all pages from page pool back to TLSF.
+    /// Used in tests for accurate memory leak detection.
+    #[cfg(allocator = "slab_dynamic")]
+    pub fn reclaim_page_pool(&self) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.reclaim_page_pool();
+    }
+
+    /// Reclaim pages from pool to TLSF when memory pressure is detected.
+    /// Can be called by idle thread for proactive memory reclaim.
+    #[cfg(allocator = "slab_dynamic")]
+    pub fn check_memory_pressure(&self) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.check_memory_pressure();
     }
 }
