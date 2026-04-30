@@ -105,11 +105,8 @@ macro_rules! enter_el1 {
         mov x19, x1
         sub x2, x1, #0x1000
         msr sp_el1, x2
-        // // Enable to switch into EL2.
-        // bl {virt_init}
-        // Enable AArch64 in EL1.
-        mov x3, #(1 << 31)
-        msr hcr_el2, x3
+        // Enable to switch into EL2.
+        bl {virt_init}
         // Set EL1 sp and mask daif in EL2.
         mov x0, #0x3C5
         msr spsr_el2, x0
