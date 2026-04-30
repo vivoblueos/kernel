@@ -51,6 +51,28 @@ macro_rules! enable_interrupt {
     };
 }
 
+#[cfg(target_board = "qemu_virt64_aarch64")]
+macro_rules! clear_ttbr0_el1 {
+    () => {
+        "
+                // clear ttbr0_el1
+                msr ttbr0_el1, xzr
+                dsb ish
+                isb
+                tlbi vmalle1
+                dsb ish
+                isb
+        "
+    };
+}
+
+#[cfg(not(target_board = "qemu_virt64_aarch64"))]
+macro_rules! clear_ttbr0_el1 {
+    () => {
+        ""
+    };
+}
+
 // Temporary stack used during early boot (before MMU is enabled).
 #[repr(C, align(16))]
 pub struct TempBootStack([u8; 4096]);
@@ -475,22 +497,20 @@ pub(crate) extern "C" fn jump_to_high_va() -> ! {
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
         core::arch::naked_asm!(
-            "
+            concat!(
+                "
                 // set sp
                 mrs x8, mpidr_el1
                 and x8, x8, #0Xff
                 lsl x8, x8, #14
                 sub sp, x1, x8 
-                // clear ttbr0_el1
-                msr ttbr0_el1, xzr
-                dsb ish
-                isb
-                tlbi vmalle1
-                dsb ish
-                isb
+                ",
+                clear_ttbr0_el1!(),
+                "
                 // branch to a far address
                 br x2
-            "
+                "
+            )
         )
     }
 }
