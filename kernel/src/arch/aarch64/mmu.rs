@@ -217,11 +217,27 @@ impl PageTableManager {
     }
 }
 
+// Indicate whether the page table initialization is done.
+static PAGETABLE_INIT_DONE: AtomicBool = AtomicBool::new(false);
+static LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
+
 pub fn enable_el1_mmu() {
     // Only allow CPU0 to initialize the page table, other cores wait
     let cpu_id = crate::arch::current_cpu_id();
     if cpu_id == 0 {
         PageTableManager::init();
+        PAGETABLE_INIT_DONE.store(true, Ordering::Release);
+        // Wake up all cores waiting on wfe
+        unsafe {
+            core::arch::asm!("sev", options(nostack, nomem));
+        }
+    } else {
+        // Wait for CPU0 to finish page table initialization.
+        while !PAGETABLE_INIT_DONE.load(Ordering::Acquire) {
+            unsafe {
+                core::arch::asm!("wfe", options(nostack, nomem));
+            }
+        }
     }
     // Set physical table base addr.
     unsafe {
@@ -269,6 +285,18 @@ pub fn el1_add_linearmap() {
     let cpu_id = crate::arch::current_cpu_id();
     if cpu_id == 0 {
         PageTableManager::init_linearmap();
+        LINEARMAP_INIT_DONE.store(true, Ordering::Release);
+        // Wake up all cores waiting on wfe
+        unsafe {
+            core::arch::asm!("sev", options(nostack, nomem));
+        }
+    } else {
+        // Wait for CPU0 to finish linearmap table initialization.
+        while !LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
+            unsafe {
+                core::arch::asm!("wfe", options(nostack, nomem));
+            }
+        }
     }
 
     TTBR1_EL1.set(core::ptr::addr_of!(LINEARMAP_MANAGER) as u64);
