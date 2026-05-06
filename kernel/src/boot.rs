@@ -90,6 +90,9 @@ extern "C" fn init() {
     init_heap();
     init_pin_states(crate::boards::PIN_STATES);
 
+    #[cfg(target_arch = "aarch64")]
+    crate::arch::aarch64::mmu::set_formal_linearmap();
+
     let uart = crate::boards::get_device!(console_uart);
     uart.configure(&UartConfig::default()).unwrap();
     uart.enable();
