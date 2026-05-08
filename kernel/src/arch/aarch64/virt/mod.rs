@@ -14,20 +14,20 @@
 
 pub mod exit;
 pub mod guest;
+pub mod hyper;
 pub mod mmu_el2;
 pub mod mmu_s2;
-pub mod hyper;
 pub mod vcpu;
 pub mod vector;
 pub mod vgic;
 pub mod vtimer;
-pub use exit::{VmExitReason, VmExitInfo};
+pub use crate::arch::aarch64::psci::hvc_call;
+use blueos_hal::PlatPeri;
+pub use exit::{VmExitInfo, VmExitReason};
 pub use hyper::{get_current_el, hyp_init};
+use semihosting::println;
 pub use vcpu::{Vcpu, VcpuManager, VcpuState};
 pub use vgic::init;
-pub use crate::arch::aarch64::psci::hvc_call;
-use semihosting::println;
-use blueos_hal::PlatPeri;
 
 // PL011 UART addresses for QEMU Virt
 const UART0_DR: *mut u32 = 0x0900_0000 as *mut u32;
@@ -36,10 +36,10 @@ const UART0_FR: *mut u32 = 0x0900_0018 as *mut u32;
 // Temporary placeholder
 #[no_mangle]
 pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
-    unsafe{
+    unsafe {
         let mut ctlr: u64;
         core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) ctlr);
-        if (ctlr & (1 << 1)) == 0{
+        if (ctlr & (1 << 1)) == 0 {
             // set EOImode.
             ctlr |= 1 << 1;
             core::arch::asm!("msr ICC_CTLR_EL1, {}", in(reg) ctlr);
@@ -60,7 +60,7 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
     if intid == 33 {
         unsafe {
             let lr_val: u64 = (1 << 62) | (1 << 61) | (1 << 60) | (0xA0 << 48) | (33 << 32) | 33;
-            
+
             // Temporarily occupy physical register for uart print in Linux shell
             core::arch::asm!("msr ICH_LR1_EL2, {}", in(reg) lr_val);
             let mut hcr: u64;
@@ -77,19 +77,19 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
         }
 
         if let Some(vcpu_id) = get_current_vcpu_id() {
-                vgic::inject_irq(vcpu_id, 27);
+            vgic::inject_irq(vcpu_id, 27);
         }
 
-        unsafe{
+        unsafe {
             core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
         }
     } else {
         semihosting::println!("[EL2] Unhandled Guest IRQ: {}", intid);
-        // For uninterruptible/unknown interrupts, 
-        // we must manually downgrade and deactivate them; 
+        // For uninterruptible/unknown interrupts,
+        // we must manually downgrade and deactivate them;
         // otherwise, the interrupt line will be permanently blocked.
-        unsafe { 
-            core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar); 
+        unsafe {
+            core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
             core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);
         }
     }
@@ -113,8 +113,7 @@ pub extern "C" fn hyper_trap_fiq(_context: &mut crate::arch::aarch64::Context) -
 #[repr(align(16))]
 pub struct VcpuManagerWrapper(pub vcpu::VcpuManager);
 
-pub static mut VCPU_MANAGER: VcpuManagerWrapper = 
-    VcpuManagerWrapper(vcpu::VcpuManager::new());
+pub static mut VCPU_MANAGER: VcpuManagerWrapper = VcpuManagerWrapper(vcpu::VcpuManager::new());
 
 #[inline]
 pub fn get_current_vcpu_id() -> Option<usize> {
@@ -132,7 +131,10 @@ pub fn virt_boot_linux() {
 
     // Initiate vCpu for Linux kernel, set the entry point and parameters.
     unsafe {
-        let vcpu = VCPU_MANAGER.0.create_vcpu(0, guest::LINUX_KERNEL_LOAD_ADDR, 0).unwrap();
+        let vcpu = VCPU_MANAGER
+            .0
+            .create_vcpu(0, guest::LINUX_KERNEL_LOAD_ADDR, 0)
+            .unwrap();
         let mut ctx = vcpu.context_mut();
         ctx.regs[0] = guest::LINUX_DTB_ADDR as u64;
         ctx.spsr = 0x3C5;

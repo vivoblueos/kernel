@@ -119,7 +119,7 @@ register_bitfields! {u64,
             Trap = 1
         ],
 
-        /// TSW, bit [22] - Trap Data Cache instructions by Set/Way 
+        /// TSW, bit [22] - Trap Data Cache instructions by Set/Way
         TSW OFFSET(22) NUMBITS(1) [
             NoTrap = 0,
             Trap = 1

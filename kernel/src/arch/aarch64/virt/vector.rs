@@ -13,14 +13,10 @@
 // limitations under the License.
 
 use super::{
-    VCPU_MANAGER,
-    guest,
-    hyper,
+    exit::{clear_guest_shutdown, handle_vm_exit, is_guest_shutdown},
+    guest, hyper,
     vcpu::Vcpu,
-    vgic,
-    exit::{
-        handle_vm_exit, is_guest_shutdown, clear_guest_shutdown
-    }
+    vgic, VCPU_MANAGER,
 };
 use core::arch::asm;
 
@@ -178,7 +174,7 @@ pub unsafe extern "C" fn sync_from_lower_el1() {
 
 #[no_mangle]
 pub unsafe extern "C" fn sync_from_lower_el1_rust(frame: *mut u64) -> u64 {
-   if let Some(vcpu_id) = VCPU_MANAGER.0.current_vcpu_id() {
+    if let Some(vcpu_id) = VCPU_MANAGER.0.current_vcpu_id() {
         handle_guest_request(vcpu_id, frame)
     } else {
         handle_host_request(frame)
@@ -196,35 +192,35 @@ unsafe fn handle_guest_request(vcpu_id: usize, frame: *mut u64) -> u64 {
         hyper::shutdown_guest();
         VCPU_MANAGER.0.clear_current_vcpu();
         restore_host_to_frame(frame);
-        2 
+        2
     } else {
         restore_context_to_frame(vcpu, frame);
         vgic::flush(vcpu_id);
-        1 
+        1
     }
 }
 
 unsafe fn handle_host_request(frame: *mut u64) -> u64 {
     let func_id = *frame.add(0);
-    
+
     match func_id {
         0x02 => {
             let target_id = *frame.add(1) as usize;
             if let Some(vcpu) = VCPU_MANAGER.0.get_vcpu(target_id) {
-                save_host_context(frame); 
+                save_host_context(frame);
                 hyper::configure_hcr_el2_for_guest();
                 vcpu.prepare_run();
                 VCPU_MANAGER.0.set_current_vcpu(target_id);
                 restore_context_to_frame(vcpu, frame);
-                1 
+                1
             } else {
                 *frame.add(0) = 1;
                 1
             }
         }
         _ => {
-            *frame.add(0) = 0; 
-            1 
+            *frame.add(0) = 0;
+            1
         }
     }
 }
@@ -233,7 +229,7 @@ unsafe fn save_host_context(frame: *mut u64) {
     VCPU_MANAGER.0.host_elr = *frame.add(31) + 4;
     VCPU_MANAGER.0.host_spsr = *frame.add(32);
     VCPU_MANAGER.0.host_sp = *frame.add(33);
-    for i in 0..31 { 
+    for i in 0..31 {
         VCPU_MANAGER.0.host_regs[i] = *frame.add(i);
     }
 
@@ -269,7 +265,7 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
     for i in 0..31 {
         *frame.add(i) = VCPU_MANAGER.0.host_regs[i];
     }
-    
+
     // Pass success code (0) back to host's x0
     *frame.add(0) = 0;
 
@@ -289,7 +285,7 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
         "msr mair_el1, {mair}",
         "isb",
         "tlbi alle1",
-        "dsb sy", 
+        "dsb sy",
         "isb",
         vbar = in(reg) vbar,
         sctlr = in(reg) sctlr,
@@ -328,14 +324,16 @@ unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
     ctx.sctlr_el1 = sctlr;
     ctx.ttbr0_el1 = ttbr0;
     ctx.ttbr1_el1 = ttbr1;
-    ctx.tcr_el1   = tcr;
-    ctx.mair_el1  = mair;
-    ctx.vbar_el1  = vbar; 
+    ctx.tcr_el1 = tcr;
+    ctx.mair_el1 = mair;
+    ctx.vbar_el1 = vbar;
 }
 
 unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
     let ctx = vcpu.context();
-    for i in 0..31 { *frame.add(i) = ctx.regs[i]; }
+    for i in 0..31 {
+        *frame.add(i) = ctx.regs[i];
+    }
     *frame.add(31) = ctx.elr_el2;
     *frame.add(32) = ctx.spsr;
     *frame.add(33) = ctx.sp;
@@ -343,11 +341,11 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
     // while booting linux, mmu should closed.
     core::arch::asm!(
         "msr vbar_el1, {vbar}",
-        "msr ttbr0_el1, {ttbr0}", 
+        "msr ttbr0_el1, {ttbr0}",
         "msr ttbr1_el1, {ttbr1}",
         "msr tcr_el1, {tcr}",
         "msr mair_el1, {mair}",
-        "msr sctlr_el1, {sctlr}", 
+        "msr sctlr_el1, {sctlr}",
         "isb",
         vbar  = in(reg) ctx.vbar_el1,
         ttbr0 = in(reg) ctx.ttbr0_el1,
@@ -357,7 +355,7 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
         sctlr = in(reg) ctx.sctlr_el1,
         options(nostack)
     );
-    
+
     let target_vcpu_id = vcpu.id();
     vgic::flush(target_vcpu_id);
 }

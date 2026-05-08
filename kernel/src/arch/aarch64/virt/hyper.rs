@@ -13,11 +13,8 @@
 // limitations under the License.
 
 use crate::arch::aarch64::{
-    registers::hcr_el2::HCR_EL2,
-    registers::sctlr_el2::SCTLR_EL2,
-    registers::spsr_el2::SPSR_EL2,
-    virt::vector,
-    virt::mmu_el2
+    registers::{hcr_el2::HCR_EL2, sctlr_el2::SCTLR_EL2, spsr_el2::SPSR_EL2},
+    virt::{mmu_el2, vector},
 };
 use tock_registers::interfaces::{Readable, Writeable};
 
@@ -91,14 +88,14 @@ pub fn read_spsr_el2() -> u64 {
 #[inline]
 pub fn configure_hcr_el2_for_guest() {
     // Identity map 192MB of RAM starting from 0x4400_0000 so the Guest can run in-place
-    super::mmu_s2::init_stage2(0x4400_0000, 0x0c00_0000); 
+    super::mmu_s2::init_stage2(0x4400_0000, 0x0c00_0000);
     HCR_EL2.write(
         HCR_EL2::VM::Enable
             + HCR_EL2::RW::EL1AArch64
             + HCR_EL2::IMO::EL2Handled
             + HCR_EL2::FMO::EL2Handled
             + HCR_EL2::AMO::EL2Handled
-            + HCR_EL2::TSC::Trap
+            + HCR_EL2::TSC::Trap,
     );
     unsafe {
         core::arch::asm!("isb");
@@ -118,11 +115,7 @@ fn configure_vector_table(vector_base: usize) {
 
 #[inline]
 fn configure_sctlr_el2() {
-    SCTLR_EL2.write(
-        SCTLR_EL2::M::Enable
-            + SCTLR_EL2::C::Cacheable
-            + SCTLR_EL2::I::Cacheable
-    );
+    SCTLR_EL2.write(SCTLR_EL2::M::Enable + SCTLR_EL2::C::Cacheable + SCTLR_EL2::I::Cacheable);
 }
 
 #[inline]
@@ -134,7 +127,7 @@ fn configure_timer_el2() {
     unsafe {
         core::arch::asm!("msr CNTHCTL_EL2, {}", in(reg) cnthctl);
     }
-    
+
     // CNTVOFF_EL2: virtual timer offset register
     let cntvoff: u64 = 0;
     unsafe {
@@ -144,10 +137,7 @@ fn configure_timer_el2() {
 
 #[inline]
 pub fn shutdown_guest() {
-    HCR_EL2.write(
-        HCR_EL2::RW::EL1AArch64
-            + HCR_EL2::SWIO::Set
-    );
+    HCR_EL2.write(HCR_EL2::RW::EL1AArch64 + HCR_EL2::SWIO::Set);
     unsafe {
         // Disable vGIC CPU interface to restore normal physical IRQ handling
         let mut ich_hcr: u64;

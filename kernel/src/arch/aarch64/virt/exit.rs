@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::{guest, hyper, vcpu::Vcpu, vgic};
 use core::arch::asm;
-use super::{vcpu::Vcpu, vgic, hyper, guest};
 use semihosting::println;
 
 static mut GUEST_SHUTDOWN: bool = false;
 
-pub const PSCI_VERSION: u32          = 0x8400_0000;
-pub const PSCI_SYSTEM_OFF: u32       = 0x8400_0008;
-pub const PSCI_SYSTEM_RESET: u32     = 0x8400_0009;
-pub const PSCI_FEATURES: u32         = 0x8400_000A;
-pub const HVC_VMM_GET_INFO: u64      = 0x11;
-pub const HVC_VMM_INJECT_IRQ: u64    = 0x13;
+pub const PSCI_VERSION: u32 = 0x8400_0000;
+pub const PSCI_SYSTEM_OFF: u32 = 0x8400_0008;
+pub const PSCI_SYSTEM_RESET: u32 = 0x8400_0009;
+pub const PSCI_FEATURES: u32 = 0x8400_000A;
+pub const HVC_VMM_GET_INFO: u64 = 0x11;
+pub const HVC_VMM_INJECT_IRQ: u64 = 0x13;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VmExitReason {
@@ -47,10 +47,10 @@ pub struct VmExitInfo {
 #[inline]
 pub fn parse_exit_reason(esr: u64) -> VmExitReason {
     let ec = (esr >> 26) & 0x3F;
-    
+
     match ec {
         0x16 | 0x17 => VmExitReason::Hvc,
-        0x15 => VmExitReason::Svc,  
+        0x15 => VmExitReason::Svc,
         0x24 => VmExitReason::DataAbortLowerEL,
         0x20 => VmExitReason::InstructionAbortLowerEL,
         0x01 => VmExitReason::TrappedWfiWfe,
@@ -71,26 +71,22 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         esr,
         far: elr,
         pstate,
-        return_addr: elr + 4,  
+        return_addr: elr + 4,
     };
-    
+
     match reason {
-        VmExitReason::Hvc => {
-            handle_hvc(vcpu, &exit_info)
-        }
-        VmExitReason::Svc => {
-            handle_svc(vcpu, &exit_info)
-        }
+        VmExitReason::Hvc => handle_hvc(vcpu, &exit_info),
+        VmExitReason::Svc => handle_svc(vcpu, &exit_info),
         VmExitReason::DataAbortLowerEL => {
             semihosting::println!("[EXIT] Data Abort from Guest (Stage-2 Fault)");
             let iss = esr & 0x1FFFFFF;
             let dfsc = iss & 0x3F;
             let is_write = (iss & (1 << 6)) != 0;
-            let faulting_pc = vcpu.context().elr_el2; 
+            let faulting_pc = vcpu.context().elr_el2;
 
             if (dfsc & 0x3C) == 0x04 || (dfsc & 0x3C) == 0x08 || (dfsc & 0x3C) == 0x0C {
                 // Translation fault (level 0/1/2/3) - Stage-2 未映射
-                unsafe { 
+                unsafe {
                     let far: u64;
                     core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
                     let hpfar_el2: u64;
@@ -99,12 +95,12 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
                     let fault_ipa_base = (hpfar_el2 & 0x0000_00FF_FFFF_FFF0) << 8;
                     let exact_ipa = fault_ipa_base | (far & 0xFFF);
                     let handled = vgic::handle_data_abort(
-                            vcpu.id(),
-                            esr,
-                            exact_ipa,
-                            &mut vcpu.context_mut().regs
-                        );
-                
+                        vcpu.id(),
+                        esr,
+                        exact_ipa,
+                        &mut vcpu.context_mut().regs,
+                    );
+
                     if handled {
                         vcpu.context_mut().elr_el2 += 4;
                         vgic::flush(vcpu.id());
@@ -119,11 +115,11 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         VmExitReason::InstructionAbortLowerEL => {
             let iss = esr & 0x1FFFFFF;
             let ifsc = iss & 0x3F;
-            
+
             if (ifsc & 0x3C) == 0x14 {
-                 semihosting::println!("[EXIT]   Stage-2 Translation Fault (Instruction)!");
+                semihosting::println!("[EXIT]   Stage-2 Translation Fault (Instruction)!");
             }
-             false
+            false
         }
         VmExitReason::TrappedWfiWfe => {
             let iss = exit_info.esr & 0x1FFFFFF;
@@ -131,14 +127,16 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
             vcpu.context_mut().elr_el2 += 4;
 
             if is_wfe {
-                true 
+                true
             } else {
                 let irq_masked = (vcpu.context().spsr & (1 << 7)) != 0;
-                
+
                 if irq_masked {
                     false
                 } else {
-                    unsafe { core::arch::asm!("wfi"); }
+                    unsafe {
+                        core::arch::asm!("wfi");
+                    }
                     true
                 }
             }
@@ -158,20 +156,20 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
     let hvc_num = info.esr & 0xFFFF;
     let mut need_advance_pc = true;
     let mut is_psci_call = false;
-    
+
     // Easy HVC Services.
     let result = match hvc_num {
         0x00 => {
             let psci_func_id = context.regs[0] as u32;
             is_psci_call = true;
-      
+
             match psci_func_id {
                 PSCI_VERSION => {
                     let version = 0x0000_0002;
                     context.regs[0] = version;
                 }
                 PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
-                    unsafe { 
+                    unsafe {
                         GUEST_SHUTDOWN = true;
                     }
                     need_advance_pc = false;
@@ -202,9 +200,9 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
             true
         }
     };
-    
+
     if result && need_advance_pc {
-        context.elr_el2 += 4; 
+        context.elr_el2 += 4;
     }
 
     result
@@ -226,7 +224,7 @@ fn handle_svc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
             context.regs[0] = 0xFFFFFFFF;
         }
     }
-    
+
     context.elr_el2 = info.return_addr as u64;
     true
 }
@@ -236,7 +234,9 @@ pub fn is_guest_shutdown() -> bool {
 }
 
 pub fn clear_guest_shutdown() {
-    unsafe { GUEST_SHUTDOWN = false; }
+    unsafe {
+        GUEST_SHUTDOWN = false;
+    }
 }
 
 #[inline]
@@ -275,8 +275,14 @@ mod tests {
     fn test_parse_exit_reason_exhaustive() {
         assert_eq!(parse_exit_reason(0x16 << 26), VmExitReason::Hvc);
         assert_eq!(parse_exit_reason(0x15 << 26), VmExitReason::Svc);
-        assert_eq!(parse_exit_reason(0x24 << 26), VmExitReason::DataAbortLowerEL);
-        assert_eq!(parse_exit_reason(0x20 << 26), VmExitReason::InstructionAbortLowerEL);
+        assert_eq!(
+            parse_exit_reason(0x24 << 26),
+            VmExitReason::DataAbortLowerEL
+        );
+        assert_eq!(
+            parse_exit_reason(0x20 << 26),
+            VmExitReason::InstructionAbortLowerEL
+        );
         assert_eq!(parse_exit_reason(0x01 << 26), VmExitReason::TrappedWfiWfe);
     }
 
@@ -284,18 +290,28 @@ mod tests {
     fn test_handle_hvc_pc_increment_and_psci() {
         let mut vcpu = Vcpu::new(0, 0x4000_0000, 0x4100_0000);
         let initial_pc = 0x4000_1000;
-        
+
         // Scenario 1: HVC #0x11 (Get Information), should resume execution and PC + 4
         vcpu.context_mut().elr_el2 = initial_pc;
         let info_normal = VmExitInfo {
             reason: VmExitReason::Hvc,
             esr: (0x16 << 26) | 0x11,
-            far: 0, pstate: 0, return_addr: initial_pc as usize + 4,
+            far: 0,
+            pstate: 0,
+            return_addr: initial_pc as usize + 4,
         };
         let should_resume = handle_hvc(&mut vcpu, &info_normal);
         assert!(should_resume);
-        assert_eq!(vcpu.context().regs[0], 0x48495001, "Should set magic return value");
-        assert_eq!(vcpu.context().elr_el2, initial_pc + 4, "PC MUST be incremented to avoid infinite loop!");
+        assert_eq!(
+            vcpu.context().regs[0],
+            0x48495001,
+            "Should set magic return value"
+        );
+        assert_eq!(
+            vcpu.context().elr_el2,
+            initial_pc + 4,
+            "PC MUST be incremented to avoid infinite loop!"
+        );
 
         // Scenario 2: PSCI SYSTEM OFF (HVC #0, X0 = 0x84000008), should shut down and refuse recovery.
         vcpu.context_mut().elr_el2 = initial_pc;
@@ -304,11 +320,16 @@ mod tests {
         let info_shutdown = VmExitInfo {
             reason: VmExitReason::Hvc,
             esr: (0x16 << 26),
-            far: 0, pstate: 0, return_addr: initial_pc as usize + 4,
+            far: 0,
+            pstate: 0,
+            return_addr: initial_pc as usize + 4,
         };
         clear_guest_shutdown();
         let should_resume_shutdown = handle_hvc(&mut vcpu, &info_shutdown);
-        assert!(!should_resume_shutdown, "Should refuse to resume on PSCI Shutdown");
+        assert!(
+            !should_resume_shutdown,
+            "Should refuse to resume on PSCI Shutdown"
+        );
         assert!(is_guest_shutdown(), "Global shutdown flag must be set");
         assert_eq!(vcpu.context().elr_el2, initial_pc);
     }

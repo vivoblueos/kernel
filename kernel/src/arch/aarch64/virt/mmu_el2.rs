@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 use crate::arch::aarch64::registers::{
-    mair_el2::MAIR_EL2,
-    tcr_el2::TCR_EL2,
-    sctlr_el2::SCTLR_EL2,
-    ttbr0_el2::TTBR0_EL2,
+    mair_el2::MAIR_EL2, sctlr_el2::SCTLR_EL2, tcr_el2::TCR_EL2, ttbr0_el2::TTBR0_EL2,
 };
+use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 
 register_bitfields! {u64,
     pub PAGE_DESCRIPTOR_EL2 [
@@ -43,7 +39,9 @@ register_bitfields! {u64,
 pub struct PageEntry(u64);
 
 impl PageEntry {
-    const fn new() -> Self { Self(0) }
+    const fn new() -> Self {
+        Self(0)
+    }
 
     fn set(&mut self, output_addr: u64, device: bool) {
         let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR_EL2::Register>::new(0);
@@ -51,11 +49,9 @@ impl PageEntry {
             + PAGE_DESCRIPTOR_EL2::AF::True
             + PAGE_DESCRIPTOR_EL2::TYPE::Block;
         if device {
-            val += PAGE_DESCRIPTOR_EL2::ATTRINDX.val(0)
-                + PAGE_DESCRIPTOR_EL2::XN::True;
+            val += PAGE_DESCRIPTOR_EL2::ATTRINDX.val(0) + PAGE_DESCRIPTOR_EL2::XN::True;
         } else {
-            val += PAGE_DESCRIPTOR_EL2::ATTRINDX.val(1)
-                + PAGE_DESCRIPTOR_EL2::SH::InnerShareable;
+            val += PAGE_DESCRIPTOR_EL2::ATTRINDX.val(1) + PAGE_DESCRIPTOR_EL2::SH::InnerShareable;
         }
         entry.write(val);
         self.0 = entry.get() | (output_addr & 0xFFFF_FFFF_C000_0000);
@@ -76,8 +72,8 @@ impl El2PageTable {
 
 pub fn enable_el2_mmu() {
     unsafe {
-        EL2_PAGE_TABLE.0[0].set(0x0, true);            // 0~1G: Device
-        EL2_PAGE_TABLE.0[1].set(0x4000_0000, false);   // 1~2G: Normal
+        EL2_PAGE_TABLE.0[0].set(0x0, true); // 0~1G: Device
+        EL2_PAGE_TABLE.0[1].set(0x4000_0000, false); // 1~2G: Normal
     }
 
     // MAIR_EL2: Attr0=Device nGnRE, Attr1=Normal WB
@@ -101,17 +97,15 @@ pub fn enable_el2_mmu() {
             + TCR_EL2::PS::Bits_32,
     );
 
-    unsafe { 
+    unsafe {
         core::arch::asm!("dsb sy", options(nostack, nomem));
         core::arch::asm!("tlbi alle2", options(nostack, nomem));
         core::arch::asm!("dsb sy", options(nostack, nomem));
         core::arch::asm!("isb sy", options(nostack, nomem));
     }
 
-    SCTLR_EL2.modify(
-        SCTLR_EL2::M::Enable
-            + SCTLR_EL2::C::Cacheable
-            + SCTLR_EL2::I::Cacheable,
-    );
-    unsafe { core::arch::asm!("isb sy", options(nostack, nomem)); }
+    SCTLR_EL2.modify(SCTLR_EL2::M::Enable + SCTLR_EL2::C::Cacheable + SCTLR_EL2::I::Cacheable);
+    unsafe {
+        core::arch::asm!("isb sy", options(nostack, nomem));
+    }
 }

@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::arch::asm;
 use super::{
-    hyper::{read_hcr_el2, write_hcr_el2}, vgic
+    hyper::{read_hcr_el2, write_hcr_el2},
+    vgic,
 };
+use core::arch::asm;
 
 /// HCR_EL2_VI: Enable virtual IRQ.
 const HCR_EL2_VI: u64 = 1 << 7;
@@ -42,18 +43,18 @@ pub struct VcpuStateStruct {
     pub pstate: u64,
     pub spsr: u64,
     pub vbar_el1: u64,
-    pub sctlr_el1:  u64,
-    pub ttbr0_el1:  u64,  
-    pub ttbr1_el1:  u64, 
-    pub tcr_el1:    u64,
-    pub mair_el1:   u64,
-    pub elr_el1:    u64,
-    pub spsr_el1:   u64,
-    pub sp_el0:     u64,
-    pub tpidr_el0:  u64,
-    pub tpidr_el1:  u64,
-    pub esr_el1:    u64,
-    pub far_el1:    u64,
+    pub sctlr_el1: u64,
+    pub ttbr0_el1: u64,
+    pub ttbr1_el1: u64,
+    pub tcr_el1: u64,
+    pub mair_el1: u64,
+    pub elr_el1: u64,
+    pub spsr_el1: u64,
+    pub sp_el0: u64,
+    pub tpidr_el0: u64,
+    pub tpidr_el1: u64,
+    pub esr_el1: u64,
+    pub far_el1: u64,
 }
 
 impl VcpuStateStruct {
@@ -61,12 +62,12 @@ impl VcpuStateStruct {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     #[inline]
     pub fn is_valid(&self) -> bool {
         self.elr_el2 != 0 && self.sp != 0
     }
-    
+
     #[inline]
     pub fn reset(&mut self) {
         self.regs = [0; 31];
@@ -76,22 +77,22 @@ impl VcpuStateStruct {
         self.spsr = 0;
         self.vbar_el1 = 0;
     }
-    
+
     #[inline]
     pub fn elr(&self) -> u64 {
         self.elr_el2
     }
-    
+
     #[inline]
     pub fn set_elr(&mut self, elr: u64) {
         self.elr_el2 = elr;
     }
-    
+
     #[inline]
     pub fn spsr(&self) -> u64 {
         self.spsr
     }
-    
+
     #[inline]
     pub fn set_spsr(&mut self, spsr: u64) {
         self.spsr = spsr;
@@ -117,7 +118,7 @@ impl Vcpu {
         context.spsr = 0x3C5; // Default PSTATE: EL1h, DAIF masked
         context.vbar_el1 = (entry as u64 + 0x1000) & !0x7FF;
         // context.sp = stack_top as u64;
-        
+
         Self {
             id,
             state: VcpuState::Stopped,
@@ -128,32 +129,32 @@ impl Vcpu {
             pending_fiq: false,
         }
     }
-    
+
     #[inline]
     pub fn id(&self) -> usize {
         self.id
     }
-    
+
     #[inline]
     pub fn entry_point(&self) -> usize {
         self.entry
     }
-    
+
     #[inline]
     pub fn stack_top(&self) -> usize {
         self.stack_top
     }
-    
+
     #[inline]
     pub fn state(&self) -> VcpuState {
         self.state
     }
-    
+
     #[inline]
     pub fn context(&self) -> &VcpuStateStruct {
         &self.context
     }
-    
+
     #[inline]
     pub fn context_mut(&mut self) -> &mut VcpuStateStruct {
         &mut self.context
@@ -178,27 +179,27 @@ impl Vcpu {
     pub fn set_pending_fiq(&mut self, val: bool) {
         self.pending_fiq = val;
     }
-    
+
     #[inline]
     pub fn elr(&self) -> u64 {
         self.context.elr_el2
     }
-    
+
     #[inline]
     pub fn set_entry(&mut self, entry: usize) {
         self.entry = entry;
     }
-    
+
     #[inline]
     pub fn set_stack_top(&mut self, stack_top: usize) {
         self.stack_top = stack_top;
     }
-    
+
     #[inline]
     pub fn set_state(&mut self, state: VcpuState) {
         self.state = state;
     }
-    
+
     pub fn prepare_run(&mut self) {
         if self.state == VcpuState::Stopped {
             #[cfg(not(test))]
@@ -206,13 +207,13 @@ impl Vcpu {
         }
         self.state = VcpuState::Running;
     }
-    
+
     pub fn inject_irq(&mut self) {
         self.pending_irq = true;
         let hcr = read_hcr_el2();
         write_hcr_el2(hcr | HCR_EL2_VI);
 
-        unsafe{
+        unsafe {
             core::arch::asm!("isb", options(nomem, nostack));
         }
     }
@@ -222,16 +223,16 @@ impl Vcpu {
         let hcr = read_hcr_el2();
         write_hcr_el2(hcr | HCR_EL2_VF);
 
-        unsafe{
+        unsafe {
             core::arch::asm!("isb", options(nomem, nostack));
         }
     }
 
     #[inline]
     pub fn can_run(&self) -> bool {
-        self.state == VcpuState::Stopped || 
-        self.state == VcpuState::Paused ||
-        self.state == VcpuState::Exited
+        self.state == VcpuState::Stopped
+            || self.state == VcpuState::Paused
+            || self.state == VcpuState::Exited
     }
 }
 
@@ -273,12 +274,12 @@ impl VcpuManager {
             host_sctlr: 0,
         }
     }
-    
+
     pub fn create_vcpu(
-        &mut self, 
-        id: usize, 
-        entry: usize, 
-        stack_top: usize
+        &mut self,
+        id: usize,
+        entry: usize,
+        stack_top: usize,
     ) -> Result<&mut Vcpu, &'static str> {
         if id >= 4 {
             return Err("vCPU ID out of range (max 3)");
@@ -288,27 +289,27 @@ impl VcpuManager {
         if self.count >= 4 {
             return Err("Reached max vCPU count");
         }
-        
+
         if self.vcpus[id].is_some() {
             return Err("vCPU ID already used");
         }
-        
+
         let vcpu = Vcpu::new(id, entry, stack_top);
         self.vcpus[id] = Some(vcpu);
         self.count += 1;
-        
+
         Ok(self.vcpus[id].as_mut().unwrap())
     }
-    
+
     pub fn clear_current_vcpu(&mut self) {
         self.current_vcpu = None;
     }
-    
+
     #[inline]
     pub fn get_vcpu(&mut self, id: usize) -> Option<&mut Vcpu> {
         self.vcpus[id].as_mut()
     }
-    
+
     #[inline]
     pub fn current_vcpu_id(&self) -> Option<usize> {
         self.current_vcpu
@@ -318,17 +319,17 @@ impl VcpuManager {
     pub fn set_current_vcpu(&mut self, id: usize) {
         self.current_vcpu = Some(id);
     }
-    
+
     #[inline]
     pub fn vcpu_count(&self) -> usize {
         self.count
     }
-    
+
     #[inline]
     pub fn has_running(&self) -> bool {
         self.current_vcpu.is_some()
     }
-    
+
     pub fn iter(&mut self) -> impl Iterator<Item = (usize, &mut Vcpu)> {
         self.vcpus
             .iter_mut()
@@ -349,16 +350,11 @@ pub enum VcpuError {
 impl core::fmt::Display for VcpuError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            VcpuError::IdOutOfRange => 
-                write!(f, "vCPU ID out of range (max 3)"),
-            VcpuError::MaxLimitReached => 
-                write!(f, "Reached max vCPU count"),
-            VcpuError::IdAlreadyUsed => 
-                write!(f, "vCPU ID already used"),
-            VcpuError::NotFound => 
-                write!(f, "vCPU not found"),
-            VcpuError::InvalidState => 
-                write!(f, "vCPU state invalid for this operation"),
+            VcpuError::IdOutOfRange => write!(f, "vCPU ID out of range (max 3)"),
+            VcpuError::MaxLimitReached => write!(f, "Reached max vCPU count"),
+            VcpuError::IdAlreadyUsed => write!(f, "vCPU ID already used"),
+            VcpuError::NotFound => write!(f, "vCPU not found"),
+            VcpuError::InvalidState => write!(f, "vCPU state invalid for this operation"),
         }
     }
 }
@@ -391,7 +387,9 @@ mod tests {
         assert_eq!(manager.vcpu_count(), 0);
         assert!(!manager.has_running());
 
-        let vcpu0 = manager.create_vcpu(0, 0x4000_0000, 0x4100_0000).expect("Failed to create vCPU 0");
+        let vcpu0 = manager
+            .create_vcpu(0, 0x4000_0000, 0x4100_0000)
+            .expect("Failed to create vCPU 0");
         assert_eq!(vcpu0.id(), 0);
         assert_eq!(vcpu0.entry_point(), 0x4000_0000);
         assert_eq!(vcpu0.state(), VcpuState::Stopped);
@@ -412,12 +410,15 @@ mod tests {
     fn test_vcpu_context_switch_preparation() {
         let mut manager = VcpuManager::new();
         manager.create_vcpu(0, 0x4000_0000, 0x4100_0000).unwrap();
-        
+
         let vcpu = manager.get_vcpu(0).unwrap();
         assert!(vcpu.can_run());
-        
+
         vcpu.prepare_run();
         assert_eq!(vcpu.state(), VcpuState::Running);
-        assert!(!vcpu.can_run(), "Running vCPU should not be marked as can_run to prevent re-entry");
+        assert!(
+            !vcpu.can_run(),
+            "Running vCPU should not be marked as can_run to prevent re-entry"
+        );
     }
 }

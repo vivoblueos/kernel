@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::vgic;
 use crate::arch::aarch64::{
     current_cpu_id,
-    irq::{self, IrqHandler, IrqNumber, Priority}
+    irq::{self, IrqNumber, Priority},
 };
-use super::vgic; 
 use alloc::boxed::Box;
+use blueos_hal::isr::IsrDesc;
 use core::arch::asm;
 
 pub struct VirtualTimerHandler;
 
-impl IrqHandler for VirtualTimerHandler {
-    fn handle(&mut self) {
+impl IsrDesc for VirtualTimerHandler {
+    fn service_isr(&self) {
         unsafe {
             // 1. Shield the virtual timer interrupt.
             let mut ctl = read_cntv_ctl();
@@ -40,40 +41,45 @@ pub fn init_global_vtimer() {
     let timer_handler = Box::new(VirtualTimerHandler);
     irq::register_handler(IrqNumber::new(27), timer_handler)
         .expect("[vTimer] Failed to register IRQ 27 handler");
-
 }
 
 /// Call it before booting guest.
 pub fn init_vcpu_timer() {
-    irq::enable_irq_with_priority(
-        IrqNumber::new(27), 
-        current_cpu_id(), 
-        Priority::Normal
-    );
+    irq::enable_irq_with_priority(IrqNumber::new(27), current_cpu_id(), Priority::Normal);
 }
 
 #[cfg(not(test))]
 #[inline]
 fn read_cntv_ctl() -> u64 {
     let ctl: u64;
-    unsafe { asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl); }
+    unsafe {
+        asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
+    }
     ctl
 }
 
 #[cfg(not(test))]
 #[inline]
 fn write_cntv_ctl(ctl: u64) {
-    unsafe { asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl); }
+    unsafe {
+        asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
+    }
 }
 
 #[cfg(test)]
 static mut MOCK_CNTV_CTL: u64 = 0;
 
 #[cfg(test)]
-fn read_cntv_ctl() -> u64 { unsafe { MOCK_CNTV_CTL } }
+fn read_cntv_ctl() -> u64 {
+    unsafe { MOCK_CNTV_CTL }
+}
 
 #[cfg(test)]
-fn write_cntv_ctl(ctl: u64) { unsafe { MOCK_CNTV_CTL = ctl; } }
+fn write_cntv_ctl(ctl: u64) {
+    unsafe {
+        MOCK_CNTV_CTL = ctl;
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -82,15 +88,19 @@ mod tests {
 
     #[test]
     fn test_vtimer_handler_masking() {
-        unsafe { 
+        unsafe {
             MOCK_CNTV_CTL = 0;
-        } 
+        }
 
         let mut handler = VirtualTimerHandler;
-        handler.handle();
+        handler.service_isr();
         // Verify whether we have shield physical interrupt. (Bit 1 = IMASK)
         unsafe {
-            assert_eq!(MOCK_CNTV_CTL & (1 << 1), (1 << 1), "vTimer must set IMASK (bit 1) to prevent IRQ storms");
+            assert_eq!(
+                MOCK_CNTV_CTL & (1 << 1),
+                (1 << 1),
+                "vTimer must set IMASK (bit 1) to prevent IRQ storms"
+            );
         }
     }
 }
