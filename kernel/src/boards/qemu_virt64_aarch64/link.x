@@ -80,7 +80,7 @@ SECTIONS
 
     . = ALIGN(4096);
     __heap_start = .;
-    . += 128M;
+    . += 0x800000;
     __heap_end = .;
     _end = .;
 }

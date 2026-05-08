@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use core::arch::asm;
-use super::{vcpu::Vcpu, vgic, hyper};
+use super::{vcpu::Vcpu, vgic, hyper, guest};
 use semihosting::println;
 
 static mut GUEST_SHUTDOWN: bool = false;
@@ -24,7 +24,6 @@ pub const PSCI_SYSTEM_RESET: u32     = 0x8400_0009;
 pub const PSCI_FEATURES: u32         = 0x8400_000A;
 pub const HVC_VMM_GET_INFO: u64      = 0x11;
 pub const HVC_VMM_INJECT_IRQ: u64    = 0x13;
-pub const HVC_GUEST_SHUTDOWN: u64    = 0x20;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VmExitReason {
@@ -50,7 +49,7 @@ pub fn parse_exit_reason(esr: u64) -> VmExitReason {
     let ec = (esr >> 26) & 0x3F;
     
     match ec {
-        0x16 => VmExitReason::Hvc,
+        0x16 | 0x17 => VmExitReason::Hvc,
         0x15 => VmExitReason::Svc,  
         0x24 => VmExitReason::DataAbortLowerEL,
         0x20 => VmExitReason::InstructionAbortLowerEL,
@@ -75,13 +74,6 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         return_addr: elr + 4,  
     };
     
-    semihosting::println!("[EXIT] VM Exit Happened!");
-    semihosting::println!("[EXIT]  Reason: {:?}", reason);
-    semihosting::println!("[EXIT]   ESR: {:#x}", esr);
-    semihosting::println!("[EXIT]   EC: {:#x}", (esr >> 26) & 0x3F);
-    semihosting::println!("[EXIT]   FAR: {:#x}", elr);
-    semihosting::println!("[EXIT]   PSTATE: {:#x}", pstate);
-    
     match reason {
         VmExitReason::Hvc => {
             handle_hvc(vcpu, &exit_info)
@@ -96,35 +88,9 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
             let is_write = (iss & (1 << 6)) != 0;
             let faulting_pc = vcpu.context().elr_el2; 
 
-            unsafe { 
-                semihosting::println!("=====================================");
-                semihosting::println!("[EXIT] PoC Guest triggered Data Abort!");
-                semihosting::println!("[EXIT]   1. Faulting PC (ELR_EL2) : {}", faulting_pc);
-                semihosting::println!("[EXIT]   2. Target Addr (FAR_EL2) : {}", {
-                let far: u64;
-                core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
-                far
-                });
-                if is_write {
-                    semihosting::println!("[EXIT]   3. Access Type           : WRITE");
-                } else {
-                    semihosting::println!("[EXIT]   3. Access Type           : READ");
-                }
-
-                semihosting::println!("[EXIT]   4. DFSC Code             : {}", dfsc as u64);
-                let hpfar_el2: u64;
-                unsafe { core::arch::asm!("mrs {}, hpfar_el2", out(reg) hpfar_el2); }
-
-                // Caclate Linux want to access physical address (IPA)
-                let fault_ipa = (hpfar_el2 & 0x0000_00FF_FFFF_FFF0) << 8;
-                println!("Target Physical Addr (IPA): {:#x}", fault_ipa);
-                semihosting::println!("=====================================");
-            }
-
             if (dfsc & 0x3C) == 0x04 || (dfsc & 0x3C) == 0x08 || (dfsc & 0x3C) == 0x0C {
                 // Translation fault (level 0/1/2/3) - Stage-2 未映射
                 unsafe { 
-                    semihosting::println!("[EXIT]   Stage-2 Translation Fault - skipping instruction"); 
                     let far: u64;
                     core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
                     let hpfar_el2: u64;
@@ -139,21 +105,18 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
                             &mut vcpu.context_mut().regs
                         );
                 
-                        if handled {
-                            semihosting::println!("[EXIT]   MMIO Handled by vGIC");
-                            vcpu.context_mut().elr_el2 += 4;
-                            vgic::flush(vcpu.id());
-                            return true;
-                        } else {
-                            semihosting::println!("[EXIT]   Unhandled Stage-2 Address!");
-                        }
+                    if handled {
+                        vcpu.context_mut().elr_el2 += 4;
+                        vgic::flush(vcpu.id());
+                        return true;
+                    } else {
+                        semihosting::println!("[EXIT]   Unhandled Stage-2 Address!");
+                    }
                 }
             }
-            semihosting::println!("[EXIT]   Unrecoverable Data Abort, terminating Guest");
             false
         }
         VmExitReason::InstructionAbortLowerEL => {
-            semihosting::println!("[EXIT] Instruction Abort from Guest!");
             let iss = esr & 0x1FFFFFF;
             let ifsc = iss & 0x3F;
             
@@ -163,9 +126,22 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
              false
         }
         VmExitReason::TrappedWfiWfe => {
-           semihosting::println!("[EXIT] Trapped WFI/WFE instruction");
+            let iss = exit_info.esr & 0x1FFFFFF;
+            let is_wfe = (iss & 1) != 0;
             vcpu.context_mut().elr_el2 += 4;
-            true
+
+            if is_wfe {
+                true 
+            } else {
+                let irq_masked = (vcpu.context().spsr & (1 << 7)) != 0;
+                
+                if irq_masked {
+                    false
+                } else {
+                    unsafe { core::arch::asm!("wfi"); }
+                    true
+                }
+            }
         }
         VmExitReason::Unknown(ec) => {
             semihosting::println!("[EXIT]  Unknown Exit Reason: EC = {:#x}", ec);
@@ -177,76 +153,52 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
 // hvc from guest.
 fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
     let saved_x0 = vcpu.context().regs[0];
-    semihosting::println!("[EXIT] Handle HVC Call");
     let vcpu_id = vcpu.id();
     let context = vcpu.context_mut();
     let hvc_num = info.esr & 0xFFFF;
-    semihosting::println!("[EXIT]   HVC#{}", hvc_num);
-
     let mut need_advance_pc = true;
+    let mut is_psci_call = false;
     
     // Easy HVC Services.
     let result = match hvc_num {
         0x00 => {
             let psci_func_id = context.regs[0] as u32;
-            semihosting::println!("[DEBUG] Returning to Linux: VBAR={:#x}, TTBR1={:#x}, SCTLR={:#x}", context.vbar_el1, context.ttbr1_el1, context.sctlr_el1);
+            is_psci_call = true;
+      
             match psci_func_id {
                 PSCI_VERSION => {
-                    semihosting::println!("[EXIT] HVC#0: Linux requested PSCI_VERSION");
-                    context.regs[0] = 0x00010001;
-                    context.regs[1] = 0;
-                    context.regs[2] = 0;
-                    context.regs[3] = 0;
-                    
-                    if context.regs[4] == 0 {
-                        context.regs[4] = context.sp - 16; 
-                    }
-                    true
+                    let version = 0x0000_0002;
+                    context.regs[0] = version;
                 }
                 PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
                     unsafe { 
-                        semihosting::println!("[EXIT] HVC#0: Linux requested PSCI_SYSTEM_OFF. Shutting down..."); 
                         GUEST_SHUTDOWN = true;
                     }
-                    // Shutdown needn't "pc + 4".
                     need_advance_pc = false;
-                    false
+                    return false;
                 }
                 PSCI_FEATURES => {
                     let feature_id = context.regs[1] as u32;
-                    // semihosting::println!("[EXIT] HVC#0: Linux requested PSCI_FEATURES for {:#x}", feature_id);
-                    
                     if feature_id == PSCI_SYSTEM_OFF || feature_id == PSCI_SYSTEM_RESET {
                         context.regs[0] = 0;
                     } else {
                         context.regs[0] = 0xFFFF_FFFF;
                     }
-                    true
                 }
                 _ => {
                     semihosting::println!("[EXIT] HVC#0: Ignored PSCI call: {:#x}", psci_func_id);
-                    // We don't suuport this function.
                     context.regs[0] = 0xFFFF_FFFF;
-                    true
                 }
             }
+
+            true
         }
-        HVC_VMM_GET_INFO=> {
+        HVC_VMM_GET_INFO => {
             context.regs[0] = 0x48495001;
             true
         }
-        HVC_GUEST_SHUTDOWN => {
-            unsafe { 
-                semihosting::println!("[EXIT] HVC#20 Guest Shutdown...");
-                need_advance_pc = false;
-                GUEST_SHUTDOWN = true;
-            }
-
-            false
-
-        }
         _ => {
-           semihosting::println!("[EXIT]   Unknown HVC Number");
+            semihosting::println!("[EXIT]   Unknown HVC Number");
             true
         }
     };
@@ -258,28 +210,24 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
     result
 }
 
+// To DO: Finish this function.
 fn handle_svc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
     let context = vcpu.context_mut();
     let svc_num = context.regs[0];
-    semihosting::println!("[EXIT]   SVC Number: {}", svc_num);
 
     match svc_num {
         0 => {
-            semihosting::println!("[EXIT]   SVC#0: Hello from Guest via SVC!");
             context.regs[0] = 0;
         }
         1 => {
-            semihosting::println!("[EXIT]   SVC#1: Get Guest ID");
             context.regs[0] = 1;
         }
         _ => {
-            semihosting::println!("[EXIT]   Unknown SVC Number");
             context.regs[0] = 0xFFFFFFFF;
         }
     }
     
     context.elr_el2 = info.return_addr as u64;
-    
     true
 }
 

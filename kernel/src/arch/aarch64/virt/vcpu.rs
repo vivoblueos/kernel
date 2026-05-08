@@ -235,6 +235,7 @@ impl Vcpu {
     }
 }
 
+// Temporarily set 4 vCPUs，though we use one.
 #[repr(align(16))]
 pub struct VcpuManager {
     vcpus: [Option<Vcpu>; 4],

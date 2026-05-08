@@ -90,15 +90,15 @@ pub fn read_spsr_el2() -> u64 {
 
 #[inline]
 pub fn configure_hcr_el2_for_guest() {
-    // Identity map 128MB of RAM starting from 0x4400_0000 so the Guest can run in-place
-    super::mmu_s2::init_stage2(0x4400_0000, 0x1000_0000); 
+    // Identity map 192MB of RAM starting from 0x4400_0000 so the Guest can run in-place
+    super::mmu_s2::init_stage2(0x4400_0000, 0x0c00_0000); 
     HCR_EL2.write(
         HCR_EL2::VM::Enable
             + HCR_EL2::RW::EL1AArch64
             + HCR_EL2::IMO::EL2Handled
             + HCR_EL2::FMO::EL2Handled
             + HCR_EL2::AMO::EL2Handled
-            +HCR_EL2::TSC::Trap
+            + HCR_EL2::TSC::Trap
     );
     unsafe {
         core::arch::asm!("isb");
@@ -185,27 +185,5 @@ pub fn hyp_init() {
     unsafe {
         core::arch::asm!("dsb sy", options(nostack));
         core::arch::asm!("isb sy", options(nostack));
-    }
-}
-
-// For GuestOS
-#[inline]
-pub fn enter_guest(entry: usize, dtb_addr: usize, pstate: u64) {
-    unsafe {
-        core::arch::asm!(
-            "msr elr_el2, {entry}",
-            "msr spsr_el2, {pstate}",
-            "mov x0, {dtb}",
-            "mov x1, xzr",
-            "mov x2, xzr",
-            "mov x3, xzr",
-            "dsb sy",
-            "isb sy",
-            "eret",
-            entry = in(reg) entry as u64,
-            pstate = in(reg) pstate,
-            dtb = in(reg) dtb_addr as u64,
-            options(noreturn)
-        );
     }
 }

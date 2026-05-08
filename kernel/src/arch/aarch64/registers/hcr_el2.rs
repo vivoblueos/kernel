@@ -31,14 +31,14 @@ register_bitfields! {u64,
             Set = 1
         ],
 
-        /// FWB, bit [2] - Force Write-back
-        FWB OFFSET(2) NUMBITS(1) [
-            Normal = 0,
-            ForceWB = 1
+        /// PTW, bit [2] - Page Table Walk
+        PTW OFFSET(2) NUMBITS(1) [
+            NoTrap = 0,
+            Trap = 1
         ],
 
-        /// AMO, bit [3] - Asynchronous Memory Abort Override
-        AMO OFFSET(3) NUMBITS(1) [
+        /// FMO, bit [3] - Asynchronous Memory Abort Override
+        FMO OFFSET(3) NUMBITS(1) [
             EL1Handled = 0,
             EL2Handled = 1
         ],
@@ -49,16 +49,48 @@ register_bitfields! {u64,
             EL2Handled = 1
         ],
 
-        /// FMO, bit [5] - FIQ Mask Override
-        FMO OFFSET(5) NUMBITS(1) [
+        /// AMO, bit [5] - Asynchronous Abort Routing
+        AMO OFFSET(5) NUMBITS(1) [
             EL1Handled = 0,
             EL2Handled = 1
         ],
 
-        /// TGE, bit [6] - Trap General Exceptions
-        TGE OFFSET(6) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
+        /// VF, bit [6] - Vitual FIQ
+        VF OFFSET(6) NUMBITS(1) [
+            Disable = 0,
+            Enable = 1
+        ],
+
+        /// VI, bit [7] - Virtual IRQ
+        VI OFFSET(7) NUMBITS(1) [
+            Disable = 0,
+            Enable = 1
+        ],
+
+        /// VSE, bit [8] - Virtual System Error
+        VSE OFFSET(8) NUMBITS(1) [
+            Disable = 0,
+            Enable = 1
+        ],
+
+        /// FB, bit [9] - Force Broadcast
+        FB OFFSET(9) NUMBITS(1) [
+            Normal = 0,
+            ForceBroadcast = 1
+        ],
+
+        /// BSU, bits [11:10] - Barrier Shareability Upgrade
+        BSU OFFSET(10) NUMBITS(2) [
+            NoEffect = 0b00,
+            InnerShareable = 0b01,
+            OuterShareable = 0b10,
+            FullShareable = 0b11
+        ],
+
+        /// DC, bit [12] - Default Cacheable
+        DC OFFSET(12) NUMBITS(1) [
+            Disable = 0,
+            Enable = 1
         ],
 
         /// TWI, bit [13] - Trap WFI
@@ -75,52 +107,58 @@ register_bitfields! {u64,
             Trap = 1
         ],
 
-        /// DCVA, bit [15] - Data Cache Zero By VA
-        DCVA OFFSET(15) NUMBITS(1) [
+        /// TSC, bit [19] - TRAP SMC instruction
+        TSC OFFSET(19) NUMBITS(1) [
             NoTrap = 0,
             Trap = 1
         ],
 
-        /// AT, bit [16] - Address Translation
-        AT OFFSET(16) NUMBITS(1) [
+        /// TACR, bit [21] - Trap ACTLR accesses
+        TACR OFFSET(21) NUMBITS(1) [
             NoTrap = 0,
             Trap = 1
         ],
 
-        /// ST, bit [17] - Store Team Register
-        ST OFFSET(17) NUMBITS(1) [
+        /// TSW, bit [22] - Trap Data Cache instructions by Set/Way 
+        TSW OFFSET(22) NUMBITS(1) [
             NoTrap = 0,
             Trap = 1
         ],
 
-        /// VSE, bit [18] - Virtual System Error
-        VSE OFFSET(18) NUMBITS(1) [
-            Disable = 0,
-            Enable = 1
+        /// TPCP, bit [23] - Trap Cache Maintenance instructions
+        TPCP OFFSET(23) NUMBITS(1) [
+            NoTrap = 0,
+            Trap = 1
         ],
 
-        /// VI, bit [19] - Virtual IRQ
-        VI OFFSET(19) NUMBITS(1) [
-            Disable = 0,
-            Enable = 1
+        /// TVM, bit [26] - Trap Virtual Memory Controls
+        TVM OFFSET(26) NUMBITS(1) [
+            NoTrap = 0,
+            Trap = 1
         ],
 
-        /// VF, bit [20] - Virtual FIQ
-        VF OFFSET(20) NUMBITS(1) [
-            Disable = 0,
-            Enable = 1
+        /// TGE, bit [27] - Trap General Exceptions
+        TGE OFFSET(27) NUMBITS(1) [
+            GuestMode = 0,
+            HostMode = 1
         ],
 
-        /// FMO, bit [21] - Cache Maintenance Override
-        FMO_CM OFFSET(21) NUMBITS(1) [
-            Normal = 0,
-            Override = 1
+        /// TDZ, bit [28] - Trap DC ZVA instruction
+        TDZ OFFSET(28) NUMBITS(1) [
+            NoTrap = 0,
+            Trap = 1
         ],
 
-        /// AMO_BIT, bit [22] - AMO for instruction
-        AMO_BIT OFFSET(22) NUMBITS(1) [
-            Normal = 0,
-            Override = 1
+        /// HCD, bit [29] - HVC Instruction Disable
+        HCD OFFSET(29) NUMBITS(1) [
+            EnableHVC = 0,
+            DisableHVC = 1
+        ],
+
+        /// TRVM, bit [30] - Trap Reads of Virtual Memory Controls
+        TRVM OFFSET(30) NUMBITS(1) [
+            NoTrap = 0,
+            Trap = 1
         ],
 
         /// RW, bit [31] - Register width control
@@ -131,52 +169,22 @@ register_bitfields! {u64,
             EL1AArch64 = 1
         ],
 
-        /// PTW, bit [23] - Page Table Walk
-        PTW OFFSET(23) NUMBITS(1) [
+        /// CD, bit [32] - Disable Stage 2 Data Cache
+        CD OFFSET(32) NUMBITS(1) [
             Enable = 0,
             Disable = 1
         ],
 
-        /// HCD, bit [24] - Hypervisor Call Disable
-        HCD OFFSET(24) NUMBITS(1) [
+        /// ID, bit [33] - Disable Stage 2 Instruction Cache
+        ID OFFSET(33) NUMBITS(1) [
             Enable = 0,
             Disable = 1
         ],
 
-        /// TDZ, bit [25] - TRAP DC ZVA
-        TDZ OFFSET(25) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
-        ],
-
-        /// TSC, bit [31] - TRAP SC
-        TSC OFFSET(31) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
-        ],
-
-        /// TACR, bit [33] - TRAP ACTLR
-        TACR OFFSET(33) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
-        ],
-
-        /// TIDCP, bit [36] - TRAP IMPLEMENTATION DEFINED
-        TIDCP OFFSET(36) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
-        ],
-
-        /// TOCU, bit [38] - TRAP OSLAR
-        TOCU OFFSET(38) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
-        ],
-
-        /// TID4, bit [40] - TRAP ID bits
-        TID4 OFFSET(40) NUMBITS(1) [
-            NoTrap = 0,
-            Trap = 1
+        /// E2H, bit [34] - EL2 Host
+        E2H OFFSET(34) NUMBITS(1) [
+            Disable = 0,
+            Enable = 1
         ]
     ]
 }

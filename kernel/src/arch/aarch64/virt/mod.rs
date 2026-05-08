@@ -27,6 +27,7 @@ pub use vcpu::{Vcpu, VcpuManager, VcpuState};
 pub use vgic::init;
 pub use crate::arch::aarch64::psci::hvc_call;
 use semihosting::println;
+use blueos_hal::PlatPeri;
 
 // PL011 UART addresses for QEMU Virt
 const UART0_DR: *mut u32 = 0x0900_0000 as *mut u32;
@@ -56,9 +57,6 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
         return 0;
     }
 
-    if intid != 27 {
-        semihosting::println!("[EL2] IRQ trap! INTID: {}", intid);
-    }
     if intid == 33 {
         unsafe {
             let lr_val: u64 = (1 << 62) | (1 << 61) | (1 << 60) | (0xA0 << 48) | (33 << 32) | 33;
@@ -132,6 +130,7 @@ pub fn virt_boot_linux() {
     vgic::init();
     vtimer::init_global_vtimer();
 
+    // Initiate vCpu for Linux kernel, set the entry point and parameters.
     unsafe {
         let vcpu = VCPU_MANAGER.0.create_vcpu(0, guest::LINUX_KERNEL_LOAD_ADDR, 0).unwrap();
         let mut ctx = vcpu.context_mut();
@@ -142,4 +141,13 @@ pub fn virt_boot_linux() {
 
     vtimer::init_vcpu_timer();
     let result = hvc_call(2, 0, 0);
+
+    /// Nowadays, Linux kernel will call PSCI CPU_OFF to shutdown the vCPU after it finishes its work, where we can't print any message.
+    /// So we print the shutdown message here before Linux kernel calls PSCI CPU_OFF.
+    /// To Do: Solve this problem in next step.
+    if result == 0 {
+        let uart = crate::boards::get_device!(console_uart);
+        uart.enable();
+        semihosting::println!("Linux shutdown!!!");
+    }
 }

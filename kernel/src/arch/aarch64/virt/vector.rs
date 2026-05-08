@@ -145,9 +145,9 @@ pub unsafe extern "C" fn sync_from_lower_el1() {
         "add sp, sp, #272\n",
         "eret\n",
         "2:\n",
-        "ldr x1, [sp, #248]\n",   // Host ELR
-        "ldr x2, [sp, #256]\n",   // Host SPSR
-        "ldr x3, [sp, #264]\n",   // Host SP_EL1
+        "ldr x1, [sp, #248]\n",
+        "ldr x2, [sp, #256]\n",
+        "ldr x3, [sp, #264]\n",
         "msr elr_el2, x1\n",
         "msr spsr_el2, x2\n",
         "msr sp_el1, x3\n",
@@ -230,10 +230,9 @@ unsafe fn handle_host_request(frame: *mut u64) -> u64 {
 }
 
 unsafe fn save_host_context(frame: *mut u64) {
-    VCPU_MANAGER.0.host_elr = *frame.add(31);
+    VCPU_MANAGER.0.host_elr = *frame.add(31) + 4;
     VCPU_MANAGER.0.host_spsr = *frame.add(32);
     VCPU_MANAGER.0.host_sp = *frame.add(33);
-    semihosting::println!("host_elr: {:x}, host_spsr: {:x}, host_sp: {:x}", VCPU_MANAGER.0.host_elr, VCPU_MANAGER.0.host_spsr, VCPU_MANAGER.0.host_sp);
     for i in 0..31 { 
         VCPU_MANAGER.0.host_regs[i] = *frame.add(i);
     }
@@ -266,12 +265,14 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
     *frame.add(31) = VCPU_MANAGER.0.host_elr;
     *frame.add(32) = VCPU_MANAGER.0.host_spsr;
     *frame.add(33) = VCPU_MANAGER.0.host_sp;
-    semihosting::println!("host_elr: {:x}, host_spsr: {:x}, host_sp: {:x}", VCPU_MANAGER.0.host_elr, VCPU_MANAGER.0.host_spsr, VCPU_MANAGER.0.host_sp);
     // Restore Host GPRs (x0-x30)
     for i in 0..31 {
         *frame.add(i) = VCPU_MANAGER.0.host_regs[i];
     }
     
+    // Pass success code (0) back to host's x0
+    *frame.add(0) = 0;
+
     let vbar = VCPU_MANAGER.0.host_vbar;
     let sctlr = VCPU_MANAGER.0.host_sctlr;
     let ttbr0 = VCPU_MANAGER.0.host_ttbr0;
@@ -301,12 +302,8 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
 
 unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
     let mut ctx = vcpu.context_mut();
-    let raw_x4 = *frame.add(4);
     for i in 0..31 {
         ctx.regs[i] = *frame.add(i);
-    }
-    if ctx.regs[4] != raw_x4 {
-        semihosting::println!("[ALARM] Memory corruption! ctx.regs[4] expected {:x}, got {:x}", raw_x4, ctx.regs[4]);
     }
     ctx.elr_el2 = *frame.add(31);
     ctx.spsr = *frame.add(32);
@@ -352,9 +349,6 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
         "msr mair_el1, {mair}",
         "msr sctlr_el1, {sctlr}", 
         "isb",
-        "tlbi alle1",
-        "dsb sy",
-        "isb",
         vbar  = in(reg) ctx.vbar_el1,
         ttbr0 = in(reg) ctx.ttbr0_el1,
         ttbr1 = in(reg) ctx.ttbr1_el1,
@@ -396,16 +390,19 @@ pub unsafe extern "C" fn irq_from_lower_el1() {
         "str x30, [sp, #240]\n",
         "mrs x1, elr_el2\n",
         "mrs x2, spsr_el2\n",
+        "mrs x3, sp_el1\n",
         "str x1, [sp, #248]\n",
         "str x2, [sp, #256]\n",
+        "str x3, [sp, #264]\n",
         "mov x0, sp\n",
-        "mov x19, sp\n",
         "bl hyper_trap_irq\n",
-        "mov sp, x19\n",
         "ldr x1, [sp, #248]\n",
         "ldr x2, [sp, #256]\n",
+        "ldr x3, [sp, #264]\n",
         "msr elr_el2, x1\n",
         "msr spsr_el2, x2\n",
+        "msr sp_el1, x3\n",
+        "isb\n",
         "ldp x0, x1, [sp, #0]\n",
         "ldp x2, x3, [sp, #16]\n",
         "ldp x4, x5, [sp, #32]\n",
