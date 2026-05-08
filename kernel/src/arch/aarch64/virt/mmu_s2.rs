@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use crate::arch::aarch64::registers::{vtcr_el2::VTCR_EL2, vttbr_el2::VTTBR_EL2};
-use semihosting::println;
 use tock_registers::interfaces::*;
 
 // Structure of Page Table.

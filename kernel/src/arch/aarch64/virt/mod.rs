@@ -25,9 +25,11 @@ pub use crate::arch::aarch64::psci::hvc_call;
 use blueos_hal::PlatPeri;
 pub use exit::{VmExitInfo, VmExitReason};
 pub use hyper::{get_current_el, hyp_init};
-use semihosting::println;
 pub use vcpu::{Vcpu, VcpuManager, VcpuState};
 pub use vgic::init;
+
+#[cfg(test)]
+use semihosting::println;
 
 // PL011 UART addresses for QEMU Virt
 const UART0_DR: *mut u32 = 0x0900_0000 as *mut u32;
@@ -84,6 +86,7 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
             core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
         }
     } else {
+        #[cfg(test)]
         semihosting::println!("[EL2] Unhandled Guest IRQ: {}", intid);
         // For uninterruptible/unknown interrupts,
         // we must manually downgrade and deactivate them;
@@ -150,6 +153,7 @@ pub fn virt_boot_linux() {
     if result == 0 {
         let uart = crate::boards::get_device!(console_uart);
         uart.enable();
+        #[cfg(test)]
         semihosting::println!("Linux shutdown!!!");
     }
 }

@@ -14,6 +14,7 @@
 
 use super::{guest, hyper, vcpu::Vcpu, vgic};
 use core::arch::asm;
+#[cfg(test)]
 use semihosting::println;
 
 static mut GUEST_SHUTDOWN: bool = false;
@@ -78,7 +79,6 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         VmExitReason::Hvc => handle_hvc(vcpu, &exit_info),
         VmExitReason::Svc => handle_svc(vcpu, &exit_info),
         VmExitReason::DataAbortLowerEL => {
-            semihosting::println!("[EXIT] Data Abort from Guest (Stage-2 Fault)");
             let iss = esr & 0x1FFFFFF;
             let dfsc = iss & 0x3F;
             let is_write = (iss & (1 << 6)) != 0;
@@ -106,6 +106,7 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
                         vgic::flush(vcpu.id());
                         return true;
                     } else {
+                        #[cfg(test)]
                         semihosting::println!("[EXIT]   Unhandled Stage-2 Address!");
                     }
                 }
@@ -142,6 +143,7 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
             }
         }
         VmExitReason::Unknown(ec) => {
+            #[cfg(test)]
             semihosting::println!("[EXIT]  Unknown Exit Reason: EC = {:#x}", ec);
             false
         }
@@ -184,6 +186,7 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
                     }
                 }
                 _ => {
+                    #[cfg(test)]
                     semihosting::println!("[EXIT] HVC#0: Ignored PSCI call: {:#x}", psci_func_id);
                     context.regs[0] = 0xFFFF_FFFF;
                 }
@@ -196,6 +199,7 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
             true
         }
         _ => {
+            #[cfg(test)]
             semihosting::println!("[EXIT]   Unknown HVC Number");
             true
         }
