@@ -116,10 +116,6 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         VmExitReason::InstructionAbortLowerEL => {
             let iss = esr & 0x1FFFFFF;
             let ifsc = iss & 0x3F;
-
-            if (ifsc & 0x3C) == 0x14 {
-                semihosting::println!("[EXIT]   Stage-2 Translation Fault (Instruction)!");
-            }
             false
         }
         VmExitReason::TrappedWfiWfe => {
