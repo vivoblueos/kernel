@@ -15,6 +15,9 @@
 #![no_std]
 #![feature(linkage)]
 
+pub mod interface;
+pub use interface::*;
+
 #[cfg(target_arch = "aarch64")]
 #[path = "../arm/aarch64/mod.rs"]
 pub mod aarch64;
