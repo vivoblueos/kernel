@@ -17,19 +17,25 @@ pub use bluekernel_arch::interface::*;
 #[cfg(target_arch = "arm")]
 pub mod arm;
 #[cfg(target_arch = "arm")]
-pub use arm::*;
+pub use arm::irq;
+#[cfg(all(target_arch = "arm", use_mpu))]
+pub use arm::mpu;
+#[cfg(target_arch = "arm")]
+pub use arm::panic_on_hardfault;
 
 #[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
 pub mod riscv;
 #[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
-pub use riscv::*;
+pub(crate) use riscv::irq;
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 #[cfg(target_arch = "aarch64")]
-pub use aarch64::*;
+pub use aarch64::irq;
 #[cfg(target_arch = "aarch64")]
-pub type IsrContext = aarch64::Context;
+pub(crate) use aarch64::{asm, mmu, psci, registers, vector, virt};
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::secondary_cpu_setup;
 
 #[allow(dead_code)]
 pub(crate) struct KernelArch;
@@ -251,4 +257,94 @@ impl ArchInterface for KernelArch {
     fn switch_stack(to_sp: usize, cont: StackSwitchContinuation) -> ! {
         aarch64::switch_stack(to_sp, cont)
     }
+}
+
+pub(crate) type Context = <KernelArch as ArchInterface>::Context;
+pub(crate) type IsrContext = <KernelArch as ArchInterface>::IsrContext;
+
+#[inline]
+pub(crate) extern "C" fn disable_local_irq() {
+    <KernelArch as ArchInterface>::disable_local_irq();
+}
+
+#[inline]
+pub(crate) extern "C" fn enable_local_irq() {
+    <KernelArch as ArchInterface>::enable_local_irq();
+}
+
+#[inline]
+pub(crate) extern "C" fn disable_local_irq_save() -> IrqState {
+    <KernelArch as ArchInterface>::disable_local_irq_save()
+}
+
+#[inline]
+pub(crate) extern "C" fn enable_local_irq_restore(old: IrqState) {
+    <KernelArch as ArchInterface>::enable_local_irq_restore(old);
+}
+
+#[inline]
+pub(crate) extern "C" fn local_irq_enabled() -> bool {
+    <KernelArch as ArchInterface>::local_irq_enabled()
+}
+
+#[inline]
+pub(crate) extern "C" fn current_cpu_id() -> CpuId {
+    <KernelArch as ArchInterface>::current_cpu_id()
+}
+
+#[inline]
+pub(crate) extern "C" fn current_sp() -> usize {
+    <KernelArch as ArchInterface>::current_sp()
+}
+
+#[inline]
+pub(crate) extern "C" fn idle() {
+    <KernelArch as ArchInterface>::idle();
+}
+
+#[inline]
+pub(crate) extern "C" fn start_schedule(cont: ScheduleEntry) {
+    <KernelArch as ArchInterface>::start_schedule(cont);
+}
+
+#[inline]
+pub(crate) extern "C" fn pend_switch_context() {
+    <KernelArch as ArchInterface>::pend_switch_context();
+}
+
+#[inline]
+pub(crate) extern "C" fn switch_context_with_hook(
+    hook: *mut crate::scheduler::ContextSwitchHookHolder,
+) {
+    <KernelArch as ArchInterface>::switch_context_with_hook(hook.cast());
+}
+
+#[inline]
+pub(crate) extern "C" fn restore_context_with_hook(
+    hook: *mut crate::scheduler::ContextSwitchHookHolder,
+) -> ! {
+    <KernelArch as ArchInterface>::restore_context_with_hook(hook.cast())
+}
+
+#[inline]
+pub(crate) extern "C" fn switch_stack(to_sp: usize, cont: StackSwitchContinuation) -> ! {
+    <KernelArch as ArchInterface>::switch_stack(to_sp, cont)
+}
+
+#[cfg(target_arch = "arm")]
+#[inline]
+pub(crate) extern "C" fn send_ipi(id: usize) {
+    arm::send_ipi(id);
+}
+
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+#[inline]
+pub(crate) extern "C" fn send_ipi(id: usize) {
+    riscv::send_ipi(id);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub(crate) extern "C" fn send_ipi(id: usize) {
+    aarch64::send_ipi(id);
 }
