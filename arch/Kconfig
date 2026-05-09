@@ -70,5 +70,5 @@ config AARCH64
 	default n
 
 if AARCH64
-	rsource "arm/arm64/Kconfig"
+	rsource "arm/aarch64/Kconfig"
 endif

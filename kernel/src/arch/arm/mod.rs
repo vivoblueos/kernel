@@ -17,7 +17,6 @@ pub mod irq;
 pub(crate) mod xpsr;
 use crate::{
     arch::irq::Vector,
-    boot::_start,
     scheduler,
     support::{sideeffect, Region, RegionalObjectBuilder},
     syscalls::{dispatch_syscall, Context as ScContext},
@@ -73,7 +72,9 @@ unsafe extern "C" {
 // See https://documentation-service.arm.com/static/5ea823e69931941038df1b02?token=.
 const fn build_exception_handlers() -> [Vector; 15] {
     let mut tbl = [Vector { reserved: 0 }; 15];
-    tbl[0] = Vector { handler: _start };
+    tbl[0] = Vector {
+        handler: bluekernel_arch::cortex_m_boot_entry,
+    };
     tbl[1] = Vector {
         handler: handle_hardfault,
     }; // NMI

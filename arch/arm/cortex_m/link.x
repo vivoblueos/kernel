@@ -47,7 +47,7 @@ MEMORY
 #ifdef CONFIG_KERNEL_ENTRY
 ENTRY(CONFIG_KERNEL_ENTRY)
 #else
-ENTRY(_start)
+ENTRY(cortex_m_boot_entry)
 #endif
 
 EXTERN(__EXCEPTION_HANDLERS__)

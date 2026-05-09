@@ -35,6 +35,19 @@ use tock_registers::interfaces::Readable;
 
 pub(crate) const NR_SWITCH: usize = !0;
 
+#[used]
+static __AARCH64_BOOT_ENTRY_REF: unsafe extern "C" fn() = bluekernel_arch::aarch64_boot_entry;
+
+#[no_mangle]
+pub extern "C" fn aarch64_virt_init() {
+    virt::virt_init();
+}
+
+#[no_mangle]
+pub extern "C" fn aarch64_enable_mmu() {
+    mmu::enable_mmu();
+}
+
 macro_rules! disable_interrupt {
     () => {
         "
@@ -545,7 +558,12 @@ pub extern "C" fn pend_switch_context() {}
 pub fn secondary_cpu_setup(psci_base: u32) {
     atomic::fence(Ordering::SeqCst);
     for i in 1..blueos_kconfig::CONFIG_NUM_CORES {
-        psci::cpu_on(psci_base, i as usize, crate::boot::_start as usize, 0);
+        psci::cpu_on(
+            psci_base,
+            i as usize,
+            bluekernel_arch::aarch64_boot_entry as usize,
+            0,
+        );
     }
 }
 

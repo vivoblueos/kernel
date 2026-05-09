@@ -59,6 +59,7 @@ _shared_deps = [
   "//external/vendor/tock-registers-0.9.0:tock_registers",
   "//external/vendor/zerocopy-0.8.27:zerocopy",
   "//kernel/driver:blueos_driver",
+  "//kernel/arch:bluekernel_arch",
   "//kernel/hal:blueos_hal",
   "//kernel/header:blueos_header",
   "//kernel/infra:blueos_infra",
