@@ -35,9 +35,6 @@ use tock_registers::interfaces::Readable;
 
 pub(crate) const NR_SWITCH: usize = !0;
 
-#[used]
-static __AARCH64_BOOT_ENTRY_REF: unsafe extern "C" fn() = bluekernel_arch::aarch64_boot_entry;
-
 #[no_mangle]
 pub extern "C" fn aarch64_virt_init() {
     virt::virt_init();

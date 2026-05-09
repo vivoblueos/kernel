@@ -23,9 +23,6 @@ use core::{
 };
 pub use trap::*;
 
-#[used]
-static __RISCV_BOOT_ENTRY_REF: unsafe extern "C" fn() = bluekernel_arch::riscv_boot_entry;
-
 pub(crate) const NR_SWITCH: usize = !0;
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 // See https://five-embeddev.com/riscv-priv-isa-manual/Priv-v1.12/machine.html#machine-status-registers-mstatus-and-mstatush

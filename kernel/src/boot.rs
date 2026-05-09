@@ -30,6 +30,7 @@ use crate::{
     thread, time,
 };
 use alloc::{string::String, sync::Arc};
+use bluekernel_arch as _;
 use blueos_driver::uart::UartConfig;
 use blueos_hal::{Configuration, PlatPeri};
 use core::ptr::{addr_of, addr_of_mut};
