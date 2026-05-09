@@ -116,22 +116,6 @@ macro_rules! enter_el1 {
 }
 
 #[macro_export]
-macro_rules! arch_bootstrap {
-    ($stack_start:path, $stack_end:path, $cont: path) => {
-        core::arch::naked_asm!(
-            $crate::enter_el1!(),
-            entry = sym $crate::arch::aarch64::init,
-            virt_init = sym $crate::arch::aarch64::virt::virt_init,
-            enable_mmu = sym $crate::arch::aarch64::mmu::enable_mmu,
-            tmp_stack = sym $crate::arch::aarch64::TEMP_BOOT_STACK,
-            stack_start = sym $stack_start,
-            stack_end = sym $stack_end,
-            cont = sym $cont,
-        )
-    };
-}
-
-#[macro_export]
 macro_rules! aarch64_save_context_prologue {
     () => {
         "

@@ -102,17 +102,6 @@ const fn build_exception_handlers() -> [Vector; 15] {
     tbl
 }
 
-#[macro_export]
-macro_rules! arch_bootstrap {
-    ($stack_start:expr, $stack_end:expr, $cont:path) => {
-        core::arch::naked_asm!(
-            "cpsid i",
-            "b {cont}",
-            cont = sym $cont,
-        )
-    };
-}
-
 extern "C" fn prepare_schedule() -> usize {
     let current = scheduler::current_thread_ref();
     // Program guard for the first thread before entering thread mode with PSP.
