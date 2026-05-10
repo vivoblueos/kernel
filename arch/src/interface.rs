@@ -168,6 +168,59 @@ pub trait ThreadContext {
     fn set_arg(&mut self, index: usize, value: usize) -> &mut Self;
 }
 
+/// Result of constructing an initial thread context on a stack.
+///
+/// `saved_sp` is the stack pointer value scheduler code should store for the
+/// thread, and `context` points at the zeroed frame that was placed there.
+pub struct ThreadContextInit<C> {
+    pub saved_sp: usize,
+    pub context: *mut C,
+}
+
+/// Build an initial architecture context at the top of a downward-growing stack.
+///
+/// This intentionally mirrors the old kernel-side
+/// `RegionalObjectBuilder::zeroed_after_start::<Context>()` sequence used by
+/// `Thread::init()`: reserve `size_of::<C>() + align_of::<C>()` bytes below
+/// `stack_top`, align upward from that temporary region's start, zero-fill the
+/// frame, then call [`ThreadContext::init`]. The raw pointer is returned because
+/// existing thread stacks are still represented as saved stack-pointer values;
+/// Phase 4 only moves frame placement ownership here, not scheduler ownership or
+/// stack lifetime tracking.
+///
+/// # Safety
+///
+/// `stack_top` must be the exclusive high address of writable stack storage with
+/// at least `size_of::<C>() + align_of::<C>()` bytes available below it. The
+/// caller must ensure the returned frame remains valid for the thread lifetime
+/// and is not aliased mutably elsewhere while it is edited.
+pub unsafe fn init_thread_context_on_stack<C: ThreadContext>(
+    stack_top: usize,
+) -> Option<ThreadContextInit<C>> {
+    let size = core::mem::size_of::<C>();
+    let align = core::mem::align_of::<C>();
+    let region_size = size.checked_add(align)?;
+    let base = stack_top.checked_sub(region_size)?;
+    let padding = (align - base % align) % align;
+    let start = base.checked_add(padding)?;
+    let end = base.checked_add(region_size)?;
+    if start.checked_add(size)? > end {
+        return None;
+    }
+
+    let ptr = start as *mut u8;
+    debug_assert_eq!(ptr.align_offset(align), 0, "Must be aligned");
+    let slice = unsafe { core::slice::from_raw_parts_mut(ptr, size) };
+    slice.fill(0u8);
+
+    let context = ptr as *mut C;
+    unsafe { &mut *context }.init();
+    Some(ThreadContextInit {
+        saved_sp: context as usize,
+        context,
+    })
+}
+
 /// Kernel-independent architecture contract.
 ///
 /// This trait describes the boundary that `bluekernel_arch` should eventually

@@ -21,7 +21,7 @@ use crate::{
     config,
     config::DEFAULT_STACK_SIZE,
     debug, scheduler,
-    support::{Region, RegionalObjectBuilder, Storage},
+    support::Storage,
     sync::{
         mutex::{MutexList, MutexListIterator},
         ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard,
@@ -594,20 +594,17 @@ impl Thread {
     pub(crate) fn init(&mut self, stack: Stack, entry: Entry) -> &mut Self {
         unsafe { self.set_state(IDLE) };
         self.stack = stack;
-        // TODO: Stack sanity check.
-        let maybe_sp = self.stack.top() as usize
-            - (core::mem::size_of::<arch::Context>() + core::mem::align_of::<arch::Context>());
         self.acquired_mutexes.irqsave_write().init();
 
-        let region = Region {
-            base: maybe_sp,
-            size: core::mem::size_of::<arch::Context>() + core::mem::align_of::<arch::Context>(),
+        // Context frame placement is architecture-owned now, but the kernel
+        // still owns entry wrapper policy and argument setup for this Phase 4
+        // slice.
+        let init = unsafe {
+            arch::init_thread_context_on_stack::<arch::Context>(self.stack.top() as usize).unwrap()
         };
-        let mut builder = RegionalObjectBuilder::new(region);
-        let ctx = unsafe { builder.zeroed_after_start::<arch::Context>().unwrap() };
-        self.set_saved_sp(ctx as *const _ as usize);
+        self.set_saved_sp(init.saved_sp);
+        let ctx = unsafe { &mut *init.context };
 
-        ctx.init();
         // TODO: We should provide the thread a more rusty environment
         // to run the function safely.
         match entry {
