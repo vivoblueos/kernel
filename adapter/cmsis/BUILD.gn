@@ -110,6 +110,7 @@ build_rust("adapter_validation") {
   deps += [
     ":cmsis_adapter",
     ":validation_cases",
+    "//external/vendor/cortex-m-0.7.7:cortex_m",
     "//external/vendor/semihosting-0.1.20:semihosting",
     "//kernel/kconfig:generate_rustflags_file",
 

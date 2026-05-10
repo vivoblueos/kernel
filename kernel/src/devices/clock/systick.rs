@@ -13,9 +13,13 @@
 // limitations under the License.
 
 use crate::{arch, arch::irq::IRQ_PRIORITY_FOR_SCHEDULER};
+use bluekernel_arch::cortex_m::{
+    asm as cortex_asm,
+    scb::{self, SystemHandler},
+    systick,
+};
 use blueos_hal::clock::Clock;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use cortex_m::peripheral::{scb::SystemHandler, syst::SystClkSource, SCB, SYST};
 
 // A SysTick device is a built-in, 24-bit system timer in ARM Cortex-M
 // processors, acting as a simple, precise hardware timer for generating
@@ -44,8 +48,8 @@ impl<const TICKS_PS: usize, const HZ: usize> Clock for SysTickClock<TICKS_PS, HZ
         if TICKS.load(Ordering::Relaxed) < nth as usize {
             return;
         }
-        SCB::set_pendst();
-        unsafe { core::arch::asm!("isb", options(nostack),) };
+        unsafe { scb::set_pendst() };
+        unsafe { cortex_asm::isb() };
     }
 
     fn stop() {
@@ -54,32 +58,26 @@ impl<const TICKS_PS: usize, const HZ: usize> Clock for SysTickClock<TICKS_PS, HZ
 }
 
 impl<const TICKS_PS: usize, const HZ: usize> SysTickClock<TICKS_PS, HZ> {
-    fn systick() -> SYST {
-        unsafe { core::mem::transmute::<(), SYST>(()) }
-    }
-
-    fn scb() -> SCB {
-        unsafe { core::mem::transmute::<(), SCB>(()) }
-    }
-
     pub fn init() {
         debug_assert_eq!(HZ % TICKS_PS, 0);
         let reload = (HZ / TICKS_PS) as u32;
         debug_assert!(reload <= 0x00ff_ffff);
         debug_assert!(reload > 0);
-        let mut scb = Self::scb();
-        unsafe { scb.set_priority(SystemHandler::SysTick, IRQ_PRIORITY_FOR_SCHEDULER) };
-        let mut systick = Self::systick();
-        systick.disable_counter();
-        systick.set_clock_source(SystClkSource::Core);
-        systick.set_reload(reload);
-        systick.clear_current();
-        systick.enable_counter();
-        systick.enable_interrupt();
+        unsafe {
+            scb::set_system_handler_priority(SystemHandler::SysTick, IRQ_PRIORITY_FOR_SCHEDULER)
+        };
+        unsafe {
+            systick::disable_counter();
+            systick::use_core_clock();
+            systick::set_reload(reload);
+            systick::clear_current();
+            systick::enable_counter();
+            systick::enable_interrupt();
+        }
     }
 
     pub fn claim_interrupt() -> bool {
-        let now = if Self::systick().has_wrapped() {
+        let now = if unsafe { systick::has_wrapped() } {
             TICKS.fetch_add(1, Ordering::Relaxed) + 1
         } else {
             // In case pend_st is manually called.

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{xpsr, IsrContext};
+use super::IsrContext;
+use bluekernel_arch::cortex_m::{scb, xpsr};
 use core::fmt;
-use cortex_m::peripheral::SCB;
 
 #[derive(Debug, Default)]
 struct HardFaultRegs {
@@ -27,16 +27,16 @@ struct HardFaultRegs {
 
 impl HardFaultRegs {
     pub fn from_scb() -> Self {
-        // Get the value of the SCB registers
-        // SAFETY: SCB::PTR comes from cortex_m crate and is a valid pointer
-        let scb = unsafe { &*SCB::PTR };
+        // Safety: the hardfault path runs on Cortex-M and only snapshots SCB
+        // fault-status registers before printing them.
+        let fault_status = unsafe { scb::read_fault_status() };
 
         Self {
-            cfsr: scb.cfsr.read(),
-            hfsr: scb.hfsr.read(),
-            mmfar: scb.mmfar.read(),
-            bfar: scb.bfar.read(),
-            afsr: scb.afsr.read(),
+            cfsr: fault_status.cfsr,
+            hfsr: fault_status.hfsr,
+            mmfar: fault_status.mmfar,
+            bfar: fault_status.bfar,
+            afsr: fault_status.afsr,
         }
     }
 }
@@ -216,7 +216,9 @@ impl fmt::Display for HardFaultRegs {
 pub extern "C" fn panic_on_hardfault(ctx: &IsrContext) {
     super::disable_local_irq();
     let fault_regs: HardFaultRegs = HardFaultRegs::from_scb();
-    let xpsr = xpsr::read();
+    // Safety: hardfault handling runs on Cortex-M and snapshots xPSR only for
+    // diagnostic output before panicking.
+    let xpsr = unsafe { xpsr::read() };
     panic!(
         "
         ==== HARD FAULT ====

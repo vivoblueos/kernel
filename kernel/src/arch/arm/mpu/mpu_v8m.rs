@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bluekernel_arch::cortex_m::{asm as cortex_asm, mpu, scb};
 use core::ptr::addr_of;
-use cortex_m::peripheral::{MPU, SCB};
 
 const MPU_CTRL_ENABLE: u32 = 1 << 0;
 const MPU_CTRL_PRIVDEFENA: u32 = 1 << 2;
@@ -24,7 +24,6 @@ const MPU_RBAR_XN: u32 = 1 << 0;
 // AP=0b10: privileged read-only, unprivileged no access.
 const MPU_RBAR_AP_PRIV_RO: u32 = 0b10 << 1;
 const MPU_RLAR_REGION_ENABLE: u32 = 1 << 0;
-const SCB_SHCSR_MEMFAULTENA: u32 = 1 << 16;
 
 extern "C" {
     static __sys_stack_guard_start: u8;
@@ -34,7 +33,8 @@ extern "C" {
 #[inline]
 fn barrier() {
     unsafe {
-        core::arch::asm!("dsb", "isb", options(nostack, preserves_flags));
+        cortex_asm::dsb();
+        cortex_asm::isb();
     }
 }
 
@@ -61,25 +61,22 @@ pub fn init_sys_stack_guard() {
     debug_assert_eq!(guard_start & 0x1f, 0);
     debug_assert_eq!(guard_end & 0x1f, 0);
 
-    let mpu = unsafe { &*MPU::PTR };
-    let scb = unsafe { &*SCB::PTR };
-
-    let mut ctrl = mpu.ctrl.read();
+    let mut ctrl = unsafe { mpu::control() };
     ctrl &= !MPU_CTRL_ENABLE;
-    unsafe { mpu.ctrl.write(ctrl) };
+    unsafe { mpu::set_control(ctrl) };
     barrier();
 
     unsafe {
-        mpu.rnr.write(MPU_REGION_GUARD);
-        mpu.rbar.write(encode_rbar(guard_start));
-        mpu.rlar.write(encode_rlar(guard_end));
-    }
+        mpu::set_region_v8m(
+            MPU_REGION_GUARD,
+            encode_rbar(guard_start),
+            encode_rlar(guard_end),
+        )
+    };
 
     // Keep background memory map for privileged code and enable MPU faulting.
-    unsafe { mpu.ctrl.write(MPU_CTRL_ENABLE | MPU_CTRL_PRIVDEFENA) };
-    let mut shcsr = scb.shcsr.read();
-    shcsr |= SCB_SHCSR_MEMFAULTENA;
-    unsafe { scb.shcsr.write(shcsr) };
+    unsafe { mpu::set_control(MPU_CTRL_ENABLE | MPU_CTRL_PRIVDEFENA) };
+    unsafe { scb::enable_memfault() };
     barrier();
 }
 
@@ -107,11 +104,12 @@ pub fn update_thread_stack_guard(next: &crate::thread::Thread) {
     debug_assert_eq!(guard_start & (MPU_REGION_ALIGN - 1), 0);
     debug_assert_eq!(guard_end & (MPU_REGION_ALIGN - 1), 0);
 
-    let mpu = unsafe { &*MPU::PTR };
     unsafe {
-        mpu.rnr.write(MPU_REGION_THREAD_GUARD);
-        mpu.rbar.write(encode_rbar(guard_start));
-        mpu.rlar.write(encode_rlar(guard_end));
+        mpu::set_region_v8m(
+            MPU_REGION_THREAD_GUARD,
+            encode_rbar(guard_start),
+            encode_rlar(guard_end),
+        );
     }
     barrier();
 }

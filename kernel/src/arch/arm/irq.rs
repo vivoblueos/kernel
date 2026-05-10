@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bluekernel_arch::cortex_m::{nvic, scb, scb::SystemHandler, xpsr};
 use blueos_hal::isr::{IsrDesc, IsrReg};
-use cortex_m::{interrupt::InterruptNumber, peripheral::scb::SystemHandler, Peripherals};
 
 #[cfg(irq_priority_bits_2)]
 pub const IRQ_PRIORITY_STEP: u8 = 0x40;
@@ -57,55 +57,42 @@ impl From<IrqNumber> for usize {
     }
 }
 
-// SAFETY: get the number of the interrupt is safe
-unsafe impl InterruptNumber for IrqNumber {
-    #[inline]
-    fn number(self) -> u16 {
-        self.0
-    }
-}
-
 pub fn init() {
-    // SAFETY: steal and set the peripherals in init is safe
+    // Safety: system handler priorities are set during early IRQ init before
+    // normal scheduling and priority-based critical sections are active.
     unsafe {
-        let mut scb = Peripherals::steal();
-        scb.SCB.set_priority(SystemHandler::SVCall, SVC_PRIORITY);
-        scb.SCB
-            .set_priority(SystemHandler::PendSV, IRQ_PRIORITY_FOR_SCHEDULER);
+        scb::set_system_handler_priority(SystemHandler::SVCall, SVC_PRIORITY);
+        scb::set_system_handler_priority(SystemHandler::PendSV, IRQ_PRIORITY_FOR_SCHEDULER);
     }
 }
 
 pub fn enable_irq_with_priority(irq: IrqNumber, priority: Priority) {
     set_irq_priority(irq, priority as u8);
-    unsafe { cortex_m::peripheral::NVIC::unmask(irq) };
+    unsafe { nvic::enable(irq.0) };
 }
 
 pub fn enable_irq(irq: IrqNumber) {
-    unsafe { cortex_m::peripheral::NVIC::unmask(irq) };
+    unsafe { nvic::enable(irq.0) };
 }
 
 pub fn disable_irq(irq: IrqNumber) {
-    unsafe { cortex_m::peripheral::NVIC::mask(irq) };
+    unsafe { nvic::disable(irq.0) };
 }
 
 pub fn is_irq_enabled(irq: IrqNumber) -> bool {
-    unsafe { cortex_m::peripheral::NVIC::is_enabled(irq) }
+    unsafe { nvic::is_enabled(irq.0) }
 }
 
 pub fn is_irq_active(irq: IrqNumber) -> bool {
-    unsafe { cortex_m::peripheral::NVIC::is_active(irq) }
+    unsafe { nvic::is_active(irq.0) }
 }
 
 pub fn get_irq_priority(irq: IrqNumber) -> u8 {
-    unsafe { cortex_m::peripheral::NVIC::get_priority(irq) }
+    unsafe { nvic::get_priority(irq.0) }
 }
 
 pub fn set_irq_priority(irq: IrqNumber, priority: u8) {
-    unsafe {
-        cortex_m::Peripherals::steal()
-            .NVIC
-            .set_priority(irq, priority)
-    };
+    unsafe { nvic::set_priority(irq.0, priority) };
 }
 
 #[derive(Clone, Copy)]
@@ -138,15 +125,12 @@ static mut __INTERRUPT_HANDLERS__: [Vector; blueos_kconfig::CONFIG_NUM_IRQS as u
     INTERRUPT_TABLE_LEN];
 
 extern "C" fn _generic_isr_handler() {
-    use cortex_m::peripheral::NVIC;
-    // Get the current ISR index from the IPSR register
-    let ipsr: u32;
-    unsafe {
-        core::arch::asm!("mrs {}, ipsr", out(reg) ipsr, options(nomem, nostack, preserves_flags));
-    }
-    let isr_index = (ipsr & 0x1FF)
-        .checked_sub(16)
-        .expect("Invalid ISR index, IPSR value: {ipsr:#X}");
+    // Safety: this handler runs on Cortex-M exception entry; xPSR carries the
+    // same active exception number previously read from IPSR directly.
+    let xpsr = unsafe { xpsr::read() };
+    let isr_index = xpsr
+        .external_interrupt_number()
+        .expect("Invalid ISR index, xPSR does not identify an external interrupt");
 
     if let Some(isr_desc) = unsafe { ISR_DESC[isr_index as usize].as_ref() } {
         isr_desc.service_isr();
@@ -163,7 +147,7 @@ extern "C" fn _generic_isr_handler() {
         if likely(is_schedule_ready()) {
             // If the scheduler is preemptive, trigger PendSV to perform
             // a context switch after handling the current interrupt.
-            cortex_m::peripheral::SCB::set_pendsv();
+            unsafe { scb::set_pendsv() };
         }
     }
 }

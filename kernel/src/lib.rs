@@ -336,8 +336,7 @@ mod tests {
 
     #[cfg(mpu_stack_guard)]
     extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::IsrContext) {
-        let scb = unsafe { &*cortex_m::peripheral::SCB::PTR };
-        let cfsr = scb.cfsr.read();
+        let cfsr = unsafe { bluekernel_arch::cortex_m::scb::cfsr() };
         // MMFSR is in CFSR[7:0].
         assert_ne!(
             cfsr & 0xff,
@@ -351,7 +350,7 @@ mod tests {
         );
         MEMFAULT_TRIGGERED.store(true, Ordering::Release);
         // Clear MMFSR bits and skip the faulting instruction.
-        unsafe { scb.cfsr.write(cfsr & 0xff) };
+        unsafe { bluekernel_arch::cortex_m::scb::write_cfsr(cfsr & 0xff) };
         ctx.pc = ctx.pc.wrapping_add(thumb_instruction_len(ctx.pc));
     }
 
