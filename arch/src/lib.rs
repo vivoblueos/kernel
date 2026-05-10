@@ -14,6 +14,7 @@
 
 #![no_std]
 #![feature(linkage)]
+#![feature(naked_functions)]
 
 pub mod interface;
 pub use interface::*;

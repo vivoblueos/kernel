@@ -17,6 +17,11 @@ import("//build/toolchain/blueos.gni")
 
 build_rust("bluekernel_arch") {
   sources = [ "src/lib.rs" ]
-  deps = [ "//kernel/kconfig:generate_rustflags_file" ]
+  deps = [
+    "//external/vendor/cortex-m-0.7.7:cortex_m",
+    "//kernel/hal:blueos_hal",
+    "//kernel/kconfig:blueos_kconfig",
+    "//kernel/kconfig:generate_rustflags_file",
+  ]
   configs += [ "//kernel/kconfig:kconfigs" ]
 }

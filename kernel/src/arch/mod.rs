@@ -17,7 +17,7 @@ pub use bluekernel_arch::interface::*;
 #[cfg(target_arch = "arm")]
 pub mod arm;
 #[cfg(target_arch = "arm")]
-pub use arm::irq;
+pub use bluekernel_arch::irq;
 #[cfg(all(target_arch = "arm", use_mpu))]
 pub use arm::mpu;
 #[cfg(target_arch = "arm")]
@@ -347,4 +347,76 @@ pub(crate) extern "C" fn send_ipi(id: usize) {
 #[inline]
 pub(crate) extern "C" fn send_ipi(id: usize) {
     aarch64::send_ipi(id);
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_handle_timer_tick() {
+    #[cfg(target_arch = "arm")]
+    {
+        use blueos_hal::clock::Clock;
+        if !crate::boards::ClockImpl::claim_interrupt() {
+            return;
+        }
+    }
+    crate::time::handle_clock_interrupt();
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_dispatch_syscall(req: *const SyscallRequest) -> usize {
+    let req = unsafe { &*req };
+    let ctx = crate::syscalls::Context {
+        nr: req.nr,
+        args: req.args,
+    };
+    crate::syscalls::dispatch_syscall(&ctx)
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_enter_irq() -> usize {
+    crate::irq::enter_irq()
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_leave_irq() -> usize {
+    crate::irq::leave_irq()
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_should_preempt_after_irq() -> bool {
+    crate::scheduler::is_schedule_ready()
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_save_context_finish_hook(
+    hook: RawContextSwitchHook,
+    from_sp: usize,
+) -> usize {
+    let hook = unsafe { &mut *hook.cast::<crate::scheduler::ContextSwitchHookHolder>() };
+    crate::scheduler::save_context_finish_hook(hook, from_sp)
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
+    crate::scheduler::relinquish_me_and_return_next_sp(old_sp)
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_dispatch_external_irq(
+    _frame: RawExceptionFrame,
+    _cause: usize,
+    _value: usize,
+) -> usize {
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn blueos_kernel_fatal_trap(
+    frame: RawExceptionFrame,
+    cause: usize,
+    value: usize,
+) -> ! {
+    panic!(
+        "Fatal architecture trap: frame={:?}, cause=0x{:x}, value=0x{:x}",
+        frame, cause, value
+    )
 }

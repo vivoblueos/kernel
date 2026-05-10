@@ -13,13 +13,11 @@
 // limitations under the License.
 
 pub(crate) mod hardfault;
-pub mod irq;
 pub(crate) mod xpsr;
 use crate::{
-    arch::irq::Vector,
+    arch::irq,
     scheduler,
     support::{sideeffect, Region, RegionalObjectBuilder},
-    syscalls::{dispatch_syscall, Context as ScContext},
 };
 pub(crate) use hardfault::handle_hardfault;
 pub use hardfault::panic_on_hardfault;
@@ -54,52 +52,7 @@ pub unsafe extern "C" fn bk_handle_hardfault() {
 
 #[no_mangle]
 pub unsafe extern "C" fn handle_systick() {
-    if !crate::boards::ClockImpl::claim_interrupt() {
-        return;
-    }
-    crate::time::handle_clock_interrupt();
-}
-
-#[used]
-#[link_section = ".exception.handlers"]
-#[no_mangle]
-pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
-
-unsafe extern "C" {
-    unsafe fn handle_memfault();
-}
-
-// See https://documentation-service.arm.com/static/5ea823e69931941038df1b02?token=.
-const fn build_exception_handlers() -> [Vector; 15] {
-    let mut tbl = [Vector { reserved: 0 }; 15];
-    tbl[0] = Vector {
-        handler: bluekernel_arch::cortex_m_boot_entry,
-    };
-    tbl[1] = Vector {
-        handler: handle_hardfault,
-    }; // NMI
-    tbl[2] = Vector {
-        handler: bk_handle_hardfault,
-    }; // HardFault
-    tbl[3] = Vector {
-        handler: handle_memfault,
-    }; // MemManage
-    tbl[4] = Vector {
-        handler: handle_hardfault,
-    }; // BusFault
-    tbl[5] = Vector {
-        handler: handle_hardfault,
-    }; // UsageFault
-    tbl[10] = Vector {
-        handler: handle_svc,
-    };
-    tbl[13] = Vector {
-        handler: handle_pendsv,
-    };
-    tbl[14] = Vector {
-        handler: handle_systick,
-    };
-    tbl
+    crate::arch::blueos_kernel_handle_timer_tick();
 }
 
 extern "C" fn prepare_schedule() -> usize {
@@ -403,12 +356,12 @@ pub unsafe extern "C" fn handle_svc() {
 }
 
 extern "C" fn syscall_handler(ctx: &mut Context) {
-    let sc = ScContext {
+    let sc = crate::arch::SyscallRequest {
         nr: ctx.r7,
         args: [ctx.r0, ctx.r1, ctx.r2, ctx.r3, ctx.r4, ctx.r5],
     };
     // r0 should contain the return value.
-    ctx.r0 = dispatch_syscall(&sc);
+    ctx.r0 = crate::arch::blueos_kernel_dispatch_syscall(&sc);
 }
 
 #[naked]
@@ -438,8 +391,10 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     debug_assert_eq!(ctx.r7, NR_SWITCH);
     let hook_ptr: *mut ContextSwitchHookHolder = unsafe { ctx.r0 as *mut ContextSwitchHookHolder };
     debug_assert!(!hook_ptr.is_null());
-    let hook = unsafe { &mut *hook_ptr };
-    scheduler::save_context_finish_hook(&mut *hook, ctx as *const _ as usize)
+    crate::arch::blueos_kernel_save_context_finish_hook(
+        hook_ptr.cast(),
+        ctx as *const _ as usize,
+    )
 }
 
 #[no_mangle]
@@ -514,7 +469,7 @@ pub unsafe extern "C" fn handle_pendsv() {
             bx lr
             "
         ),
-        next_thread_sp = sym scheduler::relinquish_me_and_return_next_sp,
+        next_thread_sp = sym crate::arch::blueos_kernel_relinquish_me_and_return_next_sp,
         basepri = const DISABLE_LOCAL_IRQ_BASEPRI,
     )
 }

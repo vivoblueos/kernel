@@ -13,5 +13,8 @@
 // limitations under the License.
 
 mod boot;
+mod exception;
+pub mod irq;
 
 pub use boot::cortex_m_boot_entry;
+pub use exception::{handle_pendsv, handle_svc, handle_systick};

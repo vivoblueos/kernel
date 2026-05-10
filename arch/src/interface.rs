@@ -36,6 +36,40 @@ pub type IrqState = usize;
 /// the implementation is still being migrated.
 pub type RawContextSwitchHook = *mut c_void;
 
+/// Opaque architecture exception or trap frame pointer.
+///
+/// Architecture code owns the concrete frame layout. Kernel policy callbacks
+/// may cast it back through the compatibility facade while migration is in
+/// progress.
+pub type RawExceptionFrame = *mut c_void;
+
+/// Kernel-independent syscall request shape used by trap handlers.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct SyscallRequest {
+    pub nr: usize,
+    pub args: [usize; 6],
+}
+
+unsafe extern "C" {
+    pub fn blueos_kernel_handle_timer_tick();
+    pub fn blueos_kernel_dispatch_syscall(req: *const SyscallRequest) -> usize;
+    pub fn blueos_kernel_enter_irq() -> usize;
+    pub fn blueos_kernel_leave_irq() -> usize;
+    pub fn blueos_kernel_should_preempt_after_irq() -> bool;
+    pub fn blueos_kernel_save_context_finish_hook(
+        hook: RawContextSwitchHook,
+        from_sp: usize,
+    ) -> usize;
+    pub fn blueos_kernel_relinquish_me_and_return_next_sp(old_sp: usize) -> usize;
+    pub fn blueos_kernel_dispatch_external_irq(
+        frame: RawExceptionFrame,
+        cause: usize,
+        value: usize,
+    ) -> usize;
+    pub fn blueos_kernel_fatal_trap(frame: RawExceptionFrame, cause: usize, value: usize) -> !;
+}
+
 /// Scheduler entry used when architecture code starts the first thread.
 ///
 /// The entry never returns. Existing architecture facades may expose
