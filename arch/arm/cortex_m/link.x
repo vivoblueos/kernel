@@ -135,6 +135,9 @@ SECTIONS
     *(vtable)
     *(.data)
     *(.data.*)
+    *(.got)
+    *(.got.*)
+    *(.got.plt)
 
     . = ALIGN(4);
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -234,4 +237,3 @@ SECTIONS
 
 EXTERN(handle_hardfault);
 PROVIDE(handle_memfault = handle_hardfault);
-

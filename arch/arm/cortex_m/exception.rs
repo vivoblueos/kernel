@@ -261,18 +261,41 @@ extern "C" fn handle_syscall(ctx: &ExceptionContext) -> usize {
         return handle_svc_switch(ctx);
     }
     if ctx.r7 == NR_RET_FROM_SYSCALL {
+        // We are using syscall(NR_RET_FROM_SYSCALL, ctx_before_syscall) to
+        // return from syscall. ctx_before_syscall is contained in r0.
         return ctx.r0;
     }
 
+    // Due to Cortex-M's limitation, we split syscall handling into 2 phases:
+    // P0:
+    //   Switch stack, go back to thread mode and run handler. Then syscall
+    //   NR_RET_FROM_SYSCALL to go back to ISR mode.
+    // P1:
+    //   Switch stack and return to the normal control flow of thread mode.
+
+    // Duplicate ctx so that we can exit to thread mode to handle syscalls.
+    // This mirrors the old kernel-side implementation that used
+    // RegionalObjectBuilder::write_after_start() followed by sideeffect().
     let size = core::mem::size_of::<ExceptionContext>();
     let base = unsafe { (ctx as *const ExceptionContext).byte_offset(-(size as isize)) as usize };
     debug_assert_eq!(base % core::mem::align_of::<ExceptionContext>(), 0);
-    let dup_ctx = base as *mut ExceptionContext;
+    let dup_ctx = base as *mut ExceptionContext as *mut usize;
     unsafe {
-        dup_ctx.write(*ctx);
-        core::ptr::addr_of_mut!((*dup_ctx).pc).write_volatile(syscall_stub as usize);
-        core::ptr::addr_of_mut!((*dup_ctx).r0).write_volatile(ctx as *const _ as usize);
-        core::ptr::addr_of_mut!((*dup_ctx).xpsr).write_volatile(ctx.xpsr & !(1 << 9));
+        // bluekernel_arch cannot depend on kernel support helpers. Use a
+        // volatile write instead of a plain write plus sideeffect(): this frame
+        // is consumed by the Cortex-M exception-return sequence after PSP is
+        // updated, so normal Rust code never reads it and release builds may
+        // otherwise optimize the full frame copy away.
+        core::ptr::write_volatile(base as *mut ExceptionContext, *ctx);
+        dup_ctx
+            .byte_offset(offset_of!(ExceptionContext, pc) as isize)
+            .write_volatile(syscall_stub as usize);
+        dup_ctx
+            .byte_offset(offset_of!(ExceptionContext, r0) as isize)
+            .write_volatile(ctx as *const _ as usize);
+        dup_ctx
+            .byte_offset(offset_of!(ExceptionContext, xpsr) as isize)
+            .write_volatile(ctx.xpsr & !(1 << 9))
     }
     base
 }
