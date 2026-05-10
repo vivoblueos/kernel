@@ -26,12 +26,12 @@ use core::sync::{
     atomic,
     atomic::{AtomicU8, Ordering},
 };
-use scheduler::ContextSwitchHookHolder;
 use tock_registers::interfaces::Readable;
 
 pub use bluekernel_arch::aarch64::context::{Context, IsrContext};
-
-pub(crate) const NR_SWITCH: usize = !0;
+pub use bluekernel_arch::aarch64::{
+    restore_context_with_hook, switch_context_with_hook, switch_stack, NR_SWITCH,
+};
 
 #[no_mangle]
 pub extern "C" fn aarch64_virt_init() {
@@ -230,30 +230,6 @@ pub(crate) extern "C" fn is_in_interrupt() -> bool {
     false
 }
 
-#[inline(always)]
-#[allow(clippy::empty_loop)]
-pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
-    switch_context_with_hook(hook);
-    loop {}
-}
-
-#[inline(never)]
-pub(crate) extern "C" fn svc_switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
-    unsafe {
-        core::arch::asm!(
-            "svc #0",
-            in("x0") hook as usize,
-            in("x8") NR_SWITCH,
-            options(nostack),
-        )
-    }
-}
-
-#[inline]
-pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
-    svc_switch_context_with_hook(hook)
-}
-
 #[naked]
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
@@ -359,23 +335,6 @@ pub fn secondary_cpu_setup(psci_base: u32) {
             bluekernel_arch::aarch64_boot_entry as usize,
             0,
         );
-    }
-}
-
-#[naked]
-pub(crate) extern "C" fn switch_stack(
-    to_sp: usize,
-    cont: extern "C" fn(sp: usize, old_sp: usize),
-) -> ! {
-    unsafe {
-        core::arch::naked_asm!(
-            "
-            mov x19, x1
-            mov x1, sp
-            mov sp, x0
-            br x19
-            "
-        )
     }
 }
 

@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::context::{IsrContext, TrapContext};
+use super::{
+    context::{IsrContext, TrapContext},
+    NR_SWITCH,
+};
 use crate::{RawExceptionFrame, SyscallRequest};
 use core::{
     mem::offset_of,
     sync::atomic::{compiler_fence, Ordering},
 };
 
-const NR_SWITCH: usize = !0;
 const MSTATUS_MIE: usize = 1 << 3;
 const INTERRUPT_MASK: usize = 1usize << (usize::BITS - 1);
 const TIMER_INT: usize = INTERRUPT_MASK | 0x7;

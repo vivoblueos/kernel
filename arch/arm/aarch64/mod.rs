@@ -29,6 +29,53 @@ pub mod virt;
 
 pub use context::{Context, IsrContext, TrapContext};
 
+pub const NR_SWITCH: usize = !0;
+
+#[inline(never)]
+pub extern "C" fn svc_switch_context_with_hook(hook: crate::RawContextSwitchHook) {
+    // Keep the old AArch64 scheduler switch ABI: x0 carries the opaque
+    // scheduler hook and x8 carries NR_SWITCH before trapping through SVC.
+    // Exception entry owns the raw frame, while kernel policy remains behind
+    // the prepare/finish callbacks.
+    unsafe {
+        core::arch::asm!(
+            "svc #0",
+            in("x0") hook as usize,
+            in("x8") NR_SWITCH,
+            options(nostack),
+        )
+    }
+}
+
+#[inline]
+pub extern "C" fn switch_context_with_hook(hook: crate::RawContextSwitchHook) {
+    svc_switch_context_with_hook(hook)
+}
+
+#[inline(always)]
+#[allow(clippy::empty_loop)]
+pub extern "C" fn restore_context_with_hook(hook: crate::RawContextSwitchHook) -> ! {
+    switch_context_with_hook(hook);
+    loop {}
+}
+
+#[naked]
+pub extern "C" fn switch_stack(to_sp: usize, cont: crate::StackSwitchContinuation) -> ! {
+    // This is the old signal stack trampoline moved from the kernel facade:
+    // switch SP to x0, pass the previous SP as x1, and tail-call the kernel
+    // continuation in x1/x19.
+    unsafe {
+        core::arch::naked_asm!(
+            "
+            mov x19, x1
+            mov x1, sp
+            mov sp, x0
+            br x19
+            "
+        )
+    }
+}
+
 core::arch::global_asm!(
     r#"
 .section .text._start, "ax"

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{context::TrapContext, irq};
+use super::{context::TrapContext, irq, NR_SWITCH};
 use crate::{RawExceptionFrame, SyscallRequest};
 use core::{
     arch::{asm, naked_asm},
@@ -20,7 +20,6 @@ use core::{
     sync::atomic::{compiler_fence, Ordering},
 };
 
-const NR_SWITCH: usize = !0;
 const SVC_AARCH64_EC: usize = 0x15;
 const FIQ_DISPATCH: usize = 1;
 const IRQ_DISPATCH: usize = 0;

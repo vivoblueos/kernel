@@ -14,7 +14,7 @@
 
 use super::{claim_switch_context, Context};
 use crate::{
-    arch::RawExceptionFrame,
+    arch::{RawContextSwitchHook, RawExceptionFrame},
     scheduler,
     scheduler::ContextSwitchHookHolder,
     thread,
@@ -22,20 +22,8 @@ use crate::{
     types::Arc,
 };
 
-type ContextSwitcher = extern "C" fn(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize;
-
-#[naked]
-extern "C" fn switch_stack_with_hook(
-    hook: &mut ContextSwitchHookHolder,
-    old_sp: usize,
-    to_sp: usize,
-    ra: usize,
-    switcher: ContextSwitcher,
-) -> ! {
-    unsafe { core::arch::naked_asm!("mv sp, a2", "mv ra, a3", "jalr x0, a4, 0") }
-}
-
-extern "C" fn handle_switch(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize {
+extern "C" fn handle_switch(hook: RawContextSwitchHook, old_sp: usize) -> usize {
+    let hook = unsafe { &mut *hook.cast::<ContextSwitchHookHolder>() };
     scheduler::save_context_finish_hook(hook, old_sp)
 }
 
@@ -49,7 +37,7 @@ pub(crate) extern "C" fn handle_ecall_switch_from_raw(
     let hook = unsafe { &mut *hook_ptr };
     let next_saved_sp = scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() });
     let old_sp = from as *const _ as usize;
-    switch_stack_with_hook(hook, old_sp, next_saved_sp, ra, handle_switch)
+    super::switch_stack_with_hook(hook_ptr.cast(), old_sp, next_saved_sp, ra, handle_switch)
 }
 
 // The RISC-V trap entry now lives in bluekernel_arch, but choosing whether an
@@ -83,5 +71,11 @@ pub(crate) extern "C" fn might_switch_context_from_raw(
         debug_assert_eq!(res, Ok(()));
     };
     let next_saved_sp = scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() });
-    switch_stack_with_hook(&mut hook, old_sp, next_saved_sp, ra, handle_switch)
+    super::switch_stack_with_hook(
+        (&mut hook as *mut ContextSwitchHookHolder).cast(),
+        old_sp,
+        next_saved_sp,
+        ra,
+        handle_switch,
+    )
 }

@@ -32,6 +32,9 @@ use cortex_m::peripheral::SCB;
 use scheduler::ContextSwitchHookHolder;
 
 pub use bluekernel_arch::cortex_m::context::{Context, IsrContext, THUMB_MODE};
+pub use bluekernel_arch::cortex_m::{
+    restore_context_with_hook, switch_context_with_hook, switch_stack,
+};
 
 pub const EXCEPTION_LR: usize = 0xFFFFFFFD;
 // See https://developer.arm.com/documentation/100235/0100/The-Cortex-M33-Processor/Programmer-s-model/Core-registers/CONTROL-register.
@@ -405,31 +408,9 @@ pub extern "C" fn current_psp() -> usize {
     x
 }
 
-#[inline(never)]
-pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
-    unsafe {
-        core::arch::asm!(
-            "movs {tmp}, r7",
-            "ldr r7, ={nr}",
-            "svc 0",
-            "mov r7, {tmp}",
-            in("r0") hook as usize,
-            tmp = out(reg) _,
-            nr = const NR_SWITCH,
-            options(nostack),
-        )
-    }
-}
-
 #[inline(always)]
 pub extern "C" fn pend_switch_context() {
     post_pendsv();
-}
-
-#[inline(always)]
-pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
-    switch_context_with_hook(hook);
-    unreachable!("Should have switched to another thread");
 }
 
 #[inline]
@@ -452,23 +433,6 @@ pub extern "C" fn local_irq_enabled() -> bool {
 #[inline]
 pub extern "C" fn is_in_interrupt() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
-}
-
-#[naked]
-pub(crate) extern "C" fn switch_stack(
-    to_sp: usize,
-    cont: extern "C" fn(sp: usize, old_sp: usize),
-) -> ! {
-    unsafe {
-        core::arch::naked_asm!(
-            "
-            mov r12, r1
-            mrs r1, psp
-            msr psp, r0
-            bx r12
-            "
-        )
-    }
 }
 
 pub extern "C" fn send_ipi(_id: usize) {}

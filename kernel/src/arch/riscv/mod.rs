@@ -14,18 +14,18 @@
 
 mod trap;
 
-use crate::{boards, irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
+use crate::{boards, irq as sysirq, scheduler};
 use core::{
     cell::Cell,
     sync::atomic::{compiler_fence, Ordering},
 };
 pub use bluekernel_arch::riscv::{
     context::{Context, IsrContext},
-    irq, trap_entry,
+    irq, restore_context_with_hook, switch_context_with_hook, switch_stack, switch_stack_with_hook,
+    trap_entry,
 };
 pub(super) use trap::{handle_ecall_switch_from_raw, might_switch_context_from_raw};
 
-pub(crate) const NR_SWITCH: usize = !0;
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 // See https://five-embeddev.com/riscv-priv-isa-manual/Priv-v1.12/machine.html#machine-status-registers-mstatus-and-mstatush
 pub(crate) const MSTATUS_MIE: usize = 1 << 3;
@@ -345,29 +345,6 @@ pub extern "C" fn current_sp() -> usize {
     x
 }
 
-pub(crate) extern "C" fn ecall_switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
-    unsafe {
-        core::arch::asm!(
-            "ecall",
-            in("a0") hook as usize,
-            in("a7") NR_SWITCH,
-            options(nostack),
-        )
-    }
-}
-
-#[inline(always)]
-pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
-    ecall_switch_context_with_hook(hook)
-}
-
-#[inline(always)]
-#[allow(clippy::empty_loop)]
-pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
-    switch_context_with_hook(hook);
-    unreachable!("Should have switched to another thread");
-}
-
 pub(crate) extern "C" fn bootstrap() {
     #[cfg(has_mie)]
     unsafe {
@@ -413,23 +390,6 @@ pub(crate) extern "C" fn current_cpu_id() -> usize {
                               options(nostack))
     };
     id
-}
-
-#[naked]
-pub(crate) extern "C" fn switch_stack(
-    to_sp: usize,
-    cont: extern "C" fn(sp: usize, old_sp: usize),
-) -> ! {
-    unsafe {
-        core::arch::naked_asm!(
-            "
-            mv t0, a1
-            mv a1, sp
-            mv sp, a0
-            jalr x0, t0, 0
-            "
-        )
-    }
 }
 
 pub(crate) extern "C" fn send_ipi(hart: usize) {
