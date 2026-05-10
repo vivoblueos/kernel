@@ -105,51 +105,34 @@ mod tests {
         0
     }
 
-    use cortex_m::interrupt::InterruptNumber;
-
-    // copy from kernel/src/arch/arm/irq.rs
-    // used for rv2 ISR context api tests
-    #[derive(Debug, Copy, Clone)]
-    #[repr(transparent)]
-    pub struct IrqNumber(u16);
-    impl IrqNumber {
-        #[inline]
-        pub const fn new(number: u16) -> Self {
-            Self(number)
-        }
-    }
-    // SAFETY: get the number of the interrupt is safe
-    unsafe impl InterruptNumber for IrqNumber {
-        #[inline]
-        fn number(self) -> u16 {
-            self.0
-        }
-    }
+    use bluekernel_arch::cortex_m::nvic;
 
     #[no_mangle]
     pub unsafe extern "C" fn NVIC_SetPriority(irq: u16, priority: u8) {
-        cortex_m::Peripherals::steal()
-            .NVIC
-            .set_priority(IrqNumber::new(irq), priority);
+        // Keep the CMSIS validation shim on the same in-tree architecture
+        // boundary as the kernel. `bluekernel_arch` owns the NVIC MMIO access
+        // now, so the adapter test should not pull in a second architecture
+        // abstraction just to drive validation interrupts.
+        unsafe { nvic::set_priority(irq, priority) };
     }
     #[no_mangle]
     pub unsafe extern "C" fn NVIC_EnableIRQ(irq: u16) {
-        cortex_m::peripheral::NVIC::unmask(IrqNumber::new(irq));
+        unsafe { nvic::enable(irq) };
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn NVIC_DisableIRQ(irq: u16) {
-        cortex_m::peripheral::NVIC::mask(IrqNumber::new(irq));
+        unsafe { nvic::disable(irq) };
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn NVIC_GetPendingIRQ(irq: u16) -> bool {
-        cortex_m::peripheral::NVIC::is_pending(IrqNumber::new(irq))
+        unsafe { nvic::is_pending(irq) }
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn NVIC_SetPendingIRQ(irq: u16) {
-        cortex_m::peripheral::NVIC::pend(IrqNumber::new(irq));
+        unsafe { nvic::pend(irq) };
     }
 
     #[no_mangle]
