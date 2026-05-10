@@ -12,42 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) mod hardfault;
-pub mod irq;
 use crate::{
-    arch::irq::Vector,
-    boot::_start,
     scheduler,
     support::{sideeffect, Region, RegionalObjectBuilder},
     syscalls::{dispatch_syscall, Context as ScContext},
 };
-use bluekernel_arch::cortex_m::{
-    asm as cortex_asm,
-    exception::{ExceptionStackFrame, THUMB_MODE_XPSR},
-    scb,
+pub(crate) use bluekernel_arch::cortex_m::hardfault::handle_hardfault;
+use bluekernel_arch::cortex_m::{asm as cortex_asm, scb};
+pub use bluekernel_arch::cortex_m::{
+    current_sp, disable_local_irq, disable_local_irq_save, enable_local_irq,
+    enable_local_irq_restore, idle, irq, local_irq_enabled, Context, ExceptionStackFrame,
 };
-pub(crate) use hardfault::handle_hardfault;
-pub use hardfault::panic_on_hardfault;
 #[cfg(use_mpu)]
 pub mod mpu;
 
-use core::{
-    mem::offset_of,
-    sync::{atomic, atomic::Ordering},
-};
+use core::mem::offset_of;
 use scheduler::ContextSwitchHookHolder;
 
-pub const EXCEPTION_LR: usize = 0xFFFFFFFD;
 // See https://developer.arm.com/documentation/100235/0100/The-Cortex-M33-Processor/Programmer-s-model/Core-registers/CONTROL-register.
 #[cfg(not(target_abi = "eabihf"))]
 pub const CONTROL: usize = 0b10;
 #[cfg(target_abi = "eabihf")]
 pub const CONTROL: usize = 0b110;
-pub const THUMB_MODE: usize = THUMB_MODE_XPSR;
+pub const THUMB_MODE: usize = bluekernel_arch::cortex_m::THUMB_MODE_XPSR;
 pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
 pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 2;
-pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
+pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = bluekernel_arch::cortex_m::LOCAL_IRQ_BASEPRI as u8;
+// Keep one callee-saved register macro: the assembler elides S16-S31 handling
+// for non-hard-float builds, matching the ABI-gated fields in `Context`.
+#[cfg(target_abi = "eabihf")]
+const CALLEE_SAVED_FPU_REGS: usize = 1;
+#[cfg(not(target_abi = "eabihf"))]
+const CALLEE_SAVED_FPU_REGS: usize = 0;
 
 #[no_mangle]
 #[linkage = "weak"]
@@ -61,46 +58,6 @@ pub unsafe extern "C" fn handle_systick() {
         return;
     }
     crate::time::handle_clock_interrupt();
-}
-
-#[used]
-#[link_section = ".exception.handlers"]
-#[no_mangle]
-pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
-
-unsafe extern "C" {
-    unsafe fn handle_memfault();
-}
-
-// See https://documentation-service.arm.com/static/5ea823e69931941038df1b02?token=.
-const fn build_exception_handlers() -> [Vector; 15] {
-    let mut tbl = [Vector { reserved: 0 }; 15];
-    tbl[0] = Vector { handler: _start };
-    tbl[1] = Vector {
-        handler: handle_hardfault,
-    }; // NMI
-    tbl[2] = Vector {
-        handler: bk_handle_hardfault,
-    }; // HardFault
-    tbl[3] = Vector {
-        handler: handle_memfault,
-    }; // MemManage
-    tbl[4] = Vector {
-        handler: handle_hardfault,
-    }; // BusFault
-    tbl[5] = Vector {
-        handler: handle_hardfault,
-    }; // UsageFault
-    tbl[10] = Vector {
-        handler: handle_svc,
-    };
-    tbl[13] = Vector {
-        handler: handle_pendsv,
-    };
-    tbl[14] = Vector {
-        handler: handle_systick,
-    };
-    tbl
 }
 
 #[macro_export]
@@ -124,24 +81,7 @@ extern "C" fn prepare_schedule() -> usize {
 }
 
 extern "C" {
-    pub static mut __sys_stack_start: u8;
     pub static mut __sys_stack_end: u8;
-}
-
-macro_rules! disable_interrupt {
-    () => {
-        "
-        cpsid i
-        "
-    };
-}
-
-macro_rules! enable_interrupt {
-    () => {
-        "
-        cpsie i
-        "
-    };
 }
 
 pub extern "C" fn reset_msp_and_start_schedule(msp: *mut u8, cont: extern "C" fn() -> !) {
@@ -168,109 +108,27 @@ pub extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     unsafe { reset_msp_and_start_schedule(&mut __sys_stack_end as *mut u8, cont) }
 }
 
-#[cfg(not(target_abi = "eabihf"))]
-#[repr(C, align(8))]
-#[derive(Default, Debug, Copy, Clone)]
-pub struct Context {
-    pub r4: usize,
-    pub r5: usize,
-    pub r6: usize,
-    pub r7: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub exception_frame: ExceptionStackFrame,
-}
-
-#[cfg(target_abi = "eabihf")]
-#[repr(C, align(8))]
-#[derive(Default, Debug, Copy, Clone)]
-pub struct Context {
-    pub r4: usize,
-    pub r5: usize,
-    pub r6: usize,
-    pub r7: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub s16: usize,
-    pub s17: usize,
-    pub s18: usize,
-    pub s19: usize,
-    pub s20: usize,
-    pub s21: usize,
-    pub s22: usize,
-    pub s23: usize,
-    pub s24: usize,
-    pub s25: usize,
-    pub s26: usize,
-    pub s27: usize,
-    pub s28: usize,
-    pub s29: usize,
-    pub s30: usize,
-    pub s31: usize,
-    pub exception_frame: ExceptionStackFrame,
-}
-
-pub type IsrContext = ExceptionStackFrame;
-
-impl core::ops::Deref for Context {
-    type Target = ExceptionStackFrame;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.exception_frame
-    }
-}
-
-impl core::ops::DerefMut for Context {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.exception_frame
-    }
-}
-
 // FIXME: We need to pass a scratch register to perform saving.
 // Use r12 as scratch register now.
-#[cfg(not(target_abi = "eabihf"))]
 macro_rules! store_callee_saved_regs {
     () => {
         "
         mrs r12, psp
-        stmdb r12!, {{r4-r11}}
-        "
-    };
-}
-
-#[cfg(not(target_abi = "eabihf"))]
-macro_rules! load_callee_saved_regs {
-    () => {
-        "
-        ldmia r12!, {{r4-r11}}
-        msr psp, r12
-        "
-    };
-}
-
-#[cfg(target_abi = "eabihf")]
-macro_rules! store_callee_saved_regs {
-    () => {
-        "
-        mrs r12, psp
+        .if {callee_saved_fpu_regs}
         vstmdb r12!, {{s16-s31}}
+        .endif
         stmdb r12!, {{r4-r11}}
         "
     };
 }
 
-#[cfg(target_abi = "eabihf")]
 macro_rules! load_callee_saved_regs {
     () => {
         "
         ldmia r12!, {{r4-r11}}
+        .if {callee_saved_fpu_regs}
         vldmia r12!, {{s16-s31}}
+        .endif
         msr psp, r12
         "
     };
@@ -283,6 +141,7 @@ pub(crate) extern "C" fn post_pendsv() {
 }
 
 #[naked]
+#[no_mangle]
 pub unsafe extern "C" fn handle_svc() {
     core::arch::naked_asm!(
         concat!(
@@ -308,6 +167,7 @@ pub unsafe extern "C" fn handle_svc() {
         ),
         syscall_handler = sym handle_syscall,
         basepri = const DISABLE_LOCAL_IRQ_BASEPRI,
+        callee_saved_fpu_regs = const CALLEE_SAVED_FPU_REGS,
     )
 }
 
@@ -388,20 +248,20 @@ extern "C" fn handle_syscall(ctx: &Context) -> usize {
         sideeffect();
         dup_ctx
             .byte_offset(
-                (offset_of!(Context, exception_frame)
-                    + offset_of!(ExceptionStackFrame, pc)) as isize,
+                (offset_of!(Context, exception_frame) + offset_of!(ExceptionStackFrame, pc))
+                    as isize,
             )
             .write_volatile(syscall_stub as usize);
         dup_ctx
             .byte_offset(
-                (offset_of!(Context, exception_frame)
-                    + offset_of!(ExceptionStackFrame, r0)) as isize,
+                (offset_of!(Context, exception_frame) + offset_of!(ExceptionStackFrame, r0))
+                    as isize,
             )
             .write_volatile(ctx as *const _ as usize);
         dup_ctx
             .byte_offset(
-                (offset_of!(Context, exception_frame)
-                    + offset_of!(ExceptionStackFrame, xpsr)) as isize,
+                (offset_of!(Context, exception_frame) + offset_of!(ExceptionStackFrame, xpsr))
+                    as isize,
             )
             .write_volatile(ctx.xpsr_without_stack_alignment_padding())
     }
@@ -409,6 +269,7 @@ extern "C" fn handle_syscall(ctx: &Context) -> usize {
 }
 
 #[naked]
+#[no_mangle]
 pub unsafe extern "C" fn handle_pendsv() {
     core::arch::naked_asm!(
         concat!(
@@ -434,111 +295,8 @@ pub unsafe extern "C" fn handle_pendsv() {
         ),
         next_thread_sp = sym scheduler::relinquish_me_and_return_next_sp,
         basepri = const DISABLE_LOCAL_IRQ_BASEPRI,
+        callee_saved_fpu_regs = const CALLEE_SAVED_FPU_REGS,
     )
-}
-
-impl Context {
-    #[inline(never)]
-    pub fn set_return_address(&mut self, pc: usize) -> &mut Self {
-        // Safety: Context owns a Cortex-M exception-return frame that the
-        // scheduler will restore; callers provide the thread entry PC.
-        unsafe {
-            self.exception_frame.set_return_address(pc);
-        }
-        self
-    }
-
-    #[inline]
-    pub fn get_return_address(&self) -> usize {
-        // Safety: Context embeds the architectural exception frame restored by
-        // Cortex-M exception return.
-        unsafe { self.exception_frame.return_address() }
-    }
-
-    #[inline]
-    pub fn set_arg(&mut self, i: usize, val: usize) -> &mut Self {
-        // Safety: Context setup uses the stacked R0-R3 fields to pass the
-        // initial thread function arguments according to AAPCS.
-        unsafe {
-            self.exception_frame.set_arg(i, val);
-        }
-        self
-    }
-
-    #[cfg(not(target_abi = "eabihf"))]
-    #[inline]
-    pub fn init(&mut self) -> &mut Self {
-        // Safety: this initializes a fresh thread context before it can be
-        // restored by exception return.
-        unsafe {
-            self.exception_frame.init_thread_mode();
-        }
-        self
-    }
-
-    // See https://developer.arm.com/documentation/100235/0004/the-cortex-m33-peripherals/floating-point-unit/floating-point-status-control-register.
-    #[cfg(target_abi = "eabihf")]
-    #[inline]
-    pub fn init(&mut self) -> &mut Self {
-        // Safety: this initializes a fresh thread context before it can be
-        // restored by exception return.
-        unsafe {
-            self.exception_frame.init_thread_mode();
-        }
-        self
-    }
-}
-
-#[inline]
-pub extern "C" fn enable_local_irq() {
-    unsafe { cortex_asm::write_basepri(0) }
-}
-
-#[inline]
-pub extern "C" fn disable_local_irq() {
-    unsafe {
-        cortex_asm::write_basepri(DISABLE_LOCAL_IRQ_BASEPRI as usize);
-        cortex_asm::isb();
-    }
-}
-
-#[coverage(off)]
-#[cfg_attr(debug, inline(never))]
-pub extern "C" fn disable_local_irq_save() -> usize {
-    let old = unsafe { cortex_asm::read_basepri() };
-    unsafe {
-        cortex_asm::write_basepri(DISABLE_LOCAL_IRQ_BASEPRI as usize);
-        cortex_asm::isb();
-    }
-    atomic::compiler_fence(Ordering::SeqCst);
-    old
-}
-
-#[coverage(off)]
-#[cfg_attr(debug, inline(never))]
-pub extern "C" fn enable_local_irq_restore(old: usize) {
-    atomic::compiler_fence(Ordering::SeqCst);
-    unsafe { cortex_asm::write_basepri(old) }
-}
-
-#[inline]
-pub extern "C" fn idle() {
-    unsafe { cortex_asm::wfi() }
-}
-
-#[inline]
-pub extern "C" fn current_sp() -> usize {
-    unsafe { cortex_asm::read_sp() }
-}
-
-#[inline]
-pub extern "C" fn current_msp() -> usize {
-    unsafe { cortex_asm::read_msp() }
-}
-
-#[inline]
-pub extern "C" fn current_psp() -> usize {
-    unsafe { cortex_asm::read_psp() }
 }
 
 #[inline(never)]
@@ -562,25 +320,9 @@ pub extern "C" fn pend_switch_context() {
     post_pendsv();
 }
 
-#[inline(always)]
-pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
-    switch_context_with_hook(hook);
-    unreachable!("Should have switched to another thread");
-}
-
 #[inline]
 pub extern "C" fn current_cpu_id() -> usize {
     0
-}
-
-#[inline]
-pub extern "C" fn local_irq_enabled() -> bool {
-    unsafe { cortex_asm::read_basepri() == 0 }
-}
-
-#[inline]
-pub extern "C" fn is_in_interrupt() -> bool {
-    unsafe { scb::is_in_exception() }
 }
 
 #[naked]
@@ -613,23 +355,23 @@ mod tests {
         #[cfg(target_abi = "eabihf")]
         {
             assert_eq!(
-                core::mem::size_of::<IsrContext>(),
+                core::mem::size_of::<ExceptionStackFrame>(),
                 core::mem::size_of::<usize>() * 26
             );
             assert_eq!(
                 core::mem::size_of::<Context>(),
-                core::mem::size_of::<IsrContext>() + 8 * 4 + 16 * 4
+                core::mem::size_of::<ExceptionStackFrame>() + 8 * 4 + 16 * 4
             );
         }
         #[cfg(not(target_abi = "eabihf"))]
         {
             assert_eq!(
-                core::mem::size_of::<IsrContext>(),
+                core::mem::size_of::<ExceptionStackFrame>(),
                 core::mem::size_of::<usize>() * 8
             );
             assert_eq!(
                 core::mem::size_of::<Context>(),
-                core::mem::size_of::<IsrContext>() + 8 * 4
+                core::mem::size_of::<ExceptionStackFrame>() + 8 * 4
             );
         }
     }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use bluekernel_arch::cortex_m::{nvic, scb, scb::SystemHandler, xpsr};
+use crate::cortex_m::{nvic, scb, scb::SystemHandler, xpsr};
 use blueos_hal::isr::{IsrDesc, IsrReg};
 
 #[cfg(irq_priority_bits_2)]
@@ -34,7 +34,7 @@ pub const SVC_PRIORITY: u8 = IRQ_PRIORITY_FOR_SCHEDULER - IRQ_PRIORITY_STEP;
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum Priority {
-    // can't use ipc in high priority irq
+    // Can't use IPC in high priority IRQ.
     High = IRQ_PRIORITY_FOR_SCHEDULER - IRQ_PRIORITY_STEP * 2,
     Normal = IRQ_PRIORITY_FOR_SCHEDULER,
     Low = IRQ_PRIORITY_FOR_SCHEDULER + IRQ_PRIORITY_STEP,
@@ -115,8 +115,9 @@ pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
 ///
 /// # Safety
 ///
-/// The interrupt vector table must be properly aligned and contain valid function pointers
-/// for all used interrupt vectors. Incorrect configuration may lead to undefined behavior.
+/// The interrupt vector table must be properly aligned and contain valid
+/// function pointers for all used interrupt vectors. Incorrect configuration
+/// may lead to undefined behavior.
 #[used]
 #[link_section = ".interrupt.handlers"]
 static mut __INTERRUPT_HANDLERS__: [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize] = [Vector {
@@ -140,15 +141,13 @@ extern "C" fn _generic_isr_handler() {
 
     #[cfg(round_robin)]
     {
-        use core::intrinsics::likely;
-
-        use crate::scheduler::is_schedule_ready;
-
-        if likely(is_schedule_ready()) {
-            // If the scheduler is preemptive, trigger PendSV to perform
-            // a context switch after handling the current interrupt.
-            unsafe { scb::set_pendsv() };
-        }
+        // If the scheduler is preemptive, trigger PendSV to perform a context
+        // switch after handling the current interrupt. External interrupts
+        // firing before the scheduler is ready are unsupported and would be
+        // undefined for BlueOS; that boot-time ordering violation should not
+        // happen. PendSV still keeps the final readiness guard before touching
+        // PSP or scheduler task queues.
+        unsafe { scb::set_pendsv() };
     }
 }
 
@@ -179,14 +178,16 @@ pub fn init_interrupt_registry() {
     }
 }
 
-/// This function is used to register the raw interrupt handler for the given irq number.
-/// The handler should be defined in the assembly file, and the caller should ensure that
-/// the handler is properly defined and linked. This function is unsafe because it allows
-/// registering a raw interrupt handler, which may lead to undefined behavior if not used
-/// correctly.
-/// Safety: race condition may occur if this function is called while the corresponding
-/// interrupt is enabled and can be triggered, so the caller should ensure that the interrupt
-/// is disabled before calling this function, and enable it after the handler is registered.
+/// This function is used to register the raw interrupt handler for the given
+/// IRQ number. The handler should be defined in the assembly file, and the
+/// caller should ensure that the handler is properly defined and linked.
+///
+/// # Safety
+///
+/// Race condition may occur if this function is called while the corresponding
+/// interrupt is enabled and can be triggered, so the caller should ensure that
+/// the interrupt is disabled before calling this function, and enable it after
+/// the handler is registered.
 pub unsafe fn register_raw_isr(irq: IrqNumber, handler: unsafe extern "C" fn()) {
     __INTERRUPT_HANDLERS__[irq.0 as usize] = Vector { handler };
 }

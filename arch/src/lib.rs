@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #![no_std]
+#![feature(naked_functions)]
 
 #[cfg(target_arch = "arm")]
 #[path = "../arm/cortex_m/mod.rs"]

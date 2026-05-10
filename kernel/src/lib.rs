@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[cfg(mpu_stack_guard)]
-    extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::IsrContext) {
+    extern "C" fn handle_memfault_impl(ctx: &mut crate::arch::ExceptionStackFrame) {
         let cfsr = unsafe { bluekernel_arch::cortex_m::scb::cfsr() };
         // MMFSR is in CFSR[7:0].
         assert_ne!(

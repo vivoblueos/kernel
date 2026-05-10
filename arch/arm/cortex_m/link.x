@@ -176,6 +176,21 @@ SECTIONS
     __stop___llvm_prf_data = .;
 
     KEEP(*(.jcr*))
+
+    /*
+     * Keep GOT sections inside the copied data range. The linker may emit
+     * PC-relative loads through .got for optimized Rust code even in this
+     * bare-metal image; if .got becomes an orphan section after __data_end,
+     * the startup copy table leaves it zeroed in RAM and indirect calls can
+     * branch through a null entry.
+     */
+    . = ALIGN(4);
+    *(.got)
+    *(.got.*)
+    *(.igot.*)
+    *(.got.plt)
+    *(.igot.plt)
+
     . = ALIGN(4);
     __data_end = .;
 
@@ -233,5 +248,7 @@ SECTIONS
 }
 
 EXTERN(handle_hardfault);
+PROVIDE(handle_nmi = handle_hardfault);
 PROVIDE(handle_memfault = handle_hardfault);
-
+PROVIDE(handle_busfault = handle_hardfault);
+PROVIDE(handle_usagefault = handle_hardfault);
