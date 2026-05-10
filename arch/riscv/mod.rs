@@ -16,6 +16,11 @@ unsafe extern "C" {
     pub fn riscv_boot_entry();
 }
 
+pub mod irq;
+mod trap;
+
+pub use trap::{trap_entry, TrapContext};
+
 #[cfg(has_mie)]
 core::arch::global_asm!(
     r#"

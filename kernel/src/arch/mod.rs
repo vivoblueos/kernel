@@ -402,14 +402,34 @@ pub extern "C" fn blueos_kernel_relinquish_me_and_return_next_sp(old_sp: usize) 
 
 #[no_mangle]
 pub extern "C" fn blueos_kernel_dispatch_external_irq(
-    _frame: RawExceptionFrame,
-    _cause: usize,
-    _value: usize,
+    frame: RawExceptionFrame,
+    cause: usize,
+    value: usize,
 ) -> usize {
+    #[cfg(all(any(target_arch = "riscv64", target_arch = "riscv32"), has_plic))]
+    {
+        // This mirrors the old RISC-V trap path: the arch crate owns trap
+        // entry/dispatch now, but board-specific PLIC handling remains kernel
+        // policy and still receives the saved RISC-V Context layout.
+        let ctx = unsafe { &*frame.cast::<riscv::Context>() };
+        crate::boards::handle_plic_irq(ctx, cause, value);
+    }
+
+    #[cfg(all(any(target_arch = "riscv64", target_arch = "riscv32"), not(has_plic)))]
+    {
+        // ESP32-C3-style boards use a non-PLIC interrupt controller. Keep the
+        // same board callback shape as the original trap implementation while
+        // the entry code lives in bluekernel_arch.
+        let ctx = unsafe { &*frame.cast::<riscv::Context>() };
+        crate::boards::handle_intc_irq(ctx, cause, value);
+    }
+
+    let _ = (frame, cause, value);
     0
 }
 
 #[no_mangle]
+#[cfg(not(any(target_arch = "riscv64", target_arch = "riscv32")))]
 pub extern "C" fn blueos_kernel_fatal_trap(
     frame: RawExceptionFrame,
     cause: usize,
@@ -419,4 +439,50 @@ pub extern "C" fn blueos_kernel_fatal_trap(
         "Fatal architecture trap: frame={:?}, cause=0x{:x}, value=0x{:x}",
         frame, cause, value
     )
+}
+
+#[no_mangle]
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+pub extern "C" fn blueos_kernel_fatal_trap(
+    frame: RawExceptionFrame,
+    cause: usize,
+    value: usize,
+) -> ! {
+    // Preserve the old RISC-V panic payload even though trap entry moved into
+    // bluekernel_arch. The raw frame has the same repr(C) Context layout until
+    // Phase 4 moves context ownership.
+    let ctx = unsafe { &*frame.cast::<riscv::Context>() };
+    let thread = crate::scheduler::current_thread_ref();
+    panic!(
+        "[C#{}:0x{:x}] Unexpected trap: context: {:?}, mcause: 0x{:x}, mtval: 0x{:x}",
+        riscv::current_cpu_id(),
+        crate::thread::Thread::id(thread),
+        ctx,
+        cause,
+        value
+    );
+}
+
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+#[no_mangle]
+pub extern "C" fn blueos_kernel_clear_software_irq(cpu_id: usize) {
+    crate::boards::clear_ipi(cpu_id);
+}
+
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+#[no_mangle]
+pub extern "C" fn blueos_kernel_riscv_handle_ecall_switch(
+    frame: RawExceptionFrame,
+    cont: usize,
+) -> usize {
+    riscv::handle_ecall_switch_from_raw(frame, cont)
+}
+
+#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
+#[no_mangle]
+pub extern "C" fn blueos_kernel_riscv_might_switch_context(
+    frame: RawExceptionFrame,
+    cont: usize,
+) -> usize {
+    riscv::might_switch_context_from_raw(frame, cont)
 }

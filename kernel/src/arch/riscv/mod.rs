@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) mod irq;
 mod trap;
 
 use crate::{boards, irq as sysirq, scheduler, scheduler::ContextSwitchHookHolder};
 use core::{
     cell::Cell,
-    mem::offset_of,
     sync::atomic::{compiler_fence, Ordering},
 };
-pub use trap::*;
+pub use bluekernel_arch::riscv::{irq, trap_entry};
+pub(super) use trap::{handle_ecall_switch_from_raw, might_switch_context_from_raw};
 
 pub(crate) const NR_SWITCH: usize = !0;
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;

@@ -52,22 +52,69 @@ pub struct SyscallRequest {
 }
 
 unsafe extern "C" {
+    /// Notify kernel timekeeping that the architecture timer interrupt fired.
+    ///
+    /// Architecture code must only signal the event here. Claiming or clearing
+    /// a board-specific timer interrupt remains kernel/board policy until the
+    /// timer driver boundary is moved.
     pub fn blueos_kernel_handle_timer_tick();
+
+    /// Dispatch a syscall request and return the raw syscall result.
+    ///
+    /// The request is intentionally a plain C-compatible value so trap code
+    /// does not depend on kernel syscall context types.
     pub fn blueos_kernel_dispatch_syscall(req: *const SyscallRequest) -> usize;
+
+    /// Enter and leave kernel IRQ accounting around an architecture trap.
     pub fn blueos_kernel_enter_irq() -> usize;
     pub fn blueos_kernel_leave_irq() -> usize;
+
+    /// Return whether kernel scheduling policy wants to preempt after an IRQ.
     pub fn blueos_kernel_should_preempt_after_irq() -> bool;
+
+    /// Complete a scheduler hook after architecture code saved a context.
     pub fn blueos_kernel_save_context_finish_hook(
         hook: RawContextSwitchHook,
         from_sp: usize,
     ) -> usize;
+
+    /// Yield the current thread and return the next saved stack pointer.
     pub fn blueos_kernel_relinquish_me_and_return_next_sp(old_sp: usize) -> usize;
+
+    /// Dispatch a board-owned external interrupt source.
+    ///
+    /// RISC-V PLIC/CLIC/INTC and AArch64 GIC policy can stay in board/kernel
+    /// code while trap/vector entry moves into `bluekernel_arch`.
     pub fn blueos_kernel_dispatch_external_irq(
         frame: RawExceptionFrame,
         cause: usize,
         value: usize,
     ) -> usize;
+
+    /// Report an unhandled architecture trap to the kernel fatal path.
     pub fn blueos_kernel_fatal_trap(frame: RawExceptionFrame, cause: usize, value: usize) -> !;
+
+    /// Clear a software interrupt used as an inter-processor wakeup.
+    pub fn blueos_kernel_clear_software_irq(cpu_id: usize);
+
+    /// Finish the existing RISC-V ecall-based context switch path.
+    ///
+    /// Phase 3 moves the trap entry but Phase 4 still owns the thread context
+    /// and scheduler switch ABI. This callback preserves the old ecall switch
+    /// behavior without making `bluekernel_arch` depend on scheduler types.
+    pub fn blueos_kernel_riscv_handle_ecall_switch(
+        frame: RawExceptionFrame,
+        cont: usize,
+    ) -> usize;
+
+    /// Apply RISC-V scheduler preemption policy after interrupt handling.
+    ///
+    /// The raw frame uses the same layout as the kernel-side RISC-V `Context`
+    /// until Phase 4 moves context ownership into `bluekernel_arch`.
+    pub fn blueos_kernel_riscv_might_switch_context(
+        frame: RawExceptionFrame,
+        cont: usize,
+    ) -> usize;
 }
 
 /// Scheduler entry used when architecture code starts the first thread.
