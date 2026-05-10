@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) mod asm;
 pub(crate) mod exception;
 pub mod irq;
-pub(crate) mod mmu;
-pub(crate) mod psci;
-pub(crate) mod registers;
 pub(crate) mod vector;
 pub(crate) mod virt;
 
@@ -32,6 +28,7 @@ pub use bluekernel_arch::aarch64::context::{Context, IsrContext};
 pub use bluekernel_arch::aarch64::{
     restore_context_with_hook, switch_context_with_hook, switch_stack, NR_SWITCH,
 };
+pub(crate) use bluekernel_arch::aarch64::{asm, mmu, psci, registers};
 
 #[no_mangle]
 pub extern "C" fn aarch64_virt_init() {
@@ -40,7 +37,11 @@ pub extern "C" fn aarch64_virt_init() {
 
 #[no_mangle]
 pub extern "C" fn aarch64_enable_mmu() {
-    mmu::enable_mmu();
+    mmu::enable_mmu(
+        current_cpu_id(),
+        crate::boards::MMU_L1_NORMAL_BASES,
+        crate::boards::MMU_L1_DEVICE_BASES,
+    );
 }
 
 macro_rules! disable_interrupt {

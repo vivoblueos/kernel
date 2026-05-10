@@ -23,6 +23,10 @@ unsafe extern "C" {
 
 pub mod context;
 pub mod irq;
+pub mod asm;
+pub mod mmu;
+pub mod psci;
+pub mod registers;
 pub mod vector;
 mod exception;
 pub mod virt;

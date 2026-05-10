@@ -27,6 +27,7 @@ build_rust("bluekernel_arch") {
     deps += [
       "//external/vendor/arm-gic-0.4.0:arm_gic",
       "//external/vendor/spin-0.9.8:spin",
+      "//external/vendor/tock-registers-0.9.0:tock_registers",
     ]
   }
   configs += [ "//kernel/kconfig:kconfigs" ]
