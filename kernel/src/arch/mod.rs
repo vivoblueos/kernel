@@ -406,6 +406,19 @@ pub extern "C" fn blueos_kernel_dispatch_external_irq(
     cause: usize,
     value: usize,
 ) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // AArch64 Phase 3 moved GIC acknowledge/EOI into bluekernel_arch.
+        // The callback ABI keeps the old kernel ISR registry behavior by
+        // passing cause = raw GIC interrupt ID and value = 0 for IRQ / 1 for
+        // FIQ. The arch side already preserves the old FIQ SPECIAL_NONE
+        // filtering, so kernel policy only maps the raw ID back to the facade
+        // IrqNumber and triggers the registered handler.
+        let irq = aarch64::irq::IrqNumber::from_raw_id(cause as u32);
+        let _is_fiq = value == 1;
+        let _ = aarch64::irq::trigger_irq(irq);
+    }
+
     #[cfg(all(any(target_arch = "riscv64", target_arch = "riscv32"), has_plic))]
     {
         // This mirrors the old RISC-V trap path: the arch crate owns trap
@@ -429,7 +442,11 @@ pub extern "C" fn blueos_kernel_dispatch_external_irq(
 }
 
 #[no_mangle]
-#[cfg(not(any(target_arch = "riscv64", target_arch = "riscv32")))]
+#[cfg(not(any(
+    target_arch = "riscv64",
+    target_arch = "riscv32",
+    target_arch = "aarch64"
+)))]
 pub extern "C" fn blueos_kernel_fatal_trap(
     frame: RawExceptionFrame,
     cause: usize,
@@ -463,6 +480,19 @@ pub extern "C" fn blueos_kernel_fatal_trap(
     );
 }
 
+#[no_mangle]
+#[cfg(target_arch = "aarch64")]
+pub extern "C" fn blueos_kernel_fatal_trap(
+    frame: RawExceptionFrame,
+    cause: usize,
+    value: usize,
+) -> ! {
+    // Keep the old AArch64 show_exception() panic text after exception entry
+    // moves into bluekernel_arch. The raw frame is still layout-compatible
+    // with kernel::arch::aarch64::Context until Phase 4 owns Context there.
+    aarch64::exception::fatal_trap_from_raw(frame, cause, value)
+}
+
 #[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
 #[no_mangle]
 pub extern "C" fn blueos_kernel_clear_software_irq(cpu_id: usize) {
@@ -485,4 +515,21 @@ pub extern "C" fn blueos_kernel_riscv_might_switch_context(
     cont: usize,
 ) -> usize {
     riscv::might_switch_context_from_raw(frame, cont)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub extern "C" fn blueos_kernel_aarch64_prepare_svc_switch(
+    frame: RawExceptionFrame,
+) -> usize {
+    aarch64::exception::prepare_svc_switch_from_raw(frame)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub extern "C" fn blueos_kernel_aarch64_finish_svc_switch(
+    to: RawExceptionFrame,
+    from: RawExceptionFrame,
+) -> usize {
+    aarch64::exception::finish_svc_switch_from_raw(to, from)
 }

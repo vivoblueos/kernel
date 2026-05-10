@@ -12,195 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{irq, registers::esr_el1::ESR_EL1, Context, NR_SWITCH};
+use super::{Context, NR_SWITCH};
 use crate::{
-    arch::aarch64::{disable_local_irq, enable_local_irq},
+    arch::RawExceptionFrame,
     scheduler::{self, ContextSwitchHookHolder},
-    support::sideeffect,
-    syscalls::{dispatch_syscall, Context as ScContext},
 };
-use core::{
-    arch::{asm, naked_asm},
-    mem::offset_of,
-    sync::atomic::{compiler_fence, fence, Ordering},
-};
-use tock_registers::interfaces::Readable;
 
-macro_rules! exception_handler {
-    ($name:ident, $cont:path) => {
-        #[no_mangle]
-        #[naked]
-        unsafe extern "C" fn $name() -> ! {
-            naked_asm!(
-                concat!(
-                    "
-                    msr DAIFSet, #0x3
-                    ",
-                    crate::aarch64_save_context_prologue!(),
-                    crate::aarch64_save_context!(),
-                    "
-                    mov x0, sp
-                    bl {cont}
-                    mov sp, x0
-                    ",
-                    crate::aarch64_restore_context!(),
-                    crate::aarch64_restore_context_epilogue!(),
-                    "
-                    eret
-                    ",
-                ),
-                lr = const offset_of!(self::Context, lr),
-                stack_size = const core::mem::size_of::<self::Context>(),
-                x0 = const offset_of!(Context, x0),
-                x2 = const offset_of!(Context, x2),
-                x4 = const offset_of!(Context, x4),
-                x6 = const offset_of!(Context, x6),
-                x8 = const offset_of!(Context, x8),
-                x10 = const offset_of!(Context, x10),
-                x12 = const offset_of!(Context, x12),
-                x14 = const offset_of!(Context, x14),
-                x16 = const offset_of!(Context, x16),
-                x18 = const offset_of!(Context, x18),
-                x20 = const offset_of!(Context, x20),
-                x22 = const offset_of!(Context, x22),
-                x24 = const offset_of!(Context, x24),
-                x26 = const offset_of!(Context, x26),
-                x28 = const offset_of!(Context, x28),
-                spsr = const offset_of!(Context, spsr),
-                elr = const offset_of!(Context, elr),
-                v0 = const offset_of!(Context, v0),
-                v2 = const offset_of!(Context, v2),
-                v4 = const offset_of!(Context, v4),
-                v6 = const offset_of!(Context, v6),
-                v8 = const offset_of!(Context, v8),
-                v10 = const offset_of!(Context, v10),
-                v12 = const offset_of!(Context, v12),
-                v14 = const offset_of!(Context, v14),
-                v16 = const offset_of!(Context, v16),
-                v18 = const offset_of!(Context, v18),
-                v20 = const offset_of!(Context, v20),
-                v22 = const offset_of!(Context, v22),
-                v24 = const offset_of!(Context, v24),
-                v26 = const offset_of!(Context, v26),
-                v28 = const offset_of!(Context, v28),
-                v30 = const offset_of!(Context, v30),
-                fpcr = const offset_of!(Context, fpcr),
-                fpsr = const offset_of!(Context, fpsr),
-                cont = sym $cont,
-            );
-        }
-    };
-}
-
-exception_handler!(el1_fiq, trap_fiq);
-
-exception_handler!(el1_sync, trap_sync);
-
-exception_handler!(el1_irq, trap_irq);
-
-exception_handler!(el1_error, trap_exception);
-
-macro_rules! unsupported_handler {
-    ($name:ident, $msg:expr) => {
-        #[no_mangle]
-        unsafe extern "C" fn $name() {
-            panic!($msg);
-            asm!("b .");
-        }
-    };
-}
-
-unsupported_handler!(el0_not_supported, "el0 is not supported.");
-
-unsupported_handler!(lowerel_not_supported, "lowerel is not supported.");
-
-#[naked]
-unsafe extern "C" fn trap_sync() -> ! {
-    naked_asm!(
-        "
-        mov x19, lr
-        mov x20, x0
-        bl {handle_svc}
-        mov sp, x0
-        mov x1, x20
-        mov lr, x19
-        b {might_switch}
-        ",
-        handle_svc = sym handle_svc,
-        might_switch = sym might_switch,
-    );
-}
-
-extern "C" fn might_switch(to: &mut Context, from: &mut Context) -> usize {
-    let to_ptr = to as *mut _;
-    let from_ptr = from as *mut _;
-    debug_assert_eq!(to_ptr != from_ptr, from.x8 == NR_SWITCH);
-    if to_ptr == from_ptr {
-        return from_ptr as usize;
-    }
-    let hook_ptr = from.x0 as *mut scheduler::ContextSwitchHookHolder;
-    let hook = unsafe { &mut *hook_ptr };
-    scheduler::save_context_finish_hook(&mut *hook, from_ptr as usize)
-}
-
-fn prepare_for_context_switch(context: &Context) -> usize {
+pub(crate) extern "C" fn prepare_svc_switch_from_raw(frame: RawExceptionFrame) -> usize {
+    // This is the old prepare_for_context_switch(context) path. Exception
+    // entry now passes an opaque raw frame from bluekernel_arch, but Phase 4
+    // has not moved AArch64 Context ownership yet, so the frame is cast back
+    // to the kernel Context layout before reading the scheduler hook in x0.
+    let context = unsafe { &*frame.cast::<Context>() };
     let hook_ptr = context.x0 as *const ContextSwitchHookHolder;
     let hook = unsafe { &*hook_ptr };
     scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() })
 }
 
-extern "C" fn handle_svc(context: &mut Context) -> usize {
-    let esr = ESR_EL1.get();
-    let ec = (esr >> 26) & 0x3F;
-    let old_sp = context as *const _ as usize;
-    if ec != 0x15 {
-        show_exception(ec, context);
-        return old_sp;
+pub(crate) extern "C" fn finish_svc_switch_from_raw(
+    to: RawExceptionFrame,
+    from: RawExceptionFrame,
+) -> usize {
+    // This is the old AArch64 might_switch() scheduler tail. The exception
+    // entry has moved to bluekernel_arch, but ContextSwitchHookHolder remains
+    // a kernel scheduler type until Phase 4, so the raw frame is cast back to
+    // the kernel-side Context with the same repr(C) layout.
+    let from_context = unsafe { &*from.cast::<Context>() };
+    debug_assert_eq!(to != from, from_context.x8 == NR_SWITCH);
+    if to == from {
+        return from as usize;
     }
-    if context.x8 == NR_SWITCH {
-        return prepare_for_context_switch(context);
-    }
-    compiler_fence(Ordering::SeqCst);
-    let sc = ScContext {
-        nr: context.x8,
-        args: [
-            context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
-        ],
-    };
-    enable_local_irq();
-    context.x0 = dispatch_syscall(&sc);
-    disable_local_irq();
-    compiler_fence(Ordering::SeqCst);
-    old_sp
+
+    let hook_ptr = from_context.x0 as *mut ContextSwitchHookHolder;
+    let hook = unsafe { &mut *hook_ptr };
+    scheduler::save_context_finish_hook(hook, from as usize)
 }
 
-extern "C" fn trap_exception(context: &mut Context) -> usize {
-    let sp = context as *const _ as usize;
-    let esr = ESR_EL1.get();
-    let ec = (esr >> 26) & 0x3F;
-    show_exception(ec, context);
-    sp
+pub(crate) extern "C" fn fatal_trap_from_raw(
+    frame: RawExceptionFrame,
+    ec: usize,
+    _esr: usize,
+) -> ! {
+    let context = unsafe { &mut *frame.cast::<Context>() };
+    show_exception(ec as u64, context)
 }
 
-extern "C" fn trap_irq(context: &mut Context) -> usize {
-    let sp = context as *const _ as usize;
-    let irq = irq::get_interrupt();
-    irq::trigger_irq(irq);
-    irq::end_interrupt(irq);
-    sp
-}
-
-extern "C" fn trap_fiq(context: &mut Context) -> usize {
-    let sp = context as *const _ as usize;
-    let fiq = irq::get_interrupt();
-    if u32::from(fiq) != 1023 {
-        irq::trigger_irq(fiq);
-    }
-    irq::end_interrupt(fiq);
-    sp
-}
-
-fn show_exception(ec: u64, context: &mut Context) {
+fn show_exception(ec: u64, context: &mut Context) -> ! {
     match ec {
         0x00 => panic!("Unknown reason Exceptions\n======== error stack ======== \n{}",context),
         0x01 => panic!("WFI or WFE instruction\n======== error stack ======== \n{}",context),
@@ -237,6 +94,6 @@ fn show_exception(ec: u64, context: &mut Context) {
         0x38 => panic!("BKPT instruction execution\n======== error stack ======== \n{}",context),
         0x3A => panic!("Vector catch exception from AArch32 state\n======== error stack ======== \n{}",context),
         0x3C => panic!("BRK instruction execution\n======== error stack ======== \n{}",context),
-        _ => todo!(),
+        _ => panic!("Unknown exception class {}\n======== error stack ======== \n{}", ec, context),
     }
 }

@@ -23,5 +23,11 @@ build_rust("bluekernel_arch") {
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/kconfig:generate_rustflags_file",
   ]
+  if (rust_abi_target == "aarch64-unknown-none") {
+    deps += [
+      "//external/vendor/arm-gic-0.4.0:arm_gic",
+      "//external/vendor/spin-0.9.8:spin",
+    ]
+  }
   configs += [ "//kernel/kconfig:kconfigs" ]
 }

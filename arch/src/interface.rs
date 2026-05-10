@@ -115,6 +115,24 @@ unsafe extern "C" {
         frame: RawExceptionFrame,
         cont: usize,
     ) -> usize;
+
+    /// Prepare the current AArch64 SVC frame for an ecall-style context switch.
+    ///
+    /// Phase 3 moves exception entry into `bluekernel_arch`, but the scheduler
+    /// hook type and saved stack ownership stay in the kernel until Phase 4.
+    /// This returns the next thread's saved stack pointer using the old
+    /// AArch64 `Context`-compatible frame layout.
+    pub fn blueos_kernel_aarch64_prepare_svc_switch(frame: RawExceptionFrame) -> usize;
+
+    /// Finish the AArch64 SVC context switch after the entry code selected SP.
+    ///
+    /// `to` and `from` use the same layout as the kernel-side AArch64
+    /// `Context`. Keeping this raw ABI avoids exposing scheduler-owned types
+    /// through `bluekernel_arch`.
+    pub fn blueos_kernel_aarch64_finish_svc_switch(
+        to: RawExceptionFrame,
+        from: RawExceptionFrame,
+    ) -> usize;
 }
 
 /// Scheduler entry used when architecture code starts the first thread.

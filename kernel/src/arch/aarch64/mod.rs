@@ -13,7 +13,7 @@
 // limitations under the License.
 
 pub(crate) mod asm;
-mod exception;
+pub(crate) mod exception;
 pub mod irq;
 pub(crate) mod mmu;
 pub(crate) mod psci;

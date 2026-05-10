@@ -12,21 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod hyper;
-pub use bluekernel_arch::aarch64::virt::vector;
-pub use hyper::{get_current_el, hyp_init};
-
-// Temporary placeholder
-#[no_mangle]
-pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn hyper_trap_fiq(_context: &mut crate::arch::aarch64::Context) -> usize {
-    0
-}
-
-pub fn virt_init() {
-    hyp_init();
-}
+pub mod vector;
