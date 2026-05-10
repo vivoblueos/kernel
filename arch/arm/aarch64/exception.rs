@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::irq;
+use super::{context::TrapContext, irq};
 use crate::{RawExceptionFrame, SyscallRequest};
 use core::{
     arch::{asm, naked_asm},
@@ -24,82 +24,6 @@ const NR_SWITCH: usize = !0;
 const SVC_AARCH64_EC: usize = 0x15;
 const FIQ_DISPATCH: usize = 1;
 const IRQ_DISPATCH: usize = 0;
-
-// This mirrors kernel/src/arch/aarch64::Context while Phase 3 only moves
-// vector/exception entry. The scheduler and thread stack still cast the raw
-// frame back to the kernel-side Context with this exact repr(C) layout.
-#[derive(Default, Debug)]
-#[repr(C, align(16))]
-pub struct TrapContext {
-    pub x0: usize,
-    pub x1: usize,
-    pub x2: usize,
-    pub x3: usize,
-    pub x4: usize,
-    pub x5: usize,
-    pub x6: usize,
-    pub x7: usize,
-    pub x8: usize,
-    pub x9: usize,
-    pub x10: usize,
-    pub x11: usize,
-    pub x12: usize,
-    pub x13: usize,
-    pub x14: usize,
-    pub x15: usize,
-    pub x16: usize,
-    pub x17: usize,
-    pub x18: usize,
-    pub x19: usize,
-    pub x20: usize,
-    pub x21: usize,
-    pub x22: usize,
-    pub x23: usize,
-    pub x24: usize,
-    pub x25: usize,
-    pub x26: usize,
-    pub x27: usize,
-    pub x28: usize,
-    pub fp: usize,
-    pub lr: usize,
-    pub elr: usize,
-    pub spsr: usize,
-    pub padding: usize,
-    pub v0: [u64; 2],
-    pub v1: [u64; 2],
-    pub v2: [u64; 2],
-    pub v3: [u64; 2],
-    pub v4: [u64; 2],
-    pub v5: [u64; 2],
-    pub v6: [u64; 2],
-    pub v7: [u64; 2],
-    pub v8: [u64; 2],
-    pub v9: [u64; 2],
-    pub v10: [u64; 2],
-    pub v11: [u64; 2],
-    pub v12: [u64; 2],
-    pub v13: [u64; 2],
-    pub v14: [u64; 2],
-    pub v15: [u64; 2],
-    pub v16: [u64; 2],
-    pub v17: [u64; 2],
-    pub v18: [u64; 2],
-    pub v19: [u64; 2],
-    pub v20: [u64; 2],
-    pub v21: [u64; 2],
-    pub v22: [u64; 2],
-    pub v23: [u64; 2],
-    pub v24: [u64; 2],
-    pub v25: [u64; 2],
-    pub v26: [u64; 2],
-    pub v27: [u64; 2],
-    pub v28: [u64; 2],
-    pub v29: [u64; 2],
-    pub v30: [u64; 2],
-    pub v31: [u64; 2],
-    pub fpcr: u64,
-    pub fpsr: u64,
-}
 
 macro_rules! aarch64_save_context_prologue {
     () => {

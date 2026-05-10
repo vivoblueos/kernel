@@ -13,8 +13,10 @@
 // limitations under the License.
 
 mod boot;
+pub mod context;
 mod exception;
 pub mod irq;
 
 pub use boot::cortex_m_boot_entry;
+pub use context::{Context, ExceptionContext, IsrContext};
 pub use exception::{handle_pendsv, handle_svc, handle_systick};

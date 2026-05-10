@@ -21,10 +21,13 @@ unsafe extern "C" {
     pub fn aarch64_boot_entry();
 }
 
+pub mod context;
 pub mod irq;
 pub mod vector;
 mod exception;
 pub mod virt;
+
+pub use context::{Context, IsrContext, TrapContext};
 
 core::arch::global_asm!(
     r#"

@@ -41,21 +41,6 @@ pub use aarch64::secondary_cpu_setup;
 pub(crate) struct KernelArch;
 
 #[cfg(target_arch = "arm")]
-impl ThreadContext for arm::Context {
-    fn init(&mut self) -> &mut Self {
-        arm::Context::init(self)
-    }
-
-    fn set_return_address(&mut self, address: usize) -> &mut Self {
-        arm::Context::set_return_address(self, address)
-    }
-
-    fn set_arg(&mut self, index: usize, value: usize) -> &mut Self {
-        arm::Context::set_arg(self, index, value)
-    }
-}
-
-#[cfg(target_arch = "arm")]
 impl ArchInterface for KernelArch {
     type Context = arm::Context;
     type IsrContext = arm::IsrContext;
@@ -110,21 +95,6 @@ impl ArchInterface for KernelArch {
 
     fn switch_stack(to_sp: usize, cont: StackSwitchContinuation) -> ! {
         arm::switch_stack(to_sp, cont)
-    }
-}
-
-#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
-impl ThreadContext for riscv::Context {
-    fn init(&mut self) -> &mut Self {
-        riscv::Context::init(self)
-    }
-
-    fn set_return_address(&mut self, address: usize) -> &mut Self {
-        riscv::Context::set_return_address(self, address)
-    }
-
-    fn set_arg(&mut self, index: usize, value: usize) -> &mut Self {
-        riscv::Context::set_arg(self, index, value)
     }
 }
 
@@ -187,24 +157,9 @@ impl ArchInterface for KernelArch {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl ThreadContext for aarch64::Context {
-    fn init(&mut self) -> &mut Self {
-        aarch64::Context::init(self)
-    }
-
-    fn set_return_address(&mut self, address: usize) -> &mut Self {
-        aarch64::Context::set_return_address(self, address)
-    }
-
-    fn set_arg(&mut self, index: usize, value: usize) -> &mut Self {
-        aarch64::Context::set_arg(self, index, value)
-    }
-}
-
-#[cfg(target_arch = "aarch64")]
 impl ArchInterface for KernelArch {
     type Context = aarch64::Context;
-    type IsrContext = aarch64::Context;
+    type IsrContext = aarch64::IsrContext;
 
     fn disable_local_irq() {
         aarch64::disable_local_irq();

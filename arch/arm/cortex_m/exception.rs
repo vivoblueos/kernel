@@ -12,93 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::irq::{self, Vector};
+use super::{
+    context::ExceptionContext,
+    irq::{self, Vector},
+};
 use crate::SyscallRequest;
 use core::mem::offset_of;
 
-pub const THUMB_MODE: usize = 0x01000000;
 pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
 pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 2;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
-
-#[cfg(not(target_abi = "eabihf"))]
-#[repr(C, align(8))]
-#[derive(Default, Debug, Copy, Clone)]
-pub struct ExceptionContext {
-    pub r4: usize,
-    pub r5: usize,
-    pub r6: usize,
-    pub r7: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub r0: usize,
-    pub r1: usize,
-    pub r2: usize,
-    pub r3: usize,
-    pub r12: usize,
-    pub lr: usize,
-    pub pc: usize,
-    pub xpsr: usize,
-}
-
-#[cfg(target_abi = "eabihf")]
-#[repr(C, align(8))]
-#[derive(Default, Debug, Copy, Clone)]
-pub struct ExceptionContext {
-    pub r4: usize,
-    pub r5: usize,
-    pub r6: usize,
-    pub r7: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub s16: usize,
-    pub s17: usize,
-    pub s18: usize,
-    pub s19: usize,
-    pub s20: usize,
-    pub s21: usize,
-    pub s22: usize,
-    pub s23: usize,
-    pub s24: usize,
-    pub s25: usize,
-    pub s26: usize,
-    pub s27: usize,
-    pub s28: usize,
-    pub s29: usize,
-    pub s30: usize,
-    pub s31: usize,
-    pub r0: usize,
-    pub r1: usize,
-    pub r2: usize,
-    pub r3: usize,
-    pub r12: usize,
-    pub lr: usize,
-    pub pc: usize,
-    pub xpsr: usize,
-    pub s0: usize,
-    pub s1: usize,
-    pub s2: usize,
-    pub s3: usize,
-    pub s4: usize,
-    pub s5: usize,
-    pub s6: usize,
-    pub s7: usize,
-    pub s8: usize,
-    pub s9: usize,
-    pub s10: usize,
-    pub s11: usize,
-    pub s12: usize,
-    pub s13: usize,
-    pub s14: usize,
-    pub s15: usize,
-    pub fpscr: usize,
-    pub vpr: usize,
-}
 
 unsafe extern "C" {
     fn bk_handle_hardfault();

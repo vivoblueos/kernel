@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::context::{IsrContext, TrapContext};
 use crate::{RawExceptionFrame, SyscallRequest};
 use core::{
     mem::offset_of,
@@ -26,60 +27,9 @@ const EXTERN_INT: usize = INTERRUPT_MASK | 0xB;
 const ECALL: usize = 0xB;
 const MSI: usize = INTERRUPT_MASK | 0x3;
 
-// This mirrors kernel/src/arch/riscv::Context while Phase 3 only moves trap
-// entry/dispatch. Phase 4 will make the context owner live in bluekernel_arch.
-// Until then, every callback that receives RawExceptionFrame casts it back to
-// the kernel-side Context with the same repr(C) layout.
-#[cfg_attr(target_pointer_width = "64", repr(C, align(16)))]
-#[cfg_attr(target_pointer_width = "32", repr(C, align(8)))]
-#[derive(Default, Debug)]
-pub struct TrapContext {
-    pub ra: usize,
-    pub mepc: usize,
-    pub gp: usize,
-    pub tp: usize,
-    pub t0: usize,
-    pub t1: usize,
-    pub t2: usize,
-    pub fp: usize,
-    pub a0: usize,
-    pub a1: usize,
-    pub a2: usize,
-    pub a3: usize,
-    pub a4: usize,
-    pub a5: usize,
-    pub a6: usize,
-    pub a7: usize,
-    pub t3: usize,
-    pub t4: usize,
-    pub t5: usize,
-    pub t6: usize,
-    pub s1: usize,
-    pub s2: usize,
-    pub s3: usize,
-    pub s4: usize,
-    pub s5: usize,
-    pub s6: usize,
-    pub s7: usize,
-    pub s8: usize,
-    pub s9: usize,
-    pub s10: usize,
-    pub s11: usize,
-    pub padding: usize,
-}
-
 #[derive(Default, Debug)]
 struct SyscallGuard {
     isr_ctx: IsrContext,
-}
-
-#[repr(C, align(16))]
-#[derive(Default, Debug)]
-struct IsrContext {
-    mstatus: usize,
-    mcause: usize,
-    mtval: usize,
-    mepc: usize,
 }
 
 #[cfg(target_pointer_width = "64")]
