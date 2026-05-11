@@ -117,6 +117,7 @@ macro_rules! trace {
 mod tests {
     extern crate alloc;
     use super::*;
+    use crate as blueos;
     use crate::{
         allocator,
         allocator::KernelAllocator,
@@ -308,6 +309,21 @@ mod tests {
     #[test]
     fn test_local_irq() {
         assert!(arch::local_irq_enabled());
+    }
+
+    #[test(thread = 2, repeat = 2)]
+    fn test_harness_thread_attribute() {
+        static ARRIVED: AtomicUsize = AtomicUsize::new(0);
+
+        let arrived = ARRIVED.fetch_add(1, Ordering::AcqRel) + 1;
+        let target = if arrived % 2 == 0 {
+            arrived
+        } else {
+            arrived + 1
+        };
+        while ARRIVED.load(Ordering::Acquire) < target {
+            scheduler::yield_me();
+        }
     }
 
     #[cfg(mpu_stack_guard)]
