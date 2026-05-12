@@ -130,6 +130,7 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
         HEAP.realloc_unknown_align(ptr, newsize)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
     };
+    #[cfg(tracing)]
     if new_ptr.is_null() {
         crate::trace_event!(record_mm_alloc_fail(newsize, 0, 0));
     } else {
