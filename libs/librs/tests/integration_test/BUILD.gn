@@ -32,6 +32,7 @@ build_rust("librs_integration_test_image") {
     "//libc:libc",
     "//librs:librs",
   ]
+  linker_script = default_linker_script
   if (coverage || profile) {
     deps += [
       "//external/vendor/minicov-0.3.7:minicov",

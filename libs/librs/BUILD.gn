@@ -67,6 +67,7 @@ build_rust("librs_unittest_image") {
     "//kernel/scal:blueos_scal",
     "//libc",
   ]
+  linker_script = default_linker_script
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   rustflags = [ "--test" ]
 }
