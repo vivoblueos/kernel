@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/boards/${board}.gni")
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
 
-executable("no_std_example") {
+build_rust("no_std_example") {
   crate_name = "no_std_example"
   crate_type = "bin"
 
@@ -25,6 +26,7 @@ executable("no_std_example") {
     "//kernel/rsrt",
     "//librs",
   ]
+  linker_script = default_linker_script
 }
 
 gen_qemu_runner("no_std_example_runner") {
