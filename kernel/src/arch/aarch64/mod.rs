@@ -51,6 +51,8 @@ macro_rules! enable_interrupt {
     };
 }
 
+// FIXME: After adapting to other AArch64 platforms, the
+// hardcoded board-specific configuration should be removed.
 #[cfg(target_board = "qemu_virt64_aarch64")]
 macro_rules! clear_ttbr0_el1 {
     () => {
@@ -66,6 +68,8 @@ macro_rules! clear_ttbr0_el1 {
     };
 }
 
+// FIXME: After adapting to other AArch64 platforms, the
+// hardcoded board-specific configuration should be removed.
 #[cfg(not(target_board = "qemu_virt64_aarch64"))]
 macro_rules! clear_ttbr0_el1 {
     () => {
