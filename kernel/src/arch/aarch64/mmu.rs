@@ -12,6 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// ============================================================================
+// Linear Mapping Layout (AArch64 EL1)
+// ============================================================================
+//
+// KERNEL_VA_BITS = 39   →  512 GB virtual address space
+// LINEAR_OFFSET  = 0xFFFF_FF80_0000_0000  (u64::MAX << 39)
+//
+//   Virtual Address Space (TTBR1, 39-bit)
+//   ┌─────────────────────────────────────────────────────────┐ 0xFFFF_FFFF_FFFF_FFFF
+//   │                                                         │
+//   │  ┌─────────────────────────────────────────────────────┐│ 0xFFFF_FFFF_0000_0000 + 4 GB
+//   │  │  Linear-mapped DRAM (4 × 1 GB L1 blocks)           ││
+//   │  │  PA 0x0000_0000_0000 → VA 0xFFFF_FF80_0000_0000    ││
+//   │  │  PA 0x0000_4000_0000 → VA 0xFFFF_FF80_4000_0000    ││
+//   │  │  PA 0x0000_8000_0000 → VA 0xFFFF_FF80_8000_0000    ││
+//   │  │  PA 0x0000_C000_0000 → VA 0xFFFF_FF80_C000_0000    ││
+//   │  └─────────────────────────────────────────────────────┘│ 0xFFFF_FF80_0000_0000 ← KERNEL_VIRT_START
+//   │                                                         │
+//   │  (unmapped)                                             │
+//   │                                                         │
+//   └─────────────────────────────────────────────────────────┘ 0xFFFF_FF80_0000_0000
+//
+//   Translation:
+//     VA = PA + LINEAR_OFFSET   (kernel_phys_to_virt)
+//     PA = VA - LINEAR_OFFSET   (kernel_virt_to_phys)
+//
+// ============================================================================
+
 use crate::arch::aarch64::{
     asm,
     asm::DsbOptions,
