@@ -63,7 +63,17 @@ pub fn init() {
     buffer::init();
 }
 
+pub fn reset() {
+    control::stop();
+    control::reset_counters();
+    buffer::init();
+}
+
 pub fn start(cfg: TraceConfig) -> bool {
+    if control::enabled() {
+        return false;
+    }
+    reset();
     control::configure(cfg);
     let started = control::start();
     if started {

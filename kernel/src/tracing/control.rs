@@ -63,6 +63,11 @@ pub fn init() {
     DROPPED_EVENTS.store(0, Ordering::Relaxed);
 }
 
+pub fn reset_counters() {
+    TOTAL_EVENTS.store(0, Ordering::Relaxed);
+    DROPPED_EVENTS.store(0, Ordering::Relaxed);
+}
+
 pub fn configure(cfg: TraceConfig) {
     let mut w = CONFIG.lock();
     *w = cfg;

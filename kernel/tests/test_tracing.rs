@@ -17,7 +17,16 @@ use blueos::{
     tracing::{self, event::EventId, TraceConfig},
 };
 use blueos_test_macro::test;
+#[cfg(procfs)]
+use core::ffi::c_char;
+#[cfg(procfs)]
+use libc::{O_RDONLY, O_WRONLY};
 use semihosting::println;
+#[cfg(procfs)]
+use {
+    alloc::{string::String, vec::Vec},
+    blueos::vfs::syscalls::{close, open, read, write},
+};
 
 const TRACE_HEADER_LEN: usize = 36;
 const DROPPED_META_LEN: usize = 8;
@@ -42,6 +51,62 @@ fn collect_event_ids(buf: &[u8], len: usize) -> alloc::vec::Vec<u16> {
 
 fn has_event(ids: &[u16], event: EventId) -> bool {
     ids.iter().any(|id| *id == event as u16)
+}
+
+#[cfg(procfs)]
+fn read_text_file(path: &core::ffi::CStr) -> String {
+    let fd = open(path.as_ptr() as *const c_char, O_RDONLY, 0);
+    assert!(fd >= 0, "failed to open {:?}", path);
+    let mut data = Vec::new();
+    let mut buf = [0u8; 512];
+    loop {
+        let n = read(fd, buf.as_mut_ptr(), buf.len());
+        assert!(n >= 0, "read failed for {:?}", path);
+        if n == 0 {
+            break;
+        }
+        data.extend_from_slice(&buf[..n as usize]);
+    }
+    assert_eq!(close(fd), 0);
+    String::from_utf8(data).expect("invalid utf-8")
+}
+
+#[cfg(procfs)]
+fn read_raw_file(path: &core::ffi::CStr) -> Vec<u8> {
+    let fd = open(path.as_ptr() as *const c_char, O_RDONLY, 0);
+    assert!(fd >= 0, "failed to open {:?}", path);
+    let mut data = Vec::new();
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = read(fd, buf.as_mut_ptr(), buf.len());
+        assert!(n >= 0, "read failed for {:?}", path);
+        if n == 0 {
+            break;
+        }
+        data.extend_from_slice(&buf[..n as usize]);
+    }
+    assert_eq!(close(fd), 0);
+    data
+}
+
+#[cfg(procfs)]
+fn write_control(cmd: &[u8]) {
+    let control = c"/proc/trace/control";
+    let fd = open(control.as_ptr() as *const c_char, O_WRONLY, 0);
+    assert!(fd >= 0, "failed to open control");
+    let n = write(fd, cmd.as_ptr(), cmd.len());
+    assert_eq!(n, cmd.len() as isize, "failed to write command");
+    assert_eq!(close(fd), 0);
+}
+
+#[cfg(procfs)]
+fn parse_stat(stats: &str, key: &str) -> usize {
+    for line in stats.lines() {
+        if let Some(val) = line.strip_prefix(key) {
+            return val.trim().parse::<usize>().expect("invalid stats value");
+        }
+    }
+    panic!("missing stats key {}", key);
 }
 
 fn event_name(event_id: u16) -> &'static str {
@@ -169,4 +234,46 @@ fn test_tracing_records_real_system_events() {
     allocator::free(p2);
     let after_stop_probe = tracing::stats();
     assert_eq!(after_stop_probe.total_events, stable_total);
+}
+
+#[cfg(procfs)]
+#[test]
+fn test_tracing_procfs_control_and_dump() {
+    write_control(b"reset");
+    write_control(b"start");
+
+    let p = allocator::malloc(96);
+    assert!(!p.is_null());
+    allocator::free(p);
+
+    write_control(b"stop");
+
+    let stats = read_text_file(c"/proc/trace/stats");
+    println!("[tracing-test] /proc/trace/stats:\n{}", stats);
+    assert!(stats.contains("enabled=0"));
+    let total_events = parse_stat(&stats, "total_events=");
+    assert!(
+        total_events >= 4,
+        "unexpected total_events={}",
+        total_events
+    );
+
+    let dump = read_text_file(c"/proc/trace/dump");
+    println!("[tracing-test] /proc/trace/dump:\n{}", dump);
+    assert!(dump.contains("TraceStart"));
+    assert!(dump.contains("MmAlloc"));
+    assert!(dump.contains("MmFree"));
+    assert!(dump.contains("TraceStop"));
+
+    let raw = read_raw_file(c"/proc/trace/raw");
+    assert!(raw.len() > RECORDS_OFFSET);
+    assert_eq!(&raw[0..4], b"BTRC");
+
+    let stable_before = parse_stat(&stats, "total_events=");
+    let p2 = allocator::malloc(32);
+    assert!(!p2.is_null());
+    allocator::free(p2);
+    let stats_after = read_text_file(c"/proc/trace/stats");
+    let stable_after = parse_stat(&stats_after, "total_events=");
+    assert_eq!(stable_before, stable_after);
 }
