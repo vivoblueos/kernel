@@ -54,10 +54,7 @@ const L1_BLOCK_SIZE: u64 = 1 << 30;
 const EL1_LINEARMAP_BLOCK_COUNT: usize = 4;
 const KERNEL_VA_BITS: u64 = 39;
 const KERNEL_TCR_TSZ: u64 = u64::BITS as u64 - KERNEL_VA_BITS;
-#[cfg(target_board = "qemu_virt64_aarch64")]
-pub(crate) const KERNEL_VIRT_START: u64 = u64::MAX << KERNEL_VA_BITS;
-#[cfg(not(target_board = "qemu_virt64_aarch64"))]
-pub(crate) const KERNEL_VIRT_START: u64 = 0;
+pub(crate) const KERNEL_VIRT_START: u64 = blueos_kconfig::CONFIG_KERNEL_VIRT_START as u64;
 
 pub const fn kernel_virt_to_phys(addr: usize) -> usize {
     if addr >= KERNEL_VIRT_START as usize {
