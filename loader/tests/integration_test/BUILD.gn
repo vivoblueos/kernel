@@ -30,6 +30,7 @@ build_rust("loader_integration_test") {
     "//libc",
     "//librs",
   ]
+  linker_script = default_linker_script
   if (coverage || profile) {
     deps += [
       "//kernel/kernel:atomic",
