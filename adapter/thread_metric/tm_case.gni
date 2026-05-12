@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/boards/${board}.gni")
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
 
@@ -33,6 +34,7 @@ template("tm_case") {
     sources = [ "src/main.rs" ]
     configs += [ "//build/boards/${board}:kernel_config" ]
     deps = [ ":${target_name}_c" ]
+    linker_script = default_linker_script
     deps += [
       "//kernel/adapter/thread_metric",
       "//kernel/rsrt",

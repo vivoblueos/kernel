@@ -25,7 +25,6 @@ build_rust("everything") {
   ]
 
   configs += [ "//build/boards/${board}:app_config" ]
-
   rustflags = [
     "-Cpanic=abort",
     "-Crelocation-model=pic",
