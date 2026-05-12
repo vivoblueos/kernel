@@ -246,7 +246,7 @@ impl PageTableManager {
 static PAGETABLE_INIT_DONE: AtomicBool = AtomicBool::new(false);
 static LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
 
-pub fn enable_el1_mmu() {
+pub fn init_el1_enable_mmu() {
     // Only allow CPU0 to initialize the page table, other cores wait
     let cpu_id = crate::arch::current_cpu_id();
     if cpu_id == 0 {
@@ -306,7 +306,7 @@ pub fn enable_el1_mmu() {
     asm::isb_sy();
 }
 
-pub fn el1_add_linearmap() {
+pub fn init_el1_boot_linearmap() {
     let cpu_id = crate::arch::current_cpu_id();
     if cpu_id == 0 {
         PageTableManager::init_linearmap();
