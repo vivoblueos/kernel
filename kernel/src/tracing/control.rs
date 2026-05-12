@@ -87,7 +87,7 @@ pub fn stop() -> bool {
 
 #[inline]
 pub fn enabled() -> bool {
-    ENABLED.load(Ordering::Relaxed)
+    ENABLED.load(Ordering::SeqCst)
 }
 
 #[inline]

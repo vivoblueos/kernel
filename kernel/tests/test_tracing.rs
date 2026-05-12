@@ -242,11 +242,21 @@ fn test_tracing_procfs_control_and_dump() {
     write_control(b"reset");
     write_control(b"start");
 
+    let running_dump = read_text_file(c"/proc/trace/dump");
+    assert!(
+        running_dump.contains("TraceStart"),
+        "expected TraceStart in running dump, got: {}",
+        running_dump
+    );
+    assert!(
+        running_dump.contains("TraceStop"),
+        "dump should force-stop tracing before snapshot, got: {}",
+        running_dump
+    );
+
     let p = allocator::malloc(96);
     assert!(!p.is_null());
     allocator::free(p);
-
-    write_control(b"stop");
 
     let stats = read_text_file(c"/proc/trace/stats");
     println!("[tracing-test] /proc/trace/stats:\n{}", stats);

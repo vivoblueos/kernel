@@ -27,6 +27,7 @@ const RECORD_SERIALIZED_LEN: usize = 52;
 
 pub(super) fn init_trace_files(root: &ProcDir) -> Result<(), Error> {
     let trace_dir = root.create_dir("trace", true)?;
+    trace_dir.create_proc_file("status", TraceStatus, InodeMode::from(0o444), true)?;
     trace_dir.create_proc_file("control", TraceControl, InodeMode::from(0o644), true)?;
     trace_dir.create_proc_file("stats", TraceStats, InodeMode::from(0o444), true)?;
     trace_dir.create_proc_file("dump", TraceDump, InodeMode::from(0o444), true)?;
@@ -34,10 +35,40 @@ pub(super) fn init_trace_files(root: &ProcDir) -> Result<(), Error> {
     Ok(())
 }
 
+struct TraceStatus;
 struct TraceControl;
 struct TraceStats;
 struct TraceDump;
 struct TraceRaw;
+
+impl ProcFileOps for TraceStatus {
+    fn get_content(&self) -> Result<Vec<u8>, Error> {
+        #[cfg(tracing)]
+        {
+            let stats = crate::tracing::stats();
+            let mut out = String::new();
+            writeln!(&mut out, "Name:     trace").ok();
+            writeln!(
+                &mut out,
+                "State:    {}",
+                if stats.enabled { "running" } else { "stopped" }
+            )
+            .ok();
+            writeln!(&mut out, "Compiled: yes").ok();
+            writeln!(&mut out, "Total:    {}", stats.total_events).ok();
+            writeln!(&mut out, "Dropped:  {}", stats.dropped_events).ok();
+            Ok(out.into_bytes())
+        }
+        #[cfg(not(tracing))]
+        {
+            Ok(b"Name:     trace\nState:    disabled\nCompiled: no\n".to_vec())
+        }
+    }
+
+    fn set_content(&self, _content: Vec<u8>) -> Result<usize, Error> {
+        Err(code::EPERM)
+    }
+}
 
 impl ProcFileOps for TraceControl {
     fn get_content(&self) -> Result<Vec<u8>, Error> {
@@ -48,7 +79,7 @@ impl ProcFileOps for TraceControl {
             writeln!(&mut out, "compiled_in=1").ok();
             writeln!(&mut out, "enabled={}", enabled as u8).ok();
             writeln!(&mut out, "commands=start stop reset").ok();
-            return Ok(out.into_bytes());
+            Ok(out.into_bytes())
         }
         #[cfg(not(tracing))]
         {
@@ -100,7 +131,7 @@ impl ProcFileOps for TraceStats {
             writeln!(&mut out, "enabled={}", stats.enabled as u8).ok();
             writeln!(&mut out, "total_events={}", stats.total_events).ok();
             writeln!(&mut out, "dropped_events={}", stats.dropped_events).ok();
-            return Ok(out.into_bytes());
+            Ok(out.into_bytes())
         }
         #[cfg(not(tracing))]
         {
@@ -153,6 +184,8 @@ impl ProcFileOps for TraceRaw {
 
 #[cfg(tracing)]
 fn dump_raw_bytes() -> Result<Vec<u8>, Error> {
+    // Ensure a stable snapshot during export by quiescing writers.
+    let _ = crate::tracing::stop(0xFFFE);
     let max_records =
         crate::tracing::buffer::RECORD_CAPACITY * blueos_kconfig::CONFIG_NUM_CORES as usize;
     let mut raw = vec![0u8; RECORDS_OFFSET + max_records * RECORD_SERIALIZED_LEN];
