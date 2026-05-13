@@ -47,8 +47,10 @@ fn find_virtio_mmio_devices(fdt: &Fdt) {
                             size_of::<VirtIOHeader>()
                         );
                     } else {
-                        let header =
-                            NonNull::new(region.starting_address as *mut VirtIOHeader).unwrap();
+                        let header = NonNull::new(
+                            phys_to_virt(region.starting_address as usize) as *mut VirtIOHeader
+                        )
+                        .unwrap();
                         // SAFETY: device tree is correct, VirtIO MMIO devices are mapped.
                         match unsafe { MmioTransport::new(header, region_size) } {
                             Err(MmioError::InvalidDeviceID(
@@ -119,7 +121,7 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: PhysAddr, _size: usize) -> NonNull<u8> {
-        NonNull::new(paddr as _).unwrap()
+        NonNull::new(phys_to_virt(paddr) as _).unwrap()
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> PhysAddr {
@@ -135,5 +137,25 @@ unsafe impl Hal for VirtioHal {
 }
 
 fn virt_to_phys(vaddr: usize) -> PhysAddr {
-    vaddr
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::arch::aarch64::mmu::kernel_virt_to_phys(vaddr)
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        vaddr
+    }
+}
+
+fn phys_to_virt(paddr: PhysAddr) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::arch::aarch64::mmu::kernel_phys_to_virt(paddr as u64) as usize
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        paddr
+    }
 }
