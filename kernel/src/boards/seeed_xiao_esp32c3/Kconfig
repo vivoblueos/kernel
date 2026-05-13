@@ -23,6 +23,7 @@ config SOC_ESP32C3
     bool "Esp32c3"
     default y
     select RISCV
+    select 32BIT
 
 config NUM_IRQS
     default 31

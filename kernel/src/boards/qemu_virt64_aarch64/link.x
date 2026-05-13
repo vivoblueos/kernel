@@ -54,6 +54,14 @@ SECTIONS
         __bss_end = .;
     } > DRAM :data
 
+    .coredump_bss (NOLOAD) : ALIGN(4096)
+    {
+        __coredump_buf_start = .;
+        *(.coredump_bss*)
+        . = ALIGN(4096);
+        __coredump_buf_end = .;
+    } > DRAM :data
+
     .init_array : {
       . = ALIGN(16);
       PROVIDE_HIDDEN (__init_array_start = .);

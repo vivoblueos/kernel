@@ -23,6 +23,7 @@ config SOC_QEMU_VIRT_RISCV32
     bool "Qemu Virt Riscv32"
     default y
     select RISCV
+    select 32BIT
     select HAS_MIE
     select HAS_MTIME
     select HAS_PLIC

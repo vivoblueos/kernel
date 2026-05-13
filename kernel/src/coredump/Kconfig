@@ -1,0 +1,30 @@
+config ENABLE_COREDUMP
+    bool "Enable ELF coredump on fatal faults"
+    default n
+    help
+      Generate an ELF ET_CORE coredump when the kernel hits a fatal
+      exception or panic. Output goes to the configured backend
+      (file, logging, or memory).
+
+config COREDUMP_BUF_SIZE
+    int "Coredump ELF buffer size in bytes"
+    default 65536 if CORTEX_M
+    default 262144 if !CORTEX_M && 32BIT
+    default 4194304
+    depends on ENABLE_COREDUMP
+    help
+      Size of the static buffer used to construct the ELF coredump
+      in memory before output. Cortex-M devices with limited RAM
+      should use a smaller value (e.g. 65536). 64-bit platforms
+      with large BSS segments may need 4 MB.
+
+config COREDUMP_MEM_BACKEND
+    bool "Store coredump in a static memory buffer"
+    default n
+    depends on ENABLE_COREDUMP
+    help
+      Store the coredump ELF in a static buffer (COREDUMP_STORAGE)
+      for post-mortem retrieval by a subsequent boot or debugger.
+      The buffer size matches COREDUMP_BUF_SIZE.
+      If disabled, the coredump goes to FileBackend (when VFS is
+      available) or LoggingBackend (serial output).
