@@ -90,6 +90,8 @@ extern "C" fn init() {
     init_heap();
     init_pin_states(crate::boards::PIN_STATES);
 
+    // FIXME: 4KB paging can only be used after heap initialization is complete.
+    // This call is used to verify that 4KB paging works correctly; perhaps it can be removed later?
     #[cfg(target_arch = "aarch64")]
     crate::arch::aarch64::mmu::set_formal_linearmap();
 

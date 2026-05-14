@@ -61,7 +61,6 @@ const L1_SHIFT: usize = 30;
 const L2_SHIFT: usize = 21;
 const L3_SHIFT: usize = 12;
 const PAGE_DESCRIPTOR_ADDR_MASK: u64 = 0x0000_ffff_ffff_f000;
-const EL1_LINEARMAP_BLOCK_COUNT: usize = 4;
 const KERNEL_VA_BITS: u64 = 39;
 const TCR_TSZ: u64 = u64::BITS as u64 - KERNEL_VA_BITS;
 pub(crate) const KERNEL_VIRT_START: u64 = blueos_kconfig::CONFIG_KERNEL_VIRT_START as u64;
@@ -78,6 +77,7 @@ pub const fn kernel_phys_to_virt(addr: u64) -> u64 {
     KERNEL_VIRT_START + addr
 }
 
+// End address of the kernel-related code and data.
 extern "C" {
     static mut _end: u8;
 }
@@ -187,17 +187,7 @@ impl PageEntry {
         Self(value)
     }
 
-    fn set_table(&mut self, table: *mut PageTableManager) -> Result<(), &'static str> {
-        if self.is_valid() {
-            return Err("page entry is set");
-        }
-        let table_phys = kernel_virt_to_phys(table as usize) as u64;
-        let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(0);
-        entry.write(PAGE_DESCRIPTOR::VALID::Valid + PAGE_DESCRIPTOR::TYPE::Page);
-        self.0 = entry.get() | (table_phys & PAGE_DESCRIPTOR_ADDR_MASK);
-        Ok(())
-    }
-
+    // Set page entry
     fn set(
         &mut self,
         output_addr: u64,
@@ -209,23 +199,19 @@ impl PageEntry {
         }
         let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(0);
         match attributes {
-            MemAttributes::Device => {
-                entry.write(
-                    PAGE_DESCRIPTOR::VALID::Valid
-                        + PAGE_DESCRIPTOR::AF::True
-                        + PAGE_DESCRIPTOR::ATTRINDX.val(MemAttributes::Device as u64)
-                        + PAGE_DESCRIPTOR::UXN::True,
-                );
-            }
-            MemAttributes::Normal => {
-                entry.write(
-                    PAGE_DESCRIPTOR::VALID::Valid
-                        + PAGE_DESCRIPTOR::AF::True
-                        + PAGE_DESCRIPTOR::ATTRINDX.val(MemAttributes::Normal as u64)
-                        + PAGE_DESCRIPTOR::SH::InnerShareable
-                        + PAGE_DESCRIPTOR::NG::True,
-                );
-            }
+            MemAttributes::Device => entry.write(
+                PAGE_DESCRIPTOR::VALID::Valid
+                    + PAGE_DESCRIPTOR::AF::True
+                    + PAGE_DESCRIPTOR::ATTRINDX.val(MemAttributes::Device as u64)
+                    + PAGE_DESCRIPTOR::UXN::True,
+            ),
+            MemAttributes::Normal => entry.write(
+                PAGE_DESCRIPTOR::VALID::Valid
+                    + PAGE_DESCRIPTOR::AF::True
+                    + PAGE_DESCRIPTOR::ATTRINDX.val(MemAttributes::Normal as u64)
+                    + PAGE_DESCRIPTOR::SH::InnerShareable
+                    + PAGE_DESCRIPTOR::NG::True,
+            ),
         }
 
         let mut value = entry.get();
@@ -240,6 +226,18 @@ impl PageEntry {
         }
 
         self.0 = value;
+        Ok(())
+    }
+
+    // Set table entry
+    fn set_table(&mut self, table: *mut PageTableManager) -> Result<(), &'static str> {
+        if self.is_valid() {
+            return Err("page entry is set");
+        }
+        let table_phys = kernel_virt_to_phys(table as usize) as u64;
+        let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(0);
+        entry.write(PAGE_DESCRIPTOR::VALID::Valid + PAGE_DESCRIPTOR::TYPE::Page);
+        self.0 = entry.get() | (table_phys & PAGE_DESCRIPTOR_ADDR_MASK);
         Ok(())
     }
 
@@ -463,12 +461,6 @@ pub fn unmap_range_in_pgtbl(
 }
 
 /// Frees a page table allocated by [`alloc_page_table`] and all child page tables.
-///
-/// # Safety
-///
-/// `pgtbl` must have been allocated by [`alloc_page_table`] and must not be the
-/// currently active translation table. The function only frees page-table pages;
-/// it does not free mapped physical pages.
 pub unsafe fn free_page_table(pgtbl: *mut PageTableManager) {
     unsafe fn free_page_table_level(pgtbl: *mut PageTableManager, level: usize) {
         if pgtbl.is_null() {
@@ -629,7 +621,7 @@ pub fn set_formal_linearmap() {
     }
 
     let formal_linearmap_phys = FORMAL_LINEARMAP_PHYS.load(Ordering::Acquire);
-    asm::dsb(DsbOptions::Sys);
+
     TTBR1_EL1.set(formal_linearmap_phys as u64);
 
     flush_tlb_all();
