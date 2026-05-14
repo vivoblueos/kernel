@@ -77,7 +77,7 @@ pub const fn kernel_phys_to_virt(addr: u64) -> u64 {
     KERNEL_VIRT_START + addr
 }
 
-// End address of the kernel-related code and data.
+// End of the kernel-reserved virtual address range, including the heap.
 extern "C" {
     static mut _end: u8;
 }
@@ -172,7 +172,7 @@ register_bitfields! {u64,
 pub struct PageEntry(u64);
 
 #[derive(Copy, Clone)]
-enum PageEntryType {
+enum DescriptorKind {
     Block,
     Page,
 }
@@ -187,12 +187,11 @@ impl PageEntry {
         Self(value)
     }
 
-    // Set page entry
-    fn set(
+    fn set_descriptor(
         &mut self,
         output_addr: u64,
         attributes: MemAttributes,
-        entry_type: PageEntryType,
+        descriptor_kind: DescriptorKind,
     ) -> Result<(), &'static str> {
         if self.is_valid() {
             return Err("page entry is set");
@@ -215,11 +214,11 @@ impl PageEntry {
         }
 
         let mut value = entry.get();
-        match entry_type {
-            PageEntryType::Block => {
+        match descriptor_kind {
+            DescriptorKind::Block => {
                 value |= output_addr;
             }
-            PageEntryType::Page => {
+            DescriptorKind::Page => {
                 value |= PAGE_DESCRIPTOR::TYPE::Page.value;
                 value |= output_addr & PAGE_DESCRIPTOR_ADDR_MASK;
             }
@@ -229,7 +228,14 @@ impl PageEntry {
         Ok(())
     }
 
-    // Set table entry
+    fn set_block(&mut self, output_addr: u64, attributes: MemAttributes) -> Result<(), &'static str> {
+        self.set_descriptor(output_addr, attributes, DescriptorKind::Block)
+    }
+
+    fn set_page(&mut self, output_addr: u64, attributes: MemAttributes) -> Result<(), &'static str> {
+        self.set_descriptor(output_addr, attributes, DescriptorKind::Page)
+    }
+
     fn set_table(&mut self, table: *mut PageTableManager) -> Result<(), &'static str> {
         if self.is_valid() {
             return Err("page entry is set");
@@ -283,11 +289,11 @@ impl PageTableManager {
         let table = unsafe { &mut TABLE_MANAGER };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Device, PageEntryType::Block);
+            let _ = table.0[index].set_block(base, MemAttributes::Device);
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Normal, PageEntryType::Block);
+            let _ = table.0[index].set_block(base, MemAttributes::Normal);
         }
     }
 
@@ -295,11 +301,11 @@ impl PageTableManager {
         let table = unsafe { &mut LINEARMAP_MANAGER };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Device, PageEntryType::Block);
+            let _ = table.0[index].set_block(base, MemAttributes::Device);
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Normal, PageEntryType::Block);
+            let _ = table.0[index].set_block(base, MemAttributes::Normal);
         }
     }
 }
@@ -307,8 +313,8 @@ impl PageTableManager {
 // Indicate whether the page table initialization is done.
 static PAGETABLE_INIT_DONE: AtomicBool = AtomicBool::new(false);
 static LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
-static FORMAL_LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
-static FORMAL_LINEARMAP_PHYS: AtomicUsize = AtomicUsize::new(0);
+static RUNTIME_LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
+static RUNTIME_LINEARMAP_PHYS: AtomicUsize = AtomicUsize::new(0);
 
 #[inline]
 fn flush_tlb_all() {
@@ -378,7 +384,7 @@ fn map_page_in_pgtbl(
     let l2_table = unsafe { &mut *l1_table };
     let l2_table = next_level_table(&mut l2_table.0[page_table_index(va, L2_SHIFT)])?;
     let l3_table = unsafe { &mut *l2_table };
-    l3_table.0[page_table_index(va, L3_SHIFT)].set(pa as u64, flags, PageEntryType::Page)
+    l3_table.0[page_table_index(va, L3_SHIFT)].set_page(pa as u64, flags)
 }
 
 // only supports L3 4KB granularity now
@@ -573,56 +579,59 @@ pub fn init_el1_boot_linearmap() {
     flush_tlb_all();
 }
 
-pub fn set_formal_linearmap() {
+pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
     let cpu_id = crate::arch::current_cpu_id();
     if cpu_id == 0 {
-        let formal_linearmap = alloc_page_table().unwrap();
-        let formal_linearmap_table = unsafe { &mut *formal_linearmap };
+        let runtime_linearmap = alloc_page_table()?;
+        let runtime_linearmap_table = unsafe { &mut *runtime_linearmap };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
             map_range_in_pgtbl(
-                formal_linearmap_table,
+                runtime_linearmap_table,
                 kernel_phys_to_virt(aligned_base as u64) as usize,
                 aligned_base,
                 L1_BLOCK_SIZE as usize,
                 MemAttributes::Device,
-            )
-            .unwrap();
+            )?;
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
-            let kernel_end = kernel_virt_to_phys(ptr::addr_of!(_end) as usize);
-            let kernel_len = align_up(kernel_end.saturating_sub(aligned_base), PAGE_SIZE);
+            let kernel_reserved_end = kernel_virt_to_phys(ptr::addr_of!(_end) as usize);
+            let kernel_reserved_len =
+                align_up(kernel_reserved_end.saturating_sub(aligned_base), PAGE_SIZE);
 
             map_range_in_pgtbl(
-                formal_linearmap_table,
+                runtime_linearmap_table,
                 kernel_phys_to_virt(aligned_base as u64) as usize,
                 aligned_base,
-                kernel_len,
+                kernel_reserved_len,
                 MemAttributes::Normal,
-            )
-            .unwrap();
+            )?;
         }
 
-        let formal_linearmap_phys = kernel_virt_to_phys(formal_linearmap as usize);
-        FORMAL_LINEARMAP_PHYS.store(formal_linearmap_phys, Ordering::Release);
-        FORMAL_LINEARMAP_INIT_DONE.store(true, Ordering::Release);
+        asm::dsb(DsbOptions::Sys);
+
+        let runtime_linearmap_phys = kernel_virt_to_phys(runtime_linearmap as usize);
+        RUNTIME_LINEARMAP_PHYS.store(runtime_linearmap_phys, Ordering::Release);
+        RUNTIME_LINEARMAP_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
         unsafe {
             core::arch::asm!("sev", options(nostack, nomem));
         }
     } else {
-        // Wait for CPU0 to finish formal linearmap table initialization.
-        while !FORMAL_LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
+        // Wait for CPU0 to finish runtime linearmap table initialization.
+        while !RUNTIME_LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
             unsafe {
                 core::arch::asm!("wfe", options(nostack, nomem));
             }
         }
     }
 
-    let formal_linearmap_phys = FORMAL_LINEARMAP_PHYS.load(Ordering::Acquire);
+    let runtime_linearmap_phys = RUNTIME_LINEARMAP_PHYS.load(Ordering::Acquire);
 
-    TTBR1_EL1.set(formal_linearmap_phys as u64);
+    asm::dsb(DsbOptions::Sys);
+    TTBR1_EL1.set(runtime_linearmap_phys as u64);
 
     flush_tlb_all();
+    Ok(())
 }
