@@ -228,11 +228,19 @@ impl PageEntry {
         Ok(())
     }
 
-    fn set_block(&mut self, output_addr: u64, attributes: MemAttributes) -> Result<(), &'static str> {
+    fn set_block(
+        &mut self,
+        output_addr: u64,
+        attributes: MemAttributes,
+    ) -> Result<(), &'static str> {
         self.set_descriptor(output_addr, attributes, DescriptorKind::Block)
     }
 
-    fn set_page(&mut self, output_addr: u64, attributes: MemAttributes) -> Result<(), &'static str> {
+    fn set_page(
+        &mut self,
+        output_addr: u64,
+        attributes: MemAttributes,
+    ) -> Result<(), &'static str> {
         self.set_descriptor(output_addr, attributes, DescriptorKind::Page)
     }
 
