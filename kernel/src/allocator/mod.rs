@@ -19,7 +19,7 @@ use alloc::alloc::Layout;
 use core::{alloc::GlobalAlloc, ptr};
 
 pub mod block;
-#[cfg(any(allocator = "tlsf", allocator = "slab"))]
+#[cfg(any(allocator = "tlsf", allocator = "slab", allocator = "slab_dynamic"))]
 mod tlsf;
 #[cfg(allocator = "tlsf")]
 pub use tlsf::heap::Heap;
@@ -35,6 +35,13 @@ mod slab;
 use slab::heap::Heap;
 #[cfg(allocator = "slab")]
 pub use slab::heap::SlabHeap;
+
+#[cfg(allocator = "slab_dynamic")]
+mod slab;
+#[cfg(allocator = "slab_dynamic")]
+use slab::heap::DynamicSlabHeap as Heap;
+#[cfg(allocator = "slab_dynamic")]
+pub use slab::heap::DynamicSlabHeap;
 
 #[derive(Default, Debug)]
 pub struct MemoryInfo {
@@ -56,6 +63,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         HEAP.dealloc(ptr, layout);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+        HEAP.realloc(ptr, old_layout, new_size)
+            .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
     }
 }
 
@@ -193,6 +205,21 @@ pub const fn align_offset(addr: usize, align: usize) -> usize {
 #[inline]
 pub const fn is_aligned(addr: usize, align: usize) -> bool {
     align_offset(addr, align) == 0
+}
+
+#[cfg(allocator = "slab_dynamic")]
+pub fn check_slab_memory_pressure() {
+    unsafe { HEAP.check_memory_pressure() };
+}
+
+#[cfg(any(allocator = "slab", allocator = "slab_dynamic"))]
+pub fn print_slab_stat() {
+    unsafe { HEAP.print_slab_stat() };
+}
+
+#[cfg(allocator = "slab_dynamic")]
+pub fn reclaim_page_pool() {
+    unsafe { HEAP.reclaim_page_pool() };
 }
 
 #[cfg(test)]
