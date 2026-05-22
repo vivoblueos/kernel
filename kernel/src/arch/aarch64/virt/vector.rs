@@ -277,12 +277,13 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
     let mair = VCPU_MANAGER.0.host_mair;
 
     core::arch::asm!(
-        "msr vbar_el1, {vbar}",
-        "msr sctlr_el1, {sctlr}",
+        "msr mair_el1, {mair}",
+        "msr tcr_el1, {tcr}",
         "msr ttbr0_el1, {ttbr0}",
         "msr ttbr1_el1, {ttbr1}",
-        "msr tcr_el1, {tcr}",
-        "msr mair_el1, {mair}",
+        "isb",
+        "msr sctlr_el1, {sctlr}",
+        "msr vbar_el1, {vbar}",  
         "isb",
         "tlbi alle1",
         "dsb sy",
@@ -356,8 +357,8 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
         options(nostack)
     );
 
-    let target_vcpu_id = vcpu.id();
-    vgic::flush(target_vcpu_id);
+    // let target_vcpu_id = vcpu.id();
+    // vgic::flush(target_vcpu_id);
 }
 
 // Temporary placeholder

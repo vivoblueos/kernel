@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{guest, hyper, vcpu::Vcpu, vgic};
+use super::{guest, hyper, vcpu::Vcpu, vgic, virtio, vuart};
 use core::arch::asm;
-#[cfg(test)]
-use semihosting::println;
+// #[cfg(test)]
+use crate::{kearly_println, kprintln};
 
 static mut GUEST_SHUTDOWN: bool = false;
 
 pub const PSCI_VERSION: u32 = 0x8400_0000;
+pub const PSCI_MIGRATE_INFO_TYPE: u32 = 0x8400_0006;
 pub const PSCI_SYSTEM_OFF: u32 = 0x8400_0008;
 pub const PSCI_SYSTEM_RESET: u32 = 0x8400_0009;
 pub const PSCI_FEATURES: u32 = 0x8400_000A;
@@ -75,79 +76,48 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         return_addr: elr + 4,
     };
 
-    match reason {
+    let result = match reason {
         VmExitReason::Hvc => handle_hvc(vcpu, &exit_info),
         VmExitReason::Svc => handle_svc(vcpu, &exit_info),
-        VmExitReason::DataAbortLowerEL => {
-            let iss = esr & 0x1FFFFFF;
-            let dfsc = iss & 0x3F;
-            let is_write = (iss & (1 << 6)) != 0;
-            let faulting_pc = vcpu.context().elr_el2;
-
-            if (dfsc & 0x3C) == 0x04 || (dfsc & 0x3C) == 0x08 || (dfsc & 0x3C) == 0x0C {
-                // Translation fault (level 0/1/2/3) - Stage-2 未映射
-                unsafe {
-                    let far: u64;
-                    core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
-                    let hpfar_el2: u64;
-                    core::arch::asm!("mrs {}, hpfar_el2", out(reg) hpfar_el2, options(nostack));
-                    //Caculate exact PA for vGIC.
-                    let fault_ipa_base = (hpfar_el2 & 0x0000_00FF_FFFF_FFF0) << 8;
-                    let exact_ipa = fault_ipa_base | (far & 0xFFF);
-                    let handled = vgic::handle_data_abort(
-                        vcpu.id(),
-                        esr,
-                        exact_ipa,
-                        &mut vcpu.context_mut().regs,
-                    );
-
-                    if handled {
-                        vcpu.context_mut().elr_el2 += 4;
-                        vgic::flush(vcpu.id());
-                        return true;
-                    } else {
-                        #[cfg(test)]
-                        semihosting::println!("[EXIT]   Unhandled Stage-2 Address!");
-                    }
-                }
-            }
-            false
-        }
+        VmExitReason::DataAbortLowerEL => handle_data_abort(vcpu, &exit_info),
         VmExitReason::InstructionAbortLowerEL => {
             let iss = esr & 0x1FFFFFF;
             let ifsc = iss & 0x3F;
             false
         }
-        VmExitReason::TrappedWfiWfe => {
-            let iss = exit_info.esr & 0x1FFFFFF;
-            let is_wfe = (iss & 1) != 0;
-            vcpu.context_mut().elr_el2 += 4;
-
-            if is_wfe {
-                true
-            } else {
-                let irq_masked = (vcpu.context().spsr & (1 << 7)) != 0;
-
-                if irq_masked {
-                    false
-                } else {
-                    unsafe {
-                        core::arch::asm!("wfi");
-                    }
-                    true
-                }
-            }
-        }
+        VmExitReason::TrappedWfiWfe => trap_wfi_wfe(vcpu, &exit_info),
         VmExitReason::Unknown(ec) => {
-            #[cfg(test)]
-            semihosting::println!("[EXIT]  Unknown Exit Reason: EC = {:#x}", ec);
             false
         }
+    };
+
+    if is_guest_shutdown() {
+        kearly_println!("\n[VMM] Guest requested shutdown via PSCI. Exiting.");
+        return false; 
     }
+
+    if !result {
+        kearly_println!(
+            "  Reason: {:?}, ESR: {:#018x}, ELR(PC): {:#018x}",
+            reason, esr, elr
+        );
+        if let VmExitReason::DataAbortLowerEL = reason {
+            let far: u64;
+            unsafe { core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack)); }
+            kearly_println!("  Faulting IPA / FAR: {:#018x}", far);
+        }
+        
+        loop {
+            unsafe { core::arch::asm!("wfe"); }
+        }
+    }
+
+    result
 }
 
 // hvc from guest.
 fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
+    kearly_println!("[EXIT] HVC call received");
     let saved_x0 = vcpu.context().regs[0];
     let vcpu_id = vcpu.id();
     let context = vcpu.context_mut();
@@ -166,7 +136,11 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
                     let version = 0x0000_0002;
                     context.regs[0] = version;
                 }
+                PSCI_MIGRATE_INFO_TYPE => {
+                    context.regs[0] =2;
+                }
                 PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
+                    kearly_println!("\n[VMM] Recieve Linux PSCI shutdown request.");
                     unsafe {
                         GUEST_SHUTDOWN = true;
                     }
@@ -182,8 +156,7 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
                     }
                 }
                 _ => {
-                    #[cfg(test)]
-                    semihosting::println!("[EXIT] HVC#0: Ignored PSCI call: {:#x}", psci_func_id);
+                    kearly_println!("[EXIT] HVC#0: Ignored PSCI call: {:#x}", psci_func_id);
                     context.regs[0] = 0xFFFF_FFFF;
                 }
             }
@@ -196,7 +169,7 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
         }
         _ => {
             #[cfg(test)]
-            semihosting::println!("[EXIT]   Unknown HVC Number");
+            kearly_println!("[EXIT]   Unknown HVC Number");
             true
         }
     };
@@ -228,6 +201,101 @@ fn handle_svc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
     context.elr_el2 = info.return_addr as u64;
     true
 }
+
+fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
+    let esr = exit_info.esr;
+    let iss = esr & 0x1FFFFFF;
+    let dfsc = iss & 0x3F;
+    let is_write = (iss & (1 << 6)) != 0;
+    let faulting_pc = vcpu.context().elr();
+
+    if (dfsc & 0x3C) == 0x04 || (dfsc & 0x3C) == 0x08 || (dfsc & 0x3C) == 0x0C {
+        unsafe {
+            let far: u64;
+            core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
+            let hpfar_el2: u64;
+            core::arch::asm!("mrs {}, hpfar_el2", out(reg) hpfar_el2, options(nostack));
+            //Caculate exact PA for vGIC and vUart.
+            let fault_ipa_base = (hpfar_el2 & 0x0000_00FF_FFFF_FFF0) << 8;
+            let exact_ipa = fault_ipa_base | (far & 0xFFF);
+            // Get target register index.
+            let srt = ((iss >> 16) & 0x1F) as usize;
+            // For vUart. 
+            if (0x08F0_0000..0x08F0_1000).contains(&exact_ipa) {
+                let offset = exact_ipa - 0x08F0_0000;
+                
+                if is_write {
+                    let value = vcpu.context().get_reg(srt);
+                    vuart::handle_write(offset, value);
+                } else {
+                    let value = vuart::handle_read(offset);
+                    vcpu.context_mut().set_reg(srt, value);
+                }
+                
+                vcpu.context_mut().set_elr(faulting_pc + 4);
+                vgic::flush(vcpu.id());
+                return true;
+            }
+
+            if (0x0a00_0000..0x0a00_0200).contains(&exact_ipa) {
+                // semihosting::println!("[EXIT] virtio handle");
+                let offset = exact_ipa - 0x0a00_0000;
+                
+                if is_write {
+                    let value = vcpu.context().get_reg(srt) as u32;
+                    virtio::VIRTIO_CONSOLE.handle_write(offset, value);
+                } else {
+                    let value = virtio::VIRTIO_CONSOLE.handle_read(offset);
+                    vcpu.context_mut().set_reg(srt, value as u64);
+                }
+                
+                vcpu.context_mut().set_elr(faulting_pc + 4);
+                vgic::flush(vcpu.id());
+                return true;
+            }
+
+            // For vGic.
+            let handled = vgic::handle_data_abort(
+                vcpu.id(),
+                esr,
+                exact_ipa,
+                &mut vcpu.context_mut().regs,
+            );
+
+            if handled {
+                vcpu.context_mut().set_elr(faulting_pc + 4);
+                vgic::flush(vcpu.id());
+                return true;
+            } else {
+                kearly_println!("[EXIT]   Unhandled Stage-2 Address!");
+            }
+        }
+    }
+    false
+}
+
+pub fn trap_wfi_wfe(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
+    let iss = exit_info.esr & 0x1FFFFFF;
+    let is_wfe = (iss & 1) != 0;
+    let target_elr = vcpu.context_mut().elr() + 4;
+    vcpu.context_mut().set_elr(target_elr);
+
+    if is_wfe {
+        true
+    } else {
+        let irq_masked = (vcpu.context().spsr() & (1 << 7)) != 0;
+
+        if irq_masked {
+            false
+        } else {
+            unsafe {
+                core::arch::asm!("wfi");
+            }
+            true
+        }
+    }
+}
+
 
 pub fn is_guest_shutdown() -> bool {
     unsafe { GUEST_SHUTDOWN }

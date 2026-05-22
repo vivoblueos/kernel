@@ -16,11 +16,12 @@ use super::VCPU_MANAGER;
 use crate::sync::SpinLock;
 use core::arch::asm;
 use spin::Once;
+use crate::{kprintln, kearly_println};
 
 const MAX_LR: usize = 4;
 const MAX_PENDING: usize = 64;
 const MAX_VCPUS: usize = 4;
-const MAX_IRQS_WORDS: usize = 32;
+pub const MAX_IRQS_WORDS: usize = 32;
 
 // Qemu default base address
 const VGICD_BASE: u64 = 0x0800_0000;
@@ -52,6 +53,7 @@ pub struct VgicRedistributor {
     pub pending_count: usize,
     // Recording how many lrs are used like KVM doing.
     pub used_lrs: usize,
+    pub lr_intids: [u32; MAX_LR],
 }
 
 impl VgicDistributor {
@@ -78,6 +80,7 @@ impl VgicRedistributor {
             pending_tail: 0,
             pending_count: 0,
             used_lrs: 0,
+            lr_intids: [0; MAX_LR],
         }
     }
 
@@ -133,7 +136,7 @@ struct MmioAccess {
 }
 
 #[inline]
-fn get_vgic() -> &'static Vgic {
+pub fn get_vgic() -> &'static Vgic {
     #[cfg(test)]
     VGIC.call_once(Vgic::new);
 
@@ -211,13 +214,39 @@ fn emulate_access(
 }
 
 fn handle_gicd_write(offset: u64, val: u32) {
-    let mut dist = get_vgic().dist.lock();
-    match offset {
-        0x0000 => dist.ctlr = val,
-        0x0100..=0x017C => dist.isenabler[((offset - 0x0100) / 4) as usize] |= val,
-        0x0180..=0x01FC => dist.isenabler[((offset - 0x0180) / 4) as usize] &= !val,
-        0x0400..=0x07F8 => dist.ipriorityr[((offset - 0x0400) / 4) as usize] = val,
-        _ => {}
+    let mut pending_intids = [0u32; 32];
+    let mut pending_count = 0;
+    // Set a scope, so that we can release lock automatically.
+    {
+        let mut dist = get_vgic().dist.lock();
+        match offset {
+            0x0000 => dist.ctlr = val,
+            0x0100..=0x017C => {
+                let index = ((offset - 0x0100) / 4) as usize;
+                let newly_enabled = val & !dist.isenabler[index];
+                dist.isenabler[index] |= val;
+                let pending_to_push = dist.ispendr[index] & newly_enabled;
+                if pending_to_push != 0 {
+                    for i in 0..32 {
+                        if (pending_to_push & (1 << i)) != 0 {
+                            pending_intids[pending_count] = (index * 32 + i) as u32;
+                            pending_count += 1;
+                        }
+                    }
+                }
+            }
+            0x0180..=0x01FC => dist.isenabler[((offset - 0x0180) / 4) as usize] &= !val,
+            0x0400..=0x07F8 => dist.ipriorityr[((offset - 0x0400) / 4) as usize] = val,
+            _ => {}
+        }
+    }
+
+    if pending_count > 0 {
+        // To Do: When GICv3 is improved in the future, GICD_IROUTER<n> should be read here to determine the target vCPU.
+        let mut redist = get_vgic().redists[0].lock();
+        for &intid in &pending_intids[..pending_count] {
+            redist.push_queue(intid);
+        }
     }
 }
 
@@ -227,7 +256,19 @@ fn handle_gicr_write(vcpu_id: usize, offset: u64, val: u32) {
     }
     let mut redist = get_vgic().redists[vcpu_id].lock();
     match offset {
-        0x10100 => redist.isenabler0 |= val,
+        // 0x10100 => redist.isenabler0 |= val,
+        0x10100 => {
+            let newly_enabled = val & !redist.isenabler0;
+            redist.isenabler0 |= val;
+            let pending_to_push = redist.ispendr0 & newly_enabled;
+            if pending_to_push != 0 {
+                for i in 0..32 {
+                    if (pending_to_push & (1 << i)) != 0 {
+                        redist.push_queue(i);
+                    }
+                }
+            }
+        }
         0x10180 => redist.isenabler0 &= !val,
         0x10200 => redist.ispendr0 |= val,
         0x10280 => redist.ispendr0 &= !val,
@@ -324,53 +365,132 @@ pub fn inject(vcpu_id: usize, intid: u32) {
         } else {
             // SPI
             let mut dist = get_vgic().dist.lock();
-            let idx = (intid / 32) as usize;
+            let index = (intid / 32) as usize;
             let mask = 1 << (intid % 32);
-            dist.ispendr[idx] |= mask;
-            is_enabled = (dist.isenabler[idx] & mask) != 0;
-
-            // Temporarily set for int 33 to get shell.
-            if intid == 33 {
-                is_enabled = true;
-            }
+            dist.ispendr[index] |= mask;
+            is_enabled = (dist.isenabler[index] & mask) != 0;
             drop(dist);
 
             if is_enabled {
                 let mut redist = get_vgic().redists[vcpu_id].lock();
                 redist.push_queue(intid);
-            }
+            } 
         }
     }
 }
 
+// ICH_LR<n>_EL2 - List Register, used to inject virtual interrupts to guest
+//
+// Bit layout:
+// [63:62] State       - Virtual interrupt state
+//                       00 = Invalid (slot unused)
+//                       01 = Pending
+//                       10 = Active
+//                       11 = Pending and Active
+// [61]    HW          - Hardware interrupt
+//                       0 = Virtual interrupt (software-generated)
+//                       1 = Physical interrupt (maps to a physical IRQ, requires pINTID)
+// [60]    Group       - Interrupt group
+//                       0 = Group 0 (FIQ)
+//                       1 = Group 1 (IRQ)
+// [59]    Reserved
+// [55:48] Priority    - Virtual interrupt priority (8-bit, lower = higher priority)
+//                       e.g. 0xA0 = lower priority
+// [47:45] Reserved
+// [44:32] pINTID      - Physical INTID (only valid when HW=1)
+//                       Maps virtual interrupt to a physical interrupt for EOI deactivation
+// [31:0]  vINTID      - Virtual INTID to be injected into the guest (bits [23:0] effective)
 pub fn flush(vcpu_id: usize) {
     if vcpu_id >= MAX_VCPUS {
         return;
     }
 
+    let mut dist = get_vgic().dist.lock();
     let mut redist = get_vgic().redists[vcpu_id].lock();
 
     unsafe {
         let mut current_lr = 0;
-        while redist.pending_count > 0 && current_lr < MAX_LR {
-            let intid = redist.pending_irqs[redist.pending_head];
+        let mut active_word = redist.isactiver0;
+        while active_word != 0 && current_lr < MAX_LR {
+            let bit = active_word.trailing_zeros();
+            let intid = bit as u32;
+            active_word &= !(1 << bit);
 
+            // let is_active = is_irq_active_locked(&redist, intid);
+            let is_pending = (redist.ispendr0 & (1 << intid)) != 0;
+            let is_enabled = (redist.isenabler0 & (1 << intid)) != 0;
+            let mut state_bits: u64 = 0b10;
+            if is_pending && is_enabled {
+                state_bits |= 0b01;
+                redist.ispendr0 &= !(1 << intid);
+            }
+
+            let is_hw = intid == 27;
+            let hw_bit = if is_hw { 1u64 << 61 } else { 0 };
+            let pintid_bits = if is_hw { (intid as u64) << 32 } else { 0 };
+
+            // Temporarily set priority(0xA0 << 48)
+            // To DO: Dynamically set hw bit(61) according to irq routing, and hw bit open while setting passthrough (finish smmu).
+            let lr_val: u64 = (state_bits << 62) | hw_bit | (1 << 60) | (0xA0 << 48) | pintid_bits | (intid as u64);
+            write_lr(current_lr, lr_val);
+            redist.lr_intids[current_lr] = intid;
+            current_lr += 1;
+        }
+
+        // Scan SPIs.
+        for i in 1..MAX_IRQS_WORDS {
+            if current_lr >= MAX_LR { break; }
+            let mut spi_active_word = dist.isactiver[i];
+            
+            while spi_active_word != 0 && current_lr < MAX_LR {
+                let bit = spi_active_word.trailing_zeros();
+                let intid = (i * 32) as u32 + bit as u32;
+                spi_active_word &= !(1 << bit);
+                let is_pending = is_irq_pending_locked(&redist, &dist, intid);
+                let is_enabled = is_irq_enabled_locked(&redist, &dist, intid);
+                let mut state_bits: u64 = 0b10;
+
+                if is_pending && is_enabled {
+                    state_bits |= 0b01;
+                    dist.ispendr[i] &= !(1 << bit);
+                }
+
+                let lr_val: u64 = (state_bits << 62) | (1 << 60) | (0xA0 << 48) | (intid as u64);
+                write_lr(current_lr, lr_val);
+                redist.lr_intids[current_lr] = intid;
+                current_lr += 1;
+            }
+        }
+
+        // Solve Pending interrupt in queue.
+        let mut processed_count = 0;
+        let original_count = redist.pending_count;
+
+        while processed_count < original_count && current_lr < MAX_LR {
+            let intid = redist.pending_irqs[redist.pending_head];
             redist.pending_head = (redist.pending_head + 1) % MAX_PENDING;
             redist.pending_count -= 1;
+            processed_count += 1;
+            if is_irq_active_locked(&redist, &dist, intid) {
+                continue;
+            }
 
-            let is_active = is_irq_active_locked(&redist, intid);
-            let state_bits: u64 = if is_active { 0b11 } else { 0b01 };
-            // Temporarily set priority(0xA0 << 48)
-            // To DO: Dynamically set hw bit(61) according to irq routing.
-            let lr_val: u64 = (state_bits << 62)
-                | (1 << 61)
-                | (1 << 60)
-                | (0xA0 << 48)
-                | ((intid as u64) << 32)
-                | (intid as u64);
-            write_lr(current_lr, lr_val);
+            let is_pending = is_irq_pending_locked(&redist, &dist, intid);
+            let is_enabled = is_irq_enabled_locked(&redist, &dist, intid);
+            
+            if is_pending && is_enabled {
+                let state_bits: u64 = 0b01;
+                clear_irq_pending_locked(&mut redist, &mut dist, intid);
 
-            current_lr += 1;
+                let is_hw = intid == 27;
+                let hw_bit = if is_hw { 1u64 << 61 } else { 0 };
+                let pintid_bits = if is_hw { (intid as u64) << 32 } else { 0 };
+
+                let lr_val: u64 = (state_bits << 62) | hw_bit | (1 << 60) | (0xA0 << 48) | pintid_bits | (intid as u64);
+                write_lr(current_lr, lr_val);
+                redist.lr_intids[current_lr] = intid;
+                current_lr += 1;
+            }
         }
 
         redist.used_lrs = current_lr;
@@ -382,19 +502,22 @@ pub fn sync(vcpu_id: usize) {
         return;
     }
 
+    let mut dist = get_vgic().dist.lock();
     let mut redist = get_vgic().redists[vcpu_id].lock();
 
     unsafe {
         for i in 0..redist.used_lrs {
             let lr_val = read_lr(i);
             let state = (lr_val >> 62) & 0b11;
-            let intid = (lr_val & 0xFFFFFFFF) as u32;
-
+            let intid = redist.lr_intids[i];
             if state == 0 {
-                clear_irq_state_locked(&mut redist, intid);
+                clear_irq_state_locked(&mut redist, &mut dist, intid);
             } else {
-                sync_irq_state_locked(&mut redist, intid, state);
-                redist.push_queue(intid);
+                sync_irq_state_locked(&mut redist, &mut dist, intid, state);
+                // redist.push_queue(intid);
+                if (state & 0b01) != 0 {
+                    redist.push_queue(intid);
+                }
             }
 
             write_lr(i, 0);
@@ -463,61 +586,85 @@ unsafe fn write_lr(index: usize, val: u64) {
     }
 }
 
-fn clear_irq_state_locked(redist: &mut VgicRedistributor, intid: u32) {
+fn clear_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistributor, intid: u32) {
     if intid < 32 {
-        redist.ispendr0 &= !(1 << intid);
+        // redist.ispendr0 &= !(1 << intid);
         redist.isactiver0 &= !(1 << intid);
     } else {
         // SPI should have lock.
-        let mut dist = get_vgic().dist.lock();
-        let idx = (intid / 32) as usize;
+        let index = (intid / 32) as usize;
         let mask = 1 << (intid % 32);
-        dist.ispendr[idx] &= !mask;
-        dist.isactiver[idx] &= !mask;
+        // dist.ispendr[index] &= !mask;
+        dist.isactiver[index] &= !mask;
     }
 }
 
-fn sync_irq_state_locked(redist: &mut VgicRedistributor, intid: u32, state: u64) {
+fn sync_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistributor,  intid: u32, state: u64) {
     let is_pending = (state & 0b01) != 0;
     let is_active = (state & 0b10) != 0;
 
     if intid < 32 {
         if is_pending {
             redist.ispendr0 |= 1 << intid;
-        } else {
-            redist.ispendr0 &= !(1 << intid);
         }
+        // } else {
+        //     redist.ispendr0 &= !(1 << intid);
+        // }
         if is_active {
             redist.isactiver0 |= 1 << intid;
         } else {
             redist.isactiver0 &= !(1 << intid);
         }
     } else {
-        let mut dist = get_vgic().dist.lock();
-        let idx = (intid / 32) as usize;
+        let index = (intid / 32) as usize;
         let mask = 1 << (intid % 32);
         if is_pending {
-            dist.ispendr[idx] |= mask;
-        } else {
-            dist.ispendr[idx] &= !mask;
-        }
+            dist.ispendr[index] |= mask;
+        } 
+        // else {
+        //     dist.ispendr[index] &= !mask;
+        // }
         if is_active {
-            dist.isactiver[idx] |= mask;
+            dist.isactiver[index] |= mask;
         } else {
-            dist.isactiver[idx] &= !mask;
+            dist.isactiver[index] &= !mask;
         }
     }
 }
 
-fn is_irq_active_locked(redist: &VgicRedistributor, intid: u32) -> bool {
+fn is_irq_active_locked(redist: &VgicRedistributor, dist: &VgicDistributor, intid: u32) -> bool {
     if intid < 32 {
         (redist.isactiver0 & (1 << intid)) != 0
     } else {
-        let dist = get_vgic().dist.lock();
         (dist.isactiver[(intid / 32) as usize] & (1 << (intid % 32))) != 0
     }
 }
 
+fn is_irq_pending_locked(redist: &VgicRedistributor, dist: &VgicDistributor, intid: u32) -> bool {
+    if intid < 32 {
+        (redist.ispendr0 & (1 << intid)) != 0
+    } else {
+        (dist.ispendr[(intid / 32) as usize] & (1 << (intid % 32))) != 0
+    }
+}
+
+fn is_irq_enabled_locked(redist: &VgicRedistributor, dist: &VgicDistributor, intid: u32) -> bool {
+    if intid < 32 {
+        (redist.isenabler0 & (1 << intid)) != 0
+    } else {
+        (dist.isenabler[(intid / 32) as usize] & (1 << (intid % 32))) != 0
+    }
+}
+
+fn clear_irq_pending_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistributor, intid: u32) {
+    if intid < 32 {
+        redist.ispendr0 &= !(1 << intid);
+    } else {
+        let index = (intid / 32) as usize;
+        let mask = 1 << (intid % 32);
+        dist.ispendr[index] &= !mask;
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

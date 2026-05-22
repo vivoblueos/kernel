@@ -33,6 +33,7 @@ impl IsrDesc for VirtualTimerHandler {
             // 2. Inject the interrupt into the vGIC queue.
             let vcpu_id = current_cpu_id();
             vgic::inject_irq(vcpu_id, 27);
+            vgic::flush(vcpu_id);
         }
     }
 }

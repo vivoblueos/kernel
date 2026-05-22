@@ -149,6 +149,25 @@ pub fn shutdown_guest() {
             tmp = out(reg) ich_hcr,
             options(nostack)
         );
+
+        // Restore EOImode to 0 for BlueOS.
+        // BlueOS's native GIC driver assumes EOImode=0 (EOIR drops priority AND deactivates).
+        // If we leave it as 1, BlueOS will never deactivate interrupts, causing an interrupt storm/hang!
+        let mut ctlr: u64;
+        core::arch::asm!(
+            "mrs {tmp2}, ICC_CTLR_EL1",
+            "bic {tmp2}, {tmp2}, #2",
+            "msr ICC_CTLR_EL1, {tmp2}",
+            "isb",
+            tmp2 = out(reg) ctlr,
+            options(nostack)
+        );
+
+        // Force deactivate physical IRQ 27 (Virtual Timer) in case the guest left it Active.
+        // If left Active, it will mask all equal/lower priority interrupts, completely blocking 
+        // BlueOS's physical timer (IRQ 30) and causing the Host OS scheduler to hang!
+        let irq_27: u64 = 27;
+        core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) irq_27, options(nostack));
     }
 }
 

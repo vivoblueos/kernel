@@ -113,12 +113,6 @@ pub fn init_stage2(ipa_base: usize, size: usize) {
     }
 
     map_range(ipa_base, ipa_base, size, false);
-    // for guest visting uart
-    map_range(0x0900_0000, 0x0900_0000, 4096, true);
-    // for vGICR and vGICD
-    // map_range(0x0800_0000, 0x0800_0000, 0x0001_0000, true);
-    // map_range(0x080A_0000, 0x080A_0000, 0x00F6_0000, true);
-
     unsafe {
         core::arch::asm!("dsb sy", options(nostack, nomem));
         let start = &S2_L1 as *const _ as usize;

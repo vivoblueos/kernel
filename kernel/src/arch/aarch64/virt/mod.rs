@@ -21,21 +21,21 @@ pub mod vcpu;
 pub mod vector;
 pub mod vgic;
 pub mod vtimer;
+pub mod vuart;
+pub(crate) mod virtio;
 pub use crate::arch::aarch64::psci::hvc_call;
-use blueos_hal::PlatPeri;
+use blueos_hal::{PlatPeri, isr::IsrDesc};
 pub use exit::{VmExitInfo, VmExitReason};
 pub use hyper::{get_current_el, hyp_init};
 pub use vcpu::{Vcpu, VcpuManager, VcpuState};
 pub use vgic::init;
 
-#[cfg(test)]
-use semihosting::println;
+use crate::{kearly_println, kprintln};
 
 // PL011 UART addresses for QEMU Virt
 const UART0_DR: *mut u32 = 0x0900_0000 as *mut u32;
 const UART0_FR: *mut u32 = 0x0900_0018 as *mut u32;
 
-// Temporary placeholder
 #[no_mangle]
 pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
     unsafe {
@@ -47,6 +47,10 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
             core::arch::asm!("msr ICC_CTLR_EL1, {}", in(reg) ctlr);
         }
     }
+
+    let vcpu_id = get_current_vcpu_id().expect("Failed to get current vcpu id");
+    vgic::sync(vcpu_id);
+
     let iar: u64;
     unsafe {
         core::arch::asm!("mrs {}, ICC_IAR1_EL1", out(reg) iar);
@@ -56,55 +60,38 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
 
     if intid == 1023 {
         // 1023 is Spurious Interrupt of GIC，skip
+        vgic::flush(vcpu_id);
         return 0;
     }
 
     if intid == 33 {
-        unsafe {
-            let lr_val: u64 = (1 << 62) | (1 << 61) | (1 << 60) | (0xA0 << 48) | (33 << 32) | 33;
+        vuart::handle_physical_uart_interrupt();
+        vgic::flush(vcpu_id);
 
-            // Temporarily occupy physical register for uart print in Linux shell
-            core::arch::asm!("msr ICH_LR1_EL2, {}", in(reg) lr_val);
-            let mut hcr: u64;
-            core::arch::asm!("mrs {}, ICH_HCR_EL2", out(reg) hcr);
-            hcr |= 1;
-            core::arch::asm!("msr ICH_HCR_EL2, {}", in(reg) hcr);
-        }
-    } else if intid == 27 {
-        unsafe {
-            let mut ctl: u64;
-            core::arch::asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
-            ctl |= 1 << 1;
-            core::arch::asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
-        }
-
-        if let Some(vcpu_id) = get_current_vcpu_id() {
-            vgic::inject_irq(vcpu_id, 27);
-        }
-
-        unsafe {
-            core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
-        }
-    } else {
-        #[cfg(test)]
-        semihosting::println!("[EL2] Unhandled Guest IRQ: {}", intid);
-        // For uninterruptible/unknown interrupts,
-        // we must manually downgrade and deactivate them;
-        // otherwise, the interrupt line will be permanently blocked.
         unsafe {
             core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
             core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);
         }
+        return 0;
+    } else if intid == 27 {
+        vgic::inject_irq(vcpu_id, 27);
+        vgic::flush(vcpu_id);
+        unsafe {
+            // For hardware routed timer, we only do EOI (Priority Drop).
+            // The guest will automatically do DIR (Deactivate) when it EOIs.
+            core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
+        }
+        return 0;
+    } else {
+        kearly_println!("[EL2] Unhandled Guest IRQ: {}", intid);
     }
 
     unsafe {
         core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
+        core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);   
     }
 
-    if let Some(vcpu_id) = get_current_vcpu_id() {
-        vgic::flush(vcpu_id);
-    }
-
+    vgic::flush(vcpu_id);
     0
 }
 
@@ -131,6 +118,20 @@ pub fn virt_boot_linux() {
     // It will be placed here next.
     vgic::init();
     vtimer::init_global_vtimer();
+    // vuart::init_uart_irq();
+
+    unsafe {
+        let current_el = hyper::get_current_el();
+        if current_el == 2 {
+            let mut ich_hcr: u64;
+            core::arch::asm!("mrs {}, ich_hcr_el2", out(reg) ich_hcr);
+            if (ich_hcr & 1) == 0 {
+                ich_hcr |= 1;
+                core::arch::asm!("msr ich_hcr_el2, {}", in(reg) ich_hcr);
+                core::arch::asm!("isb");
+            }
+        }
+    }
 
     // Initiate vCpu for Linux kernel, set the entry point and parameters.
     unsafe {
@@ -145,15 +146,11 @@ pub fn virt_boot_linux() {
     }
 
     vtimer::init_vcpu_timer();
+    vuart::enable_physical_uart_interrupts();
     let result = hvc_call(2, 0, 0);
-
-    /// Nowadays, Linux kernel will call PSCI CPU_OFF to shutdown the vCPU after it finishes its work, where we can't print any message.
-    /// So we print the shutdown message here before Linux kernel calls PSCI CPU_OFF.
-    /// To Do: Solve this problem in next step.
+    vuart::cleanup_physical_uart_interrupts();
+    
     if result == 0 {
-        let uart = crate::boards::get_device!(console_uart);
-        uart.enable();
-        #[cfg(test)]
-        semihosting::println!("Linux shutdown!!!");
+        kearly_println!("Linux shutdown!!!");
     }
 }
