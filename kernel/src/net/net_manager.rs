@@ -19,6 +19,8 @@ use crate::{
     config::MAX_THREAD_PRIORITY,
     net::{
         connection::Connection,
+        iface::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
+        link::LINK_REGISTRY,
         net_interface::NetInterface,
         socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket, PosixSocket},
         SocketDomain, SocketFd, SocketProtocol, SocketType,
@@ -178,6 +180,46 @@ where
                         log::debug!("Socket Fd={} binding to {}", socket_fd, dev.borrow());
                     },
                 )
+        }
+    }
+
+    /// Handle a type-safe network control command.
+    ///
+    /// Bridges the POSIX ioctl path (via `Operation::NetControl`) to the
+    /// new `NetIface::control()` method. Uses the first available link
+    /// device from `LINK_REGISTRY`.
+    ///
+    /// Phase 0: this creates a transient `NetIface` wrapping the link.
+    /// In a later phase `NetIface` instances will be persistent in
+    /// `NetworkManager`.
+    pub fn handle_net_control(&self, cmd: NetIfaceControl) -> Result<NetIfaceResult, NetIfaceError> {
+        let link_arc = LINK_REGISTRY
+            .get(0)
+            .ok_or(NetIfaceError::DeviceNotFound)?;
+
+        // Phase 0: for now, only handle simple queries that don't require
+        // a full NetIface. The NetIface construction with RwLock<dyn LinkLayer>
+        // requires concrete type ownership which we don't have from the Arc.
+        // Full NetIface dispatch will be wired in Step 8.
+        match cmd {
+            NetIfaceControl::GetFlags => {
+                Ok(NetIfaceResult::Flags(InterfaceFlags {
+                    up: link_arc.can_send() || link_arc.can_recv(),
+                    running: true,
+                    promiscuous: false,
+                }))
+            }
+            NetIfaceControl::GetMacAddress => {
+                let hw = link_arc.hw_addr().and_then(|h| h.as_ethernet()).unwrap_or([0u8; 6]);
+                Ok(NetIfaceResult::MacAddress(hw))
+            }
+            NetIfaceControl::GetMtu => {
+                Ok(NetIfaceResult::Mtu(link_arc.mtu()))
+            }
+            NetIfaceControl::GetLinkKind => {
+                Ok(NetIfaceResult::LinkKind(link_arc.kind()))
+            }
+            _ => Err(NetIfaceError::NotSupported),
         }
     }
 

@@ -52,6 +52,9 @@ pub enum SocketError {
     #[error("Unsupported socket protocol {0}")]
     UnsupportedSocketProtocol(i32),
 
+    #[error("Unsupported operation")]
+    UnsupportedOperation,
+
     #[error("Invalid params : {0} for operation {1}")]
     InvalidParam(String, String),
 

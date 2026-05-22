@@ -16,6 +16,7 @@ use crate::{
     error::{code, Error},
     net::{
         connection_err::ConnectionError,
+        iface::control::NetIfaceControl,
         net_manager::NetworkManager,
         port_generator::PORT_GENERATOR,
         socket::{
@@ -28,7 +29,7 @@ use crate::{
     thread::Thread,
     time::Tick,
 };
-use alloc::{boxed::Box, rc::Rc, sync::Arc};
+use alloc::{boxed::Box, format, rc::Rc, sync::Arc};
 use core::{
     cell::RefCell,
     net::SocketAddr,
@@ -326,6 +327,20 @@ impl Connection {
         log::debug!("[Socket {}] RecvMsg request queued", self.socket_fd);
 
         self.ipc_reply.queue_and_wait(sendmsg_task)
+    }
+
+    pub fn control(&self, cmd: NetIfaceControl) -> ConnectionResult {
+        let control_task = Operation::NetControl {
+            cmd,
+            ipc_reply: self.ipc_reply.clone(),
+        };
+
+        log::debug!(
+            "[Socket {}] NetControl request queued",
+            self.socket_fd
+        );
+
+        self.ipc_reply.queue_and_wait(control_task)
     }
 
     // Set recv timeout : ref to libc::SO_RCVTIMEO
@@ -705,6 +720,26 @@ impl Connection {
                         },
                     );
                 }
+                Operation::NetControl {
+                    cmd,
+                    ipc_reply,
+                } => {
+                    log::debug!("[Connection] handle NetControl");
+
+                    let result = network_manager
+                        .borrow()
+                        .handle_net_control(cmd);
+
+                    let result = result
+                        .map(|_| 0)
+                        .map_err(|e| {
+                            SocketError::InvalidParam(
+                                format!("net_control: {:?}", e),
+                                "NetIfaceControl".into(),
+                            )
+                        });
+                    ipc_reply.wakeup_client(result, 0);
+                }
             }
         }
         true
@@ -922,6 +957,12 @@ pub enum Operation {
     Bind {
         socket_fd: SocketFd,
         local_endpoint: IpListenEndpoint,
+        ipc_reply: Arc<OperationIPCReply>,
+    },
+
+    /// Network control operation (type-safe ioctl replacement).
+    NetControl {
+        cmd: NetIfaceControl,
         ipc_reply: Arc<OperationIPCReply>,
     },
 }
