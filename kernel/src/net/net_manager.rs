@@ -77,7 +77,6 @@ where
     // It will only access by a standalone tcp/ip stack thread, so no need for Critical Section .
     fn new() -> Self {
         let mut net_interfaces = Vec::new();
-        let mut net_ifaces = Vec::new();
         let socket_maps = BTreeMap::new();
         let mut default_interface = None;
 
@@ -102,22 +101,9 @@ where
             log::debug!("Add NetDevice : virtio-net");
         }
 
-        // Phase 1: create persistent NetIface instances from LINK_REGISTRY
-        for (idx, link_arc) in LINK_REGISTRY.iter().into_iter().enumerate() {
-            let (link_for_iface, smoltcp_dev) = Self::create_link_and_device_from_registry(&*link_arc);
-            if let Some((link, mut dev)) = link_for_iface.zip(smoltcp_dev) {
-                let smoltcp_result = dev.create_smoltcp_iface_and_sockets();
-                let iface = NetIface::new(link_arc.name(), link, dev, idx);
-                if let Some((smoltcp_iface, smoltcp_sockets)) = smoltcp_result {
-                    iface.set_smoltcp(smoltcp_iface, smoltcp_sockets);
-                }
-                net_ifaces.push(iface);
-            }
-        }
-
         Self {
             net_interfaces,
-            net_ifaces,
+            net_ifaces: Vec::new(),
             socket_maps,
             default_interface,
         }
@@ -344,8 +330,8 @@ where
                 // This runs in parallel with the old NetInterface poll above,
                 // enabling the dual-path architecture for migration.
                 if let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) {
-                    for net_iface in network_manager.net_ifaces.iter() {
-                        net_iface.poll(Instant::from_millis(millis_i64));
+                    for interface in network_manager.net_interfaces.iter() {
+                        interface.borrow_mut().poll(Instant::from_millis(millis_i64));
                     }
                 }
             }

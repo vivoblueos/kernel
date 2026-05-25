@@ -259,7 +259,7 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
         }
         _ => {
             let t = scheduler::current_thread_ref();
-            panic!(
+            crate::kearly_println!(
                 "[C#{}:0x{:x}] Unexpected trap: context: {:?}, mcause: 0x{:x}, mtval: 0x{:x}",
                 super::current_cpu_id(),
                 Thread::id(t),
@@ -267,6 +267,9 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
                 mcause,
                 mtval
             );
+            loop {
+                continue;
+            }
         }
     }
 }
