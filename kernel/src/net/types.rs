@@ -23,6 +23,7 @@ use core::ffi::c_void;
 
 use smoltcp::wire::{IpAddress, IpEndpoint};
 
+use crate::net::protocol::iana;
 use crate::net::socket::socket_err::SocketError;
 
 pub type SocketFd = i32;
@@ -202,6 +203,19 @@ impl From<SocketProtocol> for i32 {
 }
 
 impl SocketProtocol {
+    /// Convert to IANA protocol number for ProtocolRegistry lookup.
+    pub fn iana(&self) -> u8 {
+        match self {
+            SocketProtocol::Tcp => iana::TCP,
+            SocketProtocol::Udp => iana::UDP,
+            SocketProtocol::Icmp => iana::ICMP,
+            SocketProtocol::Icmpv6 => iana::ICMPV6,
+            SocketProtocol::Ip => 0,
+            SocketProtocol::Ipv6 => 41,
+            SocketProtocol::Raw => 255,
+        }
+    }
+
     pub fn into_ptr(
         &self,
         option_value: *mut c_void,

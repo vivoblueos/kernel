@@ -14,14 +14,22 @@
 
 #[cfg(virtio)]
 use crate::devices::net::virtio_net_device::net_dev_exist;
+#[cfg(virtio)]
+use crate::net::link::virtio::VirtioLink;
 use crate::{
     allocator,
     config::MAX_THREAD_PRIORITY,
     net::{
         connection::Connection,
         iface::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
+        iface::NetIface,
+        iface::SmoltcpDevice,
+        link::loopback::LoopbackLink,
+        link::LinkKind,
+        link::LinkLayer,
         link::LINK_REGISTRY,
         net_interface::NetInterface,
+        protocol::{iana, PROTOCOL_REGISTRY},
         socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket, PosixSocket},
         SocketDomain, SocketFd, SocketProtocol, SocketType,
     },
@@ -36,6 +44,7 @@ use alloc::{
     collections::btree_map::BTreeMap,
     rc::Rc,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 use blueos_kconfig::CONFIG_NETWORK_STACK_SIZE as NETWORK_STACK_SIZE;
@@ -44,11 +53,13 @@ use smoltcp::{
     time::{Duration, Instant},
     wire::{IpAddress, IpEndpoint},
 };
+use spin;
 
 const DEFAULT_DELAY_TIME_IN_MILLIS: u64 = 100;
 
 pub struct NetworkManager<'a> {
     net_interfaces: Vec<Rc<RefCell<NetInterface<'a>>>>,
+    net_ifaces: Vec<NetIface>,
     socket_maps: BTreeMap<SocketFd, Rc<RefCell<dyn PosixSocket>>>,
     default_interface: Option<Rc<RefCell<NetInterface<'a>>>>,
 }
@@ -66,6 +77,7 @@ where
     // It will only access by a standalone tcp/ip stack thread, so no need for Critical Section .
     fn new() -> Self {
         let mut net_interfaces = Vec::new();
+        let mut net_ifaces = Vec::new();
         let socket_maps = BTreeMap::new();
         let mut default_interface = None;
 
@@ -90,10 +102,49 @@ where
             log::debug!("Add NetDevice : virtio-net");
         }
 
+        // Phase 1: create persistent NetIface instances from LINK_REGISTRY
+        for (idx, link_arc) in LINK_REGISTRY.iter().into_iter().enumerate() {
+            let (link_for_iface, smoltcp_dev) = Self::create_link_and_device_from_registry(&*link_arc);
+            if let Some((link, mut dev)) = link_for_iface.zip(smoltcp_dev) {
+                let smoltcp_result = dev.create_smoltcp_iface_and_sockets();
+                let iface = NetIface::new(link_arc.name(), link, dev, idx);
+                if let Some((smoltcp_iface, smoltcp_sockets)) = smoltcp_result {
+                    iface.set_smoltcp(smoltcp_iface, smoltcp_sockets);
+                }
+                net_ifaces.push(iface);
+            }
+        }
+
         Self {
             net_interfaces,
+            net_ifaces,
             socket_maps,
             default_interface,
+        }
+    }
+
+    /// Create an Arc<RwLock<dyn LinkLayer>> and SmoltcpDevice from a LinkLayer trait object.
+    /// Both are fresh concrete instances matching the link kind.
+    fn create_link_and_device_from_registry(link: &dyn LinkLayer) -> (Option<Arc<spin::RwLock<dyn LinkLayer>>>, Option<SmoltcpDevice>) {
+        match link.kind() {
+            LinkKind::Loopback => {
+                let concrete = LoopbackLink::new();
+                let link: Arc<spin::RwLock<dyn LinkLayer>> = Arc::new(spin::RwLock::new(concrete));
+                (Some(link), Some(SmoltcpDevice::Loopback(LoopbackLink::new())))
+            }
+            LinkKind::Virtio => {
+                #[cfg(virtio)]
+                {
+                    let concrete = VirtioLink::new(0);
+                    let link: Arc<spin::RwLock<dyn LinkLayer>> = Arc::new(spin::RwLock::new(concrete));
+                    (Some(link), Some(SmoltcpDevice::Virtio(VirtioLink::new(0))))
+                }
+                #[cfg(not(virtio))]
+                {
+                    (None, None)
+                }
+            }
+            _ => (None, None),
         }
     }
 
@@ -105,6 +156,34 @@ where
         socket_type: SocketType,
         socket_protocol: SocketProtocol,
     ) -> SocketFd {
+        // Phase 1: try ProtocolRegistry dispatch first
+        let iana_proto = socket_protocol.iana();
+        if PROTOCOL_REGISTRY.contains_key(socket_type, iana_proto) {
+            let socket: Rc<RefCell<dyn PosixSocket>> = match iana_proto {
+                iana::TCP => {
+                    Rc::new(RefCell::new(TcpSocket::new(
+                        network_manager.clone(), socket_fd, socket_domain,
+                    )))
+                }
+                iana::UDP => {
+                    Rc::new(RefCell::new(UdpSocket::new(
+                        network_manager.clone(), socket_fd, socket_domain,
+                    )))
+                }
+                iana::ICMP | iana::ICMPV6 => {
+                    Rc::new(RefCell::new(IcmpSocket::new(
+                        network_manager.clone(), socket_fd,
+                    )))
+                }
+                _ => return -1,
+            };
+            self.socket_maps.insert(socket_fd, socket);
+            log::debug!("[NetManager] socket {} created via ProtocolRegistry dispatch (proto={})",
+                socket_fd, iana_proto);
+            return socket_fd;
+        }
+
+        // Fallback: old hardcoded path
         let socket: Rc<RefCell<dyn PosixSocket>> = match (socket_type, socket_protocol) {
             (SocketType::SockStream, _) => {
                 let tcp_socket = TcpSocket::new(network_manager, socket_fd, socket_domain);
@@ -246,6 +325,7 @@ where
             {
                 let network_manager = network_manager.borrow();
 
+                // Old path: poll NetInterfaces (unchanged)
                 if let Err(e) = network_manager.net_interfaces.iter().try_for_each(
                     |interface| -> Result<(), String> {
                         let millis_i64 =
@@ -258,8 +338,15 @@ where
                 ) {
                     log::error!("[NetworkManager]: looper exit with poll error {}", e);
                     break;
-                } else {
-                    // Do nothing and just continue when poll success
+                }
+
+                // Phase 1: poll NetIface instances alongside old path
+                // This runs in parallel with the old NetInterface poll above,
+                // enabling the dual-path architecture for migration.
+                if let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) {
+                    for net_iface in network_manager.net_ifaces.iter() {
+                        net_iface.poll(Instant::from_millis(millis_i64));
+                    }
                 }
             }
 
@@ -302,6 +389,19 @@ where
                             }
                         }
                     })
+                    // Phase 1: also compute delays from NetIface instances
+                    .chain(
+                        network_manager.net_ifaces.iter().map(|iface| {
+                            let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) else {
+                                return DEFAULT_DELAY_TIME_IN_MILLIS;
+                            };
+                            match iface.poll_delay(Instant::from_millis(millis_i64)) {
+                                Some(smoltcp::time::Duration::ZERO) => 0,
+                                Some(delay) => delay.millis() as u64,
+                                None => DEFAULT_DELAY_TIME_IN_MILLIS,
+                            }
+                        }),
+                    )
                     .min()
                     .unwrap_or(DEFAULT_DELAY_TIME_IN_MILLIS);
 

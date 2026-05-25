@@ -36,12 +36,11 @@ use crate::net::link::Medium;
 /// for interface configuration (medium detection, hardware address).
 /// During Phase 0, callers pass concrete types like `LoopbackLink` or
 /// `VirtioLink`.
-pub fn create_smoltcp_iface(link: &mut (impl Device + ?Sized)) -> Interface {
+pub fn create_smoltcp_iface(link: &mut (impl Device + ?Sized), hw_addr: Option<[u8; 6]>) -> Interface {
     let caps = link.capabilities();
     let config = match caps.medium {
         smoltcp::phy::Medium::Ethernet => {
-            // Hardware address is obtained at NetIface construction time
-            let mac = [0x02, 0x00, 0x00, 0x00, 0x00, 0x01];
+            let mac = hw_addr.unwrap_or([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
             Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)))
         }
         smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),

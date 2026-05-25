@@ -110,15 +110,36 @@ impl ProtocolRegistry {
     }
 
     /// Look up a protocol by IANA protocol number.
-    #[allow(dead_code)]
     pub fn get_by_proto(&self, protocol_number: u8) -> Option<Arc<dyn Protocol>> {
         self.by_proto.read().get(&protocol_number).cloned()
     }
 
     /// Return the number of registered protocols.
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.by_key.read().len()
+    }
+
+    /// Register an additional `(SocketType, protocol_number)` key pointing to
+    /// an already-registered protocol. Useful when one protocol implementation
+    /// handles multiple protocol numbers (e.g., ICMPv6 shares IcmpProtocol).
+    pub fn register_secondary_key(
+        &self,
+        protocol: Arc<dyn Protocol>,
+        socket_type: SocketType,
+        protocol_number: u8,
+    ) -> Result<(), NetError> {
+        let key = (socket_type, protocol_number);
+        let mut by_key = self.by_key.write();
+        if by_key.contains_key(&key) {
+            return Err(NetError::ProtocolAlreadyRegistered(protocol_number));
+        }
+        by_key.insert(key, protocol);
+        Ok(())
+    }
+
+    /// Check whether a `(SocketType, protocol_number)` pair is registered.
+    pub fn contains_key(&self, socket_type: SocketType, protocol_number: u8) -> bool {
+        self.by_key.read().contains_key(&(socket_type, protocol_number))
     }
 }
 
@@ -143,4 +164,9 @@ pub(crate) fn init() {
         "[ProtocolRegistry] initialized with {} protocols",
         PROTOCOL_REGISTRY.len()
     );
+
+    // Register ICMPv6 as secondary key for IcmpProtocol
+    if let Some(icmp) = PROTOCOL_REGISTRY.get_by_key(SocketType::SockRaw, iana::ICMP) {
+        let _ = PROTOCOL_REGISTRY.register_secondary_key(icmp, SocketType::SockRaw, iana::ICMPV6);
+    }
 }

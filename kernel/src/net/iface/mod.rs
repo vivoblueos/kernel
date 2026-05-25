@@ -33,6 +33,7 @@ pub(crate) mod control;
 
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::time::Instant;
@@ -41,6 +42,7 @@ use spin::{Mutex, RwLock};
 
 use self::addr::{IpAddrConfig, RouteConfig};
 pub(crate) use self::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
+use crate::net::compat::iface_bridge::create_smoltcp_iface;
 use crate::net::link::{LinkKind, LinkLayer, HwAddr, Medium};
 use crate::net::link::loopback::LoopbackLink;
 #[cfg(virtio)]
@@ -62,6 +64,24 @@ pub(crate) enum SmoltcpDevice {
 }
 
 impl SmoltcpDevice {
+    /// Create smoltcp Interface + SocketSet for the bridge.
+    /// Called during NetIface initialization.
+    pub fn create_smoltcp_iface_and_sockets(&mut self) -> Option<(Interface, SocketSet<'static>)> {
+        match self {
+            SmoltcpDevice::Loopback(ref mut dev) => {
+                let iface = create_smoltcp_iface(dev, None);
+                let sockets = SocketSet::new(vec![]);
+                Some((iface, sockets))
+            }
+            #[cfg(virtio)]
+            SmoltcpDevice::Virtio(ref mut dev) => {
+                let iface = create_smoltcp_iface(dev, None);
+                let sockets = SocketSet::new(vec![]);
+                Some((iface, sockets))
+            }
+        }
+    }
+
     /// Poll smoltcp using the concrete device inside this enum.
     fn poll_with(
         &mut self,
@@ -117,7 +137,7 @@ pub struct NetIface {
 }
 
 impl NetIface {
-    pub fn new(name: String, link: Arc<RwLock<dyn LinkLayer>>, smoltcp_device: SmoltcpDevice) -> Self {
+    pub fn new(name: String, link: Arc<RwLock<dyn LinkLayer>>, smoltcp_device: SmoltcpDevice, link_index: usize) -> Self {
         NetIface {
             name,
             link,
@@ -126,7 +146,7 @@ impl NetIface {
             smoltcp_dev: Mutex::new(smoltcp_device),
             smoltcp_iface: Mutex::new(None),
             smoltcp_sockets: Mutex::new(None),
-            link_index: 0,
+            link_index,
         }
     }
 
@@ -182,6 +202,14 @@ impl NetIface {
             (iface_guard.as_mut(), sockets_guard.as_mut())
         {
             dev.poll_with(iface, sockets, timestamp);
+
+            // Phase 1 marker: native RX path placeholder.
+            // In Phase 2, after poll(), we will:
+            //   1. Read raw L2 frame from the link device
+            //   2. Parse L2 header (Ethernet or IP)
+            //   3. Create PacketMeta { iface_index, ip_proto }
+            //   4. Wrap payload in Packet { meta, buffer, data_start, data_len }
+            //   5. Dispatch via PROTOCOL_REGISTRY.get_by_proto(ip_proto)
         }
     }
 
