@@ -17,9 +17,12 @@
 //! Wraps `smoltcp::phy::Loopback` and implements `LinkLayer`.
 
 use alloc::string::String;
+use alloc::vec;
 
+use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Loopback, Medium as SmoltcpMedium};
 use smoltcp::time::Instant;
+use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
 
 use crate::net::link::{HwAddr, LinkKind, LinkLayer, Medium};
 
@@ -80,5 +83,35 @@ impl LinkLayer for LoopbackLink {
 
     fn can_recv(&self) -> bool {
         true
+    }
+
+    fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>) {
+        use smoltcp::iface::Config;
+
+        let caps = self.capabilities();
+        let config = match caps.medium {
+            smoltcp::phy::Medium::Ethernet => Config::new(HardwareAddress::Ethernet(
+                smoltcp::wire::EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
+            )),
+            smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
+            smoltcp::phy::Medium::Ieee802154 => todo!(),
+        };
+        let mut iface = Interface::new(
+            config,
+            &mut self.inner,
+            Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
+        );
+        if caps.medium == smoltcp::phy::Medium::Ip {
+            iface.update_ip_addrs(|addrs| {
+                let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
+                let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+            });
+        }
+        let sockets = SocketSet::new(vec![]);
+        (iface, sockets)
+    }
+
+    fn poll_smoltcp(&mut self, timestamp: Instant, iface: &mut Interface, sockets: &mut SocketSet) {
+        iface.poll(timestamp, &mut self.inner, sockets);
     }
 }

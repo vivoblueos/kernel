@@ -23,7 +23,6 @@ use crate::{
         connection::Connection,
         iface::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
         iface::NetIface,
-        iface::SmoltcpDevice,
         link::loopback::LoopbackLink,
         link::LinkKind,
         link::LinkLayer,
@@ -78,11 +77,9 @@ impl NetworkManager
 
         // Add Loopback interface which always exist
         let link_rwlock = Arc::new(spin::RwLock::new(LoopbackLink::new())) as Arc<spin::RwLock<dyn LinkLayer>>;
-        let smoltcp_dev = SmoltcpDevice::Loopback(LoopbackLink::new());
         let lo_iface = Rc::new(NetIface::new(
             "lo".into(),
             link_rwlock,
-            smoltcp_dev,
             0,
         ));
         net_ifaces.push(lo_iface.clone());
@@ -98,11 +95,9 @@ impl NetworkManager
                 LINK_REGISTRY.register(fallback.clone());
                 fallback
             });
-            let smoltcp_dev = SmoltcpDevice::Virtio(VirtioLink::new(0));
             let virtio_iface = Rc::new(NetIface::new(
                 "virtio-net".into(),
                 link_arc,
-                smoltcp_dev,
                 1,
             ));
             net_ifaces.push(virtio_iface.clone());
@@ -117,28 +112,27 @@ impl NetworkManager
         }
     }
 
-    /// Create an Arc<RwLock<dyn LinkLayer>> and SmoltcpDevice from a LinkLayer trait object.
-    /// Both are fresh concrete instances matching the link kind.
-    fn create_link_and_device_from_registry(link: &dyn LinkLayer) -> (Option<Arc<spin::RwLock<dyn LinkLayer>>>, Option<SmoltcpDevice>) {
+    #[allow(dead_code)]
+    /// Create an Arc<RwLock<dyn LinkLayer>> from a LinkLayer trait object.
+    /// Returns a fresh concrete instance matching the link kind.
+    fn create_link_from_registry(link: &dyn LinkLayer) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
         match link.kind() {
             LinkKind::Loopback => {
                 let concrete = LoopbackLink::new();
-                let link: Arc<spin::RwLock<dyn LinkLayer>> = Arc::new(spin::RwLock::new(concrete));
-                (Some(link), Some(SmoltcpDevice::Loopback(LoopbackLink::new())))
+                Some(Arc::new(spin::RwLock::new(concrete)))
             }
             LinkKind::Virtio => {
                 #[cfg(virtio)]
                 {
                     let concrete = VirtioLink::new(0);
-                    let link: Arc<spin::RwLock<dyn LinkLayer>> = Arc::new(spin::RwLock::new(concrete));
-                    (Some(link), Some(SmoltcpDevice::Virtio(VirtioLink::new(0))))
+                    Some(Arc::new(spin::RwLock::new(concrete)))
                 }
                 #[cfg(not(virtio))]
                 {
-                    (None, None)
+                    None
                 }
             }
-            _ => (None, None),
+            _ => None,
         }
     }
 

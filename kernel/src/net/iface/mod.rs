@@ -22,11 +22,11 @@
 //!
 //! `smoltcp::phy::Device` uses GATs (`RxToken`, `TxToken`) and is NOT
 //! dyn-compatible. `LinkLayer` intentionally does NOT include `Device`
-//! as a supertrait. Concrete types implement both traits separately.
-//! `NetIface` stores `Arc<RwLock<dyn LinkLayer>>` (which IS dyn-compatible)
-//! for control operations. For smoltcp `poll()`, the `SmoltcpDevice` enum
-//! holds the concrete device — this will be removed in Phase 2 when
-//! smoltcp is phased out.
+//! as a supertrait. Concrete types implement both traits separately,
+//! and each `LinkLayer` impl handles the smoltcp poll cycle via
+//! `poll_smoltcp()`. `NetIface` stores `Arc<RwLock<dyn LinkLayer>>`
+//! (which IS dyn-compatible) for both control operations and smoltcp
+//! poll dispatch.
 
 pub(crate) mod addr;
 pub(crate) mod control;
@@ -34,7 +34,6 @@ pub(crate) mod control;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
@@ -46,136 +45,21 @@ use spin::{Mutex, RwLock};
 use self::addr::{IpAddrConfig, RouteConfig};
 pub(crate) use self::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
 use crate::net::link::{LinkLayer, HwAddr, Medium};
-use crate::net::link::loopback::LoopbackLink;
-#[cfg(virtio)]
-use crate::net::link::virtio::VirtioLink;
 
 use crate::net::socket::socket_err::SocketError;
-
-/// Concrete device wrapper for smoltcp compatibility.
-///
-/// `smoltcp::phy::Device` uses GATs and is not dyn-compatible. This enum
-/// wraps concrete device types. Instead of implementing `Device` (which
-/// requires unified GAT type aliases across variants), it provides
-/// `poll_with()` and `poll_delay_with()` that match the same pattern as
-/// the old `NetInterface::poll()`.
-///
-/// Removed in Phase 2 when smoltcp is phased out.
-pub(crate) enum SmoltcpDevice {
-    Loopback(LoopbackLink),
-    #[cfg(virtio)]
-    Virtio(VirtioLink),
-}
-
-impl SmoltcpDevice {
-    /// Create smoltcp Interface + SocketSet.
-    /// Called during NetIface initialization.
-    pub fn create_smoltcp_iface_and_sockets(&mut self) -> Option<(Interface, SocketSet<'static>)> {
-        match self {
-            SmoltcpDevice::Loopback(ref mut dev) => {
-                use smoltcp::iface::Config;
-                use smoltcp::phy::Device;
-                use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
-
-                let caps = dev.capabilities();
-                let config = match caps.medium {
-                    smoltcp::phy::Medium::Ethernet => Config::new(HardwareAddress::Ethernet(
-                        smoltcp::wire::EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
-                    )),
-                    smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
-                    smoltcp::phy::Medium::Ieee802154 => todo!(),
-                };
-                let mut iface = Interface::new(
-                    config,
-                    dev,
-                    Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
-                );
-                if caps.medium == smoltcp::phy::Medium::Ip {
-                    iface.update_ip_addrs(|addrs| {
-                        let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
-                        let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
-                    });
-                }
-                let sockets = SocketSet::new(vec![]);
-                Some((iface, sockets))
-            }
-            #[cfg(virtio)]
-            SmoltcpDevice::Virtio(ref mut dev) => {
-                use smoltcp::iface::Config;
-                use smoltcp::phy::Device;
-                use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr};
-
-                let caps = dev.capabilities();
-                let config = match caps.medium {
-                    smoltcp::phy::Medium::Ethernet => {
-                        let mac = [0x02, 0x00, 0x00, 0x00, 0x00, 0x01];
-                        Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)))
-                    }
-                    smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
-                    smoltcp::phy::Medium::Ieee802154 => todo!(),
-                };
-                let mut iface = Interface::new(
-                    config,
-                    dev,
-                    Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
-                );
-                if caps.medium == smoltcp::phy::Medium::Ip {
-                    iface.update_ip_addrs(|addrs| {
-                        let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
-                        let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
-                    });
-                }
-                let sockets = SocketSet::new(vec![]);
-                Some((iface, sockets))
-            }
-        }
-    }
-
-    /// Poll smoltcp using the concrete device inside this enum.
-    fn poll_with(
-        &mut self,
-        iface: &mut Interface,
-        sockets: &mut SocketSet<'_>,
-        timestamp: Instant,
-    ) {
-        match self {
-            SmoltcpDevice::Loopback(dev) => {
-                iface.poll(timestamp, dev, sockets);
-            }
-            #[cfg(virtio)]
-            SmoltcpDevice::Virtio(dev) => {
-                iface.poll(timestamp, dev, sockets);
-            }
-        }
-    }
-
-    /// Get the poll delay using the concrete device inside this enum.
-    fn poll_delay_with(
-        &self,
-        iface: &mut Interface,
-        sockets: &SocketSet<'_>,
-        timestamp: Instant,
-    ) -> Option<smoltcp::time::Duration> {
-        match self {
-            SmoltcpDevice::Loopback(_) => iface.poll_delay(timestamp, sockets),
-            #[cfg(virtio)]
-            SmoltcpDevice::Virtio(_) => iface.poll_delay(timestamp, sockets),
-        }
-    }
-}
 
 /// L3 network interface.
 ///
 /// Bridges the link layer (L2) with the protocol layer (L4).
-/// Owns smoltcp Interface and SocketSet directly.
+/// Owns smoltcp Interface and SocketSet directly. Poll dispatch
+/// goes through `LinkLayer::poll_smoltcp()` which uses the concrete
+/// device type internally.
 pub struct NetIface {
     name: String,
-    /// Link-layer device for control operations (dyn-compatible).
+    /// Link-layer device for control and smoltcp poll dispatch.
     link: Arc<RwLock<dyn LinkLayer>>,
     ip_config: Mutex<IpAddrConfig>,
     routes: Mutex<Vec<RouteConfig>>,
-    /// Concrete device for smoltcp poll (not dyn-compatible due to GATs).
-    smoltcp_dev: Mutex<SmoltcpDevice>,
     /// smoltcp interface.
     smoltcp_iface: Rc<RefCell<Option<Interface>>>,
     /// smoltcp socket set.
@@ -185,26 +69,16 @@ pub struct NetIface {
 }
 
 impl NetIface {
-    pub(crate) fn new(name: String, link: Arc<RwLock<dyn LinkLayer>>, mut smoltcp_device: SmoltcpDevice, link_index: usize) -> Self {
-        let (smoltcp_iface, smoltcp_sockets) = smoltcp_device
-            .create_smoltcp_iface_and_sockets()
-            .map(|(iface, sockets)| (
-                Rc::new(RefCell::new(Some(iface))),
-                Rc::new(RefCell::new(Some(sockets))),
-            ))
-            .unwrap_or_else(|| (
-                Rc::new(RefCell::new(None)),
-                Rc::new(RefCell::new(None)),
-            ));
+    pub(crate) fn new(name: String, link: Arc<RwLock<dyn LinkLayer>>, link_index: usize) -> Self {
+        let (iface, sockets) = link.write().create_smoltcp_iface();
 
         NetIface {
             name,
             link,
             ip_config: Mutex::new(IpAddrConfig::new()),
             routes: Mutex::new(Vec::new()),
-            smoltcp_dev: Mutex::new(smoltcp_device),
-            smoltcp_iface,
-            smoltcp_sockets,
+            smoltcp_iface: Rc::new(RefCell::new(Some(iface))),
+            smoltcp_sockets: Rc::new(RefCell::new(Some(sockets))),
             link_index,
         }
     }
@@ -286,17 +160,16 @@ impl NetIface {
 
     /// Poll the smoltcp interface for packet I/O.
     ///
-    /// Uses the `SmoltcpDevice` enum (not `dyn LinkLayer`) because
-    /// `smoltcp::phy::Device` uses GATs and is not dyn-compatible.
-    /// Removed in Phase 2 when smoltcp is phased out.
+    /// Dispatches to `LinkLayer::poll_smoltcp()` which uses the concrete
+    /// device type internally, eliminating the `SmoltcpDevice` enum.
     pub fn poll(&self, timestamp: Instant) {
-        let mut dev = self.smoltcp_dev.lock();
         let mut iface_guard = self.smoltcp_iface.borrow_mut();
         let mut sockets_guard = self.smoltcp_sockets.borrow_mut();
         if let (Some(ref mut iface), Some(ref mut sockets)) =
             (iface_guard.as_mut(), sockets_guard.as_mut())
         {
-            dev.poll_with(iface, sockets, timestamp);
+            let mut link = self.link.write();
+            link.poll_smoltcp(timestamp, iface, sockets);
 
             // Phase 1 marker: native RX path placeholder.
             // In Phase 2, after poll(), we will:
@@ -309,14 +182,16 @@ impl NetIface {
     }
 
     /// Poll delay from smoltcp.
+    ///
+    /// `poll_delay` does not need the device (only `iface.poll_delay` is
+    /// called), so it is handled directly without going through LinkLayer.
     pub fn poll_delay(&self, timestamp: Instant) -> Option<smoltcp::time::Duration> {
-        let dev = self.smoltcp_dev.lock();
         let mut iface_guard = self.smoltcp_iface.borrow_mut();
-        let mut sockets_guard = self.smoltcp_sockets.borrow_mut();
+        let sockets_guard = self.smoltcp_sockets.borrow();
         if let (Some(iface), Some(sockets)) =
-            (iface_guard.as_mut(), sockets_guard.as_mut())
+            (iface_guard.as_mut(), sockets_guard.as_ref())
         {
-            dev.poll_delay_with(iface, sockets, timestamp)
+            iface.poll_delay(timestamp, sockets)
         } else {
             None
         }

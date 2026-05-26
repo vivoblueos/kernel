@@ -17,9 +17,12 @@
 //! Wraps `VirtIONetDevice` and implements `LinkLayer`.
 
 use alloc::string::String;
+use alloc::vec;
 
+use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium as SmoltcpMedium};
 use smoltcp::time::Instant;
+use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr};
 
 use crate::devices::net::virtio_net_device::{
     VirtIONetDevice, VirtIONetRxToken, VirtIONetTxToken,
@@ -90,5 +93,34 @@ impl LinkLayer for VirtioLink {
     fn can_recv(&self) -> bool {
         crate::devices::net::virtio_net_device::with_net_device(0, |net| net.can_recv())
             .unwrap_or(false)
+    }
+
+    fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>) {
+        let caps = self.capabilities();
+        let config = match caps.medium {
+            smoltcp::phy::Medium::Ethernet => {
+                let mac = [0x02, 0x00, 0x00, 0x00, 0x00, 0x01];
+                Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)))
+            }
+            smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
+            smoltcp::phy::Medium::Ieee802154 => todo!(),
+        };
+        let mut iface = Interface::new(
+            config,
+            &mut self.inner,
+            Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
+        );
+        if caps.medium == smoltcp::phy::Medium::Ip {
+            iface.update_ip_addrs(|addrs| {
+                let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
+                let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+            });
+        }
+        let sockets = SocketSet::new(vec![]);
+        (iface, sockets)
+    }
+
+    fn poll_smoltcp(&mut self, timestamp: Instant, iface: &mut Interface, sockets: &mut SocketSet) {
+        iface.poll(timestamp, &mut self.inner, sockets);
     }
 }

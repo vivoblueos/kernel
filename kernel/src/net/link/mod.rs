@@ -22,8 +22,10 @@
 //! uses GATs (`RxToken`, `TxToken`) and is not dyn-compatible.
 //! Concrete link types implement both `Device` and `LinkLayer` separately.
 //!
-//! When smoltcp `Interface::poll()` needs a `Device`, the concrete type
-//! is obtained via `Any::downcast_ref` from the `dyn LinkLayer`.
+//! `LinkLayer` provides `poll_smoltcp()` and `create_smoltcp_iface()` which
+//! let each concrete implementation handle the smoltcp poll cycle using its
+//! own concrete device type. This replaces the SmoltcpDevice enum that was
+//! removed in Phase 3.
 //!
 //! # Key design decisions
 //!
@@ -42,6 +44,8 @@ use core::any::Any;
 use core::fmt;
 
 use alloc::{string::String, sync::Arc, vec::Vec};
+use smoltcp::iface::{Interface, SocketSet};
+use smoltcp::time::Instant;
 use spin::RwLock;
 
 use crate::net::link::loopback::LoopbackLink;
@@ -118,6 +122,20 @@ pub trait LinkLayer: Send + Sync + Any + 'static {
     fn can_send(&self) -> bool;
     /// Whether the device can currently receive.
     fn can_recv(&self) -> bool;
+
+    /// Create a smoltcp Interface and SocketSet for this device.
+    ///
+    /// Called during `NetIface::new()` to initialize the smoltcp interface
+    /// with the correct medium, hardware address, and configuration for this
+    /// concrete device type.
+    fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>);
+
+    /// Poll the smoltcp Interface using this device's concrete Device impl.
+    ///
+    /// Each concrete `LinkLayer` type implements `smoltcp::phy::Device`
+    /// privately and calls `iface.poll(timestamp, &mut self.inner, sockets)`
+    /// here. This replaces the `SmoltcpDevice` enum dispatch.
+    fn poll_smoltcp(&mut self, timestamp: Instant, iface: &mut Interface, sockets: &mut SocketSet);
 
     /// Optional: return a reference to this device's `WifiOps` implementation.
     fn as_wifi(&mut self) -> Option<&mut dyn WifiOps> {
