@@ -14,7 +14,7 @@
 
 use crate::net::{
     connection::{Operation, OperationIPCReply, OperationResult},
-    net_interface::NetInterface,
+    iface::NetIface,
     net_manager::NetworkManager,
     port_generator::PORT_GENERATOR,
     socket::{
@@ -30,25 +30,22 @@ use core::{
     sync::atomic::AtomicUsize,
 };
 use smoltcp::{
-    iface::{Interface, SocketHandle, SocketSet},
+    iface::{Interface, SocketHandle},
     socket::tcp::{self, State},
     wire::{IpAddress, IpEndpoint, IpListenEndpoint},
 };
-pub struct TcpSocket<'a> {
+pub struct TcpSocket {
     socket_fd: SocketFd,
     socket_domain: SocketDomain,
     is_shutdown: Rc<Cell<bool>>,
-    network_manager: Rc<RefCell<NetworkManager<'a>>>,
+    network_manager: Rc<RefCell<NetworkManager>>,
     smoltcp_socket_handle: Option<SocketHandle>,
-    smoltcp_interface: Option<Rc<RefCell<NetInterface<'a>>>>,
+    smoltcp_interface: Option<Rc<NetIface>>,
 }
 
-impl<'a> TcpSocket<'a>
-where
-    'a: 'static,
-{
+impl TcpSocket {
     pub fn new(
-        network_manager: Rc<RefCell<NetworkManager<'a>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         socket_fd: SocketFd,
         socket_domain: SocketDomain,
     ) -> Self {
@@ -76,8 +73,7 @@ where
             tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer)
         };
 
-        // Save socket handle
-        let mut interface = interface.borrow_mut();
+        // Save socket handle via NetIface::add_socket
         if let Some(socket_handle) = interface.add_socket(tcp_socket) {
             self.smoltcp_socket_handle.replace(socket_handle);
             Some(socket_handle)
@@ -88,27 +84,22 @@ where
 
     pub fn with<F>(&mut self, f: F) -> SocketResult
     where
-        F: FnOnce(&mut tcp::Socket<'a>, &mut Interface) -> SocketResult,
+        F: FnOnce(&mut tcp::Socket<'static>, &mut Interface) -> SocketResult,
     {
-        if let Some(interface) = &self.smoltcp_interface {
-            let mut interface = interface.borrow_mut();
-            let socket_sets = interface.socket_sets_mut();
-            let mut socket_sets = socket_sets.borrow_mut();
-
-            let socket = socket_sets.get_mut::<tcp::Socket>(
-                self.smoltcp_socket_handle
-                    .ok_or(SocketError::InvalidHandle)?,
-            );
-
-            f(socket, &mut interface.inner_interface_mut().borrow_mut())
-        } else {
-            Err(SocketError::InterfaceNoAvailable)
+        match &self.smoltcp_interface {
+            Some(iface) => {
+                let handle = self
+                    .smoltcp_socket_handle
+                    .ok_or(SocketError::InvalidHandle)?;
+                iface.with_socket::<tcp::Socket<'static>, F, usize>(handle, f)
+            }
+            None => Err(SocketError::InterfaceNoAvailable),
         }
     }
 }
 
-impl PosixSocket for TcpSocket<'static> {
-    fn bind_interface(&mut self, interface: Rc<RefCell<NetInterface<'static>>>) {
+impl PosixSocket for TcpSocket {
+    fn bind_interface(&mut self, interface: Rc<NetIface>) {
         // Save interface
         self.smoltcp_interface.replace(interface.clone());
     }
@@ -339,25 +330,21 @@ impl PosixSocket for TcpSocket<'static> {
     fn shutdown(&self) -> SocketResult {
         self.is_shutdown.set(true);
 
-        if let Some(interface) = &self.smoltcp_interface {
-            let mut interface = interface.borrow_mut();
-            let socket_sets = interface.socket_sets_mut();
-            let mut socket_sets = socket_sets.borrow_mut();
-
-            let socket = socket_sets.get_mut::<tcp::Socket>(
-                self.smoltcp_socket_handle
-                    .ok_or(SocketError::InvalidHandle)?,
-            );
-
-            socket.close();
-
-            let _ = socket_sets.remove(
-                self.smoltcp_socket_handle
-                    .ok_or(SocketError::InvalidHandle)?,
-            );
-            Ok(0)
-        } else {
-            Err(SocketError::InterfaceNoAvailable)
+        match &self.smoltcp_interface {
+            Some(iface) => {
+                let handle = self
+                    .smoltcp_socket_handle
+                    .ok_or(SocketError::InvalidHandle)?;
+                // Close the socket first
+                let _ = iface.with_socket::<tcp::Socket<'static>, _, i32>(handle, |socket, _| {
+                    socket.close();
+                    Ok(0i32)
+                });
+                // Remove from socket set
+                iface.remove_socket(handle);
+                Ok(0)
+            }
+            None => Err(SocketError::InterfaceNoAvailable),
         }
     }
 

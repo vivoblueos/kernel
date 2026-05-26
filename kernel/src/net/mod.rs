@@ -17,14 +17,12 @@ pub(crate) mod connection_err;
 pub(crate) mod error;
 pub(crate) mod iface;
 pub(crate) mod link;
-pub(crate) mod net_interface;
 pub(crate) mod net_manager;
 pub(crate) mod packet;
 pub(crate) mod port_generator;
 pub(crate) mod protocol;
 pub(crate) mod socket;
 pub mod syscalls;
-pub(crate) mod compat;
 pub(crate) mod types;
 
 // Re-export core types for backward compatibility.

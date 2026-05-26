@@ -14,17 +14,11 @@
 
 use core::cell::RefCell;
 
-use crate::{
-    devices::virtio::{self, VirtioHal},
-    net::net_interface::NetInterface,
-    time,
-};
-use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
+use crate::devices::virtio::{self, VirtioHal};
+use alloc::{boxed::Box, vec, vec::Vec};
 use smoltcp::{
-    iface::{Config, Interface, SocketSet},
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
-    time::{Duration, Instant},
-    wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address},
+    time::Instant,
 };
 use spin::rwlock::RwLock;
 use virtio_drivers::{
@@ -66,62 +60,6 @@ impl VirtIONetDevice {
         Self {
             net_device_index: device_index,
         }
-    }
-}
-
-impl NetInterface<'_> {
-    pub fn create_virtio_device() -> Self {
-        let mut inner: VirtIONetDevice = VirtIONetDevice::new(0);
-        // Create Device
-        let mut socket_set = SocketSet::new(vec![]);
-
-        // Get MAC address from VirtIO device
-        let mac_addr = with_net_device(0, |net| net.mac_address())
-            .unwrap_or([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
-
-        // Create interface
-        let mut config = match inner.capabilities().medium {
-            Medium::Ethernet => Config::new(EthernetAddress(mac_addr).into()),
-            Medium::Ip => Config::new(smoltcp::wire::HardwareAddress::Ip),
-            Medium::Ieee802154 => todo!(),
-        };
-
-        let mut interface = Interface::new(
-            config,
-            &mut inner,
-            Instant::from_millis(i64::try_from(time::now().as_millis()).unwrap_or(0)),
-        );
-
-        // Configure static guest IP (QEMU user networking)
-        interface.update_ip_addrs(|ip_addrs| {
-            // TODO config static ip by kconfig
-            if ip_addrs
-                .push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24))
-                .is_err()
-            {
-                log::error!("Add ip addrs to virtio net device fail");
-            }
-        });
-
-        // Set gateway to reach host
-        // In QEMU user networking, the ipv4 gateway is 10.0.2.2
-        if interface
-            .routes_mut()
-            .add_default_ipv4_route(Ipv4Address::new(10, 0, 2, 2))
-            .is_err()
-        {
-            {
-                log::error!("Add default ipv4 route to virtio net device fail");
-            }
-        }
-
-        let device = Rc::new(RefCell::new(
-            crate::net::net_interface::NetDevice::VirtioNetDevice(inner),
-        ));
-
-        let interface = Rc::new(RefCell::new(interface));
-        let socket_set = Rc::new(RefCell::new(socket_set));
-        NetInterface::new("VirtIONet".into(), device, interface, socket_set)
     }
 }
 

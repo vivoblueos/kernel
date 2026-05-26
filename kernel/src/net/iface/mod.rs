@@ -31,22 +31,26 @@
 pub(crate) mod addr;
 pub(crate) mod control;
 
+use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use smoltcp::iface::{Interface, SocketSet};
+use core::cell::RefCell;
+use smoltcp::iface::{Interface, SocketHandle, SocketSet};
+use smoltcp::socket::AnySocket;
 use smoltcp::time::Instant;
 use smoltcp::wire::IpCidr;
 use spin::{Mutex, RwLock};
 
 use self::addr::{IpAddrConfig, RouteConfig};
 pub(crate) use self::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
-use crate::net::compat::iface_bridge::create_smoltcp_iface;
-use crate::net::link::{LinkKind, LinkLayer, HwAddr, Medium};
+use crate::net::link::{LinkLayer, HwAddr, Medium};
 use crate::net::link::loopback::LoopbackLink;
 #[cfg(virtio)]
 use crate::net::link::virtio::VirtioLink;
+
+use crate::net::socket::socket_err::SocketError;
 
 /// Concrete device wrapper for smoltcp compatibility.
 ///
@@ -64,18 +68,63 @@ pub(crate) enum SmoltcpDevice {
 }
 
 impl SmoltcpDevice {
-    /// Create smoltcp Interface + SocketSet for the bridge.
+    /// Create smoltcp Interface + SocketSet.
     /// Called during NetIface initialization.
     pub fn create_smoltcp_iface_and_sockets(&mut self) -> Option<(Interface, SocketSet<'static>)> {
         match self {
             SmoltcpDevice::Loopback(ref mut dev) => {
-                let iface = create_smoltcp_iface(dev, None);
+                use smoltcp::iface::Config;
+                use smoltcp::phy::Device;
+                use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
+
+                let caps = dev.capabilities();
+                let config = match caps.medium {
+                    smoltcp::phy::Medium::Ethernet => Config::new(HardwareAddress::Ethernet(
+                        smoltcp::wire::EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
+                    )),
+                    smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
+                    smoltcp::phy::Medium::Ieee802154 => todo!(),
+                };
+                let mut iface = Interface::new(
+                    config,
+                    dev,
+                    Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
+                );
+                if caps.medium == smoltcp::phy::Medium::Ip {
+                    iface.update_ip_addrs(|addrs| {
+                        let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
+                        let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+                    });
+                }
                 let sockets = SocketSet::new(vec![]);
                 Some((iface, sockets))
             }
             #[cfg(virtio)]
             SmoltcpDevice::Virtio(ref mut dev) => {
-                let iface = create_smoltcp_iface(dev, None);
+                use smoltcp::iface::Config;
+                use smoltcp::phy::Device;
+                use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr};
+
+                let caps = dev.capabilities();
+                let config = match caps.medium {
+                    smoltcp::phy::Medium::Ethernet => {
+                        let mac = [0x02, 0x00, 0x00, 0x00, 0x00, 0x01];
+                        Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)))
+                    }
+                    smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
+                    smoltcp::phy::Medium::Ieee802154 => todo!(),
+                };
+                let mut iface = Interface::new(
+                    config,
+                    dev,
+                    Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
+                );
+                if caps.medium == smoltcp::phy::Medium::Ip {
+                    iface.update_ip_addrs(|addrs| {
+                        let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
+                        let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+                    });
+                }
                 let sockets = SocketSet::new(vec![]);
                 Some((iface, sockets))
             }
@@ -117,9 +166,8 @@ impl SmoltcpDevice {
 
 /// L3 network interface.
 ///
-/// Bridges the link layer (L2) with the protocol layer (L4). During the
-/// smoltcp migration period, `NetIface` also wraps a smoltcp `Interface`
-/// and `SocketSet` for backward compatibility.
+/// Bridges the link layer (L2) with the protocol layer (L4).
+/// Owns smoltcp Interface and SocketSet directly.
 pub struct NetIface {
     name: String,
     /// Link-layer device for control operations (dyn-compatible).
@@ -128,24 +176,35 @@ pub struct NetIface {
     routes: Mutex<Vec<RouteConfig>>,
     /// Concrete device for smoltcp poll (not dyn-compatible due to GATs).
     smoltcp_dev: Mutex<SmoltcpDevice>,
-    /// smoltcp bridge — only used during Phase 0 migration.
-    smoltcp_iface: Mutex<Option<smoltcp::iface::Interface>>,
-    /// smoltcp socket set — only used during Phase 0 migration.
-    smoltcp_sockets: Mutex<Option<SocketSet<'static>>>,
+    /// smoltcp interface.
+    smoltcp_iface: Rc<RefCell<Option<Interface>>>,
+    /// smoltcp socket set.
+    smoltcp_sockets: Rc<RefCell<Option<SocketSet<'static>>>>,
     /// Index into `LINK_REGISTRY`.
     link_index: usize,
 }
 
 impl NetIface {
-    pub fn new(name: String, link: Arc<RwLock<dyn LinkLayer>>, smoltcp_device: SmoltcpDevice, link_index: usize) -> Self {
+    pub(crate) fn new(name: String, link: Arc<RwLock<dyn LinkLayer>>, mut smoltcp_device: SmoltcpDevice, link_index: usize) -> Self {
+        let (smoltcp_iface, smoltcp_sockets) = smoltcp_device
+            .create_smoltcp_iface_and_sockets()
+            .map(|(iface, sockets)| (
+                Rc::new(RefCell::new(Some(iface))),
+                Rc::new(RefCell::new(Some(sockets))),
+            ))
+            .unwrap_or_else(|| (
+                Rc::new(RefCell::new(None)),
+                Rc::new(RefCell::new(None)),
+            ));
+
         NetIface {
             name,
             link,
             ip_config: Mutex::new(IpAddrConfig::new()),
             routes: Mutex::new(Vec::new()),
             smoltcp_dev: Mutex::new(smoltcp_device),
-            smoltcp_iface: Mutex::new(None),
-            smoltcp_sockets: Mutex::new(None),
+            smoltcp_iface,
+            smoltcp_sockets,
             link_index,
         }
     }
@@ -164,21 +223,57 @@ impl NetIface {
 
     /// Set the smoltcp interface and socket set (bridge during migration).
     pub fn set_smoltcp(&self, iface: Interface, sockets: SocketSet<'static>) {
-        self.smoltcp_iface.lock().replace(iface);
-        self.smoltcp_sockets.lock().replace(sockets);
+        self.smoltcp_iface.replace(Some(iface));
+        self.smoltcp_sockets.replace(Some(sockets));
     }
 
-    pub fn smoltcp_iface(&self) -> &Mutex<Option<Interface>> {
+    pub fn smoltcp_iface(&self) -> &Rc<RefCell<Option<Interface>>> {
         &self.smoltcp_iface
     }
 
-    pub fn smoltcp_sockets(&self) -> &Mutex<Option<SocketSet<'static>>> {
+    pub fn smoltcp_sockets(&self) -> &Rc<RefCell<Option<SocketSet<'static>>>> {
         &self.smoltcp_sockets
+    }
+
+    /// Add a smoltcp socket to this interface's socket set.
+    pub fn add_socket<T: AnySocket<'static>>(&self, socket: T) -> Option<SocketHandle> {
+        self.smoltcp_sockets
+            .borrow_mut()
+            .as_mut()
+            .map(|sockets| sockets.add(socket))
+    }
+
+    /// Execute a closure with a smoltcp socket and Interface reference.
+    ///
+    /// Similar to the `with()` pattern used in TCP/UDP/ICMP sockets, but
+    /// as a method on `NetIface` so sockets don't need to manage the locking.
+    pub fn with_socket<T, F, R>(&self, handle: SocketHandle, f: F) -> Result<R, SocketError>
+    where
+        T: AnySocket<'static>,
+        F: FnOnce(&mut T, &mut Interface) -> Result<R, SocketError>,
+    {
+        let mut sockets = self.smoltcp_sockets.borrow_mut();
+        let sockets = sockets
+            .as_mut()
+            .ok_or(SocketError::InterfaceNoAvailable)?;
+        let socket = sockets.get_mut::<T>(handle);
+        let mut iface = self.smoltcp_iface.borrow_mut();
+        let iface = iface
+            .as_mut()
+            .ok_or(SocketError::InterfaceNoAvailable)?;
+        f(socket, iface)
+    }
+
+    /// Remove a socket from this interface's socket set.
+    pub fn remove_socket(&self, handle: SocketHandle) {
+        if let Some(ref mut sockets) = *self.smoltcp_sockets.borrow_mut() {
+            sockets.remove(handle);
+        }
     }
 
     /// Check if the interface contains an IP address.
     pub fn contains_addr(&self, addr: smoltcp::wire::IpAddress) -> bool {
-        if let Some(ref iface) = *self.smoltcp_iface.lock() {
+        if let Some(ref iface) = *self.smoltcp_iface.borrow() {
             iface.ip_addrs().iter().any(|cidr| cidr.contains_addr(&addr))
         } else {
             self.ip_config
@@ -196,8 +291,8 @@ impl NetIface {
     /// Removed in Phase 2 when smoltcp is phased out.
     pub fn poll(&self, timestamp: Instant) {
         let mut dev = self.smoltcp_dev.lock();
-        let mut iface_guard = self.smoltcp_iface.lock();
-        let mut sockets_guard = self.smoltcp_sockets.lock();
+        let mut iface_guard = self.smoltcp_iface.borrow_mut();
+        let mut sockets_guard = self.smoltcp_sockets.borrow_mut();
         if let (Some(ref mut iface), Some(ref mut sockets)) =
             (iface_guard.as_mut(), sockets_guard.as_mut())
         {
@@ -216,8 +311,8 @@ impl NetIface {
     /// Poll delay from smoltcp.
     pub fn poll_delay(&self, timestamp: Instant) -> Option<smoltcp::time::Duration> {
         let dev = self.smoltcp_dev.lock();
-        let mut iface_guard = self.smoltcp_iface.lock();
-        let mut sockets_guard = self.smoltcp_sockets.lock();
+        let mut iface_guard = self.smoltcp_iface.borrow_mut();
+        let mut sockets_guard = self.smoltcp_sockets.borrow_mut();
         if let (Some(iface), Some(sockets)) =
             (iface_guard.as_mut(), sockets_guard.as_mut())
         {
@@ -229,7 +324,7 @@ impl NetIface {
 
     /// Add an IP address to the interface.
     pub fn add_address(&self, cidr: IpCidr) {
-        if let Some(ref mut iface) = *self.smoltcp_iface.lock() {
+        if let Some(ref mut iface) = *self.smoltcp_iface.borrow_mut() {
             iface.update_ip_addrs(|addrs| { addrs.push(cidr); });
         }
         self.ip_config.lock().addresses.push(cidr);

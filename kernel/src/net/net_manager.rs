@@ -28,7 +28,6 @@ use crate::{
         link::LinkKind,
         link::LinkLayer,
         link::LINK_REGISTRY,
-        net_interface::NetInterface,
         protocol::{iana, PROTOCOL_REGISTRY},
         socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket, PosixSocket},
         SocketDomain, SocketFd, SocketProtocol, SocketType,
@@ -57,55 +56,64 @@ use spin;
 
 const DEFAULT_DELAY_TIME_IN_MILLIS: u64 = 100;
 
-pub struct NetworkManager<'a> {
-    net_interfaces: Vec<Rc<RefCell<NetInterface<'a>>>>,
-    net_ifaces: Vec<NetIface>,
+pub struct NetworkManager {
+    net_ifaces: Vec<Rc<NetIface>>,
     socket_maps: BTreeMap<SocketFd, Rc<RefCell<dyn PosixSocket>>>,
-    default_interface: Option<Rc<RefCell<NetInterface<'a>>>>,
+    default_net_iface: Option<Rc<NetIface>>,
 }
 
-impl<'a> NetworkManager<'a>
-where
-    'a: 'static,
+impl NetworkManager
 {
     // Using Rc<RefCell<T>> while `static T` need T to impl Sync in rust
-    pub fn init() -> Rc<RefCell<NetworkManager<'a>>> {
+    pub fn init() -> Rc<RefCell<NetworkManager>> {
         let manager = NetworkManager::new();
         Rc::new(RefCell::new(manager))
     }
 
     // It will only access by a standalone tcp/ip stack thread, so no need for Critical Section .
     fn new() -> Self {
-        let mut net_interfaces = Vec::new();
+        let mut net_ifaces = Vec::new();
         let socket_maps = BTreeMap::new();
-        let mut default_interface = None;
+        let mut default_net_iface = None;
 
         // Add Loopback interface which always exist
-        let dev = NetInterface::create_loopback_interface();
-        let rc = Rc::new(RefCell::new(dev));
-        log::debug!("Add NetDevice : Loopback");
-
-        net_interfaces.push(rc.clone());
-        // Set loopback as default net interface
-        default_interface.replace(rc);
+        let link_rwlock = Arc::new(spin::RwLock::new(LoopbackLink::new())) as Arc<spin::RwLock<dyn LinkLayer>>;
+        let smoltcp_dev = SmoltcpDevice::Loopback(LoopbackLink::new());
+        let lo_iface = Rc::new(NetIface::new(
+            "lo".into(),
+            link_rwlock,
+            smoltcp_dev,
+            0,
+        ));
+        net_ifaces.push(lo_iface.clone());
+        default_net_iface.replace(lo_iface);
+        log::debug!("Add NetIface(Lo)");
 
         // Add other interfaces which may not exist
         #[cfg(virtio)]
         if net_dev_exist() {
-            let dev = NetInterface::create_virtio_device();
-            let rc = Rc::new(RefCell::new(dev));
-            net_interfaces.push(rc.clone());
-
-            // Using net interface other than loopback as default interface, later we need to setup default interface by net dev api
-            default_interface.replace(rc);
-            log::debug!("Add NetDevice : virtio-net");
+            // Create NetIface for virtio-net
+            let link_arc = LINK_REGISTRY.find_by_name("virtio-net").unwrap_or_else(|| {
+                let fallback = Arc::new(VirtioLink::new(0)) as Arc<dyn LinkLayer>;
+                LINK_REGISTRY.register(fallback.clone());
+                fallback
+            });
+            let smoltcp_dev = SmoltcpDevice::Virtio(VirtioLink::new(0));
+            let virtio_iface = Rc::new(NetIface::new(
+                "virtio-net".into(),
+                link_arc,
+                smoltcp_dev,
+                1,
+            ));
+            net_ifaces.push(virtio_iface.clone());
+            default_net_iface.replace(virtio_iface);
+            log::debug!("Add NetIface(Virtio)");
         }
 
         Self {
-            net_interfaces,
-            net_ifaces: Vec::new(),
+            net_ifaces,
             socket_maps,
-            default_interface,
+            default_net_iface,
         }
     }
 
@@ -137,7 +145,7 @@ where
     pub fn create_posix_socket(
         &mut self,
         socket_fd: SocketFd,
-        network_manager: Rc<RefCell<NetworkManager<'a>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         socket_domain: SocketDomain,
         socket_type: SocketType,
         socket_protocol: SocketProtocol,
@@ -208,10 +216,10 @@ where
     pub fn bind_defualt_smoltcp_interface(&self, socket_fd: SocketFd) {
         if let Some(socket) = self.socket_maps.get(&socket_fd) {
             // Use default net interface when we find no subnet match with remote_addr
-            if let Some(interface) = self.default_interface.clone() {
+            if let Some(interface) = self.default_net_iface.clone() {
                 let mut socket = socket.borrow_mut();
                 socket.bind_interface(interface.clone());
-                log::debug!("Socket Fd={} binding to {}", socket_fd, interface.borrow());
+                log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
             } else {
                 log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
             }
@@ -220,29 +228,29 @@ where
 
     pub fn bind_smoltcp_interface(&self, socket_fd: SocketFd, binding_addr: IpAddress) {
         if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            self.net_interfaces
+            self.net_ifaces
                 .iter()
-                .find(|dev| dev.borrow().contains_addr(binding_addr))
+                .find(|iface| iface.contains_addr(binding_addr))
                 .map_or_else(
                     || {
                         // Use default net interface when we find no subnet match with remote_addr
-                        if let Some(interface) = self.default_interface.clone() {
+                        if let Some(interface) = self.default_net_iface.clone() {
                             let mut socket = socket.borrow_mut();
                             socket.bind_interface(interface.clone());
                             log::debug!(
                                 "Socket Fd={} binding to {}",
                                 socket_fd,
-                                interface.borrow()
+                                interface
                             );
                         } else {
                             log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
                         }
                     },
-                    |dev| {
+                    |iface| {
                         // Otherwise choose the match net interface
                         let mut socket = socket.borrow_mut();
-                        socket.bind_interface(dev.clone());
-                        log::debug!("Socket Fd={} binding to {}", socket_fd, dev.borrow());
+                        socket.bind_interface(iface.clone());
+                        log::debug!("Socket Fd={} binding to {}", socket_fd, iface);
                     },
                 )
         }
@@ -289,11 +297,11 @@ where
     }
 
     pub fn loop_within_single_thread<F>(
-        network_manager: Rc<RefCell<NetworkManager<'static>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         timeout_millis: usize,
         mut f: F,
     ) where
-        F: FnMut(Rc<RefCell<NetworkManager<'a>>>) -> bool,
+        F: FnMut(Rc<RefCell<NetworkManager>>) -> bool,
     {
         let is_forever = timeout_millis == 0;
         let timeout = sysclk::now().as_millis() as usize + timeout_millis;
@@ -311,27 +319,12 @@ where
             {
                 let network_manager = network_manager.borrow();
 
-                // Old path: poll NetInterfaces (unchanged)
-                if let Err(e) = network_manager.net_interfaces.iter().try_for_each(
-                    |interface| -> Result<(), String> {
-                        let millis_i64 =
-                            i64::try_from(sysclk::now().as_millis()).map_err(|e| e.to_string())?;
-                        interface
-                            .borrow_mut()
-                            .poll(Instant::from_millis(millis_i64));
-                        Ok(())
-                    },
-                ) {
-                    log::error!("[NetworkManager]: looper exit with poll error {}", e);
-                    break;
-                }
-
-                // Phase 1: poll NetIface instances alongside old path
-                // This runs in parallel with the old NetInterface poll above,
-                // enabling the dual-path architecture for migration.
+                // Phase 2a: poll NetIface instances (they bridge to NetInterface
+                // via bridge_iface, so the underlying smoltcp state is shared).
+                // Replaces the old net_interfaces direct poll.
                 if let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) {
-                    for interface in network_manager.net_interfaces.iter() {
-                        interface.borrow_mut().poll(Instant::from_millis(millis_i64));
+                    for iface in network_manager.net_ifaces.iter() {
+                        iface.poll(Instant::from_millis(millis_i64));
                     }
                 }
             }
@@ -346,48 +339,18 @@ where
             {
                 let network_manager = network_manager.borrow();
                 let sleep_time = network_manager
-                    .net_interfaces
+                    .net_ifaces
                     .iter()
-                    .map(|interface| {
+                    .map(|iface| {
                         let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) else {
-                            log::error!("[NetworkManager]: Interface poll_delay get ms fail");
                             return DEFAULT_DELAY_TIME_IN_MILLIS;
                         };
-
-                        match interface
-                            .borrow_mut()
-                            .poll_delay(Instant::from_millis(millis_i64))
-                        {
-                            Some(Duration::ZERO) => {
-                                log::debug!("[NetworkManager]: Interface resuming");
-                                // Do next poll immediately
-                                0
-                            }
-                            Some(delay) => {
-                                log::debug!("[NetworkManager]: Interface poll delay for {}", delay);
-                                // Do next poll after delay.millis()
-                                delay.millis()
-                            }
-                            None => {
-                                // Wait until there is a task before the next poll
-                                // TODO add trigger when enqueue task
-                                DEFAULT_DELAY_TIME_IN_MILLIS
-                            }
+                        match iface.poll_delay(Instant::from_millis(millis_i64)) {
+                            Some(smoltcp::time::Duration::ZERO) => 0,
+                            Some(delay) => delay.millis() as u64,
+                            None => DEFAULT_DELAY_TIME_IN_MILLIS,
                         }
                     })
-                    // Phase 1: also compute delays from NetIface instances
-                    .chain(
-                        network_manager.net_ifaces.iter().map(|iface| {
-                            let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) else {
-                                return DEFAULT_DELAY_TIME_IN_MILLIS;
-                            };
-                            match iface.poll_delay(Instant::from_millis(millis_i64)) {
-                                Some(smoltcp::time::Duration::ZERO) => 0,
-                                Some(delay) => delay.millis() as u64,
-                                None => DEFAULT_DELAY_TIME_IN_MILLIS,
-                            }
-                        }),
-                    )
                     .min()
                     .unwrap_or(DEFAULT_DELAY_TIME_IN_MILLIS);
 
@@ -412,7 +375,7 @@ extern "C" fn net_stack_main_loop() {
     NetworkManager::loop_within_single_thread(
         network_manager.clone(),
         0,
-        |network_manager: Rc<RefCell<NetworkManager<'static>>>| -> bool {
+        |network_manager: Rc<RefCell<NetworkManager>>| -> bool {
             // msg loop , one msg at a time
             Connection::handle_socket_msg(network_manager)
         },

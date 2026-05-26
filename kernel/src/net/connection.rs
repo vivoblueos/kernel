@@ -391,7 +391,7 @@ impl Connection {
     }
 
     fn with_posix_socket<F: FnOnce(Rc<RefCell<dyn PosixSocket>>) -> Option<OperationResult>>(
-        network_manager: Rc<RefCell<NetworkManager<'static>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         socket_fd: i32,
         ipc_reply: Arc<OperationIPCReply>,
         f: F,
@@ -410,7 +410,7 @@ impl Connection {
         }
     }
 
-    pub fn handle_socket_msg(network_manager: Rc<RefCell<NetworkManager<'static>>>) -> bool {
+    pub fn handle_socket_msg(network_manager: Rc<RefCell<NetworkManager>>) -> bool {
         // one msg at a time , TODO batch
         if let Some(socket_request) = NETSTACK_QUEUE.dequeue() {
             match socket_request {
