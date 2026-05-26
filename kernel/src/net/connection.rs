@@ -335,10 +335,7 @@ impl Connection {
             ipc_reply: self.ipc_reply.clone(),
         };
 
-        log::debug!(
-            "[Socket {}] NetControl request queued",
-            self.socket_fd
-        );
+        log::debug!("[Socket {}] NetControl request queued", self.socket_fd);
 
         self.ipc_reply.queue_and_wait(control_task)
     }
@@ -720,24 +717,17 @@ impl Connection {
                         },
                     );
                 }
-                Operation::NetControl {
-                    cmd,
-                    ipc_reply,
-                } => {
+                Operation::NetControl { cmd, ipc_reply } => {
                     log::debug!("[Connection] handle NetControl");
 
-                    let result = network_manager
-                        .borrow()
-                        .handle_net_control(cmd);
+                    let result = network_manager.borrow().handle_net_control(cmd);
 
-                    let result = result
-                        .map(|_| 0)
-                        .map_err(|e| {
-                            SocketError::InvalidParam(
-                                format!("net_control: {:?}", e),
-                                "NetIfaceControl".into(),
-                            )
-                        });
+                    let result = result.map(|_| 0).map_err(|e| {
+                        SocketError::InvalidParam(
+                            format!("net_control: {:?}", e),
+                            "NetIfaceControl".into(),
+                        )
+                    });
                     ipc_reply.wakeup_client(result, 0);
                 }
             }

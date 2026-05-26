@@ -14,15 +14,14 @@
 
 //! TCP protocol implementation.
 
-use alloc::rc::Rc;
-use alloc::string::String;
+use alloc::{rc::Rc, string::String};
 use core::cell::RefCell;
 
-use crate::net::protocol::{Protocol, iana};
-use crate::net::socket::socket_err::SocketError;
-use crate::net::socket::tcp::TcpSocket;
-use crate::net::socket::PosixSocket;
-use crate::net::types::{SocketDomain, SocketFd, SocketType};
+use crate::net::{
+    protocol::{iana, Protocol},
+    socket::{socket_err::SocketError, tcp::TcpSocket, PosixSocket},
+    types::{SocketDomain, SocketFd, SocketType},
+};
 
 /// TCP protocol (IANA protocol number 6).
 pub struct TcpProtocol;

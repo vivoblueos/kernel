@@ -21,12 +21,11 @@ use crate::{
     config::MAX_THREAD_PRIORITY,
     net::{
         connection::Connection,
-        iface::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
-        iface::NetIface,
-        link::loopback::LoopbackLink,
-        link::LinkKind,
-        link::LinkLayer,
-        link::LINK_REGISTRY,
+        iface::{
+            control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
+            NetIface,
+        },
+        link::{loopback::LoopbackLink, LinkKind, LinkLayer, LINK_REGISTRY},
         protocol::{iana, PROTOCOL_REGISTRY},
         socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket, PosixSocket},
         SocketDomain, SocketFd, SocketProtocol, SocketType,
@@ -61,8 +60,7 @@ pub struct NetworkManager {
     default_net_iface: Option<Rc<NetIface>>,
 }
 
-impl NetworkManager
-{
+impl NetworkManager {
     // Using Rc<RefCell<T>> while `static T` need T to impl Sync in rust
     pub fn init() -> Rc<RefCell<NetworkManager>> {
         let manager = NetworkManager::new();
@@ -76,12 +74,9 @@ impl NetworkManager
         let mut default_net_iface = None;
 
         // Add Loopback interface which always exist
-        let link_rwlock = Arc::new(spin::RwLock::new(LoopbackLink::new())) as Arc<spin::RwLock<dyn LinkLayer>>;
-        let lo_iface = Rc::new(NetIface::new(
-            "lo".into(),
-            link_rwlock,
-            0,
-        ));
+        let link_rwlock =
+            Arc::new(spin::RwLock::new(LoopbackLink::new())) as Arc<spin::RwLock<dyn LinkLayer>>;
+        let lo_iface = Rc::new(NetIface::new("lo".into(), link_rwlock, 0));
         net_ifaces.push(lo_iface.clone());
         default_net_iface.replace(lo_iface);
         log::debug!("Add NetIface(Lo)");
@@ -95,11 +90,7 @@ impl NetworkManager
                 LINK_REGISTRY.register(fallback.clone());
                 fallback
             });
-            let virtio_iface = Rc::new(NetIface::new(
-                "virtio-net".into(),
-                link_arc,
-                1,
-            ));
+            let virtio_iface = Rc::new(NetIface::new("virtio-net".into(), link_arc, 1));
             net_ifaces.push(virtio_iface.clone());
             default_net_iface.replace(virtio_iface);
             log::debug!("Add NetIface(Virtio)");
@@ -148,26 +139,28 @@ impl NetworkManager
         let iana_proto = socket_protocol.iana();
         if PROTOCOL_REGISTRY.contains_key(socket_type, iana_proto) {
             let socket: Rc<RefCell<dyn PosixSocket>> = match iana_proto {
-                iana::TCP => {
-                    Rc::new(RefCell::new(TcpSocket::new(
-                        network_manager.clone(), socket_fd, socket_domain,
-                    )))
-                }
-                iana::UDP => {
-                    Rc::new(RefCell::new(UdpSocket::new(
-                        network_manager.clone(), socket_fd, socket_domain,
-                    )))
-                }
-                iana::ICMP | iana::ICMPV6 => {
-                    Rc::new(RefCell::new(IcmpSocket::new(
-                        network_manager.clone(), socket_fd,
-                    )))
-                }
+                iana::TCP => Rc::new(RefCell::new(TcpSocket::new(
+                    network_manager.clone(),
+                    socket_fd,
+                    socket_domain,
+                ))),
+                iana::UDP => Rc::new(RefCell::new(UdpSocket::new(
+                    network_manager.clone(),
+                    socket_fd,
+                    socket_domain,
+                ))),
+                iana::ICMP | iana::ICMPV6 => Rc::new(RefCell::new(IcmpSocket::new(
+                    network_manager.clone(),
+                    socket_fd,
+                ))),
                 _ => return -1,
             };
             self.socket_maps.insert(socket_fd, socket);
-            log::debug!("[NetManager] socket {} created via ProtocolRegistry dispatch (proto={})",
-                socket_fd, iana_proto);
+            log::debug!(
+                "[NetManager] socket {} created via ProtocolRegistry dispatch (proto={})",
+                socket_fd,
+                iana_proto
+            );
             return socket_fd;
         }
 
@@ -231,11 +224,7 @@ impl NetworkManager
                         if let Some(interface) = self.default_net_iface.clone() {
                             let mut socket = socket.borrow_mut();
                             socket.bind_interface(interface.clone());
-                            log::debug!(
-                                "Socket Fd={} binding to {}",
-                                socket_fd,
-                                interface
-                            );
+                            log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
                         } else {
                             log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
                         }
@@ -259,33 +248,31 @@ impl NetworkManager
     /// Phase 0: this creates a transient `NetIface` wrapping the link.
     /// In a later phase `NetIface` instances will be persistent in
     /// `NetworkManager`.
-    pub fn handle_net_control(&self, cmd: NetIfaceControl) -> Result<NetIfaceResult, NetIfaceError> {
-        let link_arc = LINK_REGISTRY
-            .get(0)
-            .ok_or(NetIfaceError::DeviceNotFound)?;
+    pub fn handle_net_control(
+        &self,
+        cmd: NetIfaceControl,
+    ) -> Result<NetIfaceResult, NetIfaceError> {
+        let link_arc = LINK_REGISTRY.get(0).ok_or(NetIfaceError::DeviceNotFound)?;
 
         // Phase 0: for now, only handle simple queries that don't require
         // a full NetIface. The NetIface construction with RwLock<dyn LinkLayer>
         // requires concrete type ownership which we don't have from the Arc.
         // Full NetIface dispatch will be wired in Step 8.
         match cmd {
-            NetIfaceControl::GetFlags => {
-                Ok(NetIfaceResult::Flags(InterfaceFlags {
-                    up: link_arc.can_send() || link_arc.can_recv(),
-                    running: true,
-                    promiscuous: false,
-                }))
-            }
+            NetIfaceControl::GetFlags => Ok(NetIfaceResult::Flags(InterfaceFlags {
+                up: link_arc.can_send() || link_arc.can_recv(),
+                running: true,
+                promiscuous: false,
+            })),
             NetIfaceControl::GetMacAddress => {
-                let hw = link_arc.hw_addr().and_then(|h| h.as_ethernet()).unwrap_or([0u8; 6]);
+                let hw = link_arc
+                    .hw_addr()
+                    .and_then(|h| h.as_ethernet())
+                    .unwrap_or([0u8; 6]);
                 Ok(NetIfaceResult::MacAddress(hw))
             }
-            NetIfaceControl::GetMtu => {
-                Ok(NetIfaceResult::Mtu(link_arc.mtu()))
-            }
-            NetIfaceControl::GetLinkKind => {
-                Ok(NetIfaceResult::LinkKind(link_arc.kind()))
-            }
+            NetIfaceControl::GetMtu => Ok(NetIfaceResult::Mtu(link_arc.mtu())),
+            NetIfaceControl::GetLinkKind => Ok(NetIfaceResult::LinkKind(link_arc.kind())),
             _ => Err(NetIfaceError::NotSupported),
         }
     }

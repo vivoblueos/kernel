@@ -40,12 +40,13 @@ pub(crate) mod link_kind;
 pub(crate) mod medium;
 pub(crate) mod wifi_ops;
 
-use core::any::Any;
-use core::fmt;
+use core::{any::Any, fmt};
 
 use alloc::{string::String, sync::Arc, vec::Vec};
-use smoltcp::iface::{Interface, SocketSet};
-use smoltcp::time::Instant;
+use smoltcp::{
+    iface::{Interface, SocketSet},
+    time::Instant,
+};
 use spin::RwLock;
 
 use crate::net::link::loopback::LoopbackLink;
@@ -55,12 +56,10 @@ use crate::devices::net::virtio_net_device::net_dev_exist;
 #[cfg(virtio)]
 use crate::net::link::virtio::VirtioLink;
 
-pub(crate) use self::link_kind::LinkKind;
-pub(crate) use self::medium::Medium;
+pub(crate) use self::{link_kind::LinkKind, medium::Medium};
 
 use super::error::NetError;
-use crate::net::link::ethernet_ops::EthernetOps;
-use crate::net::link::wifi_ops::WifiOps;
+use crate::net::link::{ethernet_ops::EthernetOps, wifi_ops::WifiOps};
 
 /// A hardware address (MAC or similar).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

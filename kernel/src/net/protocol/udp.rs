@@ -14,15 +14,14 @@
 
 //! UDP protocol implementation.
 
-use alloc::rc::Rc;
-use alloc::string::String;
+use alloc::{rc::Rc, string::String};
 use core::cell::RefCell;
 
-use crate::net::protocol::{Protocol, iana};
-use crate::net::socket::socket_err::SocketError;
-use crate::net::socket::udp::UdpSocket;
-use crate::net::socket::PosixSocket;
-use crate::net::types::{SocketDomain, SocketFd, SocketType};
+use crate::net::{
+    protocol::{iana, Protocol},
+    socket::{socket_err::SocketError, udp::UdpSocket, PosixSocket},
+    types::{SocketDomain, SocketFd, SocketType},
+};
 
 /// UDP protocol (IANA protocol number 17).
 pub struct UdpProtocol;

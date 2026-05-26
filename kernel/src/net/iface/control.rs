@@ -24,8 +24,7 @@ use core::ptr;
 
 use smoltcp::wire::IpCidr;
 
-use crate::net::link::link_kind::LinkKind;
-use crate::net::link::wifi_ops::WifiScanResult;
+use crate::net::link::{link_kind::LinkKind, wifi_ops::WifiScanResult};
 
 /// Type-safe control commands for network interfaces.
 ///
@@ -56,10 +55,7 @@ pub enum NetIfaceControl {
     /// Scan for WiFi networks.
     WifiScan,
     /// Connect to a WiFi network.
-    WifiConnect {
-        ssid: String,
-        passphrase: String,
-    },
+    WifiConnect { ssid: String, passphrase: String },
     /// Disconnect from WiFi.
     WifiDisconnect,
     /// Get WiFi signal strength.
@@ -116,11 +112,7 @@ impl NetIfaceControl {
                 let mut mac = [0u8; 6];
                 unsafe {
                     // sa_data starts at offset 2 in struct sockaddr
-                    ptr::copy_nonoverlapping(
-                        (arg + 2) as *const u8,
-                        mac.as_mut_ptr(),
-                        6,
-                    );
+                    ptr::copy_nonoverlapping((arg + 2) as *const u8, mac.as_mut_ptr(), 6);
                 }
                 Ok(NetIfaceControl::SetMacAddress(mac))
             }

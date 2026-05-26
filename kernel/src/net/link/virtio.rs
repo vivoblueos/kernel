@@ -16,18 +16,19 @@
 //!
 //! Wraps `VirtIONetDevice` and implements `LinkLayer`.
 
-use alloc::string::String;
-use alloc::vec;
+use alloc::{string::String, vec};
 
-use smoltcp::iface::{Config, Interface, SocketSet};
-use smoltcp::phy::{Device, DeviceCapabilities, Medium as SmoltcpMedium};
-use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr};
-
-use crate::devices::net::virtio_net_device::{
-    VirtIONetDevice, VirtIONetRxToken, VirtIONetTxToken,
+use smoltcp::{
+    iface::{Config, Interface, SocketSet},
+    phy::{Device, DeviceCapabilities, Medium as SmoltcpMedium},
+    time::Instant,
+    wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr},
 };
-use crate::net::link::{HwAddr, LinkKind, LinkLayer, Medium};
+
+use crate::{
+    devices::net::virtio_net_device::{VirtIONetDevice, VirtIONetRxToken, VirtIONetTxToken},
+    net::link::{HwAddr, LinkKind, LinkLayer, Medium},
+};
 
 /// VirtIO link-layer device.
 ///
@@ -46,8 +47,14 @@ impl VirtioLink {
 }
 
 impl Device for VirtioLink {
-    type RxToken<'a> = VirtIONetRxToken where Self: 'a;
-    type TxToken<'a> = VirtIONetTxToken where Self: 'a;
+    type RxToken<'a>
+        = VirtIONetRxToken
+    where
+        Self: 'a;
+    type TxToken<'a>
+        = VirtIONetTxToken
+    where
+        Self: 'a;
 
     fn receive(&mut self, timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         self.inner.receive(timestamp)

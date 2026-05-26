@@ -16,13 +16,14 @@
 //!
 //! Wraps `smoltcp::phy::Loopback` and implements `LinkLayer`.
 
-use alloc::string::String;
-use alloc::vec;
+use alloc::{string::String, vec};
 
-use smoltcp::iface::{Interface, SocketSet};
-use smoltcp::phy::{Device, DeviceCapabilities, Loopback, Medium as SmoltcpMedium};
-use smoltcp::time::Instant;
-use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
+use smoltcp::{
+    iface::{Interface, SocketSet},
+    phy::{Device, DeviceCapabilities, Loopback, Medium as SmoltcpMedium},
+    time::Instant,
+    wire::{HardwareAddress, IpAddress, IpCidr},
+};
 
 use crate::net::link::{HwAddr, LinkKind, LinkLayer, Medium};
 
@@ -40,8 +41,14 @@ impl LoopbackLink {
 }
 
 impl Device for LoopbackLink {
-    type RxToken<'a> = <Loopback as Device>::RxToken<'a> where Self: 'a;
-    type TxToken<'a> = <Loopback as Device>::TxToken<'a> where Self: 'a;
+    type RxToken<'a>
+        = <Loopback as Device>::RxToken<'a>
+    where
+        Self: 'a;
+    type TxToken<'a>
+        = <Loopback as Device>::TxToken<'a>
+    where
+        Self: 'a;
 
     fn receive(&mut self, timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         self.inner.receive(timestamp)
@@ -90,9 +97,11 @@ impl LinkLayer for LoopbackLink {
 
         let caps = self.capabilities();
         let config = match caps.medium {
-            smoltcp::phy::Medium::Ethernet => Config::new(HardwareAddress::Ethernet(
-                smoltcp::wire::EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
-            )),
+            smoltcp::phy::Medium::Ethernet => {
+                Config::new(HardwareAddress::Ethernet(smoltcp::wire::EthernetAddress([
+                    0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+                ])))
+            }
             smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
             smoltcp::phy::Medium::Ieee802154 => todo!(),
         };

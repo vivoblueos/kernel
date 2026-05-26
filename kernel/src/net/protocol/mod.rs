@@ -17,19 +17,17 @@
 //! Defines `Protocol` trait and `ProtocolRegistry` for dynamic protocol
 //! registration, replacing the hardcoded `match` in `create_posix_socket`.
 
-use alloc::collections::btree_map::BTreeMap;
-use alloc::rc::Rc;
-use alloc::string::String;
-use alloc::sync::Arc;
+use alloc::{collections::btree_map::BTreeMap, rc::Rc, string::String, sync::Arc};
 use core::cell::RefCell;
 
 use spin::RwLock;
 
-use crate::net::connection::{OperationIPCReply, OperationResult};
-use crate::net::socket::socket_err::SocketError;
-use crate::net::socket::PosixSocket;
-use crate::net::types::{SocketDomain, SocketFd, SocketResult, SocketType};
-use crate::net::NetError;
+use crate::net::{
+    connection::{OperationIPCReply, OperationResult},
+    socket::{socket_err::SocketError, PosixSocket},
+    types::{SocketDomain, SocketFd, SocketResult, SocketType},
+    NetError,
+};
 
 pub(crate) mod icmp;
 pub(crate) mod tcp;
@@ -88,7 +86,9 @@ impl ProtocolRegistry {
         let key = (protocol.socket_type(), protocol.protocol_number());
         let mut by_key = self.by_key.write();
         if by_key.contains_key(&key) {
-            return Err(NetError::ProtocolAlreadyRegistered(protocol.protocol_number()));
+            return Err(NetError::ProtocolAlreadyRegistered(
+                protocol.protocol_number(),
+            ));
         }
         by_key.insert(key, protocol.clone());
 
@@ -139,7 +139,9 @@ impl ProtocolRegistry {
 
     /// Check whether a `(SocketType, protocol_number)` pair is registered.
     pub fn contains_key(&self, socket_type: SocketType, protocol_number: u8) -> bool {
-        self.by_key.read().contains_key(&(socket_type, protocol_number))
+        self.by_key
+            .read()
+            .contains_key(&(socket_type, protocol_number))
     }
 }
 

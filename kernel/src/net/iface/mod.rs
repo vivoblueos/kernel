@@ -31,20 +31,19 @@
 pub(crate) mod addr;
 pub(crate) mod control;
 
-use alloc::rc::Rc;
-use alloc::string::String;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{rc::Rc, string::String, sync::Arc, vec::Vec};
 use core::cell::RefCell;
-use smoltcp::iface::{Interface, SocketHandle, SocketSet};
-use smoltcp::socket::AnySocket;
-use smoltcp::time::Instant;
-use smoltcp::wire::IpCidr;
+use smoltcp::{
+    iface::{Interface, SocketHandle, SocketSet},
+    socket::AnySocket,
+    time::Instant,
+    wire::IpCidr,
+};
 use spin::{Mutex, RwLock};
 
 use self::addr::{IpAddrConfig, RouteConfig};
 pub(crate) use self::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
-use crate::net::link::{LinkLayer, HwAddr, Medium};
+use crate::net::link::{HwAddr, LinkLayer, Medium};
 
 use crate::net::socket::socket_err::SocketError;
 
@@ -127,14 +126,10 @@ impl NetIface {
         F: FnOnce(&mut T, &mut Interface) -> Result<R, SocketError>,
     {
         let mut sockets = self.smoltcp_sockets.borrow_mut();
-        let sockets = sockets
-            .as_mut()
-            .ok_or(SocketError::InterfaceNoAvailable)?;
+        let sockets = sockets.as_mut().ok_or(SocketError::InterfaceNoAvailable)?;
         let socket = sockets.get_mut::<T>(handle);
         let mut iface = self.smoltcp_iface.borrow_mut();
-        let iface = iface
-            .as_mut()
-            .ok_or(SocketError::InterfaceNoAvailable)?;
+        let iface = iface.as_mut().ok_or(SocketError::InterfaceNoAvailable)?;
         f(socket, iface)
     }
 
@@ -148,7 +143,10 @@ impl NetIface {
     /// Check if the interface contains an IP address.
     pub fn contains_addr(&self, addr: smoltcp::wire::IpAddress) -> bool {
         if let Some(ref iface) = *self.smoltcp_iface.borrow() {
-            iface.ip_addrs().iter().any(|cidr| cidr.contains_addr(&addr))
+            iface
+                .ip_addrs()
+                .iter()
+                .any(|cidr| cidr.contains_addr(&addr))
         } else {
             self.ip_config
                 .lock()
@@ -188,9 +186,7 @@ impl NetIface {
     pub fn poll_delay(&self, timestamp: Instant) -> Option<smoltcp::time::Duration> {
         let mut iface_guard = self.smoltcp_iface.borrow_mut();
         let sockets_guard = self.smoltcp_sockets.borrow();
-        if let (Some(iface), Some(sockets)) =
-            (iface_guard.as_mut(), sockets_guard.as_ref())
-        {
+        if let (Some(iface), Some(sockets)) = (iface_guard.as_mut(), sockets_guard.as_ref()) {
             iface.poll_delay(timestamp, sockets)
         } else {
             None
@@ -200,7 +196,9 @@ impl NetIface {
     /// Add an IP address to the interface.
     pub fn add_address(&self, cidr: IpCidr) {
         if let Some(ref mut iface) = *self.smoltcp_iface.borrow_mut() {
-            iface.update_ip_addrs(|addrs| { addrs.push(cidr); });
+            iface.update_ip_addrs(|addrs| {
+                addrs.push(cidr);
+            });
         }
         self.ip_config.lock().addresses.push(cidr);
     }
@@ -233,16 +231,12 @@ impl NetIface {
                     None => Ok(NetIfaceResult::MacAddress([0u8; 6])),
                 }
             }
-            NetIfaceControl::SetMacAddress(_mac) => {
-                Err(NetIfaceError::NotSupported)
-            }
+            NetIfaceControl::SetMacAddress(_mac) => Err(NetIfaceError::NotSupported),
             NetIfaceControl::GetMtu => {
                 let link = self.link.read();
                 Ok(NetIfaceResult::Mtu(link.mtu()))
             }
-            NetIfaceControl::SetMtu(_mtu) => {
-                Err(NetIfaceError::NotSupported)
-            }
+            NetIfaceControl::SetMtu(_mtu) => Err(NetIfaceError::NotSupported),
             NetIfaceControl::Up | NetIfaceControl::Down => {
                 // State tracking — no-op in Phase 0
                 Ok(NetIfaceResult::Void)
@@ -270,12 +264,8 @@ impl NetIface {
                 self.add_address(cidr);
                 Ok(NetIfaceResult::Void)
             }
-            NetIfaceControl::RemoveAddress(_cidr) => {
-                Err(NetIfaceError::NotSupported)
-            }
-            NetIfaceControl::SetGateway(_gw) => {
-                Err(NetIfaceError::NotSupported)
-            }
+            NetIfaceControl::RemoveAddress(_cidr) => Err(NetIfaceError::NotSupported),
+            NetIfaceControl::SetGateway(_gw) => Err(NetIfaceError::NotSupported),
         }
     }
 }

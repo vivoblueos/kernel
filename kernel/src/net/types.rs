@@ -23,8 +23,7 @@ use core::ffi::c_void;
 
 use smoltcp::wire::{IpAddress, IpEndpoint};
 
-use crate::net::protocol::iana;
-use crate::net::socket::socket_err::SocketError;
+use crate::net::{protocol::iana, socket::socket_err::SocketError};
 
 pub type SocketFd = i32;
 pub type SocketResult = Result<usize, SocketError>;
@@ -367,11 +366,11 @@ impl From<&Timeval> for core::time::Duration {
 
 /// ICMP Message with identifier
 const IDENTIFIER_TYPES: [u8; 10] = [
-    0,  // Echo Request
-    8,  // Echo Reply
-    13, 14, 15, 16, // Timestamp / Information X Request / Reply (Deprecated)
-    42, // Extend Echo Request : Extend Ping (RFC8335)
-    43, // Extend Echo Reply : Extend Ping (RFC8335)
+    0, // Echo Request
+    8, // Echo Reply
+    13, 14, 15, 16,  // Timestamp / Information X Request / Reply (Deprecated)
+    42,  // Extend Echo Request : Extend Ping (RFC8335)
+    43,  // Extend Echo Reply : Extend Ping (RFC8335)
     128, // ICMPv6 Echo Request
     129, // ICMPv6 Echo Reply
 ];
