@@ -119,12 +119,13 @@ impl LinkLayer for VirtioLink {
         );
         match caps.medium {
             smoltcp::phy::Medium::Ethernet => {
-                // Configure static guest IP for QEMU user networking
+                // FIXME: make IP address, netmask, and gateway configurable via kconfig
                 iface.update_ip_addrs(|addrs| {
                     let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24));
                 });
-                // Set gateway to reach host (QEMU user networking gateway)
-                iface.routes_mut().add_default_ipv4_route(Ipv4Address::new(10, 0, 2, 2));
+                iface
+                    .routes_mut()
+                    .add_default_ipv4_route(Ipv4Address::new(10, 0, 2, 2));
             }
             smoltcp::phy::Medium::Ip => {
                 iface.update_ip_addrs(|addrs| {
