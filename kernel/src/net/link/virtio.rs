@@ -22,7 +22,7 @@ use smoltcp::{
     iface::{Config, Interface, SocketSet},
     phy::{Device, DeviceCapabilities, Medium as SmoltcpMedium},
     time::Instant,
-    wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr},
+    wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, Ipv4Address},
 };
 
 use crate::{
@@ -117,11 +117,22 @@ impl LinkLayer for VirtioLink {
             &mut self.inner,
             Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
         );
-        if caps.medium == smoltcp::phy::Medium::Ip {
-            iface.update_ip_addrs(|addrs| {
-                let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
-                let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
-            });
+        match caps.medium {
+            smoltcp::phy::Medium::Ethernet => {
+                // Configure static guest IP for QEMU user networking
+                iface.update_ip_addrs(|addrs| {
+                    let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24));
+                });
+                // Set gateway to reach host (QEMU user networking gateway)
+                iface.routes_mut().add_default_ipv4_route(Ipv4Address::new(10, 0, 2, 2));
+            }
+            smoltcp::phy::Medium::Ip => {
+                iface.update_ip_addrs(|addrs| {
+                    let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
+                    let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+                });
+            }
+            smoltcp::phy::Medium::Ieee802154 => {}
         }
         let sockets = SocketSet::new(vec![]);
         (iface, sockets)
