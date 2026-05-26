@@ -85,12 +85,11 @@ impl NetworkManager {
         #[cfg(virtio)]
         if net_dev_exist() {
             // Create NetIface for virtio-net
-            let link_arc = LINK_REGISTRY.find_by_name("virtio-net").unwrap_or_else(|| {
-                let fallback = Arc::new(VirtioLink::new(0)) as Arc<dyn LinkLayer>;
-                LINK_REGISTRY.register(fallback.clone());
-                fallback
-            });
-            let virtio_iface = Rc::new(NetIface::new("virtio-net".into(), link_arc, 1));
+            let virtio_iface = Rc::new(NetIface::new(
+                "virtio-net".into(),
+                Arc::new(spin::RwLock::new(VirtioLink::new(0) as dyn LinkLayer)),
+                1,
+            ));
             net_ifaces.push(virtio_iface.clone());
             default_net_iface.replace(virtio_iface);
             log::debug!("Add NetIface(Virtio)");
