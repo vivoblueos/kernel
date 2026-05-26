@@ -87,7 +87,7 @@ impl NetworkManager {
             // Create NetIface for virtio-net
             let virtio_iface = Rc::new(NetIface::new(
                 "virtio-net".into(),
-                Arc::new(spin::RwLock::new(VirtioLink::new(0) as dyn LinkLayer)),
+                Arc::new(spin::RwLock::new(VirtioLink::new(0))) as Arc<spin::RwLock<dyn LinkLayer>>,
                 1,
             ));
             net_ifaces.push(virtio_iface.clone());
