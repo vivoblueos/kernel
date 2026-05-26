@@ -14,10 +14,7 @@
 
 use crate::{
     error::{code, Error},
-    net::{
-        connection::Connection,
-        iface::control::NetIfaceControl,
-    },
+    net::{connection::Connection, iface::control::NetIfaceControl},
     vfs::{
         fd_manager::get_fd_manager,
         file::{FileAttr, FileOps, OpenFlags},
@@ -151,9 +148,7 @@ impl FileOps for SocketFile {
     fn ioctl(&self, cmd: u32, arg: usize) -> Result<i32, Error> {
         // Convert raw POSIX ioctl (cmd, arg) into a type-safe NetIfaceControl,
         // then dispatch through the IPC queue to the network stack thread.
-        let control = unsafe {
-            NetIfaceControl::from_raw_ioctl(cmd, arg)
-        }.map_err(|_| {
+        let control = unsafe { NetIfaceControl::from_raw_ioctl(cmd, arg) }.map_err(|_| {
             debug!("SocketFile ioctl: unsupported cmd=0x{:x}", cmd);
             code::ENOTTY
         })?;
