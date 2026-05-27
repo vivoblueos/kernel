@@ -18,6 +18,7 @@ use alloc::{rc::Rc, string::String};
 use core::cell::RefCell;
 
 use crate::net::{
+    net_manager::NetworkManager,
     protocol::{iana, Protocol},
     socket::{icmp::IcmpSocket, socket_err::SocketError, PosixSocket},
     types::{SocketDomain, SocketFd, SocketType},
@@ -44,10 +45,12 @@ impl Protocol for IcmpProtocol {
 
     fn create_socket(
         &self,
-        _socket_fd: SocketFd,
-        _socket_domain: SocketDomain,
+        socket_fd: SocketFd,
+        socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
     ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
-        // Phase 0: see tcp.rs — protocol-based dispatch deferred to Phase 1.
-        Err(SocketError::UnsupportedOperation)
+        Ok(Rc::new(RefCell::new(IcmpSocket::new(
+            network_manager, socket_fd,
+        ))))
     }
 }

@@ -18,6 +18,7 @@ use alloc::{rc::Rc, string::String};
 use core::cell::RefCell;
 
 use crate::net::{
+    net_manager::NetworkManager,
     protocol::{iana, Protocol},
     socket::{socket_err::SocketError, udp::UdpSocket, PosixSocket},
     types::{SocketDomain, SocketFd, SocketType},
@@ -41,10 +42,12 @@ impl Protocol for UdpProtocol {
 
     fn create_socket(
         &self,
-        _socket_fd: SocketFd,
-        _socket_domain: SocketDomain,
+        socket_fd: SocketFd,
+        socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
     ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
-        // Phase 0: see tcp.rs — protocol-based dispatch deferred to Phase 1.
-        Err(SocketError::UnsupportedOperation)
+        Ok(Rc::new(RefCell::new(UdpSocket::new(
+            network_manager, socket_fd, socket_domain,
+        ))))
     }
 }

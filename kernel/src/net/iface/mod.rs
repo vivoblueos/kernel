@@ -94,20 +94,6 @@ impl NetIface {
         self.link_index
     }
 
-    /// Set the smoltcp interface and socket set (bridge during migration).
-    pub fn set_smoltcp(&self, iface: Interface, sockets: SocketSet<'static>) {
-        self.smoltcp_iface.replace(Some(iface));
-        self.smoltcp_sockets.replace(Some(sockets));
-    }
-
-    pub fn smoltcp_iface(&self) -> &Rc<RefCell<Option<Interface>>> {
-        &self.smoltcp_iface
-    }
-
-    pub fn smoltcp_sockets(&self) -> &Rc<RefCell<Option<SocketSet<'static>>>> {
-        &self.smoltcp_sockets
-    }
-
     /// Add a smoltcp socket to this interface's socket set.
     pub fn add_socket<T: AnySocket<'static>>(&self, socket: T) -> Option<SocketHandle> {
         self.smoltcp_sockets

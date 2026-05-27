@@ -18,6 +18,7 @@ use alloc::{rc::Rc, string::String};
 use core::cell::RefCell;
 
 use crate::net::{
+    net_manager::NetworkManager,
     protocol::{iana, Protocol},
     socket::{socket_err::SocketError, tcp::TcpSocket, PosixSocket},
     types::{SocketDomain, SocketFd, SocketType},
@@ -41,12 +42,14 @@ impl Protocol for TcpProtocol {
 
     fn create_socket(
         &self,
-        _socket_fd: SocketFd,
-        _socket_domain: SocketDomain,
+        socket_fd: SocketFd,
+        socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
     ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
-        // Phase 0: Protocol registry is initialized but socket creation
-        // still goes through NetworkManager::create_posix_socket().
-        // Full protocol-based dispatch will be wired in Phase 1.
-        Err(SocketError::UnsupportedOperation)
+        Ok(Rc::new(RefCell::new(TcpSocket::new(
+            network_manager,
+            socket_fd,
+            socket_domain,
+        ))))
     }
 }

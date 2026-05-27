@@ -27,7 +27,7 @@ use crate::{
         },
         link::{loopback::LoopbackLink, LinkKind, LinkLayer, LINK_REGISTRY},
         protocol::{iana, PROTOCOL_REGISTRY},
-        socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket, PosixSocket},
+        socket::PosixSocket,
         SocketDomain, SocketFd, SocketProtocol, SocketType,
     },
     scheduler,
@@ -134,62 +134,50 @@ impl NetworkManager {
         socket_type: SocketType,
         socket_protocol: SocketProtocol,
     ) -> SocketFd {
-        // Phase 1: try ProtocolRegistry dispatch first
-        let iana_proto = socket_protocol.iana();
-        if PROTOCOL_REGISTRY.contains_key(socket_type, iana_proto) {
-            let socket: Rc<RefCell<dyn PosixSocket>> = match iana_proto {
-                iana::TCP => Rc::new(RefCell::new(TcpSocket::new(
-                    network_manager.clone(),
-                    socket_fd,
-                    socket_domain,
-                ))),
-                iana::UDP => Rc::new(RefCell::new(UdpSocket::new(
-                    network_manager.clone(),
-                    socket_fd,
-                    socket_domain,
-                ))),
-                iana::ICMP | iana::ICMPV6 => Rc::new(RefCell::new(IcmpSocket::new(
-                    network_manager.clone(),
-                    socket_fd,
-                ))),
-                _ => return -1,
-            };
-            self.socket_maps.insert(socket_fd, socket);
-            log::debug!(
-                "[NetManager] socket {} created via ProtocolRegistry dispatch (proto={})",
-                socket_fd,
-                iana_proto
-            );
-            return socket_fd;
+        // ProtocolRegistry dispatch: delegate to Protocol::create_socket()
+        //
+        // FIXME: IANA=0 (IPPROTO_IP) or 41 (IPPROTO_IPV6) means "default protocol"
+        // — resolve based on socket_type: SOCK_STREAM → TCP (6), SOCK_DGRAM → UDP (17),
+        // SOCK_RAW → ICMP (1).
+        // This is a workaround for callers that pass IPPROTO_IP/IPPROTO_IPV6 instead of
+        // the actual protocol number. A proper fix would enforce the correct protocol
+        // at the socket() syscall level.
+        let iana_proto = match socket_protocol.iana() {
+            0 | 41 => match socket_type {
+                SocketType::SockStream => iana::TCP,
+                SocketType::SockDgram => iana::UDP,
+                SocketType::SockRaw => iana::ICMP,
+                _ => {
+                    log::error!("No default protocol for socket_type={}", socket_type);
+                    return -1;
+                }
+            },
+            n => n,
+        };
+        if let Some(protocol) = PROTOCOL_REGISTRY.get_by_key(socket_type, iana_proto) {
+            match protocol.create_socket(socket_fd, socket_domain, network_manager.clone()) {
+                Ok(socket) => {
+                    self.socket_maps.insert(socket_fd, socket);
+                    return socket_fd;
+                }
+                Err(e) => {
+                    log::error!(
+                        "[NetManager] Protocol {} create_socket failed: {:?}",
+                        protocol.name(),
+                        e
+                    );
+                    return -1;
+                }
+            }
         }
 
-        // Fallback: old hardcoded path
-        let socket: Rc<RefCell<dyn PosixSocket>> = match (socket_type, socket_protocol) {
-            (SocketType::SockStream, _) => {
-                let tcp_socket = TcpSocket::new(network_manager, socket_fd, socket_domain);
-                Rc::new(RefCell::new(tcp_socket))
-            }
-            (SocketType::SockDgram, _) => {
-                let udp_socket = UdpSocket::new(network_manager, socket_fd, socket_domain);
-                Rc::new(RefCell::new(udp_socket))
-            }
-            (SocketType::SockRaw, SocketProtocol::Icmp)
-            | (SocketType::SockRaw, SocketProtocol::Icmpv6) => {
-                let icmp_socket = IcmpSocket::new(network_manager, socket_fd);
-                Rc::new(RefCell::new(icmp_socket))
-            }
-            _ => {
-                log::error!(
-                    "No support socket type={}, protocol={:#?}",
-                    socket_type,
-                    socket_protocol
-                );
-                return -1;
-            }
-        };
-
-        self.socket_maps.insert(socket_fd, socket);
-        socket_fd
+        log::error!(
+            "No registered protocol for socket_type={}, protocol={:#?} (iana={})",
+            socket_type,
+            socket_protocol,
+            iana_proto,
+        );
+        -1
     }
 
     pub fn get_posix_socket(

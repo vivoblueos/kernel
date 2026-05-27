@@ -24,6 +24,7 @@ use spin::RwLock;
 
 use crate::net::{
     connection::{OperationIPCReply, OperationResult},
+    net_manager::NetworkManager,
     socket::{socket_err::SocketError, PosixSocket},
     types::{SocketDomain, SocketFd, SocketResult, SocketType},
     NetError,
@@ -61,6 +62,7 @@ pub trait Protocol: Send + Sync + 'static {
         &self,
         socket_fd: SocketFd,
         socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
     ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError>;
 }
 
