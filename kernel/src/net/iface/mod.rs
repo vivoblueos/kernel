@@ -28,21 +28,18 @@
 //! (which IS dyn-compatible) for both control operations and smoltcp
 //! poll dispatch.
 
-pub(crate) mod addr;
 pub(crate) mod control;
 
+pub(crate) use self::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
 use alloc::{rc::Rc, string::String, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use smoltcp::{
     iface::{Interface, SocketHandle, SocketSet},
     socket::AnySocket,
     time::Instant,
-    wire::IpCidr,
 };
-use spin::{Mutex, RwLock};
+use spin::RwLock;
 
-use self::addr::{IpAddrConfig, RouteConfig};
-pub(crate) use self::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
 use crate::net::link::{HwAddr, LinkLayer, Medium};
 
 use crate::net::socket::socket_err::SocketError;
@@ -57,8 +54,6 @@ pub struct NetIface {
     name: String,
     /// Link-layer device for control and smoltcp poll dispatch.
     link: Arc<RwLock<dyn LinkLayer>>,
-    ip_config: Mutex<IpAddrConfig>,
-    routes: Mutex<Vec<RouteConfig>>,
     /// smoltcp interface.
     smoltcp_iface: Rc<RefCell<Option<Interface>>>,
     /// smoltcp socket set.
@@ -74,8 +69,6 @@ impl NetIface {
         NetIface {
             name,
             link,
-            ip_config: Mutex::new(IpAddrConfig::new()),
-            routes: Mutex::new(Vec::new()),
             smoltcp_iface: Rc::new(RefCell::new(Some(iface))),
             smoltcp_sockets: Rc::new(RefCell::new(Some(sockets))),
             link_index,
@@ -134,11 +127,7 @@ impl NetIface {
                 .iter()
                 .any(|cidr| cidr.contains_addr(&addr))
         } else {
-            self.ip_config
-                .lock()
-                .addresses
-                .iter()
-                .any(|cidr| cidr.contains_addr(&addr))
+            false
         }
     }
 
@@ -177,16 +166,6 @@ impl NetIface {
         } else {
             None
         }
-    }
-
-    /// Add an IP address to the interface.
-    pub fn add_address(&self, cidr: IpCidr) {
-        if let Some(ref mut iface) = *self.smoltcp_iface.borrow_mut() {
-            iface.update_ip_addrs(|addrs| {
-                addrs.push(cidr);
-            });
-        }
-        self.ip_config.lock().addresses.push(cidr);
     }
 
     /// Type-safe control method.
@@ -247,7 +226,11 @@ impl NetIface {
                 Err(NetIfaceError::DeviceTraitNotAvailable)
             }
             NetIfaceControl::AddAddress(cidr) => {
-                self.add_address(cidr);
+                if let Some(ref mut iface) = *self.smoltcp_iface.borrow_mut() {
+                    iface.update_ip_addrs(|addrs| {
+                        addrs.push(cidr);
+                    });
+                }
                 Ok(NetIfaceResult::Void)
             }
             NetIfaceControl::RemoveAddress(_cidr) => Err(NetIfaceError::NotSupported),
