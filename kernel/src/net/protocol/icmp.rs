@@ -50,7 +50,8 @@ impl Protocol for IcmpProtocol {
         network_manager: Rc<RefCell<NetworkManager>>,
     ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
         Ok(Rc::new(RefCell::new(IcmpSocket::new(
-            network_manager, socket_fd,
+            network_manager,
+            socket_fd,
         ))))
     }
 }

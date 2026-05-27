@@ -47,7 +47,9 @@ impl Protocol for UdpProtocol {
         network_manager: Rc<RefCell<NetworkManager>>,
     ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
         Ok(Rc::new(RefCell::new(UdpSocket::new(
-            network_manager, socket_fd, socket_domain,
+            network_manager,
+            socket_fd,
+            socket_domain,
         ))))
     }
 }
