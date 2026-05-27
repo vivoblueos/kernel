@@ -15,19 +15,14 @@
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
 use crate::net::{
-    connection::{Operation, OperationIPCReply, OperationResult},
-    iface::NetIface,
-    socket::socket_err::SocketError,
-    SocketResult,
+    connection::OperationIPCReply,
+    smoltcp::iface::NetIface,
+    types::SocketResult,
 };
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
-use core::net::SocketAddr;
 
-pub mod icmp;
 pub mod socket_err;
 pub mod socket_waker;
-pub mod tcp;
-pub mod udp;
 
 pub(crate) type FnSend = Box<dyn FnOnce(&mut [u8]) -> (usize, usize) + Send>;
 pub(crate) type FnSendMsg = Box<dyn FnOnce(&mut [u8]) -> usize + Send>;

@@ -21,12 +21,10 @@ use crate::{
     config::MAX_THREAD_PRIORITY,
     net::{
         connection::Connection,
-        iface::{
-            control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
-            NetIface,
-        },
+        iface::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
         link::{loopback::LoopbackLink, LinkKind, LinkLayer, LINK_REGISTRY},
         protocol::{iana, PROTOCOL_REGISTRY},
+        smoltcp::{iface::NetIface, link::SmoltcpDevice},
         socket::PosixSocket,
         SocketDomain, SocketFd, SocketProtocol, SocketType,
     },
@@ -74,9 +72,10 @@ impl NetworkManager {
         let mut default_net_iface = None;
 
         // Add Loopback interface which always exist
-        let link_rwlock =
-            Arc::new(spin::RwLock::new(LoopbackLink::new())) as Arc<spin::RwLock<dyn LinkLayer>>;
-        let lo_iface = Rc::new(NetIface::new("lo".into(), link_rwlock, 0));
+        let lo_device = Arc::new(spin::RwLock::new(LoopbackLink::new()));
+        let lo_link: Arc<spin::RwLock<dyn LinkLayer>> = lo_device.clone();
+        let lo_smoltcp: Arc<spin::RwLock<dyn SmoltcpDevice>> = lo_device;
+        let lo_iface = Rc::new(NetIface::new("lo".into(), lo_link, lo_smoltcp, 0));
         net_ifaces.push(lo_iface.clone());
         default_net_iface.replace(lo_iface);
         log::debug!("Add NetIface(Lo)");
@@ -85,9 +84,13 @@ impl NetworkManager {
         #[cfg(virtio)]
         if net_dev_exist() {
             // Create NetIface for virtio-net
+            let virtio_device = Arc::new(spin::RwLock::new(VirtioLink::new(0)));
+            let virtio_link: Arc<spin::RwLock<dyn LinkLayer>> = virtio_device.clone();
+            let virtio_smoltcp: Arc<spin::RwLock<dyn SmoltcpDevice>> = virtio_device;
             let virtio_iface = Rc::new(NetIface::new(
                 "virtio-net".into(),
-                Arc::new(spin::RwLock::new(VirtioLink::new(0))) as Arc<spin::RwLock<dyn LinkLayer>>,
+                virtio_link,
+                virtio_smoltcp,
                 1,
             ));
             net_ifaces.push(virtio_iface.clone());
@@ -232,7 +235,7 @@ impl NetworkManager {
     /// new `NetIface::control()` method. Uses the first available link
     /// device from `LINK_REGISTRY`.
     ///
-    /// Phase 0: this creates a transient `NetIface` wrapping the link.
+    /// Phase 0: this creates a transient `NetIface` wrapping the link.
     /// In a later phase `NetIface` instances will be persistent in
     /// `NetworkManager`.
     pub fn handle_net_control(

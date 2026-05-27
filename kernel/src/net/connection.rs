@@ -16,9 +16,9 @@ use crate::{
     error::{code, Error},
     net::{
         connection_err::ConnectionError,
+        port_generator::PORT_GENERATOR,
         iface::control::NetIfaceControl,
         net_manager::NetworkManager,
-        port_generator::PORT_GENERATOR,
         socket::{
             socket_err::SocketError, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg, PosixSocket,
         },

@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Medium types for the link layer.
+//! smoltcp-specific implementations for the layered network architecture.
 //!
-//! Mirrors `smoltcp::phy::Medium` to avoid direct smoltcp dependency at the
-//! `LinkLayer` trait boundary. Convert to/from smoltcp in the compat layer.
+//! This module contains all code that directly depends on smoltcp types:
+//! NetIface, NetworkManager, TCP/UDP/ICMP sockets, smoltcp link device
+//! implementations, and the SmoltcpDevice trait.
+//!
+//! The abstract traits (LinkLayer, PosixSocket, Protocol, ProtocolRegistry)
+//! and non-smoltcp types remain in the parent `net` module.
 
-/// The medium type of a link-layer device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Medium {
-    /// Ethernet (IEEE 802.3)
-    Ethernet,
-    /// IP (no L2 header, e.g., loopback/tun)
-    Ip,
-    /// IEEE 802.15.4
-    Ieee802154,
-}
+pub(crate) mod iface;
+pub(crate) mod link;
+pub(crate) mod socket;

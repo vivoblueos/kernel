@@ -12,18 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Medium types for the link layer.
-//!
-//! Mirrors `smoltcp::phy::Medium` to avoid direct smoltcp dependency at the
-//! `LinkLayer` trait boundary. Convert to/from smoltcp in the compat layer.
+//! smoltcp socket module.
 
-/// The medium type of a link-layer device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Medium {
-    /// Ethernet (IEEE 802.3)
-    Ethernet,
-    /// IP (no L2 header, e.g., loopback/tun)
-    Ip,
-    /// IEEE 802.15.4
-    Ieee802154,
-}
+pub(crate) mod icmp;
+pub(crate) mod socket_err;
+pub(crate) mod tcp;
+pub(crate) mod udp;

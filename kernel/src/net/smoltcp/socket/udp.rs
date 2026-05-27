@@ -14,7 +14,6 @@
 
 use crate::net::{
     connection::{Operation, OperationIPCReply, OperationResult},
-    iface::NetIface,
     net_manager::NetworkManager,
     socket::{
         socket_err::SocketError, socket_waker, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg,
@@ -33,6 +32,9 @@ use smoltcp::{
     socket::{icmp::Endpoint, udp},
     wire::{IpAddress, IpEndpoint, IpListenEndpoint},
 };
+
+use crate::net::smoltcp::iface::NetIface;
+
 pub struct UdpSocket {
     socket_fd: SocketFd,
     socket_domain: SocketDomain,

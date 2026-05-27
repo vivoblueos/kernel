@@ -17,36 +17,33 @@
 //! This module defines the `LinkLayer` trait, `LinkRegistry`, and the
 //! `downcast_ref` helper for accessing device-specific traits.
 //!
-//! `LinkLayer` replaces the old `NetDevice` enum. It intentionally does
-//! NOT include `smoltcp::phy::Device` as a supertrait because `Device`
-//! uses GATs (`RxToken`, `TxToken`) and is not dyn-compatible.
-//! Concrete link types implement both `Device` and `LinkLayer` separately.
+//! `LinkLayer` is the pure L2 abstraction — it has NO dependency on
+//! `smoltcp`. Concrete link types implement `LinkLayer` for device
+//! control (name, MTU, MAC, etc.) and separately implement
+//! `smoltcp::phy::Device` + `SmoltcpDevice` (from `crate::net::smoltcp::link`)
+//! for the protocol stack.
 //!
-//! `LinkLayer` provides `poll_smoltcp()` and `create_smoltcp_iface()` which
-//! let each concrete implementation handle the smoltcp poll cycle using its
-//! own concrete device type. This replaces the SmoltcpDevice enum that was
-//! removed in Phase 3.
+//! `NetIface` holds separate `Arc<RwLock<dyn LinkLayer>>` and
+//! `Arc<RwLock<dyn SmoltcpDevice>>` references to the same concrete device.
 //!
 //! # Key design decisions
 //!
 //! - **No ioctl**: `LinkLayer` does not expose any type-unsafe `ioctl(cmd, arg)`
 //!   method. Device-specific operations are accessed via `Any::downcast_ref`.
 //! - **Any bound**: `LinkLayer: Any + 'static` enables safe downcasting.
-//! - **dyn-compatible**: `LinkLayer` does NOT include `smoltcp::phy::Device`
-//!   (which uses GATs), so `Arc<dyn LinkLayer>` is valid.
+//! - **dyn-compatible**: `LinkLayer` is dyn-compatible.
 
 pub(crate) mod ethernet_ops;
 pub(crate) mod link_kind;
+pub(crate) mod loopback;
 pub(crate) mod medium;
+#[cfg(virtio)]
+pub(crate) mod virtio;
 pub(crate) mod wifi_ops;
 
 use core::{any::Any, fmt};
 
 use alloc::{string::String, sync::Arc, vec::Vec};
-use smoltcp::{
-    iface::{Interface, SocketSet},
-    time::Instant,
-};
 use spin::RwLock;
 
 use crate::net::link::loopback::LoopbackLink;
@@ -122,20 +119,6 @@ pub trait LinkLayer: Send + Sync + Any + 'static {
     /// Whether the device can currently receive.
     fn can_recv(&self) -> bool;
 
-    /// Create a smoltcp Interface and SocketSet for this device.
-    ///
-    /// Called during `NetIface::new()` to initialize the smoltcp interface
-    /// with the correct medium, hardware address, and configuration for this
-    /// concrete device type.
-    fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>);
-
-    /// Poll the smoltcp Interface using this device's concrete Device impl.
-    ///
-    /// Each concrete `LinkLayer` type implements `smoltcp::phy::Device`
-    /// privately and calls `iface.poll(timestamp, &mut self.inner, sockets)`
-    /// here. This replaces the `SmoltcpDevice` enum dispatch.
-    fn poll_smoltcp(&mut self, timestamp: Instant, iface: &mut Interface, sockets: &mut SocketSet);
-
     /// Optional: return a reference to this device's `WifiOps` implementation.
     fn as_wifi(&mut self) -> Option<&mut dyn WifiOps> {
         None
@@ -195,10 +178,6 @@ impl LinkRegistry {
 
 /// Global link registry instance.
 pub(crate) static LINK_REGISTRY: LinkRegistry = LinkRegistry::new();
-
-pub(crate) mod loopback;
-#[cfg(virtio)]
-pub(crate) mod virtio;
 
 /// Initialize and register all built-in link-layer devices.
 pub(crate) fn init() {

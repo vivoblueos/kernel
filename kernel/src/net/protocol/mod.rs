@@ -25,14 +25,11 @@ use spin::RwLock;
 use crate::net::{
     connection::{OperationIPCReply, OperationResult},
     net_manager::NetworkManager,
+    smoltcp::socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket},
     socket::{socket_err::SocketError, PosixSocket},
     types::{SocketDomain, SocketFd, SocketResult, SocketType},
     NetError,
 };
-
-pub(crate) mod icmp;
-pub(crate) mod tcp;
-pub(crate) mod udp;
 
 /// IANA protocol numbers.
 pub mod iana {
@@ -150,12 +147,63 @@ impl ProtocolRegistry {
 /// Global protocol registry instance.
 pub(crate) static PROTOCOL_REGISTRY: ProtocolRegistry = ProtocolRegistry::new();
 
+/// Factory struct for TCP sockets.
+struct TcpSocketFactory;
+
+impl Protocol for TcpSocketFactory {
+    fn protocol_number(&self) -> u8 { iana::TCP }
+    fn name(&self) -> String { String::from("TCP") }
+    fn socket_type(&self) -> SocketType { SocketType::SockStream }
+    fn create_socket(
+        &self,
+        socket_fd: SocketFd,
+        socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
+    ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
+        Ok(Rc::new(RefCell::new(TcpSocket::new(network_manager, socket_fd, socket_domain))))
+    }
+}
+
+/// Factory struct for UDP sockets.
+struct UdpSocketFactory;
+
+impl Protocol for UdpSocketFactory {
+    fn protocol_number(&self) -> u8 { iana::UDP }
+    fn name(&self) -> String { String::from("UDP") }
+    fn socket_type(&self) -> SocketType { SocketType::SockDgram }
+    fn create_socket(
+        &self,
+        socket_fd: SocketFd,
+        socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
+    ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
+        Ok(Rc::new(RefCell::new(UdpSocket::new(network_manager, socket_fd, socket_domain))))
+    }
+}
+
+/// Factory struct for ICMP sockets.
+struct IcmpSocketFactory;
+
+impl Protocol for IcmpSocketFactory {
+    fn protocol_number(&self) -> u8 { iana::ICMP }
+    fn name(&self) -> String { String::from("ICMP") }
+    fn socket_type(&self) -> SocketType { SocketType::SockRaw }
+    fn create_socket(
+        &self,
+        socket_fd: SocketFd,
+        _socket_domain: SocketDomain,
+        network_manager: Rc<RefCell<NetworkManager>>,
+    ) -> Result<Rc<RefCell<dyn PosixSocket>>, SocketError> {
+        Ok(Rc::new(RefCell::new(IcmpSocket::new(network_manager, socket_fd))))
+    }
+}
+
 /// Initialize and register all built-in protocols.
 pub(crate) fn init() {
     let protocols: [Arc<dyn Protocol>; 3] = [
-        Arc::new(tcp::TcpProtocol),
-        Arc::new(udp::UdpProtocol),
-        Arc::new(icmp::IcmpProtocol),
+        Arc::new(TcpSocketFactory),
+        Arc::new(UdpSocketFactory),
+        Arc::new(IcmpSocketFactory),
     ];
 
     for proto in protocols {

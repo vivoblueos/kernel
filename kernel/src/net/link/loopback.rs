@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Loopback link-layer device.
+//! Loopback link-layer device — smoltcp Device + SmoltcpDevice impl.
 //!
-//! Wraps `smoltcp::phy::Loopback` and implements `LinkLayer`.
+//! The `LinkLayer` impl for `LoopbackLink` remains in `net::link::loopback`.
 
 use alloc::{string::String, vec};
 
@@ -26,6 +26,7 @@ use smoltcp::{
 };
 
 use crate::net::link::{HwAddr, LinkKind, LinkLayer, Medium};
+use crate::net::smoltcp::link::SmoltcpDevice;
 
 /// Loopback link-layer device.
 pub struct LoopbackLink {
@@ -91,7 +92,9 @@ impl LinkLayer for LoopbackLink {
     fn can_recv(&self) -> bool {
         true
     }
+}
 
+impl SmoltcpDevice for LoopbackLink {
     fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>) {
         use smoltcp::iface::Config;
 

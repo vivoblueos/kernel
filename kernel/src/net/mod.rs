@@ -21,6 +21,7 @@ pub(crate) mod net_manager;
 pub(crate) mod packet;
 pub(crate) mod port_generator;
 pub(crate) mod protocol;
+pub(crate) mod smoltcp;
 pub(crate) mod socket;
 pub mod syscalls;
 pub(crate) mod types;

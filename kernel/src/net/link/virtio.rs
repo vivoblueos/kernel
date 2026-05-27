@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! VirtIO link-layer device.
+//! VirtIO link-layer device — smoltcp Device + SmoltcpDevice impl.
 //!
-//! Wraps `VirtIONetDevice` and implements `LinkLayer`.
+//! The `LinkLayer` impl for `VirtioLink` remains in `net::link::virtio`.
 
 use alloc::{string::String, vec};
 
@@ -28,6 +28,7 @@ use smoltcp::{
 use crate::{
     devices::net::virtio_net_device::{VirtIONetDevice, VirtIONetRxToken, VirtIONetTxToken},
     net::link::{HwAddr, LinkKind, LinkLayer, Medium},
+    net::smoltcp::link::SmoltcpDevice,
 };
 
 /// VirtIO link-layer device.
@@ -83,7 +84,6 @@ impl LinkLayer for VirtioLink {
     }
 
     fn hw_addr(&self) -> Option<HwAddr> {
-        // VirtIONetDevice doesn't expose mac directly, use default
         Some(HwAddr::from_ethernet([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]))
     }
 
@@ -92,7 +92,6 @@ impl LinkLayer for VirtioLink {
     }
 
     fn can_send(&self) -> bool {
-        // Delegate to the virtio net device static
         crate::devices::net::virtio_net_device::with_net_device(0, |net| net.can_send())
             .unwrap_or(false)
     }
@@ -101,7 +100,9 @@ impl LinkLayer for VirtioLink {
         crate::devices::net::virtio_net_device::with_net_device(0, |net| net.can_recv())
             .unwrap_or(false)
     }
+}
 
+impl SmoltcpDevice for VirtioLink {
     fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>) {
         let caps = self.capabilities();
         let config = match caps.medium {
@@ -119,7 +120,6 @@ impl LinkLayer for VirtioLink {
         );
         match caps.medium {
             smoltcp::phy::Medium::Ethernet => {
-                // FIXME: make IP address, netmask, and gateway configurable via kconfig
                 iface.update_ip_addrs(|addrs| {
                     let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24));
                 });

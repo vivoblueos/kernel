@@ -14,9 +14,7 @@
 
 use crate::net::{
     connection::{Operation, OperationIPCReply, OperationResult},
-    iface::NetIface,
     net_manager::NetworkManager,
-    port_generator::PORT_GENERATOR,
     socket::{
         socket_err::SocketError, socket_waker, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg,
         PosixSocket,
@@ -34,6 +32,9 @@ use smoltcp::{
     socket::tcp::{self, State},
     wire::{IpAddress, IpEndpoint, IpListenEndpoint},
 };
+
+use crate::net::smoltcp::iface::NetIface;
+
 pub struct TcpSocket {
     socket_fd: SocketFd,
     socket_domain: SocketDomain,

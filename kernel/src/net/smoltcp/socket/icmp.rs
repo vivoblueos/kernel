@@ -14,13 +14,12 @@
 
 use crate::net::{
     connection::{Operation, OperationIPCReply},
-    iface::NetIface,
     net_manager::NetworkManager,
     socket::{
         socket_err::SocketError, socket_waker, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg,
         PosixSocket,
     },
-    SocketFd, SocketResult, SocketType,
+    SocketDomain, SocketFd, SocketResult, SocketType,
 };
 use alloc::{boxed::Box, rc::Rc, sync::Arc, vec};
 use core::{
@@ -32,6 +31,9 @@ use smoltcp::{
     socket::icmp,
     wire::{IpEndpoint, IpListenEndpoint},
 };
+
+use crate::net::smoltcp::iface::NetIface;
+
 pub struct IcmpSocket {
     socket_fd: SocketFd,
     is_shutdown: Rc<Cell<bool>>,
