@@ -720,7 +720,7 @@ impl Connection {
                 Operation::NetControl { cmd, ipc_reply } => {
                     log::debug!("[Connection] handle NetControl");
 
-                    let result = network_manager.borrow().handle_net_control(cmd);
+                    let result = crate::net::link::handle_control(cmd);
 
                     let result = result.map(|_| 0).map_err(|e| {
                         SocketError::InvalidParam(

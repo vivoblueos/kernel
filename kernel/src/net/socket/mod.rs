@@ -31,7 +31,7 @@ pub(crate) type FnRecvWithEndpoint = Box<dyn FnOnce(&[u8], IpEndpoint) -> usize 
 
 pub trait PosixSocket {
     // smoltcp need to bind socket with interface
-    fn bind_interface(&mut self, interface: Rc<NetIface>);
+    fn bind_interface(&mut self, interface: Arc<NetIface>);
 
     fn accept(&self, _local_endpoint: IpListenEndpoint) -> SocketResult;
 

@@ -16,17 +16,19 @@
 
 use core::any::Any;
 
+use crate::net::link::LinkLayer;
+
 /// smoltcp protocol stack operations for a link-layer device.
 ///
-/// This trait is **separate** from `LinkLayer`. Each concrete link type
-/// implements both — `LinkLayer` for L2 control and `SmoltcpDevice`
-/// for smoltcp-specific lifecycle. `NetIface` holds two separate
-/// `Arc<RwLock<...>>` references, one for each trait.
+/// `SmoltcpDevice` is a **subtrait of `LinkLayer`** — a single `dyn SmoltcpDevice`
+/// trait object carries both L2 control methods (via `LinkLayer`) and smoltcp
+/// protocol-stack lifecycle methods. `NetIface` holds only one
+/// `Arc<RwLock<dyn SmoltcpDevice>>` instead of two separate references.
 ///
-/// Both methods take `&mut self` so concrete impls can access their
-/// `smoltcp::phy::Device` implementation, which is NOT dyn-compatible
+/// Both smoltcp-specific methods take `&mut self` so concrete impls can access
+/// their `smoltcp::phy::Device` implementation, which is NOT dyn-compatible
 /// (GATs on `RxToken`/`TxToken`).
-pub trait SmoltcpDevice: Any + 'static {
+pub trait SmoltcpDevice: LinkLayer + 'static {
     /// Create a smoltcp Interface and SocketSet for this device.
     fn create_smoltcp_iface(&mut self) -> (smoltcp::iface::Interface, smoltcp::iface::SocketSet<'static>);
 

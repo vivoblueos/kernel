@@ -41,7 +41,7 @@ pub struct TcpSocket {
     is_shutdown: Rc<Cell<bool>>,
     network_manager: Rc<RefCell<NetworkManager>>,
     smoltcp_socket_handle: Option<SocketHandle>,
-    smoltcp_interface: Option<Rc<NetIface>>,
+    smoltcp_interface: Option<Arc<NetIface>>,
 }
 
 impl TcpSocket {
@@ -100,7 +100,7 @@ impl TcpSocket {
 }
 
 impl PosixSocket for TcpSocket {
-    fn bind_interface(&mut self, interface: Rc<NetIface>) {
+    fn bind_interface(&mut self, interface: Arc<NetIface>) {
         // Save interface
         self.smoltcp_interface.replace(interface.clone());
     }

@@ -12,19 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(virtio)]
-use crate::devices::net::virtio_net_device::net_dev_exist;
-#[cfg(virtio)]
-use crate::net::link::virtio::VirtioLink;
 use crate::{
-    allocator,
-    config::MAX_THREAD_PRIORITY,
     net::{
         connection::Connection,
-        iface::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
-        link::{loopback::LoopbackLink, LinkKind, LinkLayer, LINK_REGISTRY},
+        iface_list,
         protocol::{iana, PROTOCOL_REGISTRY},
-        smoltcp::{iface::NetIface, link::SmoltcpDevice},
         socket::PosixSocket,
         SocketDomain, SocketFd, SocketProtocol, SocketType,
     },
@@ -53,9 +45,7 @@ use spin;
 const DEFAULT_DELAY_TIME_IN_MILLIS: u64 = 100;
 
 pub struct NetworkManager {
-    net_ifaces: Vec<Rc<NetIface>>,
     socket_maps: BTreeMap<SocketFd, Rc<RefCell<dyn PosixSocket>>>,
-    default_net_iface: Option<Rc<NetIface>>,
 }
 
 impl NetworkManager {
@@ -67,66 +57,9 @@ impl NetworkManager {
 
     // It will only access by a standalone tcp/ip stack thread, so no need for Critical Section .
     fn new() -> Self {
-        let mut net_ifaces = Vec::new();
         let socket_maps = BTreeMap::new();
-        let mut default_net_iface = None;
-
-        // Add Loopback interface which always exist
-        let lo_device = Arc::new(spin::RwLock::new(LoopbackLink::new()));
-        let lo_link: Arc<spin::RwLock<dyn LinkLayer>> = lo_device.clone();
-        let lo_smoltcp: Arc<spin::RwLock<dyn SmoltcpDevice>> = lo_device;
-        let lo_iface = Rc::new(NetIface::new("lo".into(), lo_link, lo_smoltcp, 0));
-        net_ifaces.push(lo_iface.clone());
-        default_net_iface.replace(lo_iface);
-        log::debug!("Add NetIface(Lo)");
-
-        // Add other interfaces which may not exist
-        #[cfg(virtio)]
-        if net_dev_exist() {
-            // Create NetIface for virtio-net
-            let virtio_device = Arc::new(spin::RwLock::new(VirtioLink::new(0)));
-            let virtio_link: Arc<spin::RwLock<dyn LinkLayer>> = virtio_device.clone();
-            let virtio_smoltcp: Arc<spin::RwLock<dyn SmoltcpDevice>> = virtio_device;
-            let virtio_iface = Rc::new(NetIface::new(
-                "virtio-net".into(),
-                virtio_link,
-                virtio_smoltcp,
-                1,
-            ));
-            net_ifaces.push(virtio_iface.clone());
-            default_net_iface.replace(virtio_iface);
-            log::debug!("Add NetIface(Virtio)");
-        }
-
-        Self {
-            net_ifaces,
-            socket_maps,
-            default_net_iface,
-        }
-    }
-
-    #[allow(dead_code)]
-    /// Create an Arc<RwLock<dyn LinkLayer>> from a LinkLayer trait object.
-    /// Returns a fresh concrete instance matching the link kind.
-    fn create_link_from_registry(link: &dyn LinkLayer) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
-        match link.kind() {
-            LinkKind::Loopback => {
-                let concrete = LoopbackLink::new();
-                Some(Arc::new(spin::RwLock::new(concrete)))
-            }
-            LinkKind::Virtio => {
-                #[cfg(virtio)]
-                {
-                    let concrete = VirtioLink::new(0);
-                    Some(Arc::new(spin::RwLock::new(concrete)))
-                }
-                #[cfg(not(virtio))]
-                {
-                    None
-                }
-            }
-            _ => None,
-        }
+        // Device registration moved to net::init() via smoltcp::register_device()
+        Self { socket_maps }
     }
 
     pub fn create_posix_socket(
@@ -192,8 +125,7 @@ impl NetworkManager {
 
     pub fn bind_defualt_smoltcp_interface(&self, socket_fd: SocketFd) {
         if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            // Use default net interface when we find no subnet match with remote_addr
-            if let Some(interface) = self.default_net_iface.clone() {
+            if let Some(interface) = iface_list::default() {
                 let mut socket = socket.borrow_mut();
                 socket.bind_interface(interface.clone());
                 log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
@@ -205,13 +137,10 @@ impl NetworkManager {
 
     pub fn bind_smoltcp_interface(&self, socket_fd: SocketFd, binding_addr: IpAddress) {
         if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            self.net_ifaces
-                .iter()
-                .find(|iface| iface.contains_addr(binding_addr))
+            iface_list::find(|iface| iface.contains_addr(binding_addr))
                 .map_or_else(
                     || {
-                        // Use default net interface when we find no subnet match with remote_addr
-                        if let Some(interface) = self.default_net_iface.clone() {
+                        if let Some(interface) = iface_list::default() {
                             let mut socket = socket.borrow_mut();
                             socket.bind_interface(interface.clone());
                             log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
@@ -220,50 +149,11 @@ impl NetworkManager {
                         }
                     },
                     |iface| {
-                        // Otherwise choose the match net interface
                         let mut socket = socket.borrow_mut();
                         socket.bind_interface(iface.clone());
                         log::debug!("Socket Fd={} binding to {}", socket_fd, iface);
                     },
                 )
-        }
-    }
-
-    /// Handle a type-safe network control command.
-    ///
-    /// Bridges the POSIX ioctl path (via `Operation::NetControl`) to the
-    /// new `NetIface::control()` method. Uses the first available link
-    /// device from `LINK_REGISTRY`.
-    ///
-    /// Phase 0: this creates a transient `NetIface` wrapping the link.
-    /// In a later phase `NetIface` instances will be persistent in
-    /// `NetworkManager`.
-    pub fn handle_net_control(
-        &self,
-        cmd: NetIfaceControl,
-    ) -> Result<NetIfaceResult, NetIfaceError> {
-        let link_arc = LINK_REGISTRY.get(0).ok_or(NetIfaceError::DeviceNotFound)?;
-
-        // Phase 0: for now, only handle simple queries that don't require
-        // a full NetIface. The NetIface construction with RwLock<dyn LinkLayer>
-        // requires concrete type ownership which we don't have from the Arc.
-        // Full NetIface dispatch will be wired in Step 8.
-        match cmd {
-            NetIfaceControl::GetFlags => Ok(NetIfaceResult::Flags(InterfaceFlags {
-                up: link_arc.can_send() || link_arc.can_recv(),
-                running: true,
-                promiscuous: false,
-            })),
-            NetIfaceControl::GetMacAddress => {
-                let hw = link_arc
-                    .hw_addr()
-                    .and_then(|h| h.as_ethernet())
-                    .unwrap_or([0u8; 6]);
-                Ok(NetIfaceResult::MacAddress(hw))
-            }
-            NetIfaceControl::GetMtu => Ok(NetIfaceResult::Mtu(link_arc.mtu())),
-            NetIfaceControl::GetLinkKind => Ok(NetIfaceResult::LinkKind(link_arc.kind())),
-            _ => Err(NetIfaceError::NotSupported),
         }
     }
 
@@ -288,13 +178,9 @@ impl NetworkManager {
         while is_forever || (sysclk::now().as_millis() as usize) < timeout {
             // Step1 : poll smoltcp network stack
             {
-                let network_manager = network_manager.borrow();
-
-                // Phase 2a: poll NetIface instances (they bridge to NetInterface
-                // via bridge_iface, so the underlying smoltcp state is shared).
-                // Replaces the old net_interfaces direct poll.
+                // Poll all registered NetIface instances from the global list.
                 if let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) {
-                    for iface in network_manager.net_ifaces.iter() {
+                    for iface in iface_list::iter() {
                         iface.poll(Instant::from_millis(millis_i64));
                     }
                 }
@@ -308,9 +194,7 @@ impl NetworkManager {
 
             // Step3 : get next poll time from smoltcp network stack
             {
-                let network_manager = network_manager.borrow();
-                let sleep_time = network_manager
-                    .net_ifaces
+                let sleep_time = iface_list::iter()
                     .iter()
                     .map(|iface| {
                         let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) else {

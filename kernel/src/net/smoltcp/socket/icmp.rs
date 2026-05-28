@@ -39,7 +39,7 @@ pub struct IcmpSocket {
     is_shutdown: Rc<Cell<bool>>,
     network_manager: Rc<RefCell<NetworkManager>>,
     smoltcp_socket_handle: Option<SocketHandle>,
-    smoltcp_interface: Option<Rc<NetIface>>,
+    smoltcp_interface: Option<Arc<NetIface>>,
 }
 
 impl IcmpSocket {
@@ -100,7 +100,7 @@ impl IcmpSocket {
 }
 
 impl PosixSocket for IcmpSocket {
-    fn bind_interface(&mut self, interface: Rc<NetIface>) {
+    fn bind_interface(&mut self, interface: Arc<NetIface>) {
         // Save interface
         self.smoltcp_interface.replace(interface.clone());
     }

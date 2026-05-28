@@ -24,3 +24,38 @@
 pub(crate) mod iface;
 pub(crate) mod link;
 pub(crate) mod socket;
+
+use alloc::sync::Arc;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use spin;
+
+use crate::net::iface_list;
+use crate::net::link::LinkLayer;
+use crate::net::link::LINK_REGISTRY;
+use crate::net::smoltcp::iface::NetIface;
+use crate::net::smoltcp::link::SmoltcpDevice;
+
+/// Entry in the device registration list: (name, set_default, Arc<dyn SmoltcpDevice>).
+pub(crate) type DeviceEntry = (&'static str, bool, Arc<spin::RwLock<dyn SmoltcpDevice>>);
+
+/// Initialize the link registry with all devices and register their
+/// NetIface instances. Must be called exactly once during `net::init()`
+/// before the network thread starts.
+///
+/// Each entry is `(device, name, set_default)`. Returns the created
+/// `NetIface` instances in registration order.
+pub(crate) fn init_devices(devices: &[DeviceEntry]) -> Vec<Arc<NetIface>> {
+    let link_devices: Vec<Arc<spin::RwLock<dyn LinkLayer>>> =
+        devices.iter().map(|(_, _, link)| link.clone() as Arc<spin::RwLock<dyn LinkLayer>>).collect();
+    LINK_REGISTRY.init(link_devices);
+
+    let mut ifaces = Vec::new();
+    for (i, (name, set_default, _)) in devices.iter().enumerate() {
+        let link = devices[i].2.clone();
+        let iface = Arc::new(NetIface::new(name.to_string(), link, i));
+        iface_list::register(iface.clone(), *set_default);
+        ifaces.push(iface);
+    }
+    ifaces
+}

@@ -44,18 +44,11 @@ pub(crate) mod wifi_ops;
 use core::{any::Any, fmt};
 
 use alloc::{string::String, sync::Arc, vec::Vec};
-use spin::RwLock;
-
-use crate::net::link::loopback::LoopbackLink;
-
-#[cfg(virtio)]
-use crate::devices::net::virtio_net_device::net_dev_exist;
-#[cfg(virtio)]
-use crate::net::link::virtio::VirtioLink;
+use spin;
 
 pub(crate) use self::{link_kind::LinkKind, medium::Medium};
 
-use super::error::NetError;
+use crate::net::iface::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
 use crate::net::link::{ethernet_ops::EthernetOps, wifi_ops::WifiOps};
 
 /// A hardware address (MAC or similar).
@@ -139,56 +132,77 @@ impl dyn LinkLayer {
 }
 
 /// Global registry of link-layer devices.
-pub struct LinkRegistry {
-    devices: RwLock<Vec<Arc<dyn LinkLayer>>>,
+///
+/// # Safety
+///
+/// All devices must be registered during `net::init()`, before the network
+/// thread starts. After that, the registry is immutable — no further `register()`
+/// calls are allowed. This eliminates locking overhead for reads.
+///
+/// `init()` panics if called more than once.
+pub(crate) struct LinkRegistry {
+    devices: spin::Once<Vec<Arc<spin::RwLock<dyn LinkLayer>>>>,
 }
 
 impl LinkRegistry {
     pub const fn new() -> Self {
         LinkRegistry {
-            devices: RwLock::new(Vec::new()),
+            devices: spin::Once::new(),
         }
     }
 
-    pub fn register(&self, device: Arc<dyn LinkLayer>) {
-        log::debug!("[LinkRegistry] register device: {}", device.name());
-        self.devices.write().push(device);
+    /// Initialize the registry with all devices. Must be called exactly once
+    /// during `net::init()` before the network thread starts.
+    pub fn init(&self, devices: Vec<Arc<spin::RwLock<dyn LinkLayer>>>) {
+        self.devices.call_once(|| devices);
     }
 
-    pub fn get(&self, index: usize) -> Option<Arc<dyn LinkLayer>> {
-        self.devices.read().get(index).cloned()
+    pub fn get(&self, index: usize) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
+        self.devices.get()?.get(index).cloned()
     }
 
-    pub fn iter(&self) -> Vec<Arc<dyn LinkLayer>> {
-        self.devices.read().clone()
+    pub fn iter(&self) -> Vec<Arc<spin::RwLock<dyn LinkLayer>>> {
+        self.devices.get().cloned().unwrap_or_default()
     }
 
     pub fn len(&self) -> usize {
-        self.devices.read().len()
+        self.devices.get().map_or(0, Vec::len)
     }
 
-    pub fn find_by_name(&self, name: &str) -> Option<Arc<dyn LinkLayer>> {
-        self.devices
-            .read()
-            .iter()
-            .find(|d| d.name() == name)
-            .cloned()
+    pub fn find_by_name(&self, name: &str) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
+        self.devices.get()?.iter().find(|d| d.read().name() == name).cloned()
     }
 }
 
 /// Global link registry instance.
 pub(crate) static LINK_REGISTRY: LinkRegistry = LinkRegistry::new();
 
-/// Initialize and register all built-in link-layer devices.
-pub(crate) fn init() {
-    let lo = Arc::new(LoopbackLink::new());
-    LINK_REGISTRY.register(lo);
-    log::debug!("[LinkLayer] registered loopback");
+/// Handle a type-safe network control command against the first registered link device.
+///
+/// Bridges the POSIX ioctl path (via `Operation::NetControl`) to `LinkLayer`
+/// queries. Only simple getters (flags, MAC, MTU, link kind) are supported;
+/// IP configuration and WiFi operations are dispatched through `NetIface::control()`
+/// which has access to the full smoltcp stack.
+pub(crate) fn handle_control(cmd: NetIfaceControl) -> Result<NetIfaceResult, NetIfaceError> {
+    let link_arc = LINK_REGISTRY.get(0).ok_or(NetIfaceError::DeviceNotFound)?;
+    let link = link_arc.read();
 
-    #[cfg(virtio)]
-    if net_dev_exist() {
-        let virtio = Arc::new(VirtioLink::new(0));
-        LINK_REGISTRY.register(virtio);
-        log::debug!("[LinkLayer] registered virtio-net");
+    match cmd {
+        NetIfaceControl::GetFlags => Ok(NetIfaceResult::Flags(InterfaceFlags {
+            up: link.can_send() || link.can_recv(),
+            running: true,
+            promiscuous: false,
+        })),
+        NetIfaceControl::GetMacAddress => {
+            let hw = link
+                .hw_addr()
+                .and_then(|h| h.as_ethernet())
+                .unwrap_or([0u8; 6]);
+            Ok(NetIfaceResult::MacAddress(hw))
+        }
+        NetIfaceControl::GetMtu => Ok(NetIfaceResult::Mtu(link.mtu())),
+        NetIfaceControl::GetLinkKind => Ok(NetIfaceResult::LinkKind(link.kind())),
+        _ => Err(NetIfaceError::NotSupported),
     }
 }
+

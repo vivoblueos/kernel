@@ -16,6 +16,7 @@ pub(crate) mod connection;
 pub(crate) mod connection_err;
 pub(crate) mod error;
 pub(crate) mod iface;
+pub(crate) mod iface_list;
 pub(crate) mod link;
 pub(crate) mod net_manager;
 pub(crate) mod packet;
@@ -30,13 +31,41 @@ pub(crate) mod types;
 pub use error::NetError;
 pub use types::*;
 
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use spin;
+
+use crate::net::smoltcp::DeviceEntry;
+
+use crate::net::link::loopback::LoopbackLink;
+
 /// Initialize the new layered network architecture components.
 ///
 /// This must be called during kernel initialization to register protocols
 /// and populate the link registry. In Phase 0 the existing smoltcp-based
 /// `net_manager::init()` remains the primary entry point; this function
 /// seeds the registries used by the new code paths.
+#[inline]
+#[allow(clippy::vec_init_then_push)]
 pub(crate) fn init() {
     protocol::init();
-    link::init();
+
+    // Use a temporary Vec for conditional device registration so virtio
+    // devices are only added when the hardware exists.
+    let mut devices: Vec<DeviceEntry> = Vec::new();
+    devices.push((
+        "lo",
+        true,
+        Arc::new(spin::RwLock::new(LoopbackLink::new())),
+    ));
+    #[cfg(virtio)]
+    if crate::devices::net::virtio_net_device::net_dev_exist() {
+        devices.push((
+            "virtio-net",
+            true,
+            Arc::new(spin::RwLock::new(crate::net::link::virtio::VirtioLink::new(0))),
+        ));
+    }
+    // DEVICE_ENTRY here must match DeviceEntry in smoltcp/mod.rs.
+    smoltcp::init_devices(&devices);
 }

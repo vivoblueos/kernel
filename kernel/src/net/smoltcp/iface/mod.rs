@@ -38,22 +38,20 @@ use smoltcp::{
 };
 use spin::RwLock;
 
-use crate::net::link::{HwAddr, LinkLayer, Medium};
+use crate::net::link::{HwAddr, Medium};
 use crate::net::smoltcp::link::SmoltcpDevice;
 use crate::net::socket::socket_err::SocketError;
 
 /// L3 network interface.
 ///
 /// Bridges the link layer (L2) with the protocol layer (L4).
-/// Owns smoltcp Interface and SocketSet directly. Poll dispatch
-/// goes through `LinkLayer::poll_smoltcp()` which uses the concrete
-/// device type internally.
+/// Holds a single `Arc<RwLock<dyn SmoltcpDevice>>` — since
+/// `SmoltcpDevice: LinkLayer`, both L2 control and smoltcp lifecycle
+/// are available through one trait object.
 pub struct NetIface {
     name: String,
-    /// Link-layer device for control (L2 operations).
-    link: Arc<RwLock<dyn LinkLayer>>,
-    /// smoltcp protocol stack operations (separate from L2 control).
-    smoltcp: Arc<RwLock<dyn SmoltcpDevice>>,
+    /// Link-layer device (L2 control + smoltcp lifecycle).
+    link: Arc<RwLock<dyn SmoltcpDevice>>,
     /// smoltcp interface.
     smoltcp_iface: Rc<RefCell<Option<Interface>>>,
     /// smoltcp socket set.
@@ -62,19 +60,25 @@ pub struct NetIface {
     link_index: usize,
 }
 
+// SAFETY: NetIface contains Rc<RefCell<...>> and dyn SmoltcpDevice which are
+// !Send + !Sync, but the network stack runs on a single dedicated thread.
+// All access to NetIface is guarded by spin::RwLock, so sharing Arc<NetIface>
+// across threads is safe — the inner Rc<RefCell> is only ever accessed from
+// the network thread.
+unsafe impl Send for NetIface {}
+unsafe impl Sync for NetIface {}
+
 impl NetIface {
     pub(crate) fn new(
         name: String,
-        link: Arc<RwLock<dyn LinkLayer>>,
-        smoltcp: Arc<RwLock<dyn SmoltcpDevice>>,
+        link: Arc<RwLock<dyn SmoltcpDevice>>,
         link_index: usize,
     ) -> Self {
-        let (iface, sockets) = smoltcp.write().create_smoltcp_iface();
+        let (iface, sockets) = link.write().create_smoltcp_iface();
 
         NetIface {
             name,
             link,
-            smoltcp,
             smoltcp_iface: Rc::new(RefCell::new(Some(iface))),
             smoltcp_sockets: Rc::new(RefCell::new(Some(sockets))),
             link_index,
@@ -85,7 +89,7 @@ impl NetIface {
         &self.name
     }
 
-    pub fn link(&self) -> &Arc<RwLock<dyn LinkLayer>> {
+    pub fn link(&self) -> &Arc<RwLock<dyn SmoltcpDevice>> {
         &self.link
     }
 
@@ -147,7 +151,7 @@ impl NetIface {
         if let (Some(ref mut iface), Some(ref mut sockets)) =
             (iface_guard.as_mut(), sockets_guard.as_mut())
         {
-            let mut smoltcp = self.smoltcp.write();
+            let mut smoltcp = self.link.write();
             smoltcp.poll_smoltcp(timestamp, iface, sockets);
 
             // Phase 1 marker: native RX path placeholder.
