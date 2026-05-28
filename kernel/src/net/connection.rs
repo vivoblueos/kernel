@@ -19,6 +19,7 @@ use crate::{
         port_generator::PORT_GENERATOR,
         iface::control::NetIfaceControl,
         net_manager::NetworkManager,
+        smoltcp,
         socket::{
             socket_err::SocketError, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg, PosixSocket,
         },
@@ -36,7 +37,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     time::Duration,
 };
-use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
+use ::smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 use spin::Mutex;
 
 // For posix syscalls
@@ -459,8 +460,9 @@ impl Connection {
 
                     {
                         // Bind socket when we know remote addr : smoltcp need
-                        let network_manager_mut = network_manager.borrow_mut();
-                        network_manager_mut.bind_smoltcp_interface(socket_fd, remote_endpoint.addr);
+                        if let Some(socket) = network_manager.borrow().get_posix_socket(socket_fd) {
+                            smoltcp::bind_interface_by_addr(socket_fd, socket, remote_endpoint.addr);
+                        }
                     }
 
                     Connection::with_posix_socket(
@@ -570,8 +572,9 @@ impl Connection {
                     log::debug!("[Connection] handle SendMsg socket_fd={}", socket_fd);
 
                     {
-                        let network_manager_mut = network_manager.borrow_mut();
-                        network_manager_mut.bind_smoltcp_interface(socket_fd, remote_endpoint.addr);
+                        if let Some(socket) = network_manager.borrow().get_posix_socket(socket_fd) {
+                            smoltcp::bind_interface_by_addr(socket_fd, socket, remote_endpoint.addr);
+                        }
                     }
 
                     Connection::with_posix_socket(
@@ -694,15 +697,16 @@ impl Connection {
                     log::debug!("[Connection] handle Bind socket_fd={}", socket_fd);
 
                     {
-                        let network_manager_mut = network_manager.borrow_mut();
-                        match local_endpoint.addr {
-                            Some(address) => {
-                                // Bind a properly interface when we have address
-                                network_manager_mut.bind_smoltcp_interface(socket_fd, address)
-                            }
-                            None => {
-                                // Bind to default interface when we do not have address, bind to 0.0.0.0 is not support now
-                                network_manager_mut.bind_defualt_smoltcp_interface(socket_fd)
+                        if let Some(socket) = network_manager.borrow().get_posix_socket(socket_fd) {
+                            match local_endpoint.addr {
+                                Some(address) => {
+                                    // Bind a properly interface when we have address
+                                    smoltcp::bind_interface_by_addr(socket_fd, socket, address);
+                                }
+                                None => {
+                                    // Bind to default interface when we do not have address, bind to 0.0.0.0 is not support now
+                                    smoltcp::bind_default_interface(socket_fd, socket);
+                                }
                             }
                         }
                     }

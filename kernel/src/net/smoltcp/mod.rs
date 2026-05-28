@@ -25,15 +25,20 @@ pub(crate) mod iface;
 pub(crate) mod link;
 pub(crate) mod socket;
 
+use alloc::rc::Rc;
 use alloc::sync::Arc;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use core::cell::RefCell;
+use smoltcp::wire::IpAddress;
 use spin;
 
 use crate::net::iface_list;
 use crate::net::link::LinkLayer;
 use crate::net::link::LINK_REGISTRY;
 use crate::net::smoltcp::iface::NetIface;
+use crate::net::socket::PosixSocket;
+use crate::net::SocketFd;
 use crate::net::smoltcp::link::SmoltcpDevice;
 
 /// Entry in the device registration list: (name, set_default, Arc<dyn SmoltcpDevice>).
@@ -58,4 +63,44 @@ pub(crate) fn init_devices(devices: &[DeviceEntry]) -> Vec<Arc<NetIface>> {
         ifaces.push(iface);
     }
     ifaces
+}
+
+/// Bind a socket to the default NetIface.
+pub(crate) fn bind_default_interface(
+    socket_fd: SocketFd,
+    socket: Rc<RefCell<dyn PosixSocket>>,
+) {
+    if let Some(interface) = iface_list::default() {
+        let mut socket = socket.borrow_mut();
+        socket.bind_interface(interface.clone());
+        log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
+    } else {
+        log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
+    }
+}
+
+/// Bind a socket to the NetIface that contains `binding_addr`,
+/// falling back to the default interface.
+pub(crate) fn bind_interface_by_addr(
+    socket_fd: SocketFd,
+    socket: Rc<RefCell<dyn PosixSocket>>,
+    binding_addr: IpAddress,
+) {
+    iface_list::find(|iface| iface.contains_addr(binding_addr))
+        .map_or_else(
+            || {
+                if let Some(interface) = iface_list::default() {
+                    let mut socket = socket.borrow_mut();
+                    socket.bind_interface(interface.clone());
+                    log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
+                } else {
+                    log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
+                }
+            },
+            |iface| {
+                let mut socket = socket.borrow_mut();
+                socket.bind_interface(iface.clone());
+                log::debug!("Socket Fd={} binding to {}", socket_fd, iface);
+            },
+        )
 }

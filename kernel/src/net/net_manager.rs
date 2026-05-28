@@ -38,7 +38,7 @@ use blueos_kconfig::CONFIG_NETWORK_STACK_SIZE as NETWORK_STACK_SIZE;
 use core::{cell::RefCell, mem::MaybeUninit, time};
 use smoltcp::{
     time::{Duration, Instant},
-    wire::{IpAddress, IpEndpoint},
+    wire::IpEndpoint,
 };
 use spin;
 
@@ -123,40 +123,7 @@ impl NetworkManager {
         self.socket_maps.get(&socket_fd).cloned()
     }
 
-    pub fn bind_defualt_smoltcp_interface(&self, socket_fd: SocketFd) {
-        if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            if let Some(interface) = iface_list::default() {
-                let mut socket = socket.borrow_mut();
-                socket.bind_interface(interface.clone());
-                log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
-            } else {
-                log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
-            }
-        }
-    }
-
-    pub fn bind_smoltcp_interface(&self, socket_fd: SocketFd, binding_addr: IpAddress) {
-        if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            iface_list::find(|iface| iface.contains_addr(binding_addr))
-                .map_or_else(
-                    || {
-                        if let Some(interface) = iface_list::default() {
-                            let mut socket = socket.borrow_mut();
-                            socket.bind_interface(interface.clone());
-                            log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
-                        } else {
-                            log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
-                        }
-                    },
-                    |iface| {
-                        let mut socket = socket.borrow_mut();
-                        socket.bind_interface(iface.clone());
-                        log::debug!("Socket Fd={} binding to {}", socket_fd, iface);
-                    },
-                )
-        }
-    }
-
+    
     pub fn loop_within_single_thread<F>(
         network_manager: Rc<RefCell<NetworkManager>>,
         timeout_millis: usize,
