@@ -25,21 +25,18 @@ pub(crate) mod iface;
 pub(crate) mod link;
 pub(crate) mod socket;
 
-use alloc::rc::Rc;
-use alloc::sync::Arc;
-use alloc::string::ToString;
-use alloc::vec::Vec;
+use alloc::{rc::Rc, string::ToString, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use smoltcp::wire::IpAddress;
 use spin;
 
-use crate::net::iface_list;
-use crate::net::link::LinkLayer;
-use crate::net::link::LINK_REGISTRY;
-use crate::net::smoltcp::iface::NetIface;
-use crate::net::socket::PosixSocket;
-use crate::net::SocketFd;
-use crate::net::smoltcp::link::SmoltcpDevice;
+use crate::net::{
+    iface_list,
+    link::LinkLayer,
+    smoltcp::{iface::NetIface, link::SmoltcpDevice},
+    socket::PosixSocket,
+    SocketFd,
+};
 
 /// Entry in the device registration list: (name, set_default, Arc<dyn SmoltcpDevice>).
 pub(crate) type DeviceEntry = (&'static str, bool, Arc<spin::RwLock<dyn SmoltcpDevice>>);
@@ -51,25 +48,18 @@ pub(crate) type DeviceEntry = (&'static str, bool, Arc<spin::RwLock<dyn SmoltcpD
 /// Each entry is `(device, name, set_default)`. Returns the created
 /// `NetIface` instances in registration order.
 pub(crate) fn init_devices(devices: &[DeviceEntry]) -> Vec<Arc<NetIface>> {
-    let link_devices: Vec<Arc<spin::RwLock<dyn LinkLayer>>> =
-        devices.iter().map(|(_, _, link)| link.clone() as Arc<spin::RwLock<dyn LinkLayer>>).collect();
-    LINK_REGISTRY.init(link_devices);
-
     let mut ifaces = Vec::new();
-    for (i, (name, set_default, _)) in devices.iter().enumerate() {
-        let link = devices[i].2.clone();
-        let iface = Arc::new(NetIface::new(name.to_string(), link, i));
-        iface_list::register(iface.clone(), *set_default);
+    for (i, (name, set_default, link)) in devices.iter().enumerate() {
+        let iface = Arc::new(NetIface::new(name.to_string(), link.clone(), i));
+        let link_layer: Arc<spin::RwLock<dyn LinkLayer>> = link.clone();
+        iface_list::register(iface.clone(), link_layer, *set_default);
         ifaces.push(iface);
     }
     ifaces
 }
 
 /// Bind a socket to the default NetIface.
-pub(crate) fn bind_default_interface(
-    socket_fd: SocketFd,
-    socket: Rc<RefCell<dyn PosixSocket>>,
-) {
+pub(crate) fn bind_default_interface(socket_fd: SocketFd, socket: Rc<RefCell<dyn PosixSocket>>) {
     if let Some(interface) = iface_list::default() {
         let mut socket = socket.borrow_mut();
         socket.bind_interface(interface.clone());
@@ -86,21 +76,20 @@ pub(crate) fn bind_interface_by_addr(
     socket: Rc<RefCell<dyn PosixSocket>>,
     binding_addr: IpAddress,
 ) {
-    iface_list::find(|iface| iface.contains_addr(binding_addr))
-        .map_or_else(
-            || {
-                if let Some(interface) = iface_list::default() {
-                    let mut socket = socket.borrow_mut();
-                    socket.bind_interface(interface.clone());
-                    log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
-                } else {
-                    log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
-                }
-            },
-            |iface| {
+    iface_list::find(|iface| iface.contains_addr(binding_addr)).map_or_else(
+        || {
+            if let Some(interface) = iface_list::default() {
                 let mut socket = socket.borrow_mut();
-                socket.bind_interface(iface.clone());
-                log::debug!("Socket Fd={} binding to {}", socket_fd, iface);
-            },
-        )
+                socket.bind_interface(interface.clone());
+                log::debug!("Socket Fd={} binding to {}", socket_fd, interface);
+            } else {
+                log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
+            }
+        },
+        |iface| {
+            let mut socket = socket.borrow_mut();
+            socket.bind_interface(iface.clone());
+            log::debug!("Socket Fd={} binding to {}", socket_fd, iface);
+        },
+    )
 }

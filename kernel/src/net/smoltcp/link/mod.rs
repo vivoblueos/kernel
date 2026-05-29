@@ -30,7 +30,12 @@ use crate::net::link::LinkLayer;
 /// (GATs on `RxToken`/`TxToken`).
 pub trait SmoltcpDevice: LinkLayer + 'static {
     /// Create a smoltcp Interface and SocketSet for this device.
-    fn create_smoltcp_iface(&mut self) -> (smoltcp::iface::Interface, smoltcp::iface::SocketSet<'static>);
+    fn create_smoltcp_iface(
+        &mut self,
+    ) -> (
+        smoltcp::iface::Interface,
+        smoltcp::iface::SocketSet<'static>,
+    );
 
     /// Poll the smoltcp Interface using this device's concrete Device impl.
     fn poll_smoltcp(

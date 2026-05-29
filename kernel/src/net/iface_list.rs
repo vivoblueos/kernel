@@ -22,7 +22,10 @@
 use alloc::{sync::Arc, vec::Vec};
 use spin::RwLock;
 
-use crate::net::smoltcp::iface::NetIface;
+use crate::net::{
+    link::{LinkLayer, LINK_REGISTRY},
+    smoltcp::iface::NetIface,
+};
 
 /// Global list of network interfaces.
 static NET_IFACE_LIST: RwLock<Vec<Arc<NetIface>>> = RwLock::new(Vec::new());
@@ -30,12 +33,17 @@ static NET_IFACE_LIST: RwLock<Vec<Arc<NetIface>>> = RwLock::new(Vec::new());
 /// Default interface (the last registered non-loopback interface, or loopback).
 static DEFAULT_IFACE: RwLock<Option<Arc<NetIface>>> = RwLock::new(None);
 
-/// Register a NetIface into the global list.
+/// Register a NetIface and its corresponding LinkLayer into the global registries.
+///
+/// This is the **single entry point** for all interface+link registration.
+/// Both `NET_IFACE_LIST` and `LINK_REGISTRY` are updated atomically (per call).
+/// The caller *must* already have populated `LINK_REGISTRY` via `LINK_REGISTRY.init()`
+/// before calling this function for the first time.
 ///
 /// If `set_default` is true, this interface becomes the default.
-/// (The driver should call this once per interface during boot.)
-pub fn register(iface: Arc<NetIface>, set_default: bool) {
+pub fn register(iface: Arc<NetIface>, link: Arc<spin::RwLock<dyn LinkLayer>>, set_default: bool) {
     NET_IFACE_LIST.write().push(iface.clone());
+    LINK_REGISTRY.push(link);
     if set_default {
         DEFAULT_IFACE.write().replace(iface);
     }

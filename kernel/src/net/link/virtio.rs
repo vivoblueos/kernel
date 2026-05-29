@@ -27,8 +27,10 @@ use smoltcp::{
 
 use crate::{
     devices::net::virtio_net_device::{VirtIONetDevice, VirtIONetRxToken, VirtIONetTxToken},
-    net::link::{HwAddr, LinkKind, LinkLayer, Medium},
-    net::smoltcp::link::SmoltcpDevice,
+    net::{
+        link::{HwAddr, LinkKind, LinkLayer, Medium},
+        smoltcp::link::SmoltcpDevice,
+    },
 };
 
 /// VirtIO link-layer device.

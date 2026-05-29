@@ -25,8 +25,10 @@ use smoltcp::{
     wire::{HardwareAddress, IpAddress, IpCidr},
 };
 
-use crate::net::link::{HwAddr, LinkKind, LinkLayer, Medium};
-use crate::net::smoltcp::link::SmoltcpDevice;
+use crate::net::{
+    link::{HwAddr, LinkKind, LinkLayer, Medium},
+    smoltcp::link::SmoltcpDevice,
+};
 
 /// Loopback link-layer device.
 pub struct LoopbackLink {

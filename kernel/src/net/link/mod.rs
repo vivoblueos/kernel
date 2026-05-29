@@ -48,8 +48,10 @@ use spin;
 
 pub(crate) use self::{link_kind::LinkKind, medium::Medium};
 
-use crate::net::iface::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
-use crate::net::link::{ethernet_ops::EthernetOps, wifi_ops::WifiOps};
+use crate::net::{
+    iface::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
+    link::{ethernet_ops::EthernetOps, wifi_ops::WifiOps},
+};
 
 /// A hardware address (MAC or similar).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,44 +135,43 @@ impl dyn LinkLayer {
 
 /// Global registry of link-layer devices.
 ///
-/// # Safety
-///
-/// All devices must be registered during `net::init()`, before the network
-/// thread starts. After that, the registry is immutable — no further `register()`
-/// calls are allowed. This eliminates locking overhead for reads.
-///
-/// `init()` panics if called more than once.
+/// All devices are registered during `net::init()` (single-threaded, before the
+/// network thread starts). After that, the registry is logically immutable —
+/// no further `push()` calls are made, so `Mutex` contention is zero at runtime.
 pub(crate) struct LinkRegistry {
-    devices: spin::Once<Vec<Arc<spin::RwLock<dyn LinkLayer>>>>,
+    devices: spin::Mutex<Vec<Arc<spin::RwLock<dyn LinkLayer>>>>,
 }
 
 impl LinkRegistry {
     pub const fn new() -> Self {
         LinkRegistry {
-            devices: spin::Once::new(),
+            devices: spin::Mutex::new(Vec::new()),
         }
     }
 
-    /// Initialize the registry with all devices. Must be called exactly once
-    /// during `net::init()` before the network thread starts.
-    pub fn init(&self, devices: Vec<Arc<spin::RwLock<dyn LinkLayer>>>) {
-        self.devices.call_once(|| devices);
+    /// Push a single device into the registry during init.
+    pub fn push(&self, device: Arc<spin::RwLock<dyn LinkLayer>>) {
+        self.devices.lock().push(device);
     }
 
     pub fn get(&self, index: usize) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
-        self.devices.get()?.get(index).cloned()
+        self.devices.lock().get(index).cloned()
     }
 
     pub fn iter(&self) -> Vec<Arc<spin::RwLock<dyn LinkLayer>>> {
-        self.devices.get().cloned().unwrap_or_default()
+        self.devices.lock().clone()
     }
 
     pub fn len(&self) -> usize {
-        self.devices.get().map_or(0, Vec::len)
+        self.devices.lock().len()
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
-        self.devices.get()?.iter().find(|d| d.read().name() == name).cloned()
+        self.devices
+            .lock()
+            .iter()
+            .find(|dev| dev.read().name() == name)
+            .cloned()
     }
 }
 
@@ -205,4 +206,3 @@ pub(crate) fn handle_control(cmd: NetIfaceControl) -> Result<NetIfaceResult, Net
         _ => Err(NetIfaceError::NotSupported),
     }
 }
-

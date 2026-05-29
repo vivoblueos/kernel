@@ -28,7 +28,9 @@
 //! (which IS dyn-compatible) for both control operations and smoltcp
 //! poll dispatch.
 
-pub(crate) use crate::net::iface::control::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult};
+pub(crate) use crate::net::iface::control::{
+    InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult,
+};
 use alloc::{rc::Rc, string::String, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use smoltcp::{
@@ -38,9 +40,11 @@ use smoltcp::{
 };
 use spin::RwLock;
 
-use crate::net::link::{HwAddr, Medium};
-use crate::net::smoltcp::link::SmoltcpDevice;
-use crate::net::socket::socket_err::SocketError;
+use crate::net::{
+    link::{HwAddr, Medium},
+    smoltcp::link::SmoltcpDevice,
+    socket::socket_err::SocketError,
+};
 
 /// L3 network interface.
 ///
