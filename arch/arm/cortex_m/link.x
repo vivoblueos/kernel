@@ -209,7 +209,7 @@ SECTIONS
 
   .heap (COPY) :
   {
-    . = ALIGN(8);
+    . = ALIGN(16);
     PROVIDE(_end = .);
     __heap_start = .;
     . = ORIGIN(RAM) + LENGTH(RAM) - STACK_SIZE - STACK_GUARD_SIZE;
