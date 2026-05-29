@@ -14,11 +14,7 @@
 
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
-use crate::net::{
-    connection::OperationIPCReply,
-    smoltcp::iface::NetIface,
-    types::SocketResult,
-};
+use crate::net::{connection::OperationIPCReply, smoltcp::iface::NetIface, types::SocketResult};
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 pub mod socket_err;

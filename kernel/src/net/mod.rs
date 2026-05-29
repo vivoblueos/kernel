@@ -31,8 +31,7 @@ pub(crate) mod types;
 pub use error::NetError;
 pub use types::*;
 
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use spin;
 
 use crate::net::smoltcp::DeviceEntry;
@@ -53,17 +52,15 @@ pub(crate) fn init() {
     // Use a temporary Vec for conditional device registration so virtio
     // devices are only added when the hardware exists.
     let mut devices: Vec<DeviceEntry> = Vec::new();
-    devices.push((
-        "lo",
-        true,
-        Arc::new(spin::RwLock::new(LoopbackLink::new())),
-    ));
+    devices.push(("lo", true, Arc::new(spin::RwLock::new(LoopbackLink::new()))));
     #[cfg(virtio)]
     if crate::devices::net::virtio_net_device::net_dev_exist() {
         devices.push((
             "virtio-net",
             true,
-            Arc::new(spin::RwLock::new(crate::net::link::virtio::VirtioLink::new(0))),
+            Arc::new(spin::RwLock::new(
+                crate::net::link::virtio::VirtioLink::new(0),
+            )),
         ));
     }
     // DEVICE_ENTRY here must match DeviceEntry in smoltcp/mod.rs.

@@ -123,7 +123,6 @@ impl NetworkManager {
         self.socket_maps.get(&socket_fd).cloned()
     }
 
-    
     pub fn loop_within_single_thread<F>(
         network_manager: Rc<RefCell<NetworkManager>>,
         timeout_millis: usize,

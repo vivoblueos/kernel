@@ -16,9 +16,9 @@ use crate::{
     error::{code, Error},
     net::{
         connection_err::ConnectionError,
-        port_generator::PORT_GENERATOR,
         iface::control::NetIfaceControl,
         net_manager::NetworkManager,
+        port_generator::PORT_GENERATOR,
         smoltcp,
         socket::{
             socket_err::SocketError, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg, PosixSocket,
@@ -30,6 +30,7 @@ use crate::{
     thread::Thread,
     time::Tick,
 };
+use ::smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 use alloc::{boxed::Box, format, rc::Rc, sync::Arc};
 use core::{
     cell::RefCell,
@@ -37,7 +38,6 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     time::Duration,
 };
-use ::smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 use spin::Mutex;
 
 // For posix syscalls
@@ -461,7 +461,11 @@ impl Connection {
                     {
                         // Bind socket when we know remote addr : smoltcp need
                         if let Some(socket) = network_manager.borrow().get_posix_socket(socket_fd) {
-                            smoltcp::bind_interface_by_addr(socket_fd, socket, remote_endpoint.addr);
+                            smoltcp::bind_interface_by_addr(
+                                socket_fd,
+                                socket,
+                                remote_endpoint.addr,
+                            );
                         }
                     }
 
@@ -573,7 +577,11 @@ impl Connection {
 
                     {
                         if let Some(socket) = network_manager.borrow().get_posix_socket(socket_fd) {
-                            smoltcp::bind_interface_by_addr(socket_fd, socket, remote_endpoint.addr);
+                            smoltcp::bind_interface_by_addr(
+                                socket_fd,
+                                socket,
+                                remote_endpoint.addr,
+                            );
                         }
                     }
 
