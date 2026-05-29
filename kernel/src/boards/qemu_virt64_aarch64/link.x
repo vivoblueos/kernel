@@ -2,10 +2,11 @@ OUTPUT_FORMAT("elf64-littleaarch64", "elf64-littleaarch64", "elf64-littleaarch64
 OUTPUT_ARCH(aarch64)
 
 STACK_SIZE = 128 * 1024;
+KERNEL_OFFSET = 0xFFFFFF8000000000;
 
 MEMORY
 {
-	DRAM : ORIGIN = 0x40280000, LENGTH = 32M
+       DRAM : ORIGIN = 0x40280000 + KERNEL_OFFSET, LENGTH = 32M
 }
 
 PHDRS
@@ -20,7 +21,7 @@ PHDRS
 ENTRY(_start)
 SECTIONS
 {
-    .text :
+    .text : AT(ADDR(.text) - KERNEL_OFFSET)
     {
         __text_start = .;
         _start = .;
@@ -33,28 +34,28 @@ SECTIONS
         __text_end = .;
     } > DRAM :text
 
-    .rodata : ALIGN(4096)
+    .rodata : AT(ADDR(.rodata) - KERNEL_OFFSET) ALIGN(4096)
     {
         __rodata_start = .;
         *(.rodata*)
         __rodata_end = .;
     } > DRAM :rodata
 
-    .data : ALIGN(4096)
+    .data : AT(ADDR(.data) - KERNEL_OFFSET) ALIGN(4096)
     {
         __data_start = .;
         *(.data*)
         __data_end = .;
     } > DRAM :data
 
-    .bss : ALIGN(4096)
+    .bss : AT(ADDR(.bss) - KERNEL_OFFSET) ALIGN(4096)
     {
         __bss_start = .;
         *(.bss*)
         __bss_end = .;
     } > DRAM :data
 
-    .init_array : {
+    .init_array : AT(ADDR(.init_array) - KERNEL_OFFSET) {
       . = ALIGN(16);
       PROVIDE_HIDDEN (__init_array_start = .);
       KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*)))
@@ -62,7 +63,7 @@ SECTIONS
       PROVIDE_HIDDEN (__init_array_end = .);
     } > DRAM :data
 
-    .bk_app_array : {
+    .bk_app_array : AT(ADDR(.bk_app_array) - KERNEL_OFFSET) {
       . = ALIGN(16);
       PROVIDE_HIDDEN (__bk_app_array_start = .);
       KEEP (*(SORT_BY_INIT_PRIORITY(.bk_app_array.*)))
@@ -70,7 +71,7 @@ SECTIONS
       PROVIDE_HIDDEN (__bk_app_array_end = .);
     } > DRAM :data
 
-    .stack : ALIGN(4096)
+    .stack : AT(ADDR(.stack) - KERNEL_OFFSET) ALIGN(4096)
     {
         __sys_stack_start = .;
         . += STACK_SIZE;

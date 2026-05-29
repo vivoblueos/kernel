@@ -99,6 +99,7 @@ build_rust("kernel_unittest") {
     "--test",
     "-Zpanic-abort-tests",
   ]
+  linker_script = default_linker_script
   if (defined(chip)) {
     rustflags += [
       "--cfg",
@@ -130,6 +131,7 @@ build_rust("kernel_integration_test") {
     deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
   }
   cfgs = _kernel_default_cfgs
+  linker_script = default_linker_script
   rustflags = [
     "--test",
     "-Zpanic-abort-tests",

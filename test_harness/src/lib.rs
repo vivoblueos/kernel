@@ -67,10 +67,12 @@ pub fn ignore(_attr: TokenStream, _item: TokenStream) -> TokenStream {
 }
 
 fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let repeat_count = match parse_repeat_count(attr) {
-        Ok(n) => n,
+    let test_config = match parse_test_config(attr) {
+        Ok(config) => config,
         Err(e) => return e.to_compile_error().into(),
     };
+    let repeat_count = test_config.repeat_count;
+    let thread_count = test_config.thread_count;
     let input = parse_macro_input!(item as ItemFn);
     let test_name = &input.sig.ident;
     let input_block = &input.block;
@@ -123,63 +125,145 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     });
 
-    let expanded = if repeat_count == 1 {
+    let test_body = if thread_count == 1 && repeat_count == 1 {
         quote! {
-            #(#passthrough_attrs)*
-            #[test_case]
-            fn #test_name(#(#filtered_params),*) {
-                #[cfg(not(use_defmt))]
-                use semihosting::println;
-                #[cfg(use_defmt)]
-                use defmt::println as println;
-                #( let _ = #param_names; )*
-                #ignore_guard
-                println!("[ RUN      ] {}", stringify!(#test_name));
+            println!("[ RUN      ] {}", stringify!(#test_name));
+            #input_block
+            println!("[       OK ] {}", stringify!(#test_name));
+        }
+    } else if thread_count == 1 {
+        quote! {
+            for __blueos_repeat_idx in 0..#repeat_count {
+                println!(
+                    "[ RUN      ] {} [{}/{}]",
+                    stringify!(#test_name),
+                    __blueos_repeat_idx + 1,
+                    #repeat_count
+                );
                 #input_block
-                println!("[       OK ] {}", stringify!(#test_name));
+                println!(
+                    "[       OK ] {} [{}/{}]",
+                    stringify!(#test_name),
+                    __blueos_repeat_idx + 1,
+                    #repeat_count
+                );
             }
         }
     } else {
-        quote! {
-            #(#passthrough_attrs)*
-            #[test_case]
-            fn #test_name(#(#filtered_params),*) {
-                #[cfg(not(use_defmt))]
-                use semihosting::println;
-                #[cfg(use_defmt)]
-                use defmt::println as println;
-                #( let _ = #param_names; )*
-                #ignore_guard
+        let barrier_count = thread_count + 1;
+        let build_threaded_test_body = || {
+            quote! {
+                {
+                    struct __BlueOSTestDoneGuard {
+                        done: blueos::types::Arc<core::sync::atomic::AtomicUsize>,
+                    }
+
+                    impl Drop for __BlueOSTestDoneGuard {
+                        fn drop(&mut self) {
+                            self.done.fetch_add(1, core::sync::atomic::Ordering::Release);
+                            blueos::sync::wake(&self.done);
+                        }
+                    }
+
+                    let __blueos_done =
+                        blueos::types::Arc::new(core::sync::atomic::AtomicUsize::new(0));
+                    let __blueos_start =
+                        blueos::types::Arc::new(blueos::sync::ConstBarrier::<#barrier_count>::new());
+                    for __blueos_thread_idx in 0..#thread_count {
+                        let __blueos_done = __blueos_done.clone();
+                        let __blueos_start = __blueos_start.clone();
+                        blueos::thread::spawn(move || {
+                            let _ = __blueos_thread_idx;
+                            __blueos_start.wait();
+                            let _blueos_done_guard =
+                                __BlueOSTestDoneGuard { done: __blueos_done };
+                            #input_block
+                        })
+                        .expect("failed to spawn test thread");
+                    }
+                    __blueos_start.wait();
+                    blueos::sync::wait_until(#thread_count, &__blueos_done);
+                }
+            }
+        };
+
+        if repeat_count == 1 {
+            let threaded_test_body = build_threaded_test_body();
+            quote! {
+                println!(
+                    "[ RUN      ] {} [threads={}]",
+                    stringify!(#test_name),
+                    #thread_count
+                );
+                #threaded_test_body
+                println!(
+                    "[       OK ] {} [threads={}]",
+                    stringify!(#test_name),
+                    #thread_count
+                );
+            }
+        } else {
+            let threaded_test_body = build_threaded_test_body();
+            quote! {
                 for __blueos_repeat_idx in 0..#repeat_count {
                     println!(
-                        "[ RUN      ] {} [{}/{}]",
+                        "[ RUN      ] {} [{}/{}, threads={}]",
                         stringify!(#test_name),
                         __blueos_repeat_idx + 1,
-                        #repeat_count
+                        #repeat_count,
+                        #thread_count
                     );
-                    #input_block
+                    #threaded_test_body
                     println!(
-                        "[       OK ] {} [{}/{}]",
+                        "[       OK ] {} [{}/{}, threads={}]",
                         stringify!(#test_name),
                         __blueos_repeat_idx + 1,
-                        #repeat_count
+                        #repeat_count,
+                        #thread_count
                     );
                 }
             }
         }
     };
+
+    let expanded = quote! {
+        #(#passthrough_attrs)*
+        #[test_case]
+        fn #test_name(#(#filtered_params),*) {
+            #[cfg(not(use_defmt))]
+            use semihosting::println;
+            #[cfg(use_defmt)]
+            use defmt::println as println;
+            #( let _ = #param_names; )*
+            #ignore_guard
+            #test_body
+        }
+    };
     expanded.into()
 }
 
-fn parse_repeat_count(attr: TokenStream) -> Result<usize, syn::Error> {
+#[derive(Clone, Copy, Debug)]
+struct TestConfig {
+    repeat_count: usize,
+    thread_count: usize,
+}
+
+fn parse_test_config(attr: TokenStream) -> Result<TestConfig, syn::Error> {
     if attr.is_empty() {
-        return Ok(1);
+        return Ok(TestConfig {
+            repeat_count: 1,
+            thread_count: 1,
+        });
     }
 
     let parser = Punctuated::<Meta, Comma>::parse_terminated;
     let metas = parser.parse2(attr.into())?;
-    let mut repeat = 1usize;
+    let mut config = TestConfig {
+        repeat_count: 1,
+        thread_count: 1,
+    };
     let mut seen_repeat = false;
+    let mut seen_thread = false;
 
     for meta in metas {
         match meta {
@@ -190,33 +274,47 @@ fn parse_repeat_count(attr: TokenStream) -> Result<usize, syn::Error> {
                         "`repeat` can only be specified once",
                     ));
                 }
-                let Expr::Lit(ExprLit {
-                    lit: Lit::Int(lit_int),
-                    ..
-                }) = name_value.value
-                else {
+                config.repeat_count = parse_usize_attr(&name_value, "repeat")?;
+                seen_repeat = true;
+            }
+            Meta::NameValue(name_value) if name_value.path.is_ident("thread") => {
+                if seen_thread {
                     return Err(syn::Error::new_spanned(
                         name_value,
-                        "`repeat` expects an integer literal, e.g. #[test(repeat = 10)]",
-                    ));
-                };
-                let parsed = lit_int.base10_parse::<usize>()?;
-                if parsed == 0 {
-                    return Err(syn::Error::new_spanned(
-                        lit_int,
-                        "`repeat` must be greater than 0",
+                        "`thread` can only be specified once",
                     ));
                 }
-                repeat = parsed;
-                seen_repeat = true;
+                config.thread_count = parse_usize_attr(&name_value, "thread")?;
+                seen_thread = true;
             }
             other => {
                 return Err(syn::Error::new_spanned(
                     other,
-                    "unsupported test attribute, expected #[test(repeat = N)]",
+                    "unsupported test attribute, expected #[test(repeat = N, thread = M)]",
                 ));
             }
         }
     }
-    Ok(repeat)
+    Ok(config)
+}
+
+fn parse_usize_attr(name_value: &syn::MetaNameValue, name: &str) -> Result<usize, syn::Error> {
+    let Expr::Lit(ExprLit {
+        lit: Lit::Int(lit_int),
+        ..
+    }) = &name_value.value
+    else {
+        return Err(syn::Error::new_spanned(
+            name_value,
+            format!("`{name}` expects an integer literal"),
+        ));
+    };
+    let parsed = lit_int.base10_parse::<usize>()?;
+    if parsed == 0 {
+        return Err(syn::Error::new_spanned(
+            lit_int,
+            format!("`{name}` must be greater than 0"),
+        ));
+    }
+    Ok(parsed)
 }

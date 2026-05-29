@@ -105,8 +105,7 @@ impl PortGenerator {
                 })
                 .expect("Atomic port counter should never fail");
 
-            if !ports.contains(&(candidate, socket_type)) {
-                ports.insert((candidate, socket_type));
+            if ports.insert((candidate, socket_type)) {
                 return Ok(candidate);
             }
         }

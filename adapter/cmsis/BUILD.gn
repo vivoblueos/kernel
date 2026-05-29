@@ -51,6 +51,7 @@ build_rust("cmsis_adapter_unittest") {
     "//kernel/test_harness:blueos_test_macro",
   ]
   deps = adapter_deps
+  linker_script = default_linker_script
   deps += [
     ":cmsis_adapter",
     "//external/vendor/semihosting-0.1.20:semihosting",
@@ -107,6 +108,7 @@ build_rust("adapter_validation") {
     "//kernel/test_harness:blueos_test_macro",
   ]
   deps = validation_deps
+  linker_script = default_linker_script
   deps += [
     ":cmsis_adapter",
     ":validation_cases",
