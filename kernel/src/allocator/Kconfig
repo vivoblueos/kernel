@@ -6,7 +6,9 @@ choice
     config ALLOCATOR_TLSF
         bool "TLSF algorithm"
     config ALLOCATOR_SLAB
-        bool "SLAB algorithm"
+        bool "SLAB algorithm (static)"
+    config ALLOCATOR_SLAB_DYNAMIC
+        bool "SLAB algorithm (dynamic, with page pool)"
     config ALLOCATOR_LLFF
         bool "LLFF algorithm"
     config ALLOCATOR_BUDDY
@@ -17,5 +19,19 @@ config ALLOCATOR
     string
     default "tlsf" if ALLOCATOR_TLSF
     default "slab" if ALLOCATOR_SLAB
+    default "slab_dynamic" if ALLOCATOR_SLAB_DYNAMIC
     default "llff" if ALLOCATOR_LLFF
     default "buddy" if ALLOCATOR_BUDDY
+
+config SLAB_DEBUG
+    bool "Enable SLAB allocator debug logging"
+    default n
+    depends on ALLOCATOR_SLAB || ALLOCATOR_SLAB_DYNAMIC
+    help
+      Enable debug logging for SLAB allocator operations including
+      page allocation, deallocation, and pool management.
+
+config SLAB_DYNAMIC_MAX_TOTAL_PAGES
+    int "Max total pages in page pool"
+    default 32
+    depends on ALLOCATOR_SLAB_DYNAMIC

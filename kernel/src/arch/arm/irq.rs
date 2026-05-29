@@ -156,15 +156,9 @@ extern "C" fn _generic_isr_handler() {
 
     #[cfg(round_robin)]
     {
-        use core::intrinsics::likely;
-
-        use crate::scheduler::is_schedule_ready;
-
-        if likely(is_schedule_ready()) {
-            // If the scheduler is preemptive, trigger PendSV to perform
-            // a context switch after handling the current interrupt.
-            cortex_m::peripheral::SCB::set_pendsv();
-        }
+        // If the scheduler is preemptive, trigger PendSV to perform
+        // a context switch after handling the current interrupt.
+        crate::scheduler::yield_me_now_or_later();
     }
 }
 

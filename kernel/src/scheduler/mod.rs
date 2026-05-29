@@ -14,6 +14,7 @@
 
 extern crate alloc;
 use crate::{
+    allocator,
     arch::{self, Context},
     signal,
     support::DisableInterruptGuard,

@@ -16,3 +16,34 @@ config UNITTEST_THREAD_NUM
     default 64
     help
         Set the number of thread used by unittest.
+
+choice
+    prompt "Default global logger filter level"
+    default LOG_LEVEL_INFO
+    help
+      Set Logger filter level
+    config LOG_LEVEL_OFF
+        bool "off"
+        help
+          Set logger filter level to off
+    config LOG_LEVEL_ERROR
+        bool "error"
+        help
+          Set logger filter level to error
+    config LOG_LEVEL_WARN
+        bool "warn"
+        help
+          Set logger filter level to warn
+    config LOG_LEVEL_INFO
+        bool "info"
+        help
+          Set logger filter level to info
+    config LOG_LEVEL_DEBUG
+        bool "debug"
+        help
+          Set logger filter level to debug
+    config LOG_LEVEL_TRACE
+        bool "trace"
+        help
+          Set logger filter level to trace
+endchoice
