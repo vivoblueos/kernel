@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{VirtioDevice, VirtQueue, console::VirtioConsole};
+use super::{console::VirtioConsole, VirtQueue, VirtioDevice};
 
 pub struct VirtioMmioTransport<T: VirtioDevice> {
     pub device: T,
@@ -32,7 +32,14 @@ impl<T: VirtioDevice> VirtioMmioTransport<T> {
             queue_sel: 0,
             devices_features_sel: 0,
             interrupt_status: 0,
-            queues: [VirtQueue { ready: false, num: 0, desc_addr: 0, avail_addr: 0, used_addr: 0, last_idx: 0 }; 2],
+            queues: [VirtQueue {
+                ready: false,
+                num: 0,
+                desc_addr: 0,
+                avail_addr: 0,
+                used_addr: 0,
+                last_idx: 0,
+            }; 2],
             irq_handler,
         }
     }
@@ -51,7 +58,13 @@ impl<T: VirtioDevice> VirtioMmioTransport<T> {
                 }
             }
             0x034 => 256,
-            0x044 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].ready as u32 } else { 0 },
+            0x044 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].ready as u32
+                } else {
+                    0
+                }
+            }
             0x60 => self.interrupt_status,
             0x070 => self.status,
             _ => 0,
@@ -62,8 +75,16 @@ impl<T: VirtioDevice> VirtioMmioTransport<T> {
         match offset {
             0x014 => self.devices_features_sel = value,
             0x030 => self.queue_sel = value,
-            0x038 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].num = value },
-            0x044 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].ready = value == 1 },
+            0x038 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].num = value
+                }
+            }
+            0x044 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].ready = value == 1
+                }
+            }
             0x050 => {
                 let should_interrupt = self.device.handle_kick(value as usize, &mut self.queues);
                 if should_interrupt {
@@ -76,12 +97,48 @@ impl<T: VirtioDevice> VirtioMmioTransport<T> {
                 self.status = value;
                 self.device.handle_status(value);
             }
-            0x080 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].desc_addr = (self.queues[self.queue_sel as usize].desc_addr & !0xFFFF_FFFF) | value as u64 },
-            0x084 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].desc_addr = (self.queues[self.queue_sel as usize].desc_addr & 0xFFFF_FFFF) | ((value as u64) << 32) },
-            0x090 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].avail_addr = (self.queues[self.queue_sel as usize].avail_addr & !0xFFFF_FFFF) | value as u64 },
-            0x094 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].avail_addr = (self.queues[self.queue_sel as usize].avail_addr & 0xFFFF_FFFF) | ((value as u64) << 32) },
-            0x0a0 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].used_addr = (self.queues[self.queue_sel as usize].used_addr & !0xFFFF_FFFF) | value as u64 },
-            0x0a4 => if self.queue_sel < 2 { self.queues[self.queue_sel as usize].used_addr = (self.queues[self.queue_sel as usize].used_addr & 0xFFFF_FFFF) | ((value as u64) << 32) },
+            0x080 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].desc_addr =
+                        (self.queues[self.queue_sel as usize].desc_addr & !0xFFFF_FFFF)
+                            | value as u64
+                }
+            }
+            0x084 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].desc_addr =
+                        (self.queues[self.queue_sel as usize].desc_addr & 0xFFFF_FFFF)
+                            | ((value as u64) << 32)
+                }
+            }
+            0x090 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].avail_addr =
+                        (self.queues[self.queue_sel as usize].avail_addr & !0xFFFF_FFFF)
+                            | value as u64
+                }
+            }
+            0x094 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].avail_addr =
+                        (self.queues[self.queue_sel as usize].avail_addr & 0xFFFF_FFFF)
+                            | ((value as u64) << 32)
+                }
+            }
+            0x0a0 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].used_addr =
+                        (self.queues[self.queue_sel as usize].used_addr & !0xFFFF_FFFF)
+                            | value as u64
+                }
+            }
+            0x0a4 => {
+                if self.queue_sel < 2 {
+                    self.queues[self.queue_sel as usize].used_addr =
+                        (self.queues[self.queue_sel as usize].used_addr & 0xFFFF_FFFF)
+                            | ((value as u64) << 32)
+                }
+            }
             _ => {}
         }
     }
@@ -92,7 +149,6 @@ impl VirtioMmioTransport<VirtioConsole> {
         if self.device.handle_rx(byte, &mut self.queues) {
             self.interrupt_status |= 1;
             (self.irq_handler)();
-
         }
     }
 }

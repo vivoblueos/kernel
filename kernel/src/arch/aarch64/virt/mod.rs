@@ -20,11 +20,11 @@ pub mod mmu_s2;
 pub mod vcpu;
 pub mod vector;
 pub mod vgic;
+pub(crate) mod virtio;
 pub mod vtimer;
 pub mod vuart;
-pub(crate) mod virtio;
 pub use crate::arch::aarch64::psci::hvc_call;
-use blueos_hal::{PlatPeri, isr::IsrDesc};
+use blueos_hal::{isr::IsrDesc, PlatPeri};
 pub use exit::{VmExitInfo, VmExitReason};
 pub use hyper::{get_current_el, hyp_init};
 pub use vcpu::{Vcpu, VcpuManager, VcpuState};
@@ -102,7 +102,7 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
 
     unsafe {
         core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
-        core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);   
+        core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);
     }
 
     vgic::flush(vcpu_id);

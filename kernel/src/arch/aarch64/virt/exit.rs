@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use super::{guest, hyper, vcpu::Vcpu, vgic, virtio, vuart};
-use core::arch::asm;
 use crate::{kearly_println, kprintln};
+use core::arch::asm;
 
 static mut GUEST_SHUTDOWN: bool = false;
 
@@ -91,7 +91,12 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         }
         VmExitReason::TrappedWfiWfe => trap_wfi_wfe(vcpu, &exit_info),
         VmExitReason::Unknown(ec) => {
-            kearly_println!("[EXIT] Unknown exit: EC={:#x} ESR={:#018x} ELR={:#018x}", ec, esr, elr);
+            kearly_println!(
+                "[EXIT] Unknown exit: EC={:#x} ESR={:#018x} ELR={:#018x}",
+                ec,
+                esr,
+                elr
+            );
             false
         }
     };
@@ -103,12 +108,16 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
     if !result {
         if let VmExitReason::DataAbortLowerEL = reason {
             let far: u64;
-            unsafe { core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack)); }
+            unsafe {
+                core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
+            }
             kearly_println!("  Faulting IPA / FAR: {:#018x}", far);
         }
 
         loop {
-            unsafe { core::arch::asm!("wfe"); }
+            unsafe {
+                core::arch::asm!("wfe");
+            }
         }
     }
 
@@ -136,7 +145,7 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
                     context.regs[0] = version;
                 }
                 PSCI_MIGRATE_INFO_TYPE => {
-                    context.regs[0] =2;
+                    context.regs[0] = 2;
                 }
                 PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
                     unsafe {
@@ -218,10 +227,10 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
             let exact_ipa = fault_ipa_base | (far & 0xFFF);
             // Get target register index.
             let srt = ((iss >> 16) & 0x1F) as usize;
-            // For vUart. 
+            // For vUart.
             if (VUART_IPA_BASE..VUART_IPA_BASE + VUART_IPA_SIZE).contains(&exact_ipa) {
                 let offset = exact_ipa - VUART_IPA_BASE;
-                
+
                 if is_write {
                     let value = vcpu.context().get_reg(srt);
                     vuart::handle_write(offset, value);
@@ -229,15 +238,17 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
                     let value = vuart::handle_read(offset);
                     vcpu.context_mut().set_reg(srt, value);
                 }
-                
+
                 vcpu.context_mut().set_elr(faulting_pc + 4);
                 vgic::flush(vcpu.id());
                 return true;
             }
 
-            if (VIRTIO_MMIO_IPA_BASE..VIRTIO_MMIO_IPA_BASE + VIRTIO_MMIO_IPA_SIZE).contains(&exact_ipa) {
+            if (VIRTIO_MMIO_IPA_BASE..VIRTIO_MMIO_IPA_BASE + VIRTIO_MMIO_IPA_SIZE)
+                .contains(&exact_ipa)
+            {
                 let offset = exact_ipa - VIRTIO_MMIO_IPA_BASE;
-                
+
                 if is_write {
                     let value = vcpu.context().get_reg(srt) as u32;
                     virtio::VIRTIO_CONSOLE.handle_write(offset, value);
@@ -245,19 +256,15 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
                     let value = virtio::VIRTIO_CONSOLE.handle_read(offset);
                     vcpu.context_mut().set_reg(srt, value as u64);
                 }
-                
+
                 vcpu.context_mut().set_elr(faulting_pc + 4);
                 vgic::flush(vcpu.id());
                 return true;
             }
 
             // For vGic.
-            let handled = vgic::handle_data_abort(
-                vcpu.id(),
-                esr,
-                exact_ipa,
-                &mut vcpu.context_mut().regs,
-            );
+            let handled =
+                vgic::handle_data_abort(vcpu.id(), esr, exact_ipa, &mut vcpu.context_mut().regs);
 
             if handled {
                 vcpu.context_mut().set_elr(faulting_pc + 4);
@@ -301,7 +308,6 @@ pub fn trap_wfi_wfe(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
         true
     }
 }
-
 
 pub fn is_guest_shutdown() -> bool {
     unsafe { GUEST_SHUTDOWN }

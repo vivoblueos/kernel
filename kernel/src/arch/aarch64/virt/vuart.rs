@@ -18,14 +18,18 @@ use blueos_hal::isr::IsrDesc;
 // PL011 UART addresses for QEMU Virt
 const UART0_DR: u32 = 0x0900_0000;
 
-
-
 #[inline]
 pub fn handle_read(offset: u64) -> u64 {
-     match offset {
-        0xFE0 => 0x11, 0xFE4 => 0x10, 0xFE8 => 0x14, 0xFEC => 0x00,
-        0xFF0 => 0x0D, 0xFF4 => 0xF0, 0xFF8 => 0x05, 0xFFC => 0xB1,
-        0x018 => 0x90, 
+    match offset {
+        0xFE0 => 0x11,
+        0xFE4 => 0x10,
+        0xFE8 => 0x14,
+        0xFEC => 0x00,
+        0xFF0 => 0x0D,
+        0xFF4 => 0xF0,
+        0xFF8 => 0x05,
+        0xFFC => 0xB1,
+        0x018 => 0x90,
         0x024 => 0x24,
         0x030 => 0x301,
         0x038 => 0x00,
@@ -40,7 +44,9 @@ pub fn handle_write(offset: u64, value: u64) {
             let c = (value & 0xFF) as u8;
             let mut writer = crate::console::EarlyConsole {};
             use core::fmt::Write;
-            writer.write_str(core::str::from_utf8(&[c]).unwrap_or("")).unwrap();
+            writer
+                .write_str(core::str::from_utf8(&[c]).unwrap_or(""))
+                .unwrap();
         }
         0x030..=0x044 => (),
         _ => {}
@@ -51,19 +57,19 @@ pub fn handle_physical_uart_interrupt() {
     unsafe {
         let uart_base = UART0_DR as *mut u32;
         let mut injected = false;
-        
+
         while (core::ptr::read_volatile(uart_base.add(0x18 / 4)) & (1 << 4)) == 0 {
-            let mut byte = core::ptr::read_volatile(uart_base) as u8;         
+            let mut byte = core::ptr::read_volatile(uart_base) as u8;
             virtio::VIRTIO_CONSOLE.inject_rx(byte);
             injected = true;
         }
-        
+
         if injected {
             if let Some(vcpu_id) = get_current_vcpu_id() {
                 vgic::inject_irq(vcpu_id, 48);
             }
         }
-        
+
         core::ptr::write_volatile(uart_base.add(0x44 / 4), (1 << 4) | (1 << 6));
     }
 }

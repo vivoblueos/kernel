@@ -12,27 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::{VirtQueue, VirtioDevice, VirtqAvail, VirtqDesc, VirtqUsed};
+use crate::{kearly_println, kprintln};
 use core::sync::atomic::{compiler_fence, Ordering};
-use super::{VirtioDevice, VirtQueue, VirtqDesc, VirtqAvail, VirtqUsed};
-use crate::{kprintln, kearly_println};
 
 pub struct VirtioConsole;
 
 impl VirtioConsole {
-    pub const fn new() -> Self { Self }
+    pub const fn new() -> Self {
+        Self
+    }
 
     pub fn handle_rx(&mut self, byte: u8, queues: &mut [VirtQueue]) -> bool {
         // RX Queue is index 0.
         let q_idx = 0;
         let q = &mut queues[q_idx];
-        
-        if !q.ready || q.desc_addr == 0 { return false; }
+
+        if !q.ready || q.desc_addr == 0 {
+            return false;
+        }
 
         unsafe {
             let avail = q.avail_addr as *const VirtqAvail;
-            let used  = q.used_addr as *mut VirtqUsed;
+            let used = q.used_addr as *mut VirtqUsed;
             let desc_table = q.desc_addr as *const VirtqDesc;
-            if q.last_idx == (*avail).idx { return false; }
+            if q.last_idx == (*avail).idx {
+                return false;
+            }
 
             let ring_index = (q.last_idx % q.num as u16) as usize;
             let head = (*avail).ring[ring_index] as usize;
@@ -52,8 +58,12 @@ impl VirtioConsole {
 }
 
 impl VirtioDevice for VirtioConsole {
-    fn device_id(&self) -> u32 { 3 }
-    fn vendor_id(&self) -> u32 { 0x424C5545 }
+    fn device_id(&self) -> u32 {
+        3
+    }
+    fn vendor_id(&self) -> u32 {
+        0x424C5545
+    }
     fn handle_status(&mut self, _status: u32) {}
 
     fn handle_kick(&mut self, q_idx: usize, queues: &mut [VirtQueue]) -> bool {
@@ -61,7 +71,7 @@ impl VirtioDevice for VirtioConsole {
         if q_idx != 1 {
             return false;
         }
-        
+
         let q = &mut queues[q_idx];
         if !q.ready || q.desc_addr == 0 {
             return false;
@@ -71,7 +81,7 @@ impl VirtioDevice for VirtioConsole {
         unsafe {
             let desc_table = q.desc_addr as *const VirtqDesc;
             let avail_ring = q.avail_addr as *const VirtqAvail;
-            let used_ring  = q.used_addr as *mut VirtqUsed;
+            let used_ring = q.used_addr as *mut VirtqUsed;
 
             while q.last_idx != (*avail_ring).idx {
                 processed = true;
@@ -83,7 +93,9 @@ impl VirtioDevice for VirtioConsole {
                     for byte in s.as_bytes() {
                         let mut writer = crate::console::EarlyConsole {};
                         use core::fmt::Write;
-                        writer.write_str(core::str::from_utf8(&[*byte]).unwrap_or("")).unwrap();
+                        writer
+                            .write_str(core::str::from_utf8(&[*byte]).unwrap_or(""))
+                            .unwrap();
                     }
                 }
 
@@ -91,10 +103,10 @@ impl VirtioDevice for VirtioConsole {
                 (*used_ring).ring[u_idx].id = head as u32;
                 (*used_ring).ring[u_idx].len = 0;
                 unsafe {
-                    core::arch::asm!("dmb ishst", options(nostack)); 
+                    core::arch::asm!("dmb ishst", options(nostack));
                     (*used_ring).idx = (*used_ring).idx.wrapping_add(1);
                     q.last_idx = q.last_idx.wrapping_add(1);
-                    core::arch::asm!("dsb ishst", options(nostack)); 
+                    core::arch::asm!("dsb ishst", options(nostack));
                 }
             }
         }

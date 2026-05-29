@@ -394,7 +394,7 @@ pub fn inject(vcpu_id: usize, intid: u32) {
             if is_enabled {
                 let mut redist = get_vgic().redists[vcpu_id].lock();
                 redist.push_queue(intid);
-            } 
+            }
         }
     }
 }
@@ -450,7 +450,12 @@ pub fn flush(vcpu_id: usize) {
             let hw_bit = if is_hw { 1u64 << 61 } else { 0 };
             let pintid_bits = if is_hw { (intid as u64) << 32 } else { 0 };
 
-            let lr_val: u64 = (state_bits << 62) | hw_bit | (1 << 60) | (0xA0 << 48) | pintid_bits | (intid as u64);
+            let lr_val: u64 = (state_bits << 62)
+                | hw_bit
+                | (1 << 60)
+                | (0xA0 << 48)
+                | pintid_bits
+                | (intid as u64);
             write_lr(current_lr, lr_val);
             redist.lr_intids[current_lr] = intid;
             current_lr += 1;
@@ -481,7 +486,12 @@ pub fn flush(vcpu_id: usize) {
                 let hw_bit = if is_hw { 1u64 << 61 } else { 0 };
                 let pintid_bits = if is_hw { (intid as u64) << 32 } else { 0 };
 
-                let lr_val: u64 = (state_bits << 62) | hw_bit | (1 << 60) | (0xA0 << 48) | pintid_bits | (intid as u64);
+                let lr_val: u64 = (state_bits << 62)
+                    | hw_bit
+                    | (1 << 60)
+                    | (0xA0 << 48)
+                    | pintid_bits
+                    | (intid as u64);
                 write_lr(current_lr, lr_val);
                 redist.lr_intids[current_lr] = intid;
                 current_lr += 1;
@@ -490,7 +500,9 @@ pub fn flush(vcpu_id: usize) {
 
         // Phase 3: SPI Active interrupts (lowest priority for LR allocation).
         for i in 1..MAX_IRQS_WORDS {
-            if current_lr >= MAX_LR { break; }
+            if current_lr >= MAX_LR {
+                break;
+            }
             let mut spi_active_word = dist.isactiver[i];
 
             while spi_active_word != 0 && current_lr < MAX_LR {
@@ -632,7 +644,12 @@ fn clear_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistrib
     }
 }
 
-fn sync_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistributor,  intid: u32, state: u64) {
+fn sync_irq_state_locked(
+    redist: &mut VgicRedistributor,
+    dist: &mut VgicDistributor,
+    intid: u32,
+    state: u64,
+) {
     let is_pending = (state & 0b01) != 0;
     let is_active = (state & 0b10) != 0;
 
@@ -651,7 +668,7 @@ fn sync_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistribu
         let mask = 1 << (intid % 32);
         if is_pending {
             dist.ispendr[index] |= mask;
-        } 
+        }
 
         if is_active {
             dist.isactiver[index] |= mask;
@@ -685,7 +702,11 @@ fn is_irq_enabled_locked(redist: &VgicRedistributor, dist: &VgicDistributor, int
     }
 }
 
-fn clear_irq_pending_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistributor, intid: u32) {
+fn clear_irq_pending_locked(
+    redist: &mut VgicRedistributor,
+    dist: &mut VgicDistributor,
+    intid: u32,
+) {
     if intid < 32 {
         redist.ispendr0 &= !(1 << intid);
     } else {

@@ -98,7 +98,7 @@ impl VcpuStateStruct {
         self.spsr = spsr;
     }
 
-     #[inline]
+    #[inline]
     pub fn set_reg(&mut self, index: usize, value: u64) {
         if index < 31 {
             self.regs[index] = value;

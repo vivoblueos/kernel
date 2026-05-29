@@ -233,7 +233,17 @@ unsafe fn save_host_context(frame: *mut u64) {
     }
 
     // A 13-element tuple type would exceed Clippy's complexity threshold.
-    let (vbar, sctlr, ttbr0, ttbr1, tcr, mair, pmr, sre, ctlr): (u64, u64, u64, u64, u64, u64, u64, u64, u64);
+    let (vbar, sctlr, ttbr0, ttbr1, tcr, mair, pmr, sre, ctlr): (
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+    );
     let (tpidr_el0, tpidr_el1, tpidrro_el0, sp_el0): (u64, u64, u64, u64);
     core::arch::asm!(
         "mrs {vbar}, vbar_el1",
@@ -361,7 +371,9 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
     );
 
     let restored_pmr: u64;
-    unsafe { core::arch::asm!("mrs {}, ICC_PMR_EL1", out(reg) restored_pmr); }
+    unsafe {
+        core::arch::asm!("mrs {}, ICC_PMR_EL1", out(reg) restored_pmr);
+    }
 
     // Diagnostic: print key system registers after restoring Host
     let cpacr_after: u64;

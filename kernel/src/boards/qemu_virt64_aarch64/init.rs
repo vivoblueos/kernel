@@ -20,7 +20,6 @@ use crate::{
         irq::{IrqTrigger, Priority},
         mmu,
         registers::cntfrq_el0::CNTFRQ_EL0,
-        virt::virt_boot_linux,
     },
     error::Error,
     irq::IrqTrace,
@@ -80,7 +79,6 @@ pub(crate) fn init() {
         ),
     );
     let _ = irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {}));
-    virt_boot_linux();
 }
 
 crate::define_peripheral! {

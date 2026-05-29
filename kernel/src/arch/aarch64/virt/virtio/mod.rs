@@ -15,9 +15,9 @@
 pub mod console;
 pub mod mmio;
 
+use crate::arch::virt::vgic;
 pub use console::VirtioConsole;
 pub use mmio::VirtioMmioTransport;
-use crate::arch::virt::vgic;
 
 fn console_irq_handler() {
     if let Some(vcpu_id) = super::get_current_vcpu_id() {
@@ -25,7 +25,7 @@ fn console_irq_handler() {
     }
 }
 
-pub static mut VIRTIO_CONSOLE: VirtioMmioTransport<VirtioConsole> = 
+pub static mut VIRTIO_CONSOLE: VirtioMmioTransport<VirtioConsole> =
     VirtioMmioTransport::new(VirtioConsole::new(), console_irq_handler);
 
 #[repr(C)]
@@ -71,5 +71,5 @@ pub trait VirtioDevice {
     fn device_id(&self) -> u32;
     fn vendor_id(&self) -> u32;
     fn handle_status(&mut self, status: u32);
-    fn handle_kick(&mut self, q_idx: usize, queues: &mut [VirtQueue]) -> bool; 
+    fn handle_kick(&mut self, q_idx: usize, queues: &mut [VirtQueue]) -> bool;
 }
