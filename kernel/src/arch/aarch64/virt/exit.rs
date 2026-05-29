@@ -87,9 +87,6 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         VmExitReason::InstructionAbortLowerEL => {
             let iss = esr & 0x1FFFFFF;
             let ifsc = iss & 0x3F;
-            let far: u64;
-            unsafe { core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack)); }
-            kearly_println!("[EXIT] InstructionAbort: ELR={:#018x} FAR={:#018x} IFSC={:#x}", elr, far, ifsc);
             false
         }
         VmExitReason::TrappedWfiWfe => trap_wfi_wfe(vcpu, &exit_info),
