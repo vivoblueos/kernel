@@ -187,7 +187,6 @@ unsafe fn handle_guest_request(vcpu_id: usize, frame: *mut u64) -> u64 {
     let ok = handle_vm_exit(vcpu);
 
     if !ok && is_guest_shutdown() {
-        core::arch::asm!("msr daifset, #15");
         clear_guest_shutdown();
         hyper::shutdown_guest();
         VCPU_MANAGER.0.clear_current_vcpu();
@@ -226,14 +225,16 @@ unsafe fn handle_host_request(frame: *mut u64) -> u64 {
 }
 
 unsafe fn save_host_context(frame: *mut u64) {
-    VCPU_MANAGER.0.host_elr = *frame.add(31) + 4;
+    VCPU_MANAGER.0.host_elr = *frame.add(31);
     VCPU_MANAGER.0.host_spsr = *frame.add(32);
     VCPU_MANAGER.0.host_sp = *frame.add(33);
     for i in 0..31 {
         VCPU_MANAGER.0.host_regs[i] = *frame.add(i);
     }
 
-    let (vbar, sctlr, ttbr0, ttbr1, tcr, mair): (u64, u64, u64, u64, u64, u64);
+    // A 13-element tuple type would exceed Clippy's complexity threshold.
+    let (vbar, sctlr, ttbr0, ttbr1, tcr, mair, pmr, sre, ctlr): (u64, u64, u64, u64, u64, u64, u64, u64, u64);
+    let (tpidr_el0, tpidr_el1, tpidrro_el0, sp_el0): (u64, u64, u64, u64);
     core::arch::asm!(
         "mrs {vbar}, vbar_el1",
         "mrs {sctlr}, sctlr_el1",
@@ -241,12 +242,26 @@ unsafe fn save_host_context(frame: *mut u64) {
         "mrs {ttbr1}, ttbr1_el1",
         "mrs {tcr}, tcr_el1",
         "mrs {mair}, mair_el1",
+        "mrs {pmr}, ICC_PMR_EL1",
+        "mrs {sre}, ICC_SRE_EL1",
+        "mrs {ctlr}, ICC_CTLR_EL1",
+        "mrs {tpidr_el0}, tpidr_el0",
+        "mrs {tpidr_el1}, tpidr_el1",
+        "mrs {tpidrro_el0}, tpidrro_el0",
+        "mrs {sp_el0}, sp_el0",
         vbar = out(reg) vbar,
         sctlr = out(reg) sctlr,
         ttbr0 = out(reg) ttbr0,
         ttbr1 = out(reg) ttbr1,
         tcr = out(reg) tcr,
         mair = out(reg) mair,
+        pmr = out(reg) pmr,
+        sre = out(reg) sre,
+        ctlr = out(reg) ctlr,
+        tpidr_el0 = out(reg) tpidr_el0,
+        tpidr_el1 = out(reg) tpidr_el1,
+        tpidrro_el0 = out(reg) tpidrro_el0,
+        sp_el0 = out(reg) sp_el0,
         options(nostack, nomem)
     );
     VCPU_MANAGER.0.host_vbar = vbar;
@@ -255,6 +270,29 @@ unsafe fn save_host_context(frame: *mut u64) {
     VCPU_MANAGER.0.host_ttbr1 = ttbr1;
     VCPU_MANAGER.0.host_tcr = tcr;
     VCPU_MANAGER.0.host_mair = mair;
+    VCPU_MANAGER.0.host_pmr = pmr;
+    VCPU_MANAGER.0.host_sre = sre;
+    VCPU_MANAGER.0.host_ctlr = ctlr;
+    VCPU_MANAGER.0.host_tpidr_el0 = tpidr_el0;
+    VCPU_MANAGER.0.host_tpidr_el1 = tpidr_el1;
+    VCPU_MANAGER.0.host_tpidrro_el0 = tpidrro_el0;
+    VCPU_MANAGER.0.host_sp_el0 = sp_el0;
+
+    // Save Host physical timer state (Guest can modify CNTP via direct EL1 access).
+    let (cntp_ctl, cntp_cval): (u64, u64);
+    core::arch::asm!(
+        "mrs {cntp_ctl}, CNTP_CTL_EL0",
+        "mrs {cntp_cval}, CNTP_CVAL_EL0",
+        cntp_ctl = out(reg) cntp_ctl,
+        cntp_cval = out(reg) cntp_cval,
+        options(nostack, nomem)
+    );
+    VCPU_MANAGER.0.host_cntp_ctl = cntp_ctl;
+    VCPU_MANAGER.0.host_cntp_cval = cntp_cval;
+
+    // Diagnostic: print key system registers before Guest runs
+    let cpacr: u64;
+    core::arch::asm!("mrs {}, cpacr_el1", out(reg) cpacr, options(nomem, nostack));
 }
 
 unsafe fn restore_host_to_frame(frame: *mut u64) {
@@ -275,26 +313,80 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
     let ttbr1 = VCPU_MANAGER.0.host_ttbr1;
     let tcr = VCPU_MANAGER.0.host_tcr;
     let mair = VCPU_MANAGER.0.host_mair;
+    let sre = VCPU_MANAGER.0.host_sre;
+    let ctlr = VCPU_MANAGER.0.host_ctlr;
+    let pmr = VCPU_MANAGER.0.host_pmr;
+    let tpidr_el0 = VCPU_MANAGER.0.host_tpidr_el0;
+    let tpidr_el1 = VCPU_MANAGER.0.host_tpidr_el1;
+    let tpidrro_el0 = VCPU_MANAGER.0.host_tpidrro_el0;
+    let sp_el0 = VCPU_MANAGER.0.host_sp_el0;
 
     core::arch::asm!(
+        // Restore GIC: SRE must come first (enables ICC_* register access)
+        "msr ICC_SRE_EL1, {sre}",
+        "isb",
+        "msr ICC_CTLR_EL1, {ctlr}",
+        "msr ICC_PMR_EL1, {pmr}",
+        "isb",
         "msr mair_el1, {mair}",
         "msr tcr_el1, {tcr}",
         "msr ttbr0_el1, {ttbr0}",
         "msr ttbr1_el1, {ttbr1}",
         "isb",
         "msr sctlr_el1, {sctlr}",
-        "msr vbar_el1, {vbar}",  
+        "msr vbar_el1, {vbar}",
+        "msr tpidr_el0, {tpidr_el0}",
+        "msr tpidr_el1, {tpidr_el1}",
+        "msr tpidrro_el0, {tpidrro_el0}",
+        "msr sp_el0, {sp_el0}",
+        "msr VTTBR_EL2, xzr",
         "isb",
-        "tlbi alle1",
-        "dsb sy",
+        "tlbi vmalle1is",
+        "tlbi alle2is",
+        "dsb ish",
         "isb",
+        sre = in(reg) sre,
+        ctlr = in(reg) ctlr,
+        pmr = in(reg) pmr,
         vbar = in(reg) vbar,
         sctlr = in(reg) sctlr,
         ttbr0 = in(reg) ttbr0,
         ttbr1 = in(reg) ttbr1,
         tcr = in(reg) tcr,
         mair = in(reg) mair,
+        tpidr_el0 = in(reg) tpidr_el0,
+        tpidr_el1 = in(reg) tpidr_el1,
+        tpidrro_el0 = in(reg) tpidrro_el0,
+        sp_el0 = in(reg) sp_el0,
     );
+
+    let restored_pmr: u64;
+    unsafe { core::arch::asm!("mrs {}, ICC_PMR_EL1", out(reg) restored_pmr); }
+
+    // Diagnostic: print key system registers after restoring Host
+    let cpacr_after: u64;
+    let sctlr_after: u64;
+    let ttbr0_after: u64;
+    let ttbr1_after: u64;
+    let vbar_after: u64;
+    unsafe {
+        core::arch::asm!("mrs {}, cpacr_el1", out(reg) cpacr_after);
+        core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr_after);
+        core::arch::asm!("mrs {}, ttbr0_el1", out(reg) ttbr0_after);
+        core::arch::asm!("mrs {}, ttbr1_el1", out(reg) ttbr1_after);
+        core::arch::asm!("mrs {}, vbar_el1", out(reg) vbar_after);
+    }
+
+    // Restore Host physical timer CVAL (compare value).
+    // CNTP_CTL is left as-is — shutdown_guest() already set it to Enable=1, IMASK=0.
+    let cntp_cval = VCPU_MANAGER.0.host_cntp_cval;
+    core::arch::asm!(
+        "msr CNTP_CVAL_EL0, {cntp_cval}",
+        "isb",
+        cntp_cval = in(reg) cntp_cval,
+        options(nostack)
+    );
+    core::arch::asm!("msr CNTV_CTL_EL0, xzr", options(nostack));
 }
 
 unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
@@ -356,9 +448,6 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
         sctlr = in(reg) ctx.sctlr_el1,
         options(nostack)
     );
-
-    // let target_vcpu_id = vcpu.id();
-    // vgic::flush(target_vcpu_id);
 }
 
 // Temporary placeholder
@@ -447,12 +536,19 @@ pub unsafe extern "C" fn fiq_from_lower_el1() {
         "str x30, [sp, #240]\n",
         "mrs x1, elr_el2\n",
         "mrs x2, spsr_el2\n",
+        "mrs x3, sp_el1\n",
         "str x1, [sp, #248]\n",
         "str x2, [sp, #256]\n",
+        "str x3, [sp, #264]\n",
         "mov x0, sp\n",
         "bl hyper_trap_fiq\n",
         "ldr x1, [sp, #248]\n",
+        "ldr x2, [sp, #256]\n",
+        "ldr x3, [sp, #264]\n",
         "msr elr_el2, x1\n",
+        "msr spsr_el2, x2\n",
+        "msr sp_el1, x3\n",
+        "isb\n",
         "ldp x0, x1, [sp, #0]\n",
         "ldp x2, x3, [sp, #16]\n",
         "ldp x4, x5, [sp, #32]\n",

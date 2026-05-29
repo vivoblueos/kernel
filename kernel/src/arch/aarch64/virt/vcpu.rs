@@ -131,9 +131,8 @@ impl Vcpu {
     pub fn new(id: usize, entry: usize, stack_top: usize) -> Self {
         let mut context = VcpuStateStruct::new();
         context.elr_el2 = entry as u64;
-        context.spsr = 0x3C5; // Default PSTATE: EL1h, DAIF masked
+        context.spsr = 0x3C5;
         context.vbar_el1 = (entry as u64 + 0x1000) & !0x7FF;
-        // context.sp = stack_top as u64;
 
         Self {
             id,
@@ -269,6 +268,15 @@ pub struct VcpuManager {
     pub host_tcr: u64,
     pub host_mair: u64,
     pub host_sctlr: u64,
+    pub host_pmr: u64,
+    pub host_sre: u64,
+    pub host_ctlr: u64,
+    pub host_cntp_ctl: u64,
+    pub host_cntp_cval: u64,
+    pub host_tpidr_el0: u64,
+    pub host_tpidr_el1: u64,
+    pub host_tpidrro_el0: u64,
+    pub host_sp_el0: u64,
 }
 
 impl VcpuManager {
@@ -288,6 +296,15 @@ impl VcpuManager {
             host_tcr: 0,
             host_mair: 0,
             host_sctlr: 0,
+            host_pmr: 0,
+            host_sre: 0,
+            host_ctlr: 0,
+            host_cntp_ctl: 0,
+            host_cntp_cval: 0,
+            host_tpidr_el0: 0,
+            host_tpidr_el1: 0,
+            host_tpidrro_el0: 0,
+            host_sp_el0: 0,
         }
     }
 

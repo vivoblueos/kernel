@@ -32,10 +32,6 @@ pub use vgic::init;
 
 use crate::{kearly_println, kprintln};
 
-// PL011 UART addresses for QEMU Virt
-const UART0_DR: *mut u32 = 0x0900_0000 as *mut u32;
-const UART0_FR: *mut u32 = 0x0900_0018 as *mut u32;
-
 #[no_mangle]
 pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
     unsafe {
@@ -45,6 +41,7 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
             // set EOImode.
             ctlr |= 1 << 1;
             core::arch::asm!("msr ICC_CTLR_EL1, {}", in(reg) ctlr);
+            core::arch::asm!("isb");
         }
     }
 
@@ -74,6 +71,23 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
         }
         return 0;
     } else if intid == 27 {
+        let is_enabled = {
+            let redist = vgic::get_vgic().redists[vcpu_id].lock();
+            (redist.isenabler0 & (1 << 27)) != 0
+        };
+
+        if !is_enabled {
+            unsafe {
+                let mut ctl: u64;
+                core::arch::asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
+                ctl |= 1 << 1;
+                core::arch::asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
+                core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
+                core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);
+            }
+            return 0;
+        }
+
         vgic::inject_irq(vcpu_id, 27);
         vgic::flush(vcpu_id);
         unsafe {
@@ -115,10 +129,8 @@ pub fn virt_init() {
 }
 
 pub fn virt_boot_linux() {
-    // It will be placed here next.
     vgic::init();
     vtimer::init_global_vtimer();
-    // vuart::init_uart_irq();
 
     unsafe {
         let current_el = hyper::get_current_el();
@@ -149,7 +161,7 @@ pub fn virt_boot_linux() {
     vuart::enable_physical_uart_interrupts();
     let result = hvc_call(2, 0, 0);
     vuart::cleanup_physical_uart_interrupts();
-    
+
     if result == 0 {
         kearly_println!("Linux shutdown!!!");
     }

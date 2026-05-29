@@ -55,7 +55,7 @@ register_bitfields! {u64,
             EL2Handled = 1
         ],
 
-        /// VF, bit [6] - Vitual FIQ
+        /// VF, bit [6] - Virtual FIQ
         VF OFFSET(6) NUMBITS(1) [
             Disable = 0,
             Enable = 1

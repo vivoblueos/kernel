@@ -17,10 +17,12 @@ pub mod mmio;
 
 pub use console::VirtioConsole;
 pub use mmio::VirtioMmioTransport;
-use crate::arch::virt::vgic::inject_irq;
+use crate::arch::virt::vgic;
 
 fn console_irq_handler() {
-    inject_irq(0, 48);
+    if let Some(vcpu_id) = super::get_current_vcpu_id() {
+        vgic::inject_irq(vcpu_id, 48);
+    }
 }
 
 pub static mut VIRTIO_CONSOLE: VirtioMmioTransport<VirtioConsole> = 

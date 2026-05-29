@@ -14,7 +14,6 @@
 
 use super::{guest, hyper, vcpu::Vcpu, vgic, virtio, vuart};
 use core::arch::asm;
-// #[cfg(test)]
 use crate::{kearly_println, kprintln};
 
 static mut GUEST_SHUTDOWN: bool = false;
@@ -26,6 +25,11 @@ pub const PSCI_SYSTEM_RESET: u32 = 0x8400_0009;
 pub const PSCI_FEATURES: u32 = 0x8400_000A;
 pub const HVC_VMM_GET_INFO: u64 = 0x11;
 pub const HVC_VMM_INJECT_IRQ: u64 = 0x13;
+
+const VUART_IPA_BASE: u64 = 0x08F0_0000;
+const VUART_IPA_SIZE: u64 = 0x1000;
+const VIRTIO_MMIO_IPA_BASE: u64 = 0x0a00_0000;
+const VIRTIO_MMIO_IPA_SIZE: u64 = 0x200;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VmExitReason {
@@ -83,30 +87,29 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
         VmExitReason::InstructionAbortLowerEL => {
             let iss = esr & 0x1FFFFFF;
             let ifsc = iss & 0x3F;
+            let far: u64;
+            unsafe { core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack)); }
+            kearly_println!("[EXIT] InstructionAbort: ELR={:#018x} FAR={:#018x} IFSC={:#x}", elr, far, ifsc);
             false
         }
         VmExitReason::TrappedWfiWfe => trap_wfi_wfe(vcpu, &exit_info),
         VmExitReason::Unknown(ec) => {
+            kearly_println!("[EXIT] Unknown exit: EC={:#x} ESR={:#018x} ELR={:#018x}", ec, esr, elr);
             false
         }
     };
 
     if is_guest_shutdown() {
-        kearly_println!("\n[VMM] Guest requested shutdown via PSCI. Exiting.");
-        return false; 
+        return false;
     }
 
     if !result {
-        kearly_println!(
-            "  Reason: {:?}, ESR: {:#018x}, ELR(PC): {:#018x}",
-            reason, esr, elr
-        );
         if let VmExitReason::DataAbortLowerEL = reason {
             let far: u64;
             unsafe { core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack)); }
             kearly_println!("  Faulting IPA / FAR: {:#018x}", far);
         }
-        
+
         loop {
             unsafe { core::arch::asm!("wfe"); }
         }
@@ -117,7 +120,6 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
 
 // hvc from guest.
 fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
-    kearly_println!("[EXIT] HVC call received");
     let saved_x0 = vcpu.context().regs[0];
     let vcpu_id = vcpu.id();
     let context = vcpu.context_mut();
@@ -140,7 +142,6 @@ fn handle_hvc(vcpu: &mut Vcpu, info: &VmExitInfo) -> bool {
                     context.regs[0] =2;
                 }
                 PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
-                    kearly_println!("\n[VMM] Recieve Linux PSCI shutdown request.");
                     unsafe {
                         GUEST_SHUTDOWN = true;
                     }
@@ -221,8 +222,8 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
             // Get target register index.
             let srt = ((iss >> 16) & 0x1F) as usize;
             // For vUart. 
-            if (0x08F0_0000..0x08F0_1000).contains(&exact_ipa) {
-                let offset = exact_ipa - 0x08F0_0000;
+            if (VUART_IPA_BASE..VUART_IPA_BASE + VUART_IPA_SIZE).contains(&exact_ipa) {
+                let offset = exact_ipa - VUART_IPA_BASE;
                 
                 if is_write {
                     let value = vcpu.context().get_reg(srt);
@@ -237,9 +238,8 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
                 return true;
             }
 
-            if (0x0a00_0000..0x0a00_0200).contains(&exact_ipa) {
-                // semihosting::println!("[EXIT] virtio handle");
-                let offset = exact_ipa - 0x0a00_0000;
+            if (VIRTIO_MMIO_IPA_BASE..VIRTIO_MMIO_IPA_BASE + VIRTIO_MMIO_IPA_SIZE).contains(&exact_ipa) {
+                let offset = exact_ipa - VIRTIO_MMIO_IPA_BASE;
                 
                 if is_write {
                     let value = vcpu.context().get_reg(srt) as u32;
@@ -266,9 +266,17 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
                 vcpu.context_mut().set_elr(faulting_pc + 4);
                 vgic::flush(vcpu.id());
                 return true;
-            } else {
-                kearly_println!("[EXIT]   Unhandled Stage-2 Address!");
             }
+
+            // Unhandled Stage-2 MMIO: return 0 for reads, ignore writes, advance PC.
+            // This prevents the VMM from entering a wfe death loop on unemulated
+            // devices (virtio-blk, virtio-net, etc.), allowing Guest shutdown to proceed.
+            if !is_write {
+                vcpu.context_mut().set_reg(srt, 0);
+            }
+            vcpu.context_mut().set_elr(faulting_pc + 4);
+            vgic::flush(vcpu.id());
+            return true;
         }
     }
     false
@@ -280,19 +288,20 @@ pub fn trap_wfi_wfe(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
     let target_elr = vcpu.context_mut().elr() + 4;
     vcpu.context_mut().set_elr(target_elr);
 
+    // Flush pending vGIC interrupts before returning to Guest.
+    // When Guest does WFI waiting for timer, Pending IRQ 27 must
+    // be in a List Register so the virtual interrupt can wake it up.
+    vgic::flush(vcpu.id());
+
     if is_wfe {
         true
     } else {
         let irq_masked = (vcpu.context().spsr() & (1 << 7)) != 0;
 
-        if irq_masked {
-            false
-        } else {
-            unsafe {
-                core::arch::asm!("wfi");
-            }
-            true
-        }
+        // WFI with IRQ masked is normal idle behavior (e.g. cpu_do_idle).
+        // Always return true — KVM never returns failure for WFI regardless
+        // of IRQ mask state. The PC was already advanced +4.
+        true
     }
 }
 

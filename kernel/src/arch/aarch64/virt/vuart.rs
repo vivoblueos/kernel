@@ -15,15 +15,10 @@
 use super::{get_current_vcpu_id, vgic, virtio};
 use blueos_hal::isr::IsrDesc;
 
-pub fn forward_byte_to_guest(byte: u8) {
-    if let Some(vcpu_id) = get_current_vcpu_id() {
-        unsafe {
-            virtio::VIRTIO_CONSOLE.inject_rx(byte);
-        }
+// PL011 UART addresses for QEMU Virt
+const UART0_DR: u32 = 0x0900_0000;
 
-        vgic::inject_irq(vcpu_id, 48);
-    }
-}
+
 
 #[inline]
 pub fn handle_read(offset: u64) -> u64 {
@@ -54,15 +49,11 @@ pub fn handle_write(offset: u64, value: u64) {
 
 pub fn handle_physical_uart_interrupt() {
     unsafe {
-        let uart_base = 0x0900_0000 as *mut u32;
+        let uart_base = UART0_DR as *mut u32;
         let mut injected = false;
         
         while (core::ptr::read_volatile(uart_base.add(0x18 / 4)) & (1 << 4)) == 0 {
-            let mut byte = core::ptr::read_volatile(uart_base) as u8;
-            if byte == b'\r' {
-                byte = b'\n';
-            }
-            
+            let mut byte = core::ptr::read_volatile(uart_base) as u8;         
             virtio::VIRTIO_CONSOLE.inject_rx(byte);
             injected = true;
         }
@@ -77,11 +68,11 @@ pub fn handle_physical_uart_interrupt() {
     }
 }
 
+// Enable UART RX and RT interrupts in PL011 IMSC register
+// Without this, the hardware won't assert IRQ 33 when keys are pressed!
 pub fn enable_physical_uart_interrupts() {
     unsafe {
-        // Enable UART RX and RT interrupts in PL011 IMSC register
-        // Without this, the hardware won't assert IRQ 33 when keys are pressed!
-        let uart_base = 0x0900_0000 as *mut u32;
+        let uart_base = UART0_DR as *mut u32;
         let imsc = uart_base.add(0x38 / 4);
         core::ptr::write_volatile(imsc, core::ptr::read_volatile(imsc) | (1 << 4) | (1 << 6));
     }
@@ -89,8 +80,8 @@ pub fn enable_physical_uart_interrupts() {
 
 pub fn cleanup_physical_uart_interrupts() {
     unsafe {
-        let uart_base = 0x0900_0000 as *mut u32;
-        
+        let uart_base = UART0_DR as *mut u32;
+
         // Disable RTI (bit 6) because BlueOS's native driver doesn't handle it.
         // If we leave it enabled, it causes an infinite interrupt storm in EL1!
         let imsc = uart_base.add(0x38 / 4);
@@ -100,6 +91,8 @@ pub fn cleanup_physical_uart_interrupts() {
 
         // Clear any pending RTI to ensure a clean state for BlueOS
         let icr = uart_base.add(0x44 / 4);
-        core::ptr::write_volatile(icr, 1 << 6);
+        core::ptr::write_volatile(icr, (1 << 4) | (1 << 6));
+
+        let imsc_val = core::ptr::read_volatile(imsc);
     }
 }

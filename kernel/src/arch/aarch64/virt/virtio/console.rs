@@ -66,8 +66,8 @@ impl VirtioDevice for VirtioConsole {
         if !q.ready || q.desc_addr == 0 {
             return false;
         }
-        let mut processed = false;
 
+        let mut processed = false;
         unsafe {
             let desc_table = q.desc_addr as *const VirtqDesc;
             let avail_ring = q.avail_addr as *const VirtqAvail;
@@ -90,8 +90,6 @@ impl VirtioDevice for VirtioConsole {
                 let u_idx = ((*used_ring).idx % q.num as u16) as usize;
                 (*used_ring).ring[u_idx].id = head as u32;
                 (*used_ring).ring[u_idx].len = 0;
-                
-                // compiler_fence(Ordering::SeqCst);
                 unsafe {
                     core::arch::asm!("dmb ishst", options(nostack)); 
                     (*used_ring).idx = (*used_ring).idx.wrapping_add(1);

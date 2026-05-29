@@ -16,4 +16,4 @@ use core::arch::asm;
 
 pub const LINUX_KERNEL_LOAD_ADDR: usize = 0x4400_0000;
 pub const LINUX_DTB_ADDR: usize = 0x4E00_0000;
-pub const LINUX_RAM_SIZE: usize = 0x1000_0000;
+pub const LINUX_RAM_SIZE: usize = 0x0C00_0000;

@@ -16,7 +16,6 @@ use super::VCPU_MANAGER;
 use crate::sync::SpinLock;
 use core::arch::asm;
 use spin::Once;
-use crate::{kprintln, kearly_println};
 
 const MAX_LR: usize = 4;
 const MAX_PENDING: usize = 64;
@@ -268,6 +267,19 @@ fn handle_gicr_write(vcpu_id: usize, offset: u64, val: u32) {
                     }
                 }
             }
+            // When Guest enables IRQ 27 (virtual timer), clear CNTV_CTL_EL0.IMASK
+            // that was set by hyper_trap_irq when the timer fired before Guest
+            // enabled isenabler0. Without this, the physical timer stays permanently
+            // silent — no timer ticks → Guest scheduler can't wake processes.
+            if (newly_enabled & (1 << 27)) != 0 {
+                unsafe {
+                    let mut ctl: u64;
+                    asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
+                    ctl &= !(1u64 << 1);
+                    asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
+                    asm!("isb", options(nostack));
+                }
+            }
         }
         0x10180 => redist.isenabler0 &= !val,
         0x10200 => redist.ispendr0 |= val,
@@ -304,7 +316,7 @@ fn handle_gicr_read(vcpu_id: usize, offset: u64) -> u32 {
             let mut val = (vcpu_id as u32) << 8;
             let active_vcpus = unsafe { VCPU_MANAGER.0.vcpu_count() };
             if vcpu_id == active_vcpus - 1 {
-                val |= 1 << 4; // Last Redistributor
+                val |= 1 << 4;
             }
             val
         }
@@ -347,6 +359,14 @@ pub fn cpu_init(vcpu_id: usize) {
         for i in 0..MAX_LR {
             write_lr(i, 0);
         }
+    }
+}
+
+/// Clear all ICH_LR registers to invalidate pending/active virtual interrupts.
+/// Called during guest shutdown to ensure no stale vGIC state leaks to the host.
+pub unsafe fn clear_all_lrs() {
+    for i in 0..MAX_LR {
+        write_lr(i, 0);
     }
 }
 
@@ -410,13 +430,14 @@ pub fn flush(vcpu_id: usize) {
 
     unsafe {
         let mut current_lr = 0;
+
+        // Phase 1: All PPI Active interrupts (Active-only and Active+Pending).
         let mut active_word = redist.isactiver0;
         while active_word != 0 && current_lr < MAX_LR {
             let bit = active_word.trailing_zeros();
             let intid = bit as u32;
             active_word &= !(1 << bit);
 
-            // let is_active = is_irq_active_locked(&redist, intid);
             let is_pending = (redist.ispendr0 & (1 << intid)) != 0;
             let is_enabled = (redist.isenabler0 & (1 << intid)) != 0;
             let mut state_bits: u64 = 0b10;
@@ -429,40 +450,14 @@ pub fn flush(vcpu_id: usize) {
             let hw_bit = if is_hw { 1u64 << 61 } else { 0 };
             let pintid_bits = if is_hw { (intid as u64) << 32 } else { 0 };
 
-            // Temporarily set priority(0xA0 << 48)
-            // To DO: Dynamically set hw bit(61) according to irq routing, and hw bit open while setting passthrough (finish smmu).
             let lr_val: u64 = (state_bits << 62) | hw_bit | (1 << 60) | (0xA0 << 48) | pintid_bits | (intid as u64);
             write_lr(current_lr, lr_val);
             redist.lr_intids[current_lr] = intid;
             current_lr += 1;
         }
 
-        // Scan SPIs.
-        for i in 1..MAX_IRQS_WORDS {
-            if current_lr >= MAX_LR { break; }
-            let mut spi_active_word = dist.isactiver[i];
-            
-            while spi_active_word != 0 && current_lr < MAX_LR {
-                let bit = spi_active_word.trailing_zeros();
-                let intid = (i * 32) as u32 + bit as u32;
-                spi_active_word &= !(1 << bit);
-                let is_pending = is_irq_pending_locked(&redist, &dist, intid);
-                let is_enabled = is_irq_enabled_locked(&redist, &dist, intid);
-                let mut state_bits: u64 = 0b10;
-
-                if is_pending && is_enabled {
-                    state_bits |= 0b01;
-                    dist.ispendr[i] &= !(1 << bit);
-                }
-
-                let lr_val: u64 = (state_bits << 62) | (1 << 60) | (0xA0 << 48) | (intid as u64);
-                write_lr(current_lr, lr_val);
-                redist.lr_intids[current_lr] = intid;
-                current_lr += 1;
-            }
-        }
-
-        // Solve Pending interrupt in queue.
+        // Phase 2: Pending interrupts from queue (state 01) — including timer IRQ 27.
+        // Elevated above SPI Active to ensure timer delivery before LR overflow.
         let mut processed_count = 0;
         let original_count = redist.pending_count;
 
@@ -477,7 +472,7 @@ pub fn flush(vcpu_id: usize) {
 
             let is_pending = is_irq_pending_locked(&redist, &dist, intid);
             let is_enabled = is_irq_enabled_locked(&redist, &dist, intid);
-            
+
             if is_pending && is_enabled {
                 let state_bits: u64 = 0b01;
                 clear_irq_pending_locked(&mut redist, &mut dist, intid);
@@ -487,6 +482,31 @@ pub fn flush(vcpu_id: usize) {
                 let pintid_bits = if is_hw { (intid as u64) << 32 } else { 0 };
 
                 let lr_val: u64 = (state_bits << 62) | hw_bit | (1 << 60) | (0xA0 << 48) | pintid_bits | (intid as u64);
+                write_lr(current_lr, lr_val);
+                redist.lr_intids[current_lr] = intid;
+                current_lr += 1;
+            }
+        }
+
+        // Phase 3: SPI Active interrupts (lowest priority for LR allocation).
+        for i in 1..MAX_IRQS_WORDS {
+            if current_lr >= MAX_LR { break; }
+            let mut spi_active_word = dist.isactiver[i];
+
+            while spi_active_word != 0 && current_lr < MAX_LR {
+                let bit = spi_active_word.trailing_zeros();
+                let intid = (i * 32) as u32 + bit as u32;
+                spi_active_word &= !(1 << bit);
+                let is_pending = is_irq_pending_locked(&redist, &dist, intid);
+                let is_enabled = is_irq_enabled_locked(&redist, &dist, intid);
+                let mut state_bits: u64 = 0b10;
+
+                if is_pending && is_enabled {
+                    state_bits |= 0b01;
+                    dist.ispendr[i] &= !(1 << bit);
+                }
+
+                let lr_val: u64 = (state_bits << 62) | (1 << 60) | (0xA0 << 48) | (intid as u64);
                 write_lr(current_lr, lr_val);
                 redist.lr_intids[current_lr] = intid;
                 current_lr += 1;
@@ -510,11 +530,26 @@ pub fn sync(vcpu_id: usize) {
             let lr_val = read_lr(i);
             let state = (lr_val >> 62) & 0b11;
             let intid = redist.lr_intids[i];
+            let hw = (lr_val >> 61) & 1;
+
+            // HW-mapped LR with state != Invalid: the physical interrupt is
+            // Active (Guest hasn't done virtual EOI yet).  Invalidating the
+            // LR without DIR destroys the HW mapping, so the Guest's future
+            // virtual EOI won't auto-deactivate the physical INTID, leaving
+            // it permanently Active and silencing future assertions.
+            // DIR on an Active interrupt transitions it to Inactive;
+            // on Active-and-Pending it transitions to Pending (re-triggers).
+            // DIR on an Inactive interrupt is a safe no-op per GICv3 spec.
+            if hw != 0 && state != 0 {
+                let p_intid = (lr_val & 0x3FF) as u64;
+                core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) p_intid, options(nostack));
+                core::arch::asm!("isb", options(nostack));
+            }
+
             if state == 0 {
                 clear_irq_state_locked(&mut redist, &mut dist, intid);
             } else {
                 sync_irq_state_locked(&mut redist, &mut dist, intid, state);
-                // redist.push_queue(intid);
                 if (state & 0b01) != 0 {
                     redist.push_queue(intid);
                 }
@@ -588,13 +623,11 @@ unsafe fn write_lr(index: usize, val: u64) {
 
 fn clear_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistributor, intid: u32) {
     if intid < 32 {
-        // redist.ispendr0 &= !(1 << intid);
         redist.isactiver0 &= !(1 << intid);
     } else {
         // SPI should have lock.
         let index = (intid / 32) as usize;
         let mask = 1 << (intid % 32);
-        // dist.ispendr[index] &= !mask;
         dist.isactiver[index] &= !mask;
     }
 }
@@ -607,9 +640,7 @@ fn sync_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistribu
         if is_pending {
             redist.ispendr0 |= 1 << intid;
         }
-        // } else {
-        //     redist.ispendr0 &= !(1 << intid);
-        // }
+
         if is_active {
             redist.isactiver0 |= 1 << intid;
         } else {
@@ -621,9 +652,7 @@ fn sync_irq_state_locked(redist: &mut VgicRedistributor, dist: &mut VgicDistribu
         if is_pending {
             dist.ispendr[index] |= mask;
         } 
-        // else {
-        //     dist.ispendr[index] &= !mask;
-        // }
+
         if is_active {
             dist.isactiver[index] |= mask;
         } else {
@@ -681,14 +710,14 @@ mod tests {
         setup_test_env();
         let mut redist = VgicRedistributor::new();
 
-        // verify normal queuing.
+        // Verify normal queuing.
         redist.push_queue(27);
         redist.push_queue(30);
         assert_eq!(redist.pending_count, 2);
         assert_eq!(redist.pending_irqs[0], 27);
         assert_eq!(redist.pending_irqs[1], 30);
 
-        // verify deadlock prevention optimization: ghost reuse deduplication.
+        // Verify deadlock prevention optimization: ghost reuse deduplication.
         redist.push_queue(27);
         assert_eq!(
             redist.pending_count, 2,

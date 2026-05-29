@@ -16,6 +16,15 @@ use tock_registers::{interfaces::*, register_bitfields};
 
 register_bitfields! {u64,
     pub SPSR_EL2 [
+        /// Negative condition flag.
+        N OFFSET(31) NUMBITS(1) [],
+        /// Zero condition flag.
+        Z OFFSET(30) NUMBITS(1) [],
+        /// Carry condition flag.
+        C OFFSET(29) NUMBITS(1) [],
+        /// Overflow condition flag.
+        V OFFSET(28) NUMBITS(1) [],
+
         /// Debug exception mask. Controls routing of debug exceptions to EL2.
         D OFFSET(9) NUMBITS(1) [
             Allow = 0,
@@ -40,13 +49,6 @@ register_bitfields! {u64,
             Prohibit = 1
         ],
 
-        /// Exception mask bits. These bits mask PSTATE.A, I, F when taking an exception to EL2.
-        /// The value saved is OR of the respective mask bits.
-        E OFFSET(5) NUMBITS(1) [
-            LittleEndian = 0,
-            BigEndian = 1
-        ],
-
         /// Instruction set state.
         /// 0: AArch64
         /// 1: AArch32
@@ -55,15 +57,8 @@ register_bitfields! {u64,
             Illegal = 1
         ],
 
-        /// Stack Pointer selection.
-        /// 0: Use SP_EL0
-        /// 1: Use SP_EL2
-        SP OFFSET(0) NUMBITS(1) [
-            EL0 = 0,
-            EL2 = 1
-        ],
-
         /// Mode/Execution state.
+        /// Bit 0 also encodes SP selection: 0 = SP_EL0, 1 = SP_ELx.
         M OFFSET(0) NUMBITS(4) [
             EL0t = 0b0000,
             EL1t = 0b0100,

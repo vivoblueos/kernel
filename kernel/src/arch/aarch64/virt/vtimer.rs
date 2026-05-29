@@ -26,11 +26,6 @@ pub struct VirtualTimerHandler;
 impl IsrDesc for VirtualTimerHandler {
     fn service_isr(&self) {
         unsafe {
-            // 1. Shield the virtual timer interrupt.
-            let mut ctl = read_cntv_ctl();
-            ctl |= 1 << 1;
-            write_cntv_ctl(ctl);
-            // 2. Inject the interrupt into the vGIC queue.
             let vcpu_id = current_cpu_id();
             vgic::inject_irq(vcpu_id, 27);
             vgic::flush(vcpu_id);
@@ -88,19 +83,19 @@ mod tests {
     use blueos_test_macro::test;
 
     #[test]
-    fn test_vtimer_handler_masking() {
+    fn test_vtimer_handler_injects_irq() {
         unsafe {
             MOCK_CNTV_CTL = 0;
         }
 
         let mut handler = VirtualTimerHandler;
         handler.service_isr();
-        // Verify whether we have shield physical interrupt. (Bit 1 = IMASK)
+        // IMASK is no longer set — vGIC HW LR + EOImode prevents re-trigger.
         unsafe {
             assert_eq!(
                 MOCK_CNTV_CTL & (1 << 1),
-                (1 << 1),
-                "vTimer must set IMASK (bit 1) to prevent IRQ storms"
+                0,
+                "vTimer should NOT set IMASK (bit 1)"
             );
         }
     }

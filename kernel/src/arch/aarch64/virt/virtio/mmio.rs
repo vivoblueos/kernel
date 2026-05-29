@@ -91,7 +91,6 @@ impl VirtioMmioTransport<VirtioConsole> {
     pub fn inject_rx(&mut self, byte: u8) {
         if self.device.handle_rx(byte, &mut self.queues) {
             self.interrupt_status |= 1;
-            // inject_irq(0, 48);
             (self.irq_handler)();
 
         }

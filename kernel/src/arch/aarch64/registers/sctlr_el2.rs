@@ -203,13 +203,6 @@ register_bitfields! {u64,
             Enable = 1
         ],
 
-        /// User Mask Access. Traps EL2 execution of MSR and MRS instructions
-        /// that access the PSTATE.{D, A, I, F} masks to EL2.
-        UMA OFFSET(9) NUMBITS(1) [
-            Trap = 0,
-            DontTrap = 1,
-        ],
-
         /// When FEAT_LSE2 is implemented:
         /// Non-aligned access.
         NAA OFFSET(6) NUMBITS(1) [

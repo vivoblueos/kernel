@@ -14,7 +14,7 @@
 
 use crate::arch::aarch64::{
     registers::{hcr_el2::HCR_EL2, sctlr_el2::SCTLR_EL2, spsr_el2::SPSR_EL2},
-    virt::{mmu_el2, vector},
+    virt::{guest, mmu_el2, vector, vgic},
 };
 use tock_registers::interfaces::{Readable, Writeable};
 
@@ -88,7 +88,7 @@ pub fn read_spsr_el2() -> u64 {
 #[inline]
 pub fn configure_hcr_el2_for_guest() {
     // Identity map 192MB of RAM starting from 0x4400_0000 so the Guest can run in-place
-    super::mmu_s2::init_stage2(0x4400_0000, 0x0c00_0000);
+    super::mmu_s2::init_stage2(guest::LINUX_KERNEL_LOAD_ADDR, guest::LINUX_RAM_SIZE);
     HCR_EL2.write(
         HCR_EL2::VM::Enable
             + HCR_EL2::RW::EL1AArch64
@@ -136,10 +136,15 @@ fn configure_timer_el2() {
 }
 
 #[inline]
+unsafe fn deactivate_irq(intid: u64) {
+    core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) intid, options(nostack));
+}
+
+#[inline]
 pub fn shutdown_guest() {
     HCR_EL2.write(HCR_EL2::RW::EL1AArch64 + HCR_EL2::SWIO::Set);
     unsafe {
-        // Disable vGIC CPU interface to restore normal physical IRQ handling
+        // Disable vGIC CPU interface
         let mut ich_hcr: u64;
         core::arch::asm!(
             "mrs {tmp}, ich_hcr_el2",
@@ -150,9 +155,10 @@ pub fn shutdown_guest() {
             options(nostack)
         );
 
-        // Restore EOImode to 0 for BlueOS.
-        // BlueOS's native GIC driver assumes EOImode=0 (EOIR drops priority AND deactivates).
-        // If we leave it as 1, BlueOS will never deactivate interrupts, causing an interrupt storm/hang!
+        // Clear all List Registers to invalidate pending/active virtual interrupts
+        vgic::clear_all_lrs();
+
+        // Immediately restore EOImode=0 so EOI both drops priority AND deactivates.
         let mut ctlr: u64;
         core::arch::asm!(
             "mrs {tmp2}, ICC_CTLR_EL1",
@@ -163,11 +169,23 @@ pub fn shutdown_guest() {
             options(nostack)
         );
 
-        // Force deactivate physical IRQ 27 (Virtual Timer) in case the guest left it Active.
-        // If left Active, it will mask all equal/lower priority interrupts, completely blocking 
-        // BlueOS's physical timer (IRQ 30) and causing the Host OS scheduler to hang!
-        let irq_27: u64 = 27;
-        core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) irq_27, options(nostack));
+        // Deactivate all PPIs (0-31) and UART SPI (33).
+        // DIR on an Inactive interrupt is a safe no-op per GICv3 spec.
+        // This clears any Active state left by the Guest, allowing
+        // running priority to drop to idle so PMR=0xFF takes full effect.
+        for intid in 0..32 {
+            deactivate_irq(intid as u64);
+        }
+        deactivate_irq(33);
+
+        let rpr: u64;
+        core::arch::asm!("mrs {}, ICC_RPR_EL1", out(reg) rpr, options(nostack));
+
+        // Re-enable Host physical timer (Guest may have disabled CNTP_CTL_EL0).
+        // Enable=1, IMASK=0 so IRQ 30 fires for Host scheduler.
+        let cntp_ctl: u64 = 1;
+        core::arch::asm!("msr CNTP_CTL_EL0, {}", in(reg) cntp_ctl, options(nostack));
+        core::arch::asm!("isb", options(nostack));
     }
 }
 
