@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(target_board = "seeed_xiao_esp32c3")]
+pub mod esp32_clock_control;
 #[cfg(any(target_chip = "gd32e5x", target_chip = "gd32vw55x"))]
 pub mod gd32_clock_control;
 #[cfg(target_board = "raspberry_pico2_cortexm")]
