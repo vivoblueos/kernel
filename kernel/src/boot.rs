@@ -90,6 +90,12 @@ extern "C" fn init() {
     init_heap();
     init_pin_states(crate::boards::PIN_STATES);
 
+    // FIXME: 4KB paging can only be used after heap initialization is complete.
+    // This call is used to verify that 4KB paging works correctly; perhaps it can be removed later?
+    #[cfg(target_arch = "aarch64")]
+    crate::arch::aarch64::mmu::init_el1_runtime_linearmap()
+        .expect("failed to initialize AArch64 EL1 runtime 4KB linearmap");
+
     let uart = crate::boards::get_device!(console_uart);
     uart.configure(&UartConfig::default()).unwrap();
     uart.enable();

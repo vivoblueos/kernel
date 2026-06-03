@@ -47,13 +47,22 @@ use crate::arch::aarch64::{
         mair_el1::*, sctlr_el1::*, tcr_el1::*, ttbr0_el1::TTBR0_EL1, ttbr1_el1::TTBR1_EL1,
     },
 };
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    mem, ptr,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 
 const L1_BLOCK_SIZE: u64 = 1 << 30;
-const EL1_LINEARMAP_BLOCK_COUNT: usize = 4;
+const PAGE_SIZE: usize = 4096;
+const PAGE_MASK: usize = PAGE_SIZE - 1;
+const PAGE_TABLE_INDEX_MASK: usize = 0x1ff;
+const L1_SHIFT: usize = 30;
+const L2_SHIFT: usize = 21;
+const L3_SHIFT: usize = 12;
+const PAGE_DESCRIPTOR_ADDR_MASK: u64 = 0x0000_ffff_ffff_f000;
 const KERNEL_VA_BITS: u64 = 39;
-const KERNEL_TCR_TSZ: u64 = u64::BITS as u64 - KERNEL_VA_BITS;
+const TCR_TSZ: u64 = u64::BITS as u64 - KERNEL_VA_BITS;
 pub(crate) const KERNEL_VIRT_START: u64 = blueos_kconfig::CONFIG_KERNEL_VIRT_START as u64;
 
 pub const fn kernel_virt_to_phys(addr: usize) -> usize {
@@ -66,6 +75,11 @@ pub const fn kernel_virt_to_phys(addr: usize) -> usize {
 
 pub const fn kernel_phys_to_virt(addr: u64) -> u64 {
     KERNEL_VIRT_START + addr
+}
+
+// End of the kernel-reserved virtual address range, including the heap.
+extern "C" {
+    static mut _end: u8;
 }
 
 #[repr(u64)]
@@ -157,6 +171,12 @@ register_bitfields! {u64,
 #[repr(transparent)]
 pub struct PageEntry(u64);
 
+#[derive(Copy, Clone)]
+enum DescriptorKind {
+    Block,
+    Page,
+}
+
 impl PageEntry {
     // Create a new invalid entry
     const fn new() -> Self {
@@ -167,8 +187,12 @@ impl PageEntry {
         Self(value)
     }
 
-    // Set page entry
-    fn set(&mut self, output_addr: u64, attributes: MemAttributes) -> Result<(), &'static str> {
+    fn set_descriptor(
+        &mut self,
+        output_addr: u64,
+        attributes: MemAttributes,
+        descriptor_kind: DescriptorKind,
+    ) -> Result<(), &'static str> {
         if self.is_valid() {
             return Err("page entry is set");
         }
@@ -188,7 +212,46 @@ impl PageEntry {
                     + PAGE_DESCRIPTOR::NG::True,
             ),
         }
-        self.0 = entry.get() | output_addr;
+
+        let mut value = entry.get();
+        match descriptor_kind {
+            DescriptorKind::Block => {
+                value |= output_addr;
+            }
+            DescriptorKind::Page => {
+                value |= PAGE_DESCRIPTOR::TYPE::Page.value;
+                value |= output_addr & PAGE_DESCRIPTOR_ADDR_MASK;
+            }
+        }
+
+        self.0 = value;
+        Ok(())
+    }
+
+    fn set_block(
+        &mut self,
+        output_addr: u64,
+        attributes: MemAttributes,
+    ) -> Result<(), &'static str> {
+        self.set_descriptor(output_addr, attributes, DescriptorKind::Block)
+    }
+
+    fn set_page(
+        &mut self,
+        output_addr: u64,
+        attributes: MemAttributes,
+    ) -> Result<(), &'static str> {
+        self.set_descriptor(output_addr, attributes, DescriptorKind::Page)
+    }
+
+    fn set_table(&mut self, table: *mut PageTableManager) -> Result<(), &'static str> {
+        if self.is_valid() {
+            return Err("page entry is set");
+        }
+        let table_phys = kernel_virt_to_phys(table as usize) as u64;
+        let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(0);
+        entry.write(PAGE_DESCRIPTOR::VALID::Valid + PAGE_DESCRIPTOR::TYPE::Page);
+        self.0 = entry.get() | (table_phys & PAGE_DESCRIPTOR_ADDR_MASK);
         Ok(())
     }
 
@@ -196,6 +259,19 @@ impl PageEntry {
     fn is_valid(&self) -> bool {
         InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(self.0)
             .is_set(PAGE_DESCRIPTOR::VALID)
+    }
+
+    fn is_table_or_page(&self) -> bool {
+        InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(self.0)
+            .is_set(PAGE_DESCRIPTOR::TYPE)
+    }
+
+    fn table_ptr(&self) -> Option<*mut PageTableManager> {
+        if !self.is_valid() || !self.is_table_or_page() {
+            return None;
+        }
+        let table_phys = self.0 & PAGE_DESCRIPTOR_ADDR_MASK;
+        Some(kernel_phys_to_virt(table_phys) as *mut PageTableManager)
     }
 }
 
@@ -221,11 +297,11 @@ impl PageTableManager {
         let table = unsafe { &mut TABLE_MANAGER };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Device);
+            let _ = table.0[index].set_block(base, MemAttributes::Device);
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Normal);
+            let _ = table.0[index].set_block(base, MemAttributes::Normal);
         }
     }
 
@@ -233,11 +309,11 @@ impl PageTableManager {
         let table = unsafe { &mut LINEARMAP_MANAGER };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Device);
+            let _ = table.0[index].set_block(base, MemAttributes::Device);
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set(base, MemAttributes::Normal);
+            let _ = table.0[index].set_block(base, MemAttributes::Normal);
         }
     }
 }
@@ -245,6 +321,181 @@ impl PageTableManager {
 // Indicate whether the page table initialization is done.
 static PAGETABLE_INIT_DONE: AtomicBool = AtomicBool::new(false);
 static LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
+static RUNTIME_LINEARMAP_INIT_DONE: AtomicBool = AtomicBool::new(false);
+static RUNTIME_LINEARMAP_PHYS: AtomicUsize = AtomicUsize::new(0);
+
+#[inline]
+fn flush_tlb_all() {
+    asm::tlbi_all();
+    asm::dsb(DsbOptions::Sys);
+    asm::isb_sy();
+}
+
+#[inline]
+const fn page_table_index(addr: usize, shift: usize) -> usize {
+    (addr >> shift) & PAGE_TABLE_INDEX_MASK
+}
+
+#[inline]
+const fn align_down(addr: usize, align: usize) -> usize {
+    addr & !(align - 1)
+}
+
+#[inline]
+const fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
+}
+
+#[inline]
+const fn is_valid_kernel_va(addr: usize) -> bool {
+    (addr as u64).wrapping_sub(KERNEL_VIRT_START) < (1 << KERNEL_VA_BITS)
+}
+
+#[inline]
+const fn is_valid_translation_va(addr: usize) -> bool {
+    (addr as u64) < (1 << KERNEL_VA_BITS) || is_valid_kernel_va(addr)
+}
+
+pub fn alloc_page_table() -> Result<*mut PageTableManager, &'static str> {
+    let raw = crate::allocator::malloc_align(
+        mem::size_of::<PageTableManager>(),
+        mem::align_of::<PageTableManager>(),
+    );
+    if raw.is_null() {
+        return Err("failed to allocate page table");
+    }
+
+    unsafe {
+        ptr::write_bytes(raw, 0, mem::size_of::<PageTableManager>());
+    }
+
+    Ok(raw.cast::<PageTableManager>())
+}
+
+fn next_level_table(entry: &mut PageEntry) -> Result<*mut PageTableManager, &'static str> {
+    if !entry.is_valid() {
+        let table = alloc_page_table()?;
+        entry.set_table(table)?;
+        return Ok(table);
+    }
+
+    entry.table_ptr().ok_or("page entry is not a page table")
+}
+
+fn map_page_in_pgtbl(
+    pgtbl: &mut PageTableManager,
+    va: usize,
+    pa: usize,
+    flags: MemAttributes,
+) -> Result<(), &'static str> {
+    let l1_table = next_level_table(&mut pgtbl.0[page_table_index(va, L1_SHIFT)])?;
+    let l2_table = unsafe { &mut *l1_table };
+    let l2_table = next_level_table(&mut l2_table.0[page_table_index(va, L2_SHIFT)])?;
+    let l3_table = unsafe { &mut *l2_table };
+    l3_table.0[page_table_index(va, L3_SHIFT)].set_page(pa as u64, flags)
+}
+
+// only supports L3 4KB granularity now
+pub fn map_range_in_pgtbl(
+    pgtbl: &mut PageTableManager,
+    va: usize,
+    pa: usize,
+    len: usize,
+    flags: MemAttributes,
+) -> Result<(), &'static str> {
+    if len == 0 {
+        return Ok(());
+    }
+    if va & PAGE_MASK != 0 || pa & PAGE_MASK != 0 {
+        return Err("virtual and physical addresses must be 4KB aligned");
+    }
+
+    let end = va
+        .checked_add(len)
+        .ok_or("virtual address range overflow")?;
+    let _ = pa
+        .checked_add(len)
+        .ok_or("physical address range overflow")?;
+    if !is_valid_translation_va(va) || !is_valid_translation_va(end - 1) {
+        return Err("virtual address exceeds configured VA bits");
+    }
+
+    let mut cur_va = va;
+    let mut cur_pa = pa;
+    while cur_va < end {
+        map_page_in_pgtbl(pgtbl, cur_va, cur_pa, flags)?;
+        cur_va += PAGE_SIZE;
+        cur_pa += PAGE_SIZE;
+    }
+
+    Ok(())
+}
+
+fn unmap_page_in_pgtbl(pgtbl: &mut PageTableManager, va: usize) -> Result<(), &'static str> {
+    let l1_entry = &mut pgtbl.0[page_table_index(va, L1_SHIFT)];
+    let l1_table = l1_entry.table_ptr().ok_or("L1 entry is not mapped")?;
+    let l2_table = unsafe { &mut *l1_table };
+    let l2_entry = &mut l2_table.0[page_table_index(va, L2_SHIFT)];
+    let l2_table = l2_entry.table_ptr().ok_or("L2 entry is not mapped")?;
+    let l3_table = unsafe { &mut *l2_table };
+    let l3_entry = &mut l3_table.0[page_table_index(va, L3_SHIFT)];
+    if !l3_entry.is_valid() {
+        return Err("L3 entry is not mapped");
+    }
+    l3_entry.0 = 0;
+    Ok(())
+}
+
+pub fn unmap_range_in_pgtbl(
+    pgtbl: &mut PageTableManager,
+    va: usize,
+    len: usize,
+) -> Result<(), &'static str> {
+    if len == 0 {
+        return Ok(());
+    }
+    if va & PAGE_MASK != 0 {
+        return Err("virtual address must be 4KB aligned");
+    }
+
+    let end = va
+        .checked_add(len)
+        .ok_or("virtual address range overflow")?;
+    if !is_valid_translation_va(va) || !is_valid_translation_va(end - 1) {
+        return Err("virtual address exceeds configured VA bits");
+    }
+
+    let mut cur_va = va;
+    while cur_va < end {
+        unmap_page_in_pgtbl(pgtbl, cur_va)?;
+        cur_va += PAGE_SIZE;
+    }
+
+    Ok(())
+}
+
+/// Frees a page table allocated by [`alloc_page_table`] and all child page tables.
+pub unsafe fn free_page_table(pgtbl: *mut PageTableManager) {
+    unsafe fn free_page_table_level(pgtbl: *mut PageTableManager, level: usize) {
+        if pgtbl.is_null() {
+            return;
+        }
+
+        let table = unsafe { &mut *pgtbl };
+        for entry in table.0.iter_mut() {
+            if level < 2 {
+                if let Some(next_table) = entry.table_ptr() {
+                    free_page_table_level(next_table, level + 1);
+                }
+            }
+            entry.0 = 0;
+        }
+
+        crate::allocator::free_align(pgtbl.cast::<u8>(), mem::align_of::<PageTableManager>());
+    }
+
+    free_page_table_level(pgtbl, 0);
+}
 
 pub fn init_el1_enable_mmu() {
     // Only allow CPU0 to initialize the page table, other cores wait
@@ -290,12 +541,10 @@ pub fn init_el1_enable_mmu() {
             + TCR_EL1::IRGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::DisableTTBR1Walks
             + TCR_EL1::EPD0::EnableTTBR0Walks
-            + TCR_EL1::T0SZ.val(KERNEL_TCR_TSZ),
+            + TCR_EL1::T0SZ.val(TCR_TSZ),
     );
     // Clear tlb.
-    asm::tlbi_all();
-    asm::dsb(DsbOptions::Sys);
-    asm::isb_sy();
+    flush_tlb_all();
     // Enable the MMU.
     SCTLR_EL1.modify(
         SCTLR_EL1::M::Enable
@@ -332,10 +581,65 @@ pub fn init_el1_boot_linearmap() {
             + TCR_EL1::ORGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::IRGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::EnableTTBR1Walks
-            + TCR_EL1::T1SZ.val(KERNEL_TCR_TSZ),
+            + TCR_EL1::T1SZ.val(TCR_TSZ),
     );
 
-    asm::tlbi_all();
+    flush_tlb_all();
+}
+
+pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
+    let cpu_id = crate::arch::current_cpu_id();
+    if cpu_id == 0 {
+        let runtime_linearmap = alloc_page_table()?;
+        let runtime_linearmap_table = unsafe { &mut *runtime_linearmap };
+        for &base in crate::boards::MMU_L1_DEVICE_BASES {
+            let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
+            map_range_in_pgtbl(
+                runtime_linearmap_table,
+                kernel_phys_to_virt(aligned_base as u64) as usize,
+                aligned_base,
+                L1_BLOCK_SIZE as usize,
+                MemAttributes::Device,
+            )?;
+        }
+        for &base in crate::boards::MMU_L1_NORMAL_BASES {
+            let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
+            let kernel_reserved_end = kernel_virt_to_phys(ptr::addr_of!(_end) as usize);
+            let kernel_reserved_len =
+                align_up(kernel_reserved_end.saturating_sub(aligned_base), PAGE_SIZE);
+
+            map_range_in_pgtbl(
+                runtime_linearmap_table,
+                kernel_phys_to_virt(aligned_base as u64) as usize,
+                aligned_base,
+                kernel_reserved_len,
+                MemAttributes::Normal,
+            )?;
+        }
+
+        asm::dsb(DsbOptions::Sys);
+
+        let runtime_linearmap_phys = kernel_virt_to_phys(runtime_linearmap as usize);
+        RUNTIME_LINEARMAP_PHYS.store(runtime_linearmap_phys, Ordering::Release);
+        RUNTIME_LINEARMAP_INIT_DONE.store(true, Ordering::Release);
+        // Wake up all cores waiting on wfe
+        unsafe {
+            core::arch::asm!("sev", options(nostack, nomem));
+        }
+    } else {
+        // Wait for CPU0 to finish runtime linearmap table initialization.
+        while !RUNTIME_LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
+            unsafe {
+                core::arch::asm!("wfe", options(nostack, nomem));
+            }
+        }
+    }
+
+    let runtime_linearmap_phys = RUNTIME_LINEARMAP_PHYS.load(Ordering::Acquire);
+
     asm::dsb(DsbOptions::Sys);
-    asm::isb_sy();
+    TTBR1_EL1.set(runtime_linearmap_phys as u64);
+
+    flush_tlb_all();
+    Ok(())
 }
