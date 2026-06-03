@@ -239,6 +239,20 @@ struct VaListCache {
     args: Vec<VaArg>,
     i: usize,
 }
+
+fn record_positional_type(
+    positional: &mut BTreeMap<usize, (FmtKind, IntKind)>,
+    index: usize,
+    kind: (FmtKind, IntKind),
+) -> Result<(), ()> {
+    if let Some(existing) = positional.insert(index, kind) {
+        if existing != kind {
+            return Err(());
+        }
+    }
+    Ok(())
+}
+
 impl VaListCache {
     unsafe fn get(
         &mut self,
@@ -626,6 +640,8 @@ unsafe fn inner_printf<W: Write>(w: W, format: *const c_char, mut ap: VaList) ->
     let mut varargs = VaListCache::default();
     let mut positional = BTreeMap::new();
     // ^ NOTE: This depends on the sorted order, do not change to HashMap or whatever
+    let mut uses_positional = false;
+    let mut uses_sequential = false;
 
     for section in iterator {
         let arg = match section {
@@ -638,21 +654,45 @@ unsafe fn inner_printf<W: Write>(w: W, format: *const c_char, mut ap: VaList) ->
         }
         for num in &[arg.min_width, arg.precision.unwrap_or(Number::Static(0))] {
             match num {
-                Number::Next => varargs.args.push(VaArg::c_int(ap.arg::<c_int>())),
+                Number::Next => {
+                    uses_sequential = true;
+                    varargs.args.push(VaArg::c_int(ap.arg::<c_int>()));
+                }
                 Number::Index(i) => {
-                    positional.insert(i - 1, (FmtKind::Signed, IntKind::Int));
+                    uses_positional = true;
+                    if record_positional_type(
+                        &mut positional,
+                        i - 1,
+                        (FmtKind::Signed, IntKind::Int),
+                    )
+                    .is_err()
+                    {
+                        return Ok(-1);
+                    }
                 }
                 Number::Static(_) => (),
             }
         }
         match arg.index {
             Some(i) => {
-                positional.insert(i - 1, (arg.fmtkind, arg.intkind));
+                uses_positional = true;
+                if record_positional_type(&mut positional, i - 1, (arg.fmtkind, arg.intkind))
+                    .is_err()
+                {
+                    return Ok(-1);
+                }
             }
-            None => varargs
-                .args
-                .push(VaArg::arg_from(arg.fmtkind, arg.intkind, &mut ap)),
+            None => {
+                uses_sequential = true;
+                varargs
+                    .args
+                    .push(VaArg::arg_from(arg.fmtkind, arg.intkind, &mut ap));
+            }
         }
+    }
+
+    if uses_positional && uses_sequential {
+        return Ok(-1);
     }
 
     for (i, arg) in positional {

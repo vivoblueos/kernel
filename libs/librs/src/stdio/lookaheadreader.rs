@@ -59,13 +59,20 @@ impl LookAheadFile<'_> {
     fn look_ahead(&mut self) -> Result<Option<u8>, i32> {
         let buf = &mut [0];
         let seek = unsafe { ftell_locked(self.f) };
-        unsafe { fseek_locked(self.f, self.look_ahead as off_t, SEEK_SET) };
+        if seek < 0 {
+            return Err(-1);
+        }
+        if unsafe { fseek_locked(self.f, self.look_ahead as off_t, SEEK_SET) } < 0 {
+            return Err(-1);
+        }
         let ret = match self.f.read(buf) {
             Ok(0) => Ok(None),
             Ok(_) => Ok(Some(buf[0])),
             Err(_) => Err(-1),
         };
-        unsafe { fseek_locked(self.f, seek, SEEK_SET) };
+        if unsafe { fseek_locked(self.f, seek, SEEK_SET) } < 0 {
+            return Err(-1);
+        }
         self.look_ahead += 1;
         ret
     }

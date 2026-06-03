@@ -109,6 +109,7 @@ use semihosting::println;
 
 #[cfg(test)]
 pub fn librs_test_runner(tests: &[&dyn Fn()]) {
+    crate::stdio::init();
     println!("Librs unittest started");
     println!("Running {} tests", tests.len());
     for test in tests {

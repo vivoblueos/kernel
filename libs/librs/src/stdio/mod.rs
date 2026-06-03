@@ -879,3 +879,166 @@ pub fn init() {
         stderr = default_stderr().get();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{printf, snprintf, sscanf};
+    use crate::c_str::CStr;
+    use blueos_test_macro::test;
+    use libc::{c_char, c_double, c_float, c_int, c_longlong, size_t};
+
+    #[test]
+    fn check_snprintf() {
+        let mut buffer = [0 as c_char; 64];
+
+        let conflicting = b"%1$d %1$f\0";
+        let ret = unsafe {
+            snprintf(
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                conflicting.as_ptr() as *const c_char,
+                7 as c_int,
+            )
+        };
+        assert_eq!(ret, -1);
+
+        let mixed = b"%1$d %d\0";
+        let ret = unsafe {
+            snprintf(
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                mixed.as_ptr() as *const c_char,
+                11 as c_int,
+                22 as c_int,
+            )
+        };
+        assert_eq!(ret, -1);
+
+        let positional = b"%3$*1$.*2$s\0";
+        let ret = unsafe {
+            snprintf(
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                positional.as_ptr() as *const c_char,
+                10 as c_int,
+                3 as c_int,
+                c"abcdef".as_ptr(),
+            )
+        };
+        assert_eq!(ret, 10);
+        assert_eq!(unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(), b"       abc");
+
+        let reordered = b"%2$lld:%1$zu\0";
+        let ret = unsafe {
+            snprintf(
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                reordered.as_ptr() as *const c_char,
+                42usize as size_t,
+                123456789i64 as c_longlong,
+            )
+        };
+        assert_eq!(ret, 12);
+        assert_eq!(unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(), b"123456789:42");
+
+        let mixed_numeric = b"int=%d float=%.2f double=%.3f\0";
+        let ret = unsafe {
+            snprintf(
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                mixed_numeric.as_ptr() as *const c_char,
+                9 as c_int,
+                1.25f32 as c_double,
+                6.875f64 as c_double,
+            )
+        };
+        assert_eq!(ret, 29);
+        assert_eq!(
+            unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(),
+            b"int=9 float=1.25 double=6.875"
+        );
+    }
+    #[test]
+    fn check_printf() {
+        let conflicting = b"%1$d %1$f\n\0";
+        let ret = unsafe { printf(conflicting.as_ptr() as *const c_char, 7 as c_int) };
+        assert_eq!(ret, -1);
+
+        let mixed_numeric = b"printf int=%d float=%.2f double=%.3f\n\0";
+        let ret = unsafe {
+            printf(
+                mixed_numeric.as_ptr() as *const c_char,
+                9 as c_int,
+                1.25f32 as c_double,
+                6.875f64 as c_double,
+            )
+        };
+        assert_eq!(ret, 37);
+    }
+
+    #[test]
+    fn check_scanf() {
+        let mut first = 0;
+        let mut second = 0;
+        let ret = unsafe {
+            sscanf(
+                c"12345".as_ptr(),
+                c"%3d%2d".as_ptr(),
+                &mut first as *mut c_int,
+                &mut second as *mut c_int,
+            )
+        };
+        assert_eq!(ret, 2);
+        assert_eq!(first, 123);
+        assert_eq!(second, 45);
+
+        let mut word = [0 as c_char; 6];
+        let ret = unsafe { sscanf(c"hello".as_ptr(), c"%5s".as_ptr(), word.as_mut_ptr()) };
+        assert_eq!(ret, 1);
+        assert_eq!(unsafe { CStr::from_ptr(word.as_ptr()) }.to_bytes(), b"hello");
+
+        let mut prefix = [0 as c_char; 4];
+        let ret = unsafe { sscanf(c"abc".as_ptr(), c"%3c".as_ptr(), prefix.as_mut_ptr()) };
+        assert_eq!(ret, 1);
+        assert_eq!(&prefix.map(|ch| ch as u8), b"abc\0");
+
+        let mut auto_base = 0;
+        let mut octal = 0;
+        let mut wide = 0i64;
+        let ret = unsafe {
+            sscanf(
+                c"0x2a 17 1234567890123".as_ptr(),
+                c"%i %o %lld".as_ptr(),
+                &mut auto_base as *mut c_int,
+                &mut octal as *mut c_int,
+                &mut wide as *mut c_longlong,
+            )
+        };
+        assert_eq!(ret, 3);
+        assert_eq!(auto_base, 42);
+        assert_eq!(octal, 15);
+        assert_eq!(wide, 1234567890123);
+
+        let mut parsed_int = 0;
+        let mut parsed_float: c_float = 0.0;
+        let mut parsed_double: c_double = 0.0;
+        let ret = unsafe {
+            sscanf(
+                c"9 1.25 6.875".as_ptr(),
+                c"%d %f %lf".as_ptr(),
+                &mut parsed_int as *mut c_int,
+                &mut parsed_float as *mut c_float,
+                &mut parsed_double as *mut c_double,
+            )
+        };
+        assert_eq!(ret, 3);
+        assert_eq!(parsed_int, 9);
+        assert!((parsed_float - 1.25).abs() < 0.0001);
+        assert!((parsed_double - 6.875).abs() < 0.0001);
+
+        let mut tail = [0 as c_char; 4];
+        let ret = unsafe { sscanf(c"abc123 xyz".as_ptr(), c"%*3c%*3d %3s".as_ptr(), tail.as_mut_ptr()) };
+        assert_eq!(ret, 1);
+        assert_eq!(unsafe { CStr::from_ptr(tail.as_ptr()) }.to_bytes(), b"xyz");
+    }
+}
