@@ -1707,7 +1707,7 @@ mod tests {
 
             let block_size = allocated_block_size(ptr, 4096);
             assert!(
-                block_size <= GRANULARITY + 4096 + GRANULARITY - 1,
+                block_size < GRANULARITY + 4096 + GRANULARITY,
                 "block_size {} should be ~4K not ~8K (reclamation working)",
                 block_size
             );
