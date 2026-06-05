@@ -1617,6 +1617,7 @@ impl BlockInfo<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     // On 64-bit: GRANULARITY=32. Use u8 bitmaps for small tests.
     type TestTlsf<'a> = Tlsf<'a, u8, u8, 8, 8>;
