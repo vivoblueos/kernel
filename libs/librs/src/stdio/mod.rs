@@ -926,7 +926,10 @@ mod tests {
             )
         };
         assert_eq!(ret, 10);
-        assert_eq!(unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(), b"       abc");
+        assert_eq!(
+            unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(),
+            b"       abc"
+        );
 
         let reordered = b"%2$lld:%1$zu\0";
         let ret = unsafe {
@@ -939,7 +942,10 @@ mod tests {
             )
         };
         assert_eq!(ret, 12);
-        assert_eq!(unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(), b"123456789:42");
+        assert_eq!(
+            unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes(),
+            b"123456789:42"
+        );
 
         let mixed_numeric = b"int=%d float=%.2f double=%.3f\0";
         let ret = unsafe {
@@ -995,7 +1001,10 @@ mod tests {
         let mut word = [0 as c_char; 6];
         let ret = unsafe { sscanf(c"hello".as_ptr(), c"%5s".as_ptr(), word.as_mut_ptr()) };
         assert_eq!(ret, 1);
-        assert_eq!(unsafe { CStr::from_ptr(word.as_ptr()) }.to_bytes(), b"hello");
+        assert_eq!(
+            unsafe { CStr::from_ptr(word.as_ptr()) }.to_bytes(),
+            b"hello"
+        );
 
         let mut prefix = [0 as c_char; 4];
         let ret = unsafe { sscanf(c"abc".as_ptr(), c"%3c".as_ptr(), prefix.as_mut_ptr()) };
@@ -1037,7 +1046,13 @@ mod tests {
         assert!((parsed_double - 6.875).abs() < 0.0001);
 
         let mut tail = [0 as c_char; 4];
-        let ret = unsafe { sscanf(c"abc123 xyz".as_ptr(), c"%*3c%*3d %3s".as_ptr(), tail.as_mut_ptr()) };
+        let ret = unsafe {
+            sscanf(
+                c"abc123 xyz".as_ptr(),
+                c"%*3c%*3d %3s".as_ptr(),
+                tail.as_mut_ptr(),
+            )
+        };
         assert_eq!(ret, 1);
         assert_eq!(unsafe { CStr::from_ptr(tail.as_ptr()) }.to_bytes(), b"xyz");
     }
