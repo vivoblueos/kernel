@@ -1619,27 +1619,33 @@ mod tests {
     use super::*;
     use blueos_test_macro::test;
 
-    // On 64-bit: GRANULARITY=32. Use u8 bitmaps for small tests.
-    type TestTlsf<'a> = Tlsf<'a, u8, u8, 8, 8>;
+    // FLLEN=12 ensures MAX_POOL_SIZE = GRANULARITY << 12 >= 65536 on both 32-bit
+    // (GRANULARITY=16) and 64-bit (GRANULARITY=32), so a 4K-aligned 4K alloc
+    // (search_size=8192) fits comfortably within the pool.
+    type TestTlsf<'a> = Tlsf<'a, u16, u8, 12, 8>;
 
+    // Pool and allocator in .bss — avoids stack overflow on embedded targets.
     #[repr(align(32))]
-    struct AlignedPool([core::mem::MaybeUninit<u8>; 16384]);
+    struct AlignedPool([core::mem::MaybeUninit<u8>; 32768]);
+    static mut POOL: AlignedPool = AlignedPool([core::mem::MaybeUninit::uninit(); 32768]);
+    static mut TLSF: TestTlsf<'static> = TestTlsf::new();
 
     fn with_pool<F: FnOnce(&mut TestTlsf<'_>, *mut u8, usize)>(f: F) {
-        let mut storage = AlignedPool([core::mem::MaybeUninit::uninit(); 16384]);
-        let mut tlsf = TestTlsf::new();
-        let pool_start = storage.0.as_mut_ptr() as *mut u8;
-        let pool_len = unsafe {
-            tlsf.insert_free_block_ptr(
-                core::ptr::NonNull::new(core::ptr::slice_from_raw_parts_mut(
-                    pool_start, 16384,
-                ))
-                .unwrap(),
-            )
-            .map(|n| n.get())
-            .unwrap_or(0)
-        };
-        f(&mut tlsf, pool_start, pool_len);
+        // Safety: tests run single-threaded in the kernel test harness.
+        unsafe {
+            TLSF = TestTlsf::new();
+            let pool_start = POOL.0.as_mut_ptr() as *mut u8;
+            let pool_len = TLSF
+                .insert_free_block_ptr(
+                    core::ptr::NonNull::new(core::ptr::slice_from_raw_parts_mut(
+                        pool_start, 32768,
+                    ))
+                    .unwrap(),
+                )
+                .map(|n| n.get())
+                .unwrap_or(0);
+            f(&mut TLSF, pool_start, pool_len);
+        }
     }
 
     /// Walk the physical chain and assert structural invariants:
