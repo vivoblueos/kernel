@@ -880,9 +880,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         // written; writing through &mut FreeBlockHdr would be UB).
         let u_ptr = block.as_ptr().cast::<u8>().add(l_size).cast::<BlockHdr>();
         core::ptr::addr_of_mut!((*u_ptr).prev_phys_block).write(Some(l.cast()));
-        let u = NonNull::new_unchecked(u_ptr);
-
-        u
+        NonNull::new_unchecked(u_ptr)
     }
 
     /// Search for a non-empty free block list for allocation.
