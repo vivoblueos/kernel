@@ -30,6 +30,7 @@ use crate::{
 };
 use blueos_driver::uart::ns16x50::Ns16x50Isr;
 use blueos_hal::{clock::Clock, isr::IsrDesc};
+pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE};
 use core::sync::atomic::Ordering;
 pub(crate) static PLIC: Plic = Plic::new(config::PLIC_BASE);
 pub use crate::devices::clock::riscv_clock::QemuRiscvClock as ClockImpl;

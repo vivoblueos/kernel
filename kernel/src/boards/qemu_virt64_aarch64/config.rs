@@ -25,3 +25,7 @@ pub const GICD: usize = mmu::kernel_phys_to_virt(0x8000000) as usize;
 pub const GICR: usize = mmu::kernel_phys_to_virt(0x80a0000) as usize;
 pub const MMU_L1_NORMAL_BASES: &[u64] = &[0x4008_0000];
 pub const MMU_L1_DEVICE_BASES: &[u64] = &[0x0];
+
+// Physical memory range for buddy allocator (QEMU virt defaults to 128MB).
+pub const PHYS_DRAM_BASE: u64 = 0x4000_0000;
+pub const PHYS_DRAM_SIZE: u64 = 128 * 1024 * 1024;

@@ -19,3 +19,7 @@ use crate::arch::irq::IrqNumber;
 pub const PLIC_BASE: usize = 0x0c00_0000;
 pub const NS16550_UART0_BASE: u32 = 0x1000_0000;
 pub const NS16550_UART0_IRQNUM: IrqNumber = IrqNumber::new(10);
+
+// Physical memory range for buddy allocator (QEMU virt defaults to 128MB).
+pub const PHYS_DRAM_BASE: usize = 0x8000_0000;
+pub const PHYS_DRAM_SIZE: usize = 128 * 1024 * 1024;

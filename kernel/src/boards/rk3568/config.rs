@@ -24,3 +24,7 @@ pub const GICD: usize = 0xfd400000;
 pub const GICR: usize = 0xfd460000;
 pub const MMU_L1_NORMAL_BASES: &[u64] = &[0x0, 0x4000_0000];
 pub const MMU_L1_DEVICE_BASES: &[u64] = &[0xc000_0000];
+
+// Physical memory range for buddy allocator (according to uboot bdinfo message).
+pub const PHYS_DRAM_BASE: usize = 0x20_0000;
+pub const PHYS_DRAM_SIZE: usize = 0xefe0_0000;
