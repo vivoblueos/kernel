@@ -604,17 +604,31 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
-            let kernel_reserved_end = kernel_virt_to_phys(ptr::addr_of!(_end) as usize);
-            let kernel_reserved_len =
-                align_up(kernel_reserved_end.saturating_sub(aligned_base), PAGE_SIZE);
 
-            map_range_in_pgtbl(
-                runtime_linearmap_table,
-                kernel_phys_to_virt(aligned_base as u64) as usize,
-                aligned_base,
-                kernel_reserved_len,
-                MemAttributes::Normal,
-            )?;
+            // Map the intersection between this L1 block and the physical DRAM range.
+            let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
+            let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
+            let dram_end = dram_base.checked_add(dram_size).ok_or("DRAM range overflow")?;
+
+            let block_start = aligned_base;
+            let block_end = aligned_base + L1_BLOCK_SIZE as usize;
+
+            let map_start = core::cmp::max(block_start, dram_base);
+            let map_end = core::cmp::min(block_end, dram_end);
+
+            if map_start < map_end {
+                let map_start_aligned = align_down(map_start, PAGE_SIZE);
+                let map_end_aligned = align_up(map_end, PAGE_SIZE);
+                let map_len = map_end_aligned.saturating_sub(map_start_aligned);
+
+                map_range_in_pgtbl(
+                    runtime_linearmap_table,
+                    kernel_phys_to_virt(map_start_aligned as u64) as usize,
+                    map_start_aligned,
+                    map_len,
+                    MemAttributes::Normal,
+                )?;
+            }
         }
 
         asm::dsb(DsbOptions::Sys);
