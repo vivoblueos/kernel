@@ -58,16 +58,16 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         #[cfg(buddy_allocator)]
         {
-            use buddy::{heap::order_of_size, page::PAGE_SIZE};
-            let size = layout.size().max(layout.align());
-            if size >= PAGE_SIZE {
-                let order = order_of_size(size);
-                return buddy::BUDDY_ALLOC
-                    .alloc_pages_addr(order)
-                    .map_or(ptr::null_mut(), |addr| {
-                        buddy_phys_to_virt_addr(addr) as *mut u8
-                    });
-            }
+            // use buddy::{heap::order_of_size, page::PAGE_SIZE};
+            // let size = layout.size().max(layout.align());
+            // if size >= PAGE_SIZE {
+            //     let order = order_of_size(size);
+            //     return buddy::BUDDY_ALLOC
+            //         .alloc_pages_addr(order)
+            //         .map_or(ptr::null_mut(), |addr| {
+            //             buddy_phys_to_virt_addr(addr) as *mut u8
+            //         });
+            // }
         }
         HEAP.alloc(layout)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
@@ -76,13 +76,13 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         #[cfg(buddy_allocator)]
         {
-            use buddy::page::PAGE_SIZE;
-            let size = layout.size().max(layout.align());
-            if size >= PAGE_SIZE {
-                // Page-level allocations from buddy cannot be freed through HEAP.
-                // A separate API (e.g., free_pages) is required; for now, leak.
-                return;
-            }
+            // use buddy::page::PAGE_SIZE;
+            // let size = layout.size().max(layout.align());
+            // if size >= PAGE_SIZE {
+            //     // Page-level allocations from buddy cannot be freed through HEAP.
+            //     // A separate API (e.g., free_pages) is required; for now, leak.
+            //     return;
+            // }
         }
         HEAP.dealloc(ptr, layout);
     }
@@ -99,9 +99,8 @@ impl KernelAllocator {
     }
 }
 
-#[cfg(buddy_allocator)]
 #[inline]
-fn buddy_phys_to_virt_addr(addr: usize) -> usize {
+fn kernel_phys_to_virt(addr: usize) -> usize {
     #[cfg(target_arch = "aarch64")]
     {
         crate::arch::aarch64::mmu::kernel_phys_to_virt(addr as u64) as usize
@@ -134,28 +133,28 @@ fn buddy_phys_to_virt_addr(addr: usize) -> usize {
 pub fn init_heap(start: *mut u8, end: *mut u8) {
     #[cfg(buddy_allocator)]
     {
-        // Level 1: Initialize buddy allocator to manage all physical memory.
-        let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
-        let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
-        unsafe {
-            buddy::BUDDY_ALLOC.init(dram_base, dram_base + dram_size);
-        }
+        // // Level 1: Initialize buddy allocator to manage all physical memory.
+        // let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
+        // let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
+        // unsafe {
+        //     buddy::BUDDY_ALLOC.init(dram_base, dram_base + dram_size);
+        // }
 
-        // Level 2: Allocate page pool for small-object allocator from buddy.
-        let pool_size = (end as usize).saturating_sub(start as usize);
-        if pool_size > 0 {
-            let order = buddy::heap::order_of_size(pool_size);
-            if let Some(pool_addr) = buddy::BUDDY_ALLOC.alloc_pages_addr(order) {
-                unsafe {
-                    HEAP.init(buddy_phys_to_virt_addr(pool_addr), pool_size);
-                }
-            } else {
-                // Fallback: use original heap range if buddy allocation fails.
-                unsafe {
-                    HEAP.init(start as usize, pool_size);
-                }
-            }
-        }
+        // // Level 2: Allocate page pool for small-object allocator from buddy.
+        // let pool_size = (end as usize).saturating_sub(start as usize);
+        // if pool_size > 0 {
+        //     let order = buddy::heap::order_of_size(pool_size);
+        //     if let Some(pool_addr) = buddy::BUDDY_ALLOC.alloc_pages_addr(order) {
+        //         unsafe {
+        //             HEAP.init(buddy_phys_to_virt_addr(pool_addr), pool_size);
+        //         }
+        //     } else {
+        //         // Fallback: use original heap range if buddy allocation fails.
+        //         unsafe {
+        //             HEAP.init(start as usize, pool_size);
+        //         }
+        //     }
+        // }
     }
 
     #[cfg(not(buddy_allocator))]

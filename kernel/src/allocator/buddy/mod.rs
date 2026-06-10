@@ -14,21 +14,21 @@
 
 use crate::types::{Arc, ArcInner};
 
-pub mod heap;
-pub mod page;
+// pub mod heap;
+// pub mod page;
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;
 
-use heap::BuddyAllocator;
+// use heap::BuddyAllocator;
 
-#[allow(non_snake_case)]
-mod BUDDY_ALLOC {
-    use super::*;
+// #[allow(non_snake_case)]
+// mod BUDDY_ALLOC {
+//     use super::*;
 
-    static CTRL_BLOCK: ArcInner<BuddyAllocator> = ArcInner::new(BuddyAllocator::new());
-    pub(in crate::allocator) static PTR: Arc<BuddyAllocator> =
-        unsafe { Arc::from_static_inner_ref(&CTRL_BLOCK) };
-}
+//     static CTRL_BLOCK: ArcInner<BuddyAllocator> = ArcInner::new(BuddyAllocator::new());
+//     pub(in crate::allocator) static PTR: Arc<BuddyAllocator> =
+//         unsafe { Arc::from_static_inner_ref(&CTRL_BLOCK) };
+// }
 
-pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
+// pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
