@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ use crate::{arch, error::Error, sync::SpinLock, time};
 use blueos_driver::uart::ns16x50::Ns16x50Isr;
 use blueos_kconfig::CONFIG_NUM_CORES;
 pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
+pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE};
 use core::sync::atomic::Ordering;
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::GenericClock;
 use alloc::boxed::Box;

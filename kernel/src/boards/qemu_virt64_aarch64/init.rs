@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -90,7 +90,7 @@ crate::define_peripheral! {
      )),
 }
 
-pub const DRAM_BASE: u64 = mmu::kernel_phys_to_virt(0x4000_0000);
+pub const DRAM_BASE: usize = mmu::kernel_phys_to_virt(0x4000_0000);
 
 crate::define_pin_states!(None);
 

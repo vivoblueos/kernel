@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -63,19 +63,9 @@ const L3_SHIFT: usize = 12;
 const PAGE_DESCRIPTOR_ADDR_MASK: u64 = 0x0000_ffff_ffff_f000;
 const KERNEL_VA_BITS: u64 = 39;
 const TCR_TSZ: u64 = u64::BITS as u64 - KERNEL_VA_BITS;
-pub(crate) const KERNEL_VIRT_START: u64 = blueos_kconfig::CONFIG_KERNEL_VIRT_START as u64;
+pub(crate) const KERNEL_VIRT_START: u64 = crate::mm::KERNEL_VIRT_OFFSET as u64;
 
-pub const fn kernel_virt_to_phys(addr: usize) -> usize {
-    if addr >= KERNEL_VIRT_START as usize {
-        addr - KERNEL_VIRT_START as usize
-    } else {
-        addr
-    }
-}
-
-pub const fn kernel_phys_to_virt(addr: u64) -> u64 {
-    KERNEL_VIRT_START + addr
-}
+pub use crate::mm::{kernel_phys_to_virt, kernel_virt_to_phys};
 
 // End of the kernel-reserved virtual address range, including the heap.
 extern "C" {
@@ -271,7 +261,7 @@ impl PageEntry {
             return None;
         }
         let table_phys = self.0 & PAGE_DESCRIPTOR_ADDR_MASK;
-        Some(kernel_phys_to_virt(table_phys) as *mut PageTableManager)
+        Some(kernel_phys_to_virt(table_phys as usize) as *mut PageTableManager)
     }
 }
 
@@ -596,7 +586,7 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
             let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
             map_range_in_pgtbl(
                 runtime_linearmap_table,
-                kernel_phys_to_virt(aligned_base as u64) as usize,
+                kernel_phys_to_virt(aligned_base),
                 aligned_base,
                 L1_BLOCK_SIZE as usize,
                 MemAttributes::Device,
@@ -604,17 +594,33 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
-            let kernel_reserved_end = kernel_virt_to_phys(ptr::addr_of!(_end) as usize);
-            let kernel_reserved_len =
-                align_up(kernel_reserved_end.saturating_sub(aligned_base), PAGE_SIZE);
 
-            map_range_in_pgtbl(
-                runtime_linearmap_table,
-                kernel_phys_to_virt(aligned_base as u64) as usize,
-                aligned_base,
-                kernel_reserved_len,
-                MemAttributes::Normal,
-            )?;
+            // Map the intersection between this L1 block and the physical DRAM range.
+            let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
+            let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
+            let dram_end = dram_base
+                .checked_add(dram_size)
+                .ok_or("DRAM range overflow")?;
+
+            let block_start = aligned_base;
+            let block_end = aligned_base + L1_BLOCK_SIZE as usize;
+
+            let map_start = core::cmp::max(block_start, dram_base);
+            let map_end = core::cmp::min(block_end, dram_end);
+
+            if map_start < map_end {
+                let map_start_aligned = align_down(map_start, PAGE_SIZE);
+                let map_end_aligned = align_up(map_end, PAGE_SIZE);
+                let map_len = map_end_aligned.saturating_sub(map_start_aligned);
+
+                map_range_in_pgtbl(
+                    runtime_linearmap_table,
+                    kernel_phys_to_virt(map_start_aligned),
+                    map_start_aligned,
+                    map_len,
+                    MemAttributes::Normal,
+                )?;
+            }
         }
 
         asm::dsb(DsbOptions::Sys);

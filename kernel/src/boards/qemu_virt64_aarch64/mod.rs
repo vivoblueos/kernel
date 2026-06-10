@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 pub mod init;
 pub use init::*;
-mod config;
+pub mod config;
 pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
+pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE};
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::QemuGtClk;
