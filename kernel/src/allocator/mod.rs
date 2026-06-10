@@ -155,6 +155,12 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         //         }
         //     }
         // }
+
+        let start_addr = start as usize;
+        let size = unsafe { end.offset_from(start) as usize };
+        unsafe {
+            HEAP.init(start_addr, size);
+        }
     }
 
     #[cfg(not(buddy_allocator))]
