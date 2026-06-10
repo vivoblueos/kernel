@@ -21,6 +21,8 @@ use core::{alloc::GlobalAlloc, ptr};
 // Raw heap implementations are in the allocator_crate.
 // This module only contains SpinLock wrappers and the GlobalAlloc impl.
 
+#[cfg(buddy_allocator)]
+mod buddy;
 #[cfg(any(allocator = "tlsf", allocator = "slab", allocator = "slab_dynamic"))]
 mod tlsf;
 #[cfg(allocator = "tlsf")]
@@ -54,11 +56,34 @@ static_arc! {
 
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        #[cfg(buddy_allocator)]
+        {
+            use buddy::{heap::order_of_size, page::PAGE_SIZE};
+            let size = layout.size().max(layout.align());
+            if size >= PAGE_SIZE {
+                let order = order_of_size(size);
+                return buddy::BUDDY_ALLOC
+                    .alloc_pages_addr(order)
+                    .map_or(ptr::null_mut(), |addr| {
+                        buddy_phys_to_virt_addr(addr) as *mut u8
+                    });
+            }
+        }
         HEAP.alloc(layout)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        #[cfg(buddy_allocator)]
+        {
+            use buddy::page::PAGE_SIZE;
+            let size = layout.size().max(layout.align());
+            if size >= PAGE_SIZE {
+                // Page-level allocations from buddy cannot be freed through HEAP.
+                // A separate API (e.g., free_pages) is required; for now, leak.
+                return;
+            }
+        }
         HEAP.dealloc(ptr, layout);
     }
 
@@ -74,11 +99,72 @@ impl KernelAllocator {
     }
 }
 
+#[cfg(buddy_allocator)]
+#[inline]
+fn buddy_phys_to_virt_addr(addr: usize) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::arch::aarch64::mmu::kernel_phys_to_virt(addr as u64) as usize
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        addr
+    }
+}
+
+/// Initialize the kernel heap.
+///
+/// # Two-Level Architecture (buddy_allocator enabled)
+///
+/// 1. **Level 1 — Physical page management**: The buddy allocator is
+///    initialized with the full physical DRAM range. It manages all
+///    physical pages via split/coalesce, providing page-aligned blocks
+///    of power-of-two sizes.
+///
+/// 2. **Level 2 — Small-object allocation**: The slab allocator (or
+///    tlsf/llff fallback) receives its page pool from the buddy allocator.
+///    This keeps small-object allocation fast while physical memory is
+///    centrally managed. The original `__heap_start..__heap_end` range
+///    is used only as a fallback if buddy allocation fails.
+///
+/// # FDT / DTB Note
+/// The physical memory range is currently hard-coded per board via
+/// `PHYS_DRAM_BASE` and `PHYS_DRAM_SIZE`. This should be replaced with
+/// FDT/DTB dynamic detection in a future update.
 pub fn init_heap(start: *mut u8, end: *mut u8) {
-    let start_addr = start as usize;
-    let size = unsafe { end.offset_from(start) as usize };
-    unsafe {
-        HEAP.init(start_addr, size);
+    #[cfg(buddy_allocator)]
+    {
+        // Level 1: Initialize buddy allocator to manage all physical memory.
+        let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
+        let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
+        unsafe {
+            buddy::BUDDY_ALLOC.init(dram_base, dram_base + dram_size);
+        }
+
+        // Level 2: Allocate page pool for small-object allocator from buddy.
+        let pool_size = (end as usize).saturating_sub(start as usize);
+        if pool_size > 0 {
+            let order = buddy::heap::order_of_size(pool_size);
+            if let Some(pool_addr) = buddy::BUDDY_ALLOC.alloc_pages_addr(order) {
+                unsafe {
+                    HEAP.init(buddy_phys_to_virt_addr(pool_addr), pool_size);
+                }
+            } else {
+                // Fallback: use original heap range if buddy allocation fails.
+                unsafe {
+                    HEAP.init(start as usize, pool_size);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(buddy_allocator))]
+    {
+        let start_addr = start as usize;
+        let size = unsafe { end.offset_from(start) as usize };
+        unsafe {
+            HEAP.init(start_addr, size);
+        }
     }
 }
 
