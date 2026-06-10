@@ -608,7 +608,9 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
             // Map the intersection between this L1 block and the physical DRAM range.
             let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
             let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
-            let dram_end = dram_base.checked_add(dram_size).ok_or("DRAM range overflow")?;
+            let dram_end = dram_base
+                .checked_add(dram_size)
+                .ok_or("DRAM range overflow")?;
 
             let block_start = aligned_base;
             let block_end = aligned_base + L1_BLOCK_SIZE as usize;
