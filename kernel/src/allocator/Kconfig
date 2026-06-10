@@ -35,3 +35,13 @@ config SLAB_DYNAMIC_MAX_TOTAL_PAGES
     int "Max total pages in page pool"
     default 32
     depends on ALLOCATOR_SLAB_DYNAMIC
+
+config BUDDY_ALLOCATOR
+    bool "Enable buddy allocator as physical page manager"
+    default n
+    help
+        Enable the buddy allocator to manage all physical memory pages.
+        When enabled, slab allocator operates on top of buddy-allocated
+        page pools; >= PAGE_SIZE allocations go directly to buddy;
+        tlsf/llff keep their original __heap_start~__heap_end path.
+        When disabled, the kernel falls back to direct heap management.
