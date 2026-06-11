@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,26 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod cntfrq_el0;
-pub mod cntp_ctl_el0;
-pub mod cntp_tval_el0;
-pub mod cntpct_el0;
-pub mod cpacr_el1;
-pub mod daif;
-pub mod esr_el1;
-pub mod hcr_el2;
-pub mod mair_el1;
-pub mod mair_el2;
-pub mod mpidr_el1;
-pub mod sctlr_el1;
-pub mod sctlr_el2;
-pub mod spsel;
-pub mod spsr_el2;
-pub mod tcr_el1;
-pub mod tcr_el2;
-pub mod ttbr0_el1;
-pub mod ttbr0_el2;
-pub mod ttbr1_el1;
-pub mod vbar_el1;
-pub mod vtcr_el2;
-pub mod vttbr_el2;
+use core::arch::asm;
+
+pub const LINUX_KERNEL_LOAD_ADDR: usize = 0x4400_0000;
+pub const LINUX_DTB_ADDR: usize = 0x4E00_0000;
+pub const LINUX_RAM_SIZE: usize = 0x0C00_0000;
