@@ -12,5 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Re-export termios from the standalone blueos_devices crate.
+pub use blueos_devices::tty::termios;
+
 pub mod n_tty;
-pub mod termios;

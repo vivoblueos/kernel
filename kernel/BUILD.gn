@@ -46,8 +46,12 @@ group("check_kernel_probe") {
 
 _shared_deps = [
   ":atomic",
+  "//kernel/blueos_allocator",
   "//kernel/blueos_arch",
+  "//kernel/blueos_boards",
   "//kernel/blueos_core_traits",
+  "//kernel/blueos_devices",
+  "//kernel/blueos_logger",
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/vendor/bitflags-2.10.0:bitflags",
   "//external/vendor/cfg-if-1.0.4:cfg_if",

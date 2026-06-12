@@ -1,0 +1,10 @@
+config SOC_GD32VW553
+    bool "Gd32vw553"
+    default y
+    select RISCV
+    select HAS_MIE
+    select HAS_MTIME
+    select HAS_PLIC
+
+config NUM_IRQS
+    default 116

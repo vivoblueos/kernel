@@ -12,25 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    devices::{
-        tty::{
-            serial::{Serial, SerialError, UartOps},
-            termios::Termios,
-        },
-        Device,
-    },
-    sync::SpinLock,
-};
-use alloc::sync::Arc;
-use embedded_io::{ErrorType, Read, ReadReady, Write, WriteReady};
-use spin::Once;
-pub(crate) struct DumbUart;
+use crate::devices::tty::termios::Termios;
+use core::fmt;
+use embedded_io::{Error, ErrorKind, ErrorType, Read, ReadReady, Write, WriteReady};
 
-pub(crate) static DUMB_UART0: SpinLock<DumbUart> = SpinLock::new(DumbUart);
+/// Simple error type for the DumbUart implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SerialError;
+
+impl Error for SerialError {
+    fn kind(&self) -> ErrorKind {
+        ErrorKind::Other
+    }
+}
+
+impl fmt::Display for SerialError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SerialError")
+    }
+}
+
+/// Trait defining UART operations needed for serial devices.
+pub trait UartOps: ReadReady + WriteReady + ErrorType {
+    fn setup(&mut self, termios: &Termios) -> Result<(), Self::Error>;
+    fn shutdown(&mut self) -> Result<(), Self::Error>;
+    fn read_byte(&mut self) -> Result<u8, Self::Error>;
+    fn write_byte(&mut self, c: u8) -> Result<(), Self::Error>;
+    fn write_str(&mut self, s: &str) -> Result<(), Self::Error>;
+    fn ioctl(&mut self, request: u32, arg: usize) -> Result<(), Self::Error>;
+    fn set_rx_interrupt(&mut self, enable: bool);
+    fn set_tx_interrupt(&mut self, enable: bool);
+    fn clear_rx_interrupt(&mut self);
+    fn clear_tx_interrupt(&mut self);
+}
+
+pub(crate) struct DumbUart;
 
 unsafe impl Send for DumbUart {}
 unsafe impl Sync for DumbUart {}
+
+impl ErrorType for DumbUart {
+    type Error = SerialError;
+}
 
 impl WriteReady for DumbUart {
     fn write_ready(&mut self) -> Result<bool, SerialError> {
@@ -58,10 +81,6 @@ impl Write for DumbUart {
     fn flush(&mut self) -> Result<(), SerialError> {
         Ok(())
     }
-}
-
-impl ErrorType for DumbUart {
-    type Error = SerialError;
 }
 
 impl UartOps for DumbUart {
@@ -96,13 +115,4 @@ impl UartOps for DumbUart {
     fn clear_rx_interrupt(&mut self) {}
 
     fn clear_tx_interrupt(&mut self) {}
-}
-
-static DUMB_SERIAL0: Once<Arc<dyn Device>> = Once::new();
-
-pub(crate) fn get_serial0() -> &'static Arc<dyn Device> {
-    DUMB_SERIAL0.call_once(|| {
-        let uart = Arc::new(SpinLock::new(DumbUart));
-        Arc::new(Serial::new(0, Termios::default(), uart))
-    })
 }

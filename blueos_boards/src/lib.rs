@@ -12,21 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use flat_device_tree::Fdt;
-use spin::Once;
+#![no_std]
 
-static FDT: Once<Fdt<'static>> = Once::new();
-
-pub fn fdt_init(base: u64) {
-    // SAFETY: FDT pointer given by the bootloader/qemu is valid.
-    let fdt = unsafe { Fdt::from_ptr(base as *const u8).unwrap() };
-    log::debug!("FDT: {:?}", fdt);
-    for reserved in fdt.memory_reservations() {
-        log::debug!("Reserved memory: {:?}", reserved);
-    }
-    FDT.call_once(|| fdt);
-}
-
-pub fn get_fdt() -> &'static Fdt<'static> {
-    FDT.get().unwrap()
-}
+use blueos_macro::current_board_mod;
+current_board_mod!();

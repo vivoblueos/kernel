@@ -12,21 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use flat_device_tree::Fdt;
-use spin::Once;
-
-static FDT: Once<Fdt<'static>> = Once::new();
-
-pub fn fdt_init(base: u64) {
-    // SAFETY: FDT pointer given by the bootloader/qemu is valid.
-    let fdt = unsafe { Fdt::from_ptr(base as *const u8).unwrap() };
-    log::debug!("FDT: {:?}", fdt);
-    for reserved in fdt.memory_reservations() {
-        log::debug!("Reserved memory: {:?}", reserved);
-    }
-    FDT.call_once(|| fdt);
-}
-
-pub fn get_fdt() -> &'static Fdt<'static> {
-    FDT.get().unwrap()
-}
+pub const APBP_CLOCK: u32 = 0x16e3600;
+pub const PL011_UART0_BASE: u64 = 0xFDD50000;
+pub const PL011_UART0_IRQNUM: u32 = 148;
+pub const GENERIC_TIMER_IRQNUM: u32 = 30;
+pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
+pub const PSCI_BASE: u32 = 0x84000000;
+pub const GICD: u64 = 0xfd400000;
+pub const GICR: u64 = 0xfd460000;
+pub const MMU_L1_NORMAL_BASES: &[u64] = &[0x0, 0x4000_0000];
+pub const MMU_L1_DEVICE_BASES: &[u64] = &[0xc000_0000];

@@ -12,21 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use flat_device_tree::Fdt;
-use spin::Once;
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-static FDT: Once<Fdt<'static>> = Once::new();
+use blueos_arch::irq::IrqNumber;
 
-pub fn fdt_init(base: u64) {
-    // SAFETY: FDT pointer given by the bootloader/qemu is valid.
-    let fdt = unsafe { Fdt::from_ptr(base as *const u8).unwrap() };
-    log::debug!("FDT: {:?}", fdt);
-    for reserved in fdt.memory_reservations() {
-        log::debug!("Reserved memory: {:?}", reserved);
-    }
-    FDT.call_once(|| fdt);
-}
-
-pub fn get_fdt() -> &'static Fdt<'static> {
-    FDT.get().unwrap()
-}
+pub const PLIC_BASE: usize = 0x0c00_0000;
+pub const NS16550_UART0_BASE: u32 = 0x1000_0000;
+pub const NS16550_UART0_IRQNUM: IrqNumber = IrqNumber::new(10);
