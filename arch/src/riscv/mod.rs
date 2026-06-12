@@ -12,28 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod irq;
+pub(crate) mod irq;
 
-use core::sync::atomic::{compiler_fence, Ordering};
+use core_traits::ContextSwitchHookHolder;
+use core::{
+    cell::Cell,
+    mem::offset_of,
+    sync::atomic::{compiler_fence, Ordering},
+};
 
-pub const NR_SWITCH: usize = !0;
+pub(crate) const NR_SWITCH: usize = !0;
+const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 // See https://five-embeddev.com/riscv-priv-isa-manual/Priv-v1.12/machine.html#machine-status-registers-mstatus-and-mstatush
-pub const MSTATUS_MIE: usize = 1 << 3;
-pub const MSTATUS_MPIE: usize = 1 << 7;
-pub const MSTATUS_MPP_MASK: usize = 0b11 << 11;
-pub const MSTATUS_MPP_U: usize = 0b00 << 11;
-pub const MSTATUS_MPP_S: usize = 0b01 << 11;
-pub const MSTATUS_MPP_M: usize = 0b11 << 11;
-pub const MIE_SSIE: usize = 1 << 1;
-pub const MIE_MSIE: usize = 1 << 3;
-pub const MIE_STIE: usize = 1 << 5;
-pub const MIE_MTIE: usize = 1 << 7;
-pub const MIE_SEIE: usize = 1 << 9;
-pub const MIE_MEIE: usize = 1 << 11;
+pub(crate) const MSTATUS_MIE: usize = 1 << 3;
+pub(crate) const MSTATUS_MPIE: usize = 1 << 7;
+pub(crate) const MSTATUS_MPP_MASK: usize = 0b11 << 11;
+pub(crate) const MSTATUS_MPP_U: usize = 0b00 << 11;
+pub(crate) const MSTATUS_MPP_S: usize = 0b01 << 11;
+pub(crate) const MSTATUS_MPP_M: usize = 0b11 << 11;
+pub(crate) const MIE_SSIE: usize = 1 << 1;
+pub(crate) const MIE_MSIE: usize = 1 << 3;
+pub(crate) const MIE_STIE: usize = 1 << 5;
+pub(crate) const MIE_MTIE: usize = 1 << 7;
+pub(crate) const MIE_SEIE: usize = 1 << 9;
+pub(crate) const MIE_MEIE: usize = 1 << 11;
 // We haven't supported supervisor mode and user mode yet.
 
+// FIXME: We don't need atomic here.
+static mut PENDING_SWITCH_CONTEXT: [Cell<bool>; NUM_CORES] =
+    [const { Cell::new(false) }; NUM_CORES];
+
 #[inline]
-pub extern "C" fn local_irq_enabled() -> bool {
+pub(crate) extern "C" fn pend_switch_context() {
+    // Kernel must register the actual handler via register_kernel_hooks
+    // For now, just set the pending flag
+    let level = disable_local_irq_save();
+    let id = current_cpu_id();
+    unsafe { PENDING_SWITCH_CONTEXT[id].set(true) };
+    enable_local_irq_restore(level);
+}
+
+#[inline]
+pub(crate) extern "C" fn claim_switch_context() -> bool {
+    let level = disable_local_irq_save();
+    let id = current_cpu_id();
+    let ok = unsafe { PENDING_SWITCH_CONTEXT[id].get() };
+    unsafe { PENDING_SWITCH_CONTEXT[id].set(false) };
+    enable_local_irq_restore(level);
+    ok
+}
+
+#[inline]
+pub(crate) extern "C" fn local_irq_enabled() -> bool {
     let x: usize;
     unsafe {
         core::arch::asm!("csrr {}, mstatus", out(reg) x,
@@ -285,24 +315,24 @@ macro_rules! rv_save_context {
 }
 
 #[inline]
-pub extern "C" fn disable_local_irq() {
+pub(crate) extern "C" fn disable_local_irq() {
     compiler_fence(Ordering::SeqCst);
     unsafe { core::arch::asm!(clear_mstatus_mie!(), options(nostack)) };
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq() {
+pub(crate) extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!(set_mstatus_mie!(), options(nostack)) };
     compiler_fence(Ordering::SeqCst);
 }
 
 #[inline]
-pub extern "C" fn idle() {
+pub(crate) extern "C" fn idle() {
     unsafe { core::arch::asm!("wfi", options(nostack)) };
 }
 
 #[inline]
-pub extern "C" fn disable_local_irq_save() -> usize {
+pub(crate) extern "C" fn disable_local_irq_save() -> usize {
     compiler_fence(Ordering::SeqCst);
     let old: usize;
     unsafe {
@@ -316,7 +346,7 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq_restore(old: usize) {
+pub(crate) extern "C" fn enable_local_irq_restore(old: usize) {
     unsafe {
         core::arch::asm!("csrw mstatus, {old}", old = in(reg) old,
                          options(nostack))
@@ -331,12 +361,35 @@ pub extern "C" fn current_sp() -> usize {
     x
 }
 
+pub(crate) extern "C" fn ecall_switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    unsafe {
+        core::arch::asm!(
+            "ecall",
+            in("a0") hook as usize,
+            in("a7") NR_SWITCH,
+            options(nostack),
+        )
+    }
+}
+
+#[inline(always)]
+pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    ecall_switch_context_with_hook(hook)
+}
+
+#[inline(always)]
+#[allow(clippy::empty_loop)]
+pub(crate) extern "C" fn restore_context_with_hook(hook: *mut ContextSwitchHookHolder) -> ! {
+    switch_context_with_hook(hook);
+    unreachable!("Should have switched to another thread");
+}
+
 // This context is used when we are performing context switching in
 // thread mode or in the first level ISR.
 #[cfg_attr(target_pointer_width = "64", repr(C, align(16)))]
 #[cfg_attr(target_pointer_width = "32", repr(C, align(8)))]
 #[derive(Default, Debug)]
-pub struct Context {
+pub(crate) struct Context {
     pub ra: usize,
     pub mepc: usize,
     pub gp: usize,
@@ -374,7 +427,7 @@ pub struct Context {
 
 #[repr(C, align(16))]
 #[derive(Default, Debug)]
-pub struct IsrContext {
+pub(crate) struct IsrContext {
     pub mstatus: usize,
     pub mcause: usize,
     pub mtval: usize,
@@ -383,13 +436,13 @@ pub struct IsrContext {
 
 impl Context {
     #[inline]
-    pub fn init(&mut self) -> &mut Self {
+    pub(crate) fn init(&mut self) -> &mut Self {
         self.gp = Self::__global_pointer();
         self
     }
 
     #[inline]
-    pub fn __global_pointer() -> usize {
+    pub(crate) fn __global_pointer() -> usize {
         let gp_val: usize;
         unsafe {
             core::arch::asm!("la {}, __global_pointer$", out(reg) gp_val,
@@ -401,13 +454,13 @@ impl Context {
     // We are following C-ABI, since Rust ABI is not stabilized.
     // FIXME: rustc miscompiles it if inlined.
     #[inline(never)]
-    pub fn set_return_address(&mut self, pc: usize) -> &mut Self {
+    pub(crate) fn set_return_address(&mut self, pc: usize) -> &mut Self {
         self.mepc = pc;
         self
     }
 
     #[inline(never)]
-    pub fn set_arg(&mut self, index: usize, val: usize) -> &mut Self {
+    pub(crate) fn set_arg(&mut self, index: usize, val: usize) -> &mut Self {
         match index {
             0 => self.a0 = val,
             1 => self.a1 = val,
@@ -423,7 +476,7 @@ impl Context {
     }
 }
 
-pub extern "C" fn bootstrap() {
+pub(crate) extern "C" fn bootstrap() {
     #[cfg(has_mie)]
     unsafe {
         core::arch::asm!(
@@ -443,9 +496,8 @@ pub extern "C" fn bootstrap() {
         )
     };
 }
-
 #[inline(always)]
-pub extern "C" fn current_cpu_id() -> usize {
+pub(crate) extern "C" fn current_cpu_id() -> usize {
     let id: usize;
     unsafe {
         core::arch::asm!("csrr {}, mhartid", out(reg) id,
@@ -455,7 +507,7 @@ pub extern "C" fn current_cpu_id() -> usize {
 }
 
 #[naked]
-pub extern "C" fn switch_stack(
+pub(crate) extern "C" fn switch_stack(
     to_sp: usize,
     cont: extern "C" fn(sp: usize, old_sp: usize),
 ) -> ! {
