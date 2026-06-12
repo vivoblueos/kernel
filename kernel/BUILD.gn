@@ -46,6 +46,7 @@ group("check_kernel_probe") {
 
 _shared_deps = [
   ":atomic",
+  "//kernel/arch:arch_crate",
   "//kernel/core_traits",
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/vendor/bitflags-2.10.0:bitflags",
