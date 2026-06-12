@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Re-export architecture-independent items from blueos_arch crate.
-// Each arch module's type/constant re-exports are handled within
-// the per-arch module files (e.g., arch/riscv/mod.rs).
+#![no_std]
+#![feature(naked_functions)]
 
 #[cfg(target_arch = "arm")]
 pub mod arm;

@@ -15,55 +15,11 @@
 use blueos_hal::isr::{IsrDesc, IsrReg};
 use cortex_m::{interrupt::InterruptNumber, peripheral::scb::SystemHandler, Peripherals};
 
-#[cfg(irq_priority_bits_2)]
-pub const IRQ_PRIORITY_STEP: u8 = 0x40;
-#[cfg(irq_priority_bits_3)]
-pub const IRQ_PRIORITY_STEP: u8 = 0x20;
-#[cfg(irq_priority_bits_8)]
-pub const IRQ_PRIORITY_STEP: u8 = 0x10;
-
-#[cfg(irq_priority_bits_2)]
-pub const IRQ_PRIORITY_FOR_SCHEDULER: u8 = 0x80;
-#[cfg(irq_priority_bits_3)]
-pub const IRQ_PRIORITY_FOR_SCHEDULER: u8 = 0x40;
-#[cfg(irq_priority_bits_8)]
-pub const IRQ_PRIORITY_FOR_SCHEDULER: u8 = 0x20;
-
-pub const SVC_PRIORITY: u8 = IRQ_PRIORITY_FOR_SCHEDULER - IRQ_PRIORITY_STEP;
-
-#[derive(Debug, Copy, Clone)]
-#[repr(u8)]
-pub enum Priority {
-    // can't use ipc in high priority irq
-    High = IRQ_PRIORITY_FOR_SCHEDULER - IRQ_PRIORITY_STEP * 2,
-    Normal = IRQ_PRIORITY_FOR_SCHEDULER,
-    Low = IRQ_PRIORITY_FOR_SCHEDULER + IRQ_PRIORITY_STEP,
-}
-
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-pub struct IrqNumber(u16);
-
-impl IrqNumber {
-    #[inline]
-    pub const fn new(number: u16) -> Self {
-        Self(number)
-    }
-}
-
-impl From<IrqNumber> for usize {
-    fn from(irq: IrqNumber) -> Self {
-        usize::from(irq.0)
-    }
-}
-
-// SAFETY: get the number of the interrupt is safe
-unsafe impl InterruptNumber for IrqNumber {
-    #[inline]
-    fn number(self) -> u16 {
-        self.0
-    }
-}
+// Re-export pure irq types and constants from blueos_arch
+pub use blueos_arch::arm::irq::{
+    IrqNumber, Priority, Vector, INTERRUPT_TABLE_LEN, IRQ_PRIORITY_FOR_SCHEDULER,
+    IRQ_PRIORITY_STEP, SVC_PRIORITY,
+};
 
 pub fn init() {
     // SAFETY: steal and set the peripherals in init is safe
@@ -107,15 +63,6 @@ pub fn set_irq_priority(irq: IrqNumber, priority: u8) {
             .set_priority(irq, priority)
     };
 }
-
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub union Vector {
-    pub handler: unsafe extern "C" fn(),
-    pub reserved: usize,
-}
-
-pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
 
 /// Interrupt vector table configuration for ARM Cortex-M processors.
 ///
@@ -198,5 +145,5 @@ pub fn init_interrupt_registry() {
 /// interrupt is enabled and can be triggered, so the caller should ensure that the interrupt
 /// is disabled before calling this function, and enable it after the handler is registered.
 pub unsafe fn register_raw_isr(irq: IrqNumber, handler: unsafe extern "C" fn()) {
-    __INTERRUPT_HANDLERS__[irq.0 as usize] = Vector { handler };
+    __INTERRUPT_HANDLERS__[usize::from(irq)] = Vector { handler };
 }

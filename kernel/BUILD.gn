@@ -46,6 +46,7 @@ group("check_kernel_probe") {
 
 _shared_deps = [
   ":atomic",
+  "//kernel/blueos_arch",
   "//kernel/blueos_core_traits",
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/vendor/bitflags-2.10.0:bitflags",

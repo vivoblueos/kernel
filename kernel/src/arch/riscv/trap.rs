@@ -20,7 +20,6 @@ use crate::{
     boards::clear_ipi,
     debug,
     irq::{enter_irq, leave_irq},
-    rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
     scheduler,
     scheduler::ContextSwitchHookHolder,
     support::sideeffect,
@@ -28,6 +27,9 @@ use crate::{
     thread,
     thread::Thread,
     types::Arc,
+};
+use blueos_arch::{
+    rv_restore_context, rv_restore_context_epilogue, rv_save_context, rv_save_context_prologue,
 };
 use core::{
     mem::offset_of,

@@ -113,6 +113,44 @@ macro_rules! trace {
     }};
 }
 
+// Re-export aarch64 asm context macros from blueos_arch for use in the kernel crate
+#[macro_export]
+macro_rules! aarch64_save_context_prologue {
+    () => {
+        blueos_arch::aarch64_save_context_prologue!()
+    };
+}
+
+#[macro_export]
+macro_rules! aarch64_restore_context_epilogue {
+    () => {
+        blueos_arch::aarch64_restore_context_epilogue!()
+    };
+}
+
+#[macro_export]
+macro_rules! aarch64_save_context {
+    () => {
+        blueos_arch::aarch64_save_context!()
+    };
+}
+
+#[macro_export]
+macro_rules! aarch64_restore_context {
+    () => {
+        blueos_arch::aarch64_restore_context!()
+    };
+}
+
+// Re-export arch_bootstrap macro from blueos_arch for all architectures
+#[cfg(any(target_arch = "arm", target_arch = "riscv64", target_arch = "riscv32"))]
+#[macro_export]
+macro_rules! arch_bootstrap {
+    ($stack_start:path, $stack_end:path, $cont:path) => {
+        blueos_arch::arch_bootstrap!($stack_start, $stack_end, $cont)
+    };
+}
+
 #[cfg(test)]
 mod tests {
     extern crate alloc;

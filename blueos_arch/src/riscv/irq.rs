@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Re-export architecture-independent items from blueos_arch crate.
-// Each arch module's type/constant re-exports are handled within
-// the per-arch module files (e.g., arch/riscv/mod.rs).
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq)]
+#[repr(transparent)]
+pub struct IrqNumber(usize);
 
-#[cfg(target_arch = "arm")]
-pub mod arm;
-#[cfg(target_arch = "arm")]
-pub use arm::*;
+impl IrqNumber {
+    pub const fn new(irq: usize) -> Self {
+        Self(irq)
+    }
+}
 
-#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
-pub mod riscv;
-#[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
-pub use riscv::*;
+impl From<IrqNumber> for usize {
+    fn from(irq: IrqNumber) -> Self {
+        irq.0
+    }
+}
 
-#[cfg(target_arch = "aarch64")]
-pub mod aarch64;
-#[cfg(target_arch = "aarch64")]
-pub use aarch64::*;
+pub const INTERRUPT_TABLE_LEN: usize = 128;
