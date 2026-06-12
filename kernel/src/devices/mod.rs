@@ -34,7 +34,7 @@ pub mod clock;
 pub mod console;
 pub mod dumb;
 mod error_conv;
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(target_arch = "aarch64")]
 pub mod fdt;
 pub mod i2c_core;
 #[cfg(enable_net)]
