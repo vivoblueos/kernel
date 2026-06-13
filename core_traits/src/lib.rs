@@ -39,10 +39,7 @@ pub trait ArchInterface {
 pub trait SchedulerInterface {
     type ThreadHandle: Clone + Send;
 
-    fn save_context_finish_hook(
-        hook: &mut ContextSwitchHookHolder,
-        old_sp: usize,
-    ) -> usize;
+    fn save_context_finish_hook(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize;
 
     fn spin_until_ready_to_run(t: &Self::ThreadHandle) -> usize;
     fn current_thread_ref() -> Self::ThreadHandle;

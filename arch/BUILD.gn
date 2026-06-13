@@ -12,11 +12,11 @@ build_rust("arch_crate") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   deps = [
-    "//kernel/core_traits",
-    "//kernel/kconfig:blueos_kconfig",
-    "//kernel/hal:blueos_hal",
     "//external/vendor/cortex-m-0.7.7:cortex_m",
     "//external/vendor/tock-registers-0.9.0:tock_registers",
+    "//kernel/core_traits",
+    "//kernel/hal:blueos_hal",
+    "//kernel/kconfig:blueos_kconfig",
   ]
   configs += [
     "//kernel/kconfig:kconfigs",

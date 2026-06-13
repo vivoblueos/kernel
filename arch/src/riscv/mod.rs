@@ -14,12 +14,12 @@
 
 pub(crate) mod irq;
 
-use core_traits::ContextSwitchHookHolder;
 use core::{
     cell::Cell,
     mem::offset_of,
     sync::atomic::{compiler_fence, Ordering},
 };
+use core_traits::ContextSwitchHookHolder;
 
 pub(crate) const NR_SWITCH: usize = !0;
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
@@ -522,4 +522,3 @@ pub(crate) extern "C" fn switch_stack(
         )
     }
 }
-
