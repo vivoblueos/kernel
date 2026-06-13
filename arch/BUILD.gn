@@ -24,6 +24,7 @@ build_rust("arch_crate") {
     "//kernel/core_traits",
     "//kernel/hal:blueos_hal",
     "//kernel/kconfig:blueos_kconfig",
+    "//kernel/kconfig:generate_rustflags_file",
   ]
   configs += [
     "//kernel/kconfig:kconfigs",
