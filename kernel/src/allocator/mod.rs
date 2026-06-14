@@ -133,12 +133,12 @@ fn kernel_phys_to_virt(addr: usize) -> usize {
 pub fn init_heap(start: *mut u8, end: *mut u8) {
     #[cfg(buddy_allocator)]
     {
-        // // Level 1: Initialize buddy allocator to manage all physical memory.
-        // let dram_base = crate::boards::PHYS_DRAM_BASE as usize;
-        // let dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
-        // unsafe {
-        //     buddy::BUDDY_ALLOC.init(dram_base, dram_base + dram_size);
-        // }
+        // Level 1: Initialize buddy allocator to manage all physical memory.
+        let phys_dram_base = crate::boards::PHYS_DRAM_BASE as usize;
+        let phys_dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
+        unsafe {
+            buddy::BUDDY_ALLOC.init(phys_dram_base, phys_dram_base + phys_dram_size);
+        }
 
         // // Level 2: Allocate page pool for small-object allocator from buddy.
         // let pool_size = (end as usize).saturating_sub(start as usize);
