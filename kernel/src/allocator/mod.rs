@@ -58,16 +58,16 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         #[cfg(buddy_allocator)]
         {
-            // use buddy::{heap::order_of_size, page::PAGE_SIZE};
-            // let size = layout.size().max(layout.align());
-            // if size >= PAGE_SIZE {
-            //     let order = order_of_size(size);
-            //     return buddy::BUDDY_ALLOC
-            //         .alloc_pages_addr(order)
-            //         .map_or(ptr::null_mut(), |addr| {
-            //             buddy_phys_to_virt_addr(addr) as *mut u8
-            //         });
-            // }
+            use buddy::{heap::order_of_size, page::PAGE_SIZE};
+            let size = layout.size().max(layout.align());
+            if size >= PAGE_SIZE {
+                let order = order_of_size(size);
+                return buddy::BUDDY_ALLOC
+                    .alloc_pages_phys_addr(order)
+                    .map_or(ptr::null_mut(), |addr| {
+                        kernel_phys_to_virt(addr) as *mut u8
+                    });
+            }
         }
         HEAP.alloc(layout)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
