@@ -17,8 +17,8 @@ use crate::types::{Arc, ArcInner};
 pub mod heap;
 pub mod page;
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
 
 use heap::BuddyAllocator;
 
