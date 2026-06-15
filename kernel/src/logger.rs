@@ -12,65 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{arch, kprintln, scheduler, sync::SpinLock, thread::Thread, time};
-use log::{LevelFilter, Metadata, Record};
-
-static LOGGER_MUTEX: SpinLock<()> = SpinLock::new(());
-
-struct Logger;
-
-#[cfg(log_level_off)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Off;
-#[cfg(log_level_error)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Error;
-#[cfg(log_level_warn)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Warn;
-#[cfg(log_level_info)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Info;
-#[cfg(log_level_debug)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Debug;
-#[cfg(log_level_trace)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Trace;
+use crate::{arch, kprintln, scheduler, time};
+use logger_crate::LoggerHooks;
 
 /// log init
 pub fn logger_init() {
-    static LOGGER: Logger = Logger {};
-    log::set_max_level(DEFAULT_LOG_LEVEL);
-    log::set_logger(&LOGGER).unwrap();
-}
-
-///impl log for Logger
-impl log::Log for Logger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= log::max_level()
-    }
-
-    fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-        let timestamp = time::now().as_millis();
-        let tid = scheduler::current_thread_id();
-        let cpu = arch::current_cpu_id();
-        #[cfg(not(test))]
-        kprintln!(
-            "[T:{:09} C:{} TH:0x{:x}][{}] {} ",
-            timestamp,
-            cpu,
-            tid,
-            record.level(),
-            record.args()
-        );
-        #[cfg(test)]
-        semihosting::println!(
-            "[T:{:09} C:{} TH:0x{:x}][{}] {} ",
-            timestamp,
-            cpu,
-            tid,
-            record.level(),
-            record.args()
-        );
-    }
-
-    fn flush(&self) {}
+    static HOOKS: LoggerHooks = LoggerHooks {
+        timestamp_ms: || time::now().as_millis(),
+        cpu_id: || arch::current_cpu_id(),
+        thread_id: || scheduler::current_thread_id(),
+        write: |line| {
+            #[cfg(not(test))]
+            kprintln!("{}", line.trim_end());
+            #[cfg(test)]
+            semihosting::println!("{}", line.trim_end());
+        },
+    };
+    logger_crate::logger_init(&HOOKS);
 }
