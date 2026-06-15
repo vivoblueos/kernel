@@ -91,8 +91,77 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
-        HEAP.realloc(ptr, old_layout, new_size)
-            .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+        #[cfg(buddy_allocator)]
+        {
+            use buddy::{
+                heap::order_of_size,
+                page::{PAGE_SHIFT, PAGE_SIZE},
+            };
+
+            let old_route_size = old_layout.size().max(old_layout.align());
+            let new_route_size = new_size.max(old_layout.align());
+            let old_is_buddy = old_route_size >= PAGE_SIZE;
+            let new_is_buddy = new_route_size >= PAGE_SIZE;
+
+            match (old_is_buddy, new_is_buddy) {
+                (false, false) => HEAP
+                    .realloc(ptr, old_layout, new_size)
+                    .map_or(ptr::null_mut(), |ptr| ptr.as_ptr()),
+                (false, true) => {
+                    let new_order = order_of_size(new_route_size);
+                    let Some(new_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(new_order)
+                    else {
+                        return ptr::null_mut();
+                    };
+                    let new_ptr = kernel_phys_to_virt(new_phys_addr) as *mut u8;
+                    ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
+                    HEAP.dealloc(ptr, old_layout);
+                    new_ptr
+                }
+                (true, true) => {
+                    let old_order = order_of_size(old_route_size);
+                    let new_order = order_of_size(new_route_size);
+                    if old_order == new_order {
+                        return ptr;
+                    }
+
+                    let Some(new_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(new_order)
+                    else {
+                        return ptr::null_mut();
+                    };
+                    let new_ptr = kernel_phys_to_virt(new_phys_addr) as *mut u8;
+                    ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
+
+                    let old_phys_addr = kernel_virt_to_phys(ptr as usize);
+                    let old_pfn =
+                        (old_phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
+                    buddy::BUDDY_ALLOC.free_pages_pfn(old_pfn, old_order);
+                    new_ptr
+                }
+                (true, false) => {
+                    let new_layout =
+                        Layout::from_size_align_unchecked(new_size, old_layout.align());
+                    let Some(new_ptr) = HEAP.alloc(new_layout) else {
+                        return ptr::null_mut();
+                    };
+                    let new_ptr = new_ptr.as_ptr();
+                    ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
+
+                    let old_order = order_of_size(old_route_size);
+                    let old_phys_addr = kernel_virt_to_phys(ptr as usize);
+                    let old_pfn =
+                        (old_phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
+                    buddy::BUDDY_ALLOC.free_pages_pfn(old_pfn, old_order);
+                    new_ptr
+                }
+            }
+        }
+
+        #[cfg(not(buddy_allocator))]
+        {
+            HEAP.realloc(ptr, old_layout, new_size)
+                .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+        }
     }
 }
 
@@ -427,6 +496,54 @@ mod tests {
         // Reallocate to smaller size
         let smaller_size = 256;
         boxed.resize(smaller_size, 0);
+    }
+
+    #[cfg(buddy_allocator)]
+    #[test]
+    fn realloc_crosses_buddy_threshold() {
+        let small_layout = Layout::from_size_align(2048, core::mem::size_of::<usize>()).unwrap();
+        let large_layout = Layout::from_size_align(4096, core::mem::size_of::<usize>()).unwrap();
+
+        unsafe {
+            let ptr = alloc::alloc::alloc(small_layout);
+            assert!(!ptr.is_null(), "small allocation should succeed");
+            ptr.write(0x5A);
+
+            let ptr = alloc::alloc::realloc(ptr, small_layout, large_layout.size());
+            assert!(
+                !ptr.is_null(),
+                "realloc across buddy threshold should succeed"
+            );
+            assert_eq!(ptr.read(), 0x5A);
+            ptr.add(large_layout.size() - 1).write(0xA5);
+            assert_eq!(ptr.add(large_layout.size() - 1).read(), 0xA5);
+
+            alloc::alloc::dealloc(ptr, large_layout);
+        }
+    }
+
+    #[cfg(buddy_allocator)]
+    #[test]
+    fn realloc_shrinks_below_buddy_threshold() {
+        let large_layout = Layout::from_size_align(4096, core::mem::size_of::<usize>()).unwrap();
+        let small_layout = Layout::from_size_align(2048, core::mem::size_of::<usize>()).unwrap();
+
+        unsafe {
+            let ptr = alloc::alloc::alloc(large_layout);
+            assert!(!ptr.is_null(), "large allocation should succeed");
+            ptr.write(0xC3);
+
+            let ptr = alloc::alloc::realloc(ptr, large_layout, small_layout.size());
+            assert!(
+                !ptr.is_null(),
+                "realloc below buddy threshold should succeed"
+            );
+            assert_eq!(ptr.read(), 0xC3);
+            ptr.add(small_layout.size() - 1).write(0x3C);
+            assert_eq!(ptr.add(small_layout.size() - 1).read(), 0x3C);
+
+            alloc::alloc::dealloc(ptr, small_layout);
+        }
     }
 
     #[test]
