@@ -254,9 +254,19 @@ impl BuddyAllocatorCore {
 
             let buddy = &mut *self.page_at_mut(buddy_pfn);
 
-            if !buddy.flags.contains(PageFlags::FREE) || buddy.order as usize != current_order {
+            // A free buddy with a smaller order means this buddy range has been
+            // split into smaller blocks: the page at buddy_pfn may be a free
+            // block head, but the whole current-order buddy range is not free.
+            // A free buddy can never have a larger order than the current block;
+            // before it could become a larger block, it would have to merge with
+            // the current block first.
+            if !buddy.flags.contains(PageFlags::FREE) || (buddy.order as usize) < current_order {
                 break;
             }
+            debug_assert!(
+                (buddy.order as usize) <= current_order,
+                "free buddy cannot have a larger order than current block"
+            );
 
             self.free_lists[current_order].remove(buddy);
 

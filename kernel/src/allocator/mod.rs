@@ -64,9 +64,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 let order = order_of_size(size);
                 return buddy::BUDDY_ALLOC
                     .alloc_pages_phys_addr(order)
-                    .map_or(ptr::null_mut(), |addr| {
-                        kernel_phys_to_virt(addr) as *mut u8
-                    });
+                    .map_or(ptr::null_mut(), |addr| kernel_phys_to_virt(addr) as *mut u8);
             }
         }
         HEAP.alloc(layout)
@@ -76,13 +74,18 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         #[cfg(buddy_allocator)]
         {
-            // use buddy::page::PAGE_SIZE;
-            // let size = layout.size().max(layout.align());
-            // if size >= PAGE_SIZE {
-            //     // Page-level allocations from buddy cannot be freed through HEAP.
-            //     // A separate API (e.g., free_pages) is required; for now, leak.
-            //     return;
-            // }
+            use buddy::{
+                heap::order_of_size,
+                page::{PAGE_SHIFT, PAGE_SIZE},
+            };
+            let size = layout.size().max(layout.align());
+            if size >= PAGE_SIZE {
+                let order = order_of_size(size);
+                let phys_addr = kernel_virt_to_phys(ptr as usize);
+                let pfn = (phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
+                buddy::BUDDY_ALLOC.free_pages_pfn(pfn, order);
+                return;
+            }
         }
         HEAP.dealloc(ptr, layout);
     }
@@ -104,6 +107,18 @@ fn kernel_phys_to_virt(addr: usize) -> usize {
     #[cfg(target_arch = "aarch64")]
     {
         crate::arch::aarch64::mmu::kernel_phys_to_virt(addr as u64) as usize
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        addr
+    }
+}
+
+#[inline]
+fn kernel_virt_to_phys(addr: usize) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::arch::aarch64::mmu::kernel_virt_to_phys(addr)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
