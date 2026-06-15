@@ -140,26 +140,19 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
             buddy::BUDDY_ALLOC.init(phys_dram_base, phys_dram_base + phys_dram_size);
         }
 
-        // // Level 2: Allocate page pool for small-object allocator from buddy.
-        // let pool_size = (end as usize).saturating_sub(start as usize);
-        // if pool_size > 0 {
-        //     let order = buddy::heap::order_of_size(pool_size);
-        //     if let Some(pool_addr) = buddy::BUDDY_ALLOC.alloc_pages_addr(order) {
-        //         unsafe {
-        //             HEAP.init(buddy_phys_to_virt_addr(pool_addr), pool_size);
-        //         }
-        //     } else {
-        //         // Fallback: use original heap range if buddy allocation fails.
-        //         unsafe {
-        //             HEAP.init(start as usize, pool_size);
-        //         }
-        //     }
-        // }
-
-        let start_addr = start as usize;
-        let size = unsafe { end.offset_from(start) as usize };
-        unsafe {
-            HEAP.init(start_addr, size);
+        // Level 2: Allocate page pool for small-object allocator from buddy.
+        assert!(end > start);
+        let pool_size = end as usize - start as usize;
+        let order = buddy::heap::order_of_size(pool_size);
+        if let Some(pool_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(order) {
+            unsafe {
+                HEAP.init(kernel_phys_to_virt(pool_phys_addr), pool_size);
+            }
+        } else {
+            // Fallback: use original heap range if buddy allocation fails.
+            unsafe {
+                HEAP.init(start as usize, pool_size);
+            }
         }
     }
 

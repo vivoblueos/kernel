@@ -343,7 +343,7 @@ impl BuddyAllocator {
     }
 
     /// Allocate pages and return the physical address.
-    pub fn alloc_pages_addr(&self, order: usize) -> Option<usize> {
+    pub fn alloc_pages_phys_addr(&self, order: usize) -> Option<usize> {
         let mut inner = self.inner.irqsave_lock();
         inner.alloc_pages(order).map(|p| {
             let pfn = unsafe { (*p).pfn };
