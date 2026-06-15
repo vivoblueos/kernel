@@ -17,7 +17,7 @@
 // SPDX-LICENSE: MIT
 
 use crate::{
-    allocator::block::{
+    block::{
         get_overhead_and_size, used_block_hdr_for_allocation,
         used_block_hdr_for_allocation_unknown_align, UsedBlockHdr, UsedBlockPad, GRANULARITY,
         SIZE_USED,
@@ -33,20 +33,20 @@ use core::{
 
 /// A sorted list of holes. It uses the the holes itself to store its nodes.
 pub struct HoleList {
-    pub(crate) first: Hole, // dummy
-    pub(crate) bottom: *mut u8,
-    pub(crate) top: *mut u8,
-    pub(crate) pending_extend: u8,
+    pub first: Hole, // dummy
+    pub bottom: *mut u8,
+    pub top: *mut u8,
+    pub pending_extend: u8,
 }
 
-pub(crate) struct Cursor {
+pub struct Cursor {
     prev: NonNull<Hole>,
     hole: NonNull<Hole>,
     top: *mut u8,
 }
 
 /// A block containing free memory. It points to the next hole and thus forms a linked list.
-pub(crate) struct Hole {
+pub struct Hole {
     pub size: usize,
     pub next: Option<NonNull<Hole>>,
 }
@@ -264,7 +264,7 @@ impl HoleList {
         }
     }
 
-    pub(crate) fn cursor(&mut self) -> Option<Cursor> {
+    pub fn cursor(&mut self) -> Option<Cursor> {
         if let Some(hole) = self.first.next {
             Some(Cursor {
                 hole,
@@ -278,11 +278,11 @@ impl HoleList {
 
     #[cfg(any(test, fuzzing))]
     #[allow(dead_code)]
-    pub(crate) fn debug(&mut self) {
+    pub fn debug(&mut self) {
         if let Some(cursor) = self.cursor() {
             let mut cursor = cursor;
             loop {
-                crate::kprintln!(
+                log::debug!(
                     "prev: {:?}[{}], hole: {:?}[{}]",
                     cursor.previous() as *const Hole,
                     cursor.previous().size,
@@ -292,12 +292,12 @@ impl HoleList {
                 if let Some(c) = cursor.next() {
                     cursor = c;
                 } else {
-                    crate::kprintln!("Done!");
+                    log::debug!("Done!");
                     return;
                 }
             }
         } else {
-            crate::kprintln!("No holes");
+            log::debug!("No holes");
         }
     }
 
@@ -483,7 +483,7 @@ impl HoleList {
         max_addr.map(|addr| (addr, max_size))
     }
 
-    pub(crate) unsafe fn extend(&mut self, by: usize) {
+    pub unsafe fn extend(&mut self, by: usize) {
         debug_assert!(!self.top.is_null(), "tried to extend an empty heap");
 
         let top = self.top;

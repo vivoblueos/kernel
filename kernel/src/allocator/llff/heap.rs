@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Heap;
-use crate::{allocator::MemoryInfo, sync::SpinLock};
+use crate::sync::SpinLock;
+use allocator_crate::{llff::Heap, MemoryInfo};
 use core::{alloc::Layout, ptr::NonNull};
 
 pub struct LlffHeap {

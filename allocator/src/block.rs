@@ -25,9 +25,9 @@ use core::{
 ///
 /// It is `size_of::<usize>() * 4` bytes, which is the minimum size of a
 /// free block.
-pub(crate) const GRANULARITY: usize = core::mem::size_of::<usize>() * 4;
+pub const GRANULARITY: usize = core::mem::size_of::<usize>() * 4;
 
-pub(crate) const GRANULARITY_LOG2: u32 = GRANULARITY.trailing_zeros();
+pub const GRANULARITY_LOG2: u32 = GRANULARITY.trailing_zeros();
 
 /// The header of a memory block.
 // The header is actually aligned at `size_of::<usize>() * 4`-byte boundaries
@@ -38,7 +38,7 @@ pub(crate) const GRANULARITY_LOG2: u32 = GRANULARITY.trailing_zeros();
 #[cfg_attr(target_pointer_width = "32", repr(align(8)))]
 #[cfg_attr(target_pointer_width = "64", repr(align(16)))]
 #[derive(Debug)]
-pub(crate) struct BlockHdr {
+pub struct BlockHdr {
     /// The size of the whole memory block, including the header.
     ///
     ///  - `bit[0]` ([`SIZE_USED`]) indicates whether the block is a used memory
@@ -49,23 +49,23 @@ pub(crate) struct BlockHdr {
     ///
     ///  - `bit[GRANULARITY_LOG2..]` ([`SIZE_SIZE_MASK`]) represents the size.
     ///
-    pub(crate) size: usize,
-    pub(crate) prev_phys_block: Option<NonNull<BlockHdr>>,
+    pub size: usize,
+    pub prev_phys_block: Option<NonNull<BlockHdr>>,
 }
 
 /// The bit of [`BlockHdr::size`] indicating whether the block is a used memory
 /// block or not.
-pub(crate) const SIZE_USED: usize = 1;
+pub const SIZE_USED: usize = 1;
 /// The bit of [`BlockHdr::size`] indicating whether the block is a sentinel
 /// (the last block in a memory pool) or not. If this bit is set, [`SIZE_USED`]
 /// must be set, too (`SIZE_SENTINEL ⟹ SIZE_USED`).
-pub(crate) const SIZE_SENTINEL: usize = 2;
+pub const SIZE_SENTINEL: usize = 2;
 /// The bits of [`BlockHdr::size`] indicating the block's size.
-pub(crate) const SIZE_SIZE_MASK: usize = !((1 << GRANULARITY_LOG2) - 1);
+pub const SIZE_SIZE_MASK: usize = !((1 << GRANULARITY_LOG2) - 1);
 
 impl BlockHdr {
     #[inline]
-    pub(crate) fn new(size: usize, prev_phys_block: Option<NonNull<BlockHdr>>) -> Self {
+    pub fn new(size: usize, prev_phys_block: Option<NonNull<BlockHdr>>) -> Self {
         Self {
             size,
             prev_phys_block,
@@ -79,7 +79,7 @@ impl BlockHdr {
     /// `self` must have a next block (it must not be the sentinel block in a
     /// pool).
     #[inline]
-    pub(crate) unsafe fn next_phys_block(&self) -> NonNull<BlockHdr> {
+    pub unsafe fn next_phys_block(&self) -> NonNull<BlockHdr> {
         debug_assert!(
             (self.size & SIZE_SENTINEL) == 0,
             "`self` must not be a sentinel"
@@ -100,21 +100,21 @@ impl BlockHdr {
 /// header is located.
 #[repr(C)]
 #[derive(Debug)]
-pub(crate) struct UsedBlockHdr {
-    pub(crate) common: BlockHdr,
+pub struct UsedBlockHdr {
+    pub common: BlockHdr,
 }
 
 /// In a used memory block with an alignment requirement larger than or equal to
 /// `GRANULARITY`, the payload is preceded by this structure.
 #[derive(Debug)]
 #[repr(C)]
-pub(crate) struct UsedBlockPad {
-    pub(crate) block_hdr: NonNull<UsedBlockHdr>,
+pub struct UsedBlockPad {
+    pub block_hdr: NonNull<UsedBlockHdr>,
 }
 
 impl UsedBlockPad {
     #[inline]
-    pub(crate) fn get_for_allocation(ptr: NonNull<u8>) -> *mut Self {
+    pub fn get_for_allocation(ptr: NonNull<u8>) -> *mut Self {
         ptr.cast::<Self>().as_ptr().wrapping_sub(1)
     }
 }
@@ -128,7 +128,7 @@ impl UsedBlockPad {
 // aligned to `GRANULARITY / 2` bytes. Consequently, we need to insert
 // a padding containing at most `max(align - GRANULARITY / 2, 0)` bytes.
 #[inline]
-pub(crate) fn get_overhead_and_size(layout: &Layout) -> Option<(usize, usize)> {
+pub fn get_overhead_and_size(layout: &Layout) -> Option<(usize, usize)> {
     let max_overhead =
         layout.align().saturating_sub(GRANULARITY / 2) + core::mem::size_of::<UsedBlockHdr>();
     // Search for a suitable free block
@@ -149,7 +149,7 @@ pub(crate) fn get_overhead_and_size(layout: &Layout) -> Option<(usize, usize)> {
 ///    ([`Layout::align`]) as `align`.
 ///
 #[inline]
-pub(crate) unsafe fn used_block_hdr_for_allocation(
+pub unsafe fn used_block_hdr_for_allocation(
     ptr: NonNull<u8>,
     align: usize,
 ) -> Option<NonNull<UsedBlockHdr>> {
@@ -184,7 +184,7 @@ pub(crate) unsafe fn used_block_hdr_for_allocation(
 ///      `Self::{allocate, reallocate}`.
 ///
 #[inline]
-pub(crate) unsafe fn used_block_hdr_for_allocation_unknown_align(
+pub unsafe fn used_block_hdr_for_allocation_unknown_align(
     ptr: NonNull<u8>,
 ) -> Option<NonNull<UsedBlockHdr>> {
     // Case 1: `align >= GRANULARITY`
@@ -236,10 +236,7 @@ pub(crate) unsafe fn used_block_hdr_for_allocation_unknown_align(
 }
 
 #[inline]
-pub(crate) unsafe fn size_of_allocation_in_block(
-    ptr: NonNull<u8>,
-    block: NonNull<UsedBlockHdr>,
-) -> usize {
+pub unsafe fn size_of_allocation_in_block(ptr: NonNull<u8>, block: NonNull<UsedBlockHdr>) -> usize {
     let size = block.as_ref().common.size - SIZE_USED;
     debug_assert_eq!(size, block.as_ref().common.size & SIZE_SIZE_MASK);
     debug_assert!(size > 0);
@@ -261,7 +258,7 @@ pub(crate) unsafe fn size_of_allocation_in_block(
 ///    ([`Layout::align`]) as `align`.
 ///
 #[inline]
-pub(crate) unsafe fn size_of_allocation(ptr: NonNull<u8>, align: usize) -> Option<usize> {
+pub unsafe fn size_of_allocation(ptr: NonNull<u8>, align: usize) -> Option<usize> {
     let block = used_block_hdr_for_allocation(ptr, align)?;
     Some(size_of_allocation_in_block(ptr, block))
 }
@@ -275,7 +272,7 @@ pub(crate) unsafe fn size_of_allocation(ptr: NonNull<u8>, align: usize) -> Optio
 ///  - `ptr` must denote a memory block previously allocated via `Self`.
 ///
 #[inline]
-pub(crate) unsafe fn size_of_allocation_unknown_align(ptr: NonNull<u8>) -> Option<usize> {
+pub unsafe fn size_of_allocation_unknown_align(ptr: NonNull<u8>) -> Option<usize> {
     // Safety: `ptr` is a previously allocated memory block.
     //         This is upheld by the caller.
     let block = used_block_hdr_for_allocation_unknown_align(ptr)?;

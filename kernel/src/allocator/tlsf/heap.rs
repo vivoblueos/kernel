@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Tlsf;
-use crate::{allocator, sync::spinlock::SpinLock};
+use crate::sync::spinlock::SpinLock;
+use allocator_crate::{
+    tlsf::{Tlsf, TlsfHeap},
+    MemoryInfo,
+};
 use const_default::ConstDefault;
 use core::{alloc::Layout, ptr::NonNull};
-
-use allocator::MemoryInfo;
-
-pub type TlsfHeap = Tlsf<'static, usize, usize, { usize::BITS as usize }, { usize::BITS as usize }>;
 
 /// A two-Level segregated fit heap.
 pub struct Heap {

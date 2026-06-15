@@ -12,7 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Raw TLSF implementation is in allocator_crate.
-// This module only re-exports the SpinLock-wrapped heap.
+#![no_std]
 
-pub mod heap;
+extern crate alloc;
+
+pub mod block;
+pub mod llff;
+pub mod llff_hole;
+pub mod slab;
+pub mod support;
+pub mod tlsf;
+pub mod tlsf_int;
+
+#[derive(Default, Debug)]
+pub struct MemoryInfo {
+    pub total: usize,
+    pub used: usize,
+    pub max_used: usize,
+}

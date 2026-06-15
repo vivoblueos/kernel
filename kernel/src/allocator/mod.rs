@@ -18,7 +18,9 @@ use crate::static_arc;
 use alloc::alloc::Layout;
 use core::{alloc::GlobalAlloc, ptr};
 
-pub mod block;
+// Raw heap implementations are in the allocator_crate.
+// This module only contains SpinLock wrappers and the GlobalAlloc impl.
+
 #[cfg(any(allocator = "tlsf", allocator = "slab", allocator = "slab_dynamic"))]
 mod tlsf;
 #[cfg(allocator = "tlsf")]
@@ -43,12 +45,7 @@ use slab::heap::DynamicSlabHeap as Heap;
 #[cfg(allocator = "slab_dynamic")]
 pub use slab::heap::DynamicSlabHeap;
 
-#[derive(Default, Debug)]
-pub struct MemoryInfo {
-    pub total: usize,
-    pub used: usize,
-    pub max_used: usize,
-}
+pub use allocator_crate::MemoryInfo;
 
 pub struct KernelAllocator;
 static_arc! {
