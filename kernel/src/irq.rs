@@ -33,7 +33,12 @@ impl IrqTrace {
 
     #[inline]
     fn enter(&self) {
-        enter_irq();
+        let nesting = enter_irq();
+        crate::trace_event!(record_irq_enter(
+            usize::from(self.irq_number) as u16,
+            0,
+            nesting as u8
+        ));
         #[cfg(procfs)]
         unsafe {
             irq_trace::IRQ_COUNTERS[usize::from(self.irq_number)].fetch_add(1, Ordering::Relaxed);
@@ -42,7 +47,12 @@ impl IrqTrace {
 
     #[inline]
     fn leave(&self) {
-        leave_irq();
+        let nesting = leave_irq();
+        crate::trace_event!(record_irq_exit(
+            usize::from(self.irq_number) as u16,
+            0,
+            nesting as u8
+        ));
     }
 }
 

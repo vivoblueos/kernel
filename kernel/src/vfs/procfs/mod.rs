@@ -15,6 +15,7 @@
 mod memory_info;
 mod stat;
 mod task;
+mod trace;
 
 use memory_info::MemoryInfo;
 use stat::SystemStat;
@@ -136,6 +137,7 @@ impl ProcFileSystem {
 
         self.root.create_meminfo_file("meminfo")?;
         self.root.create_stat_file("stat")?;
+        trace::init_trace_files(&self.root)?;
 
         // not support process yet, use thread info instead. and put all threads in /proc
         let mut global_queue_visitor = GlobalQueueVisitor::new();
@@ -235,43 +237,43 @@ struct ProcDir {
 }
 
 impl ProcDir {
-    pub fn create_task_file(
+    pub fn create_proc_file<T: ProcFileOps + 'static>(
         &self,
         name: &str,
-        thread: ThreadNode,
+        file: T,
+        mode: InodeMode,
+        is_dcacheable: bool,
     ) -> Result<Arc<dyn InodeOps>, Error> {
         if name.len() > NAME_MAX {
             return Err(code::ENAMETOOLONG);
         }
 
         let ino = self.base.fs.upgrade().unwrap().alloc_inode_no();
-        let inode = ProcFile::new(ProcTaskFile::new(thread), ino, self.base.fs.clone(), false)
+        let inode = ProcFile::new(file, ino, self.base.fs.clone(), is_dcacheable, mode)
             as Arc<dyn InodeOps>;
         self.insert(name, inode.clone());
-
         Ok(inode)
+    }
+
+    pub fn create_task_file(
+        &self,
+        name: &str,
+        thread: ThreadNode,
+    ) -> Result<Arc<dyn InodeOps>, Error> {
+        self.create_proc_file(
+            name,
+            ProcTaskFile::new(thread),
+            InodeMode::from(0o444),
+            false,
+        )
     }
 
     pub fn create_meminfo_file(&self, name: &str) -> Result<Arc<dyn InodeOps>, Error> {
-        if name.len() > NAME_MAX {
-            return Err(code::ENAMETOOLONG);
-        }
-        let ino = self.base.fs.upgrade().unwrap().alloc_inode_no();
-        let inode =
-            ProcFile::new(MemoryInfo {}, ino, self.base.fs.clone(), true) as Arc<dyn InodeOps>;
-        self.insert(name, inode.clone());
-        Ok(inode)
+        self.create_proc_file(name, MemoryInfo {}, InodeMode::from(0o444), true)
     }
 
     pub fn create_stat_file(&self, name: &str) -> Result<Arc<dyn InodeOps>, Error> {
-        if name.len() > NAME_MAX {
-            return Err(code::ENAMETOOLONG);
-        }
-        let ino = self.base.fs.upgrade().unwrap().alloc_inode_no();
-        let inode =
-            ProcFile::new(SystemStat {}, ino, self.base.fs.clone(), true) as Arc<dyn InodeOps>;
-        self.insert(name, inode.clone());
-        Ok(inode)
+        self.create_proc_file(name, SystemStat {}, InodeMode::from(0o444), true)
     }
 
     pub fn create_dir(&self, name: &str, is_dcacheable: bool) -> Result<Arc<Self>, Error> {
@@ -432,13 +434,14 @@ impl<T: ProcFileOps> ProcFile<T> {
         inode_no: InodeNo,
         fs: Weak<ProcFileSystem>,
         is_dcacheable: bool,
+        mode: InodeMode,
     ) -> Arc<Self> {
         Arc::new(Self {
             base: BaseNode {
                 attr: RwLock::new(InodeAttr::new(
                     inode_no,
                     InodeFileType::Regular,
-                    InodeMode::from(0o444),
+                    mode,
                     0,
                     0,
                     BLOCK_SIZE,
@@ -471,8 +474,14 @@ impl<T: ProcFileOps + 'static> InodeOps for ProcFile<T> {
         Ok(len)
     }
 
-    fn write_at(&self, _offset: usize, _buf: &[u8], _nonblock: bool) -> Result<usize, Error> {
-        Err(code::EPERM)
+    fn write_at(&self, offset: usize, buf: &[u8], _nonblock: bool) -> Result<usize, Error> {
+        if !self.mode().is_writable() {
+            return Err(code::EPERM);
+        }
+        if offset != 0 {
+            return Err(code::EINVAL);
+        }
+        self.inner.set_content(buf.to_vec())
     }
 
     fn resize(&self, _new_size: usize) -> Result<(), Error> {

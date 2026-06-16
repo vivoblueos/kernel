@@ -195,7 +195,9 @@ extern "C" fn handle_ecall(ctx: &mut Context, cont: usize) -> usize {
             nr: ctx.a7,
             args: [ctx.a0, ctx.a1, ctx.a2, ctx.a3, ctx.a4, ctx.a5],
         };
+        crate::trace_event!(record_sys_enter(sc.nr, sc.args[0], sc.args[1], sc.args[2]));
         ctx.a0 = dispatch_syscall(&sc);
+        crate::trace_event!(record_sys_exit(sc.nr, ctx.a0 as isize, 0));
         compiler_fence(Ordering::SeqCst);
     }
     sp
