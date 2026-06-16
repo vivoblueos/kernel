@@ -200,6 +200,8 @@ impl BuddyAllocatorCore {
             };
             let mut current_order = o;
 
+            debug_assert!(unsafe { (*page_ptr).flags.contains(PageFlags::FREE) });
+
             while current_order > order {
                 current_order -= 1;
                 let buddy_pfn = unsafe { (*page_ptr).pfn } + (1 << current_order);
@@ -269,11 +271,14 @@ impl BuddyAllocatorCore {
             );
 
             self.free_lists[current_order].remove(buddy);
-            buddy.flags.clear(PageFlags::FREE);
-            buddy.order = 0;
 
             if buddy_pfn < current_page.pfn {
+                current_page.flags.clear(PageFlags::FREE);
+                current_page.order = 0;
                 current_page = buddy;
+            } else {
+                buddy.flags.clear(PageFlags::FREE);
+                buddy.order = 0;
             }
             current_order += 1;
             current_page.order = current_order as u8;
