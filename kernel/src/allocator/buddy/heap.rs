@@ -269,6 +269,8 @@ impl BuddyAllocatorCore {
             );
 
             self.free_lists[current_order].remove(buddy);
+            buddy.flags.clear(PageFlags::FREE);
+            buddy.order = 0;
 
             if buddy_pfn < current_page.pfn {
                 current_page = buddy;

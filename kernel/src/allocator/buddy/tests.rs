@@ -272,6 +272,37 @@ mod split_coalesce_tests {
         assert_eq!(after, before);
         check_conservation(&core);
     }
+
+    #[test]
+    fn coalescing_clears_removed_buddy_head_metadata() {
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
+
+        let mut core = BuddyAllocatorCore::new();
+        unsafe { core.init(mem_start, mem_end) };
+
+        let p1 = core.alloc_pages(0).expect("first page");
+        let p2 = core.alloc_pages(0).expect("second page");
+        let p1_pfn = unsafe { (*p1).pfn };
+        let p2_pfn = unsafe { (*p2).pfn };
+
+        if p1_pfn ^ p2_pfn != 1 {
+            unsafe { core.free_pages(&mut *p1, 0) };
+            unsafe { core.free_pages(&mut *p2, 0) };
+            return;
+        }
+
+        unsafe { core.free_pages(&mut *p1, 0) };
+        unsafe { core.free_pages(&mut *p2, 0) };
+
+        let removed_buddy_pfn = p1_pfn.max(p2_pfn);
+        let removed_buddy = unsafe { &*core.page_at_mut(removed_buddy_pfn) };
+        assert!(
+            !removed_buddy.flags.contains(PageFlags::FREE),
+            "merged buddy head pfn={} must not remain marked free",
+            removed_buddy_pfn
+        );
+        check_conservation(&core);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
