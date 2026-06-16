@@ -405,7 +405,8 @@ mod boundary_tests {
 
     #[test]
     fn alloc_max_order() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_aligned_with_storage(8 * 1024 * 1024, MAX_ORDER); // 8 MiB
+        let (mem_start, mem_end, mut page_storage) =
+            alloc_test_mem_aligned_with_storage(8 * 1024 * 1024, MAX_ORDER); // 8 MiB
 
         let mut core = BuddyAllocatorCore::new();
         unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
