@@ -108,17 +108,15 @@ impl BuddyAllocatorCore {
     /// 5. Add remaining free pages to free lists as largest possible aligned blocks.
     ///    Each block starts at a pfn aligned to its size (buddy invariant).
     pub unsafe fn init(&mut self, phys_mem_start: usize, phys_mem_end: usize) {
-        self.base_addr = phys_mem_start;
-        self.total_pages = (phys_mem_end - phys_mem_start) >> PAGE_SHIFT;
-        self.end_pfn = self.total_pages; // 数组上 end_pfn 不可用
+        let total_pages = (phys_mem_end - phys_mem_start) >> PAGE_SHIFT;
 
         // Reserve space for struct Page[total_pages] after the kernel image and static heap.
         let virt_mem_start = kernel_phys_to_virt_addr(phys_mem_start);
-        let mut virt_page_array_start =
+        let virt_page_array_start =
             crate::support::align_up_size(unsafe { ptr::addr_of_mut!(_end) as usize }, PAGE_SIZE);
         assert!(virt_page_array_start >= virt_mem_start);
 
-        let page_array_size = self.total_pages * core::mem::size_of::<Page>();
+        let page_array_size = total_pages * core::mem::size_of::<Page>();
         let virt_page_array_end = virt_page_array_start + page_array_size;
 
         // Align metadata end up to PAGE_SIZE boundary.
@@ -126,12 +124,52 @@ impl BuddyAllocatorCore {
         let phys_metadata_end = kernel_virt_to_phys_addr(virt_metadata_end);
         assert!(phys_metadata_end <= phys_mem_end);
         // start_pfn 指的是第一个可用的物理页的 pfn，因此它是 metadata 结束后的第一个页的 pfn。
-        self.start_pfn = (phys_metadata_end - phys_mem_start) >> PAGE_SHIFT;
+        let start_pfn = (phys_metadata_end - phys_mem_start) >> PAGE_SHIFT;
 
+        self.init_with_reserved_pages(
+            phys_mem_start,
+            phys_mem_end,
+            virt_page_array_start as *mut Page,
+            start_pfn,
+        );
+    }
+
+    /// Initialize the buddy allocator with caller-provided page descriptor storage.
+    ///
+    /// # Safety
+    /// `phys_mem_start..phys_mem_end` must be valid, exclusively owned, writable physical memory.
+    /// `pages` must point to writable storage for one descriptor per managed page.
+    pub unsafe fn init_with_storage(
+        &mut self,
+        phys_mem_start: usize,
+        phys_mem_end: usize,
+        pages: *mut Page,
+    ) {
+        let total_pages = (phys_mem_end - phys_mem_start) >> PAGE_SHIFT;
+        let page_array_size = total_pages * core::mem::size_of::<Page>();
+        let start_pfn = crate::support::align_up_size(page_array_size, PAGE_SIZE) >> PAGE_SHIFT;
+
+        self.init_with_reserved_pages(phys_mem_start, phys_mem_end, pages, start_pfn);
+    }
+
+    unsafe fn init_with_reserved_pages(
+        &mut self,
+        phys_mem_start: usize,
+        phys_mem_end: usize,
+        pages: *mut Page,
+        start_pfn: usize,
+    ) {
+        self.base_addr = phys_mem_start;
+        self.total_pages = (phys_mem_end - phys_mem_start) >> PAGE_SHIFT;
+        self.end_pfn = self.total_pages; // 数组上 end_pfn 不可用
+        self.start_pfn = start_pfn;
+        assert!(self.start_pfn <= self.end_pfn);
+
+        let page_array_size = self.total_pages * core::mem::size_of::<Page>();
         // Zero the entire page descriptor array / struct Page array.
-        core::ptr::write_bytes(virt_page_array_start as *mut u8, 0, page_array_size);
+        core::ptr::write_bytes(pages as *mut u8, 0, page_array_size);
         // 把 pages 指针指向这个数组的起始位置，后续通过 pfn 索引访问对应的 Page 结构体。
-        self.pages = virt_page_array_start as *mut Page;
+        self.pages = pages;
 
         // Initialize each page descriptor / struct Page.
         for pfn in 0..self.total_pages {
