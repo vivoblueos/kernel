@@ -20,7 +20,7 @@
 
 use super::{
     heap::{order_of_size, BuddyAllocatorCore, BuddyMemoryInfo},
-    page::{Page, PageFlags, MAX_ORDER, PAGE_SHIFT, PAGE_SIZE},
+    page::{PageFlags, MAX_ORDER, PAGE_SIZE},
 };
 use alloc::vec::Vec;
 use core::{ptr, sync::atomic::Ordering};
@@ -57,22 +57,6 @@ fn alloc_test_mem_aligned(size: usize, align_order: usize) -> (usize, usize) {
     (phys_start, phys_start + size)
 }
 
-fn alloc_test_mem_with_storage(size: usize) -> (usize, usize, Vec<Page>) {
-    // 对齐 16 KB
-    alloc_test_mem_aligned_with_storage(size, 2)
-}
-
-fn alloc_test_mem_aligned_with_storage(
-    size: usize,
-    align_order: usize,
-) -> (usize, usize, Vec<Page>) {
-    let (phys_start, phys_end) = alloc_test_mem_aligned(size, align_order);
-    let page_count = (phys_end - phys_start) >> PAGE_SHIFT;
-    let mut page_storage = Vec::with_capacity(page_count);
-    page_storage.resize_with(page_count, Page::new);
-    (phys_start, phys_end, page_storage)
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper functions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,10 +90,10 @@ mod basic_tests {
 
     #[test]
     fn init_creates_valid_state() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let info = core.memory_info();
         assert!(info.total_pages > 0);
@@ -119,10 +103,10 @@ mod basic_tests {
 
     #[test]
     fn alloc_single_page() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let before_free = core.memory_info().free_pages;
         let page = core
@@ -143,10 +127,10 @@ mod basic_tests {
 
     #[test]
     fn alloc_large_block() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let before_free = core.memory_info().free_pages;
         let page = core.alloc_pages(2).expect("alloc order=2 should succeed");
@@ -165,10 +149,10 @@ mod basic_tests {
 
     #[test]
     fn alloc_returns_null_when_exhausted() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(64 * 1024); // 64 KiB = 16 pages
+        let (mem_start, mem_end) = alloc_test_mem(64 * 1024); // 64 KiB = 16 pages
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         // Exhaust all available pages
         let mut allocated = Vec::new();
@@ -204,10 +188,10 @@ mod split_coalesce_tests {
 
     #[test]
     fn split_on_demand() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         // Allocate order=1 (2 pages) — may trigger split from larger blocks
         let page = core.alloc_pages(1).expect("alloc order=1 should succeed");
@@ -221,10 +205,10 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalesce_adjacent_buddies() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let total_free = core.memory_info().free_pages;
         let mut allocated = Vec::new();
@@ -273,10 +257,10 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalesce_chain() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let before = core.memory_info().free_pages;
 
@@ -297,10 +281,10 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalescing_clears_removed_buddy_head_metadata() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let p1 = core.alloc_pages(0).expect("first page");
         let p2 = core.alloc_pages(0).expect("second page");
@@ -340,10 +324,10 @@ mod aligned_tests {
 
     #[test]
     fn alloc_aligned_basic() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         // Allocate 8KB (order=1) aligned to 16KB (align_order=2)
         let page = core
@@ -364,10 +348,10 @@ mod aligned_tests {
 
     #[test]
     fn alloc_aligned_does_not_leak() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let before = core.memory_info().free_pages;
 
@@ -402,10 +386,10 @@ mod boundary_tests {
 
     #[test]
     fn init_with_small_memory() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(8 * 1024); // 8 KiB = 2 pages
+        let (mem_start, mem_end) = alloc_test_mem(8 * 1024); // 8 KiB = 2 pages
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let info = core.memory_info();
         // Most pages are reserved for metadata; may have 0 free pages
@@ -414,11 +398,10 @@ mod boundary_tests {
 
     #[test]
     fn alloc_max_order() {
-        let (mem_start, mem_end, mut page_storage) =
-            alloc_test_mem_aligned_with_storage(8 * 1024 * 1024, MAX_ORDER); // 8 MiB
+        let (mem_start, mem_end) = alloc_test_mem_aligned(8 * 1024 * 1024, MAX_ORDER); // 8 MiB
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         // Try allocating the largest possible order
         let page = core.alloc_pages(MAX_ORDER);
@@ -432,20 +415,20 @@ mod boundary_tests {
 
     #[test]
     fn alloc_beyond_max_order_fails() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         assert!(core.alloc_pages(MAX_ORDER + 1).is_none());
     }
 
     #[test]
     fn alloc_zero_pages() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let page = core.alloc_pages(0);
         assert!(page.is_some());
@@ -464,10 +447,10 @@ mod stress_tests {
 
     #[test]
     fn random_alloc_free_sequence() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(2 * 1024 * 1024); // 2 MiB
+        let (mem_start, mem_end) = alloc_test_mem(2 * 1024 * 1024); // 2 MiB
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let before = core.memory_info().free_pages;
 
@@ -494,10 +477,10 @@ mod stress_tests {
 
     #[test]
     fn alloc_free_alloc_no_leak() {
-        let (mem_start, mem_end, mut page_storage) = alloc_test_mem_with_storage(TEST_MEM_SIZE);
+        let (mem_start, mem_end) = alloc_test_mem(TEST_MEM_SIZE);
 
         let mut core = BuddyAllocatorCore::new();
-        unsafe { core.init_with_storage(mem_start, mem_end, page_storage.as_mut_ptr()) };
+        unsafe { core.init(mem_start, mem_end) };
 
         let before = core.memory_info().free_pages;
 
