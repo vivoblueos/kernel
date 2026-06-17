@@ -74,11 +74,6 @@ fn check_conservation(core: &BuddyAllocatorCore) {
     );
 }
 
-fn count_free_list_pages(core: &BuddyAllocatorCore) -> usize {
-    let info = core.memory_info();
-    info.free_pages
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Basic allocation / deallocation
 // ─────────────────────────────────────────────────────────────────────────────
