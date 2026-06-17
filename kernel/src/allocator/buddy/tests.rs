@@ -54,7 +54,7 @@ fn alloc_test_mem_aligned(size: usize, align_order: usize) -> (usize, usize) {
     let phys_metadata_start = kernel_virt_to_phys(virt_metadata_start);
     let alignment = PAGE_SIZE << align_order;
     let phys_start = (phys_metadata_start + alignment - 1) & !(alignment - 1);
-    (phys_start, phys_metadata_start + size)
+    (phys_start, phys_start + size)
 }
 
 fn alloc_test_mem_with_storage(size: usize) -> (usize, usize, Vec<Page>) {
