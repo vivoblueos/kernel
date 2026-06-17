@@ -56,7 +56,7 @@ pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 // They are intended to be run in a kernel test harness with a
 // reserved test memory region.
 
-use super::{
+use self::{
     heap::{order_of_size, BuddyAllocatorCore, BuddyMemoryInfo},
     page::{PageFlags, MAX_ORDER, PAGE_SIZE},
 };
@@ -450,7 +450,7 @@ mod stress_tests {
 
 #[cfg(test)]
 mod order_tests {
-    use super::super::{heap::order_of_size, page::PAGE_SIZE};
+    use super::{heap::order_of_size, page::PAGE_SIZE};
     use blueos_test_macro::test;
 
     #[test]
