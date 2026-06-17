@@ -53,11 +53,12 @@ fn alloc_test_mem_aligned(size: usize, align_order: usize) -> (usize, usize) {
         crate::support::align_up_size(unsafe { ptr::addr_of_mut!(_end) as usize }, PAGE_SIZE);
     let phys_metadata_start = kernel_virt_to_phys(virt_metadata_start);
     let alignment = PAGE_SIZE << align_order;
-    let phys_start = phys_metadata_start & !(alignment - 1);
+    let phys_start = (phys_metadata_start + alignment - 1) & !(alignment - 1);
     (phys_start, phys_metadata_start + size)
 }
 
 fn alloc_test_mem_with_storage(size: usize) -> (usize, usize, Vec<Page>) {
+    // 对齐 16 KB
     alloc_test_mem_aligned_with_storage(size, 2)
 }
 
