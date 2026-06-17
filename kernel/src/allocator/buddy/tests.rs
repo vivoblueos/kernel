@@ -230,6 +230,7 @@ mod split_coalesce_tests {
         let mut allocated = Vec::new();
         let mut buddies = None;
 
+        // Keep allocating pages until we find two pages whose PFNs are buddies of each other.
         while let Some(page) = core.alloc_pages(1) {
             let pfn = unsafe { (*page).pfn };
             if let Some(index) = allocated
@@ -243,6 +244,7 @@ mod split_coalesce_tests {
             allocated.push((pfn, page));
         }
 
+        // Free the extra pages that were allocated earlier
         for (_, page) in allocated {
             unsafe { core.free_pages(&mut *page, 1) };
         }
@@ -260,6 +262,9 @@ mod split_coalesce_tests {
         let after = core.memory_info().free_pages;
         assert_eq!(after, total_free);
 
+        // Since our design places the just-freed node at the head of the linked list and
+        // allocation also takes from the head, we can be certain the block we get back
+        // is the one we just freed.
         let merged = core.alloc_pages(2).expect("merged order=2 block");
         assert_eq!(unsafe { (*merged).pfn }, block_pfn);
         unsafe { core.free_pages(&mut *merged, 2) };
@@ -302,12 +307,14 @@ mod split_coalesce_tests {
         let p1_pfn = unsafe { (*p1).pfn };
         let p2_pfn = unsafe { (*p2).pfn };
 
+        // They are not buddy pairs
         if p1_pfn ^ p2_pfn != 1 {
             unsafe { core.free_pages(&mut *p1, 0) };
             unsafe { core.free_pages(&mut *p2, 0) };
             return;
         }
 
+        // They are buddy pairs
         unsafe { core.free_pages(&mut *p1, 0) };
         unsafe { core.free_pages(&mut *p2, 0) };
 
