@@ -387,6 +387,20 @@ impl BuddyAllocator {
         inner.free_pages(page, order);
     }
 
+    /// Convert pfn to Page descriptor pointer.
+    ///
+    /// Returns a mutable pointer to the `Page` descriptor for the given `pfn`.
+    pub fn pfn_to_virt(&self, pfn: usize) -> *mut Page {
+        let mut inner = self.inner.irqsave_lock();
+        inner.pfn_to_virt(pfn)
+    }
+
+    /// Convert pfn to physical address.
+    pub fn pfn_to_phys(&self, pfn: usize) -> usize {
+        let mut inner = self.inner.irqsave_lock();
+        inner.pfn_to_phys(pfn)
+    }
+
     /// Get memory statistics.
     pub fn memory_info(&self) -> BuddyMemoryInfo {
         let inner = self.inner.irqsave_lock();
