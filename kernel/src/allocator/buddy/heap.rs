@@ -205,7 +205,7 @@ impl BuddyAllocatorCore {
             while current_order > order {
                 current_order -= 1;
                 let buddy_pfn = unsafe { (*page_ptr).pfn } + (1 << current_order);
-                let buddy = unsafe { &mut *self.page_at_mut(buddy_pfn) };
+                let buddy = unsafe { &mut *self.pfn_to_virt(buddy_pfn) };
                 buddy.flags.set(PageFlags::FREE);
                 buddy.order = current_order as u8;
                 unsafe {
@@ -254,7 +254,7 @@ impl BuddyAllocatorCore {
                 break;
             }
 
-            let buddy = &mut *self.page_at_mut(buddy_pfn);
+            let buddy = &mut *self.pfn_to_virt(buddy_pfn);
 
             // A free buddy with a smaller order means this buddy range has been
             // split into smaller blocks: the page at buddy_pfn may be a free
@@ -293,7 +293,7 @@ impl BuddyAllocatorCore {
     }
 
     /// Get a mutable pointer to the `Page` descriptor for `pfn`.
-    pub(crate) fn page_at_mut(&mut self, pfn: usize) -> *mut Page {
+    pub(crate) fn pfn_to_virt(&mut self, pfn: usize) -> *mut Page {
         debug_assert!(pfn < self.total_pages);
         unsafe { self.pages.add(pfn) }
     }
@@ -383,7 +383,7 @@ impl BuddyAllocator {
     /// `pfn` must be the head of an allocated block of the given `order`.
     pub unsafe fn free_pages_pfn(&self, pfn: usize, order: usize) {
         let mut inner = self.inner.irqsave_lock();
-        let page = &mut *inner.page_at_mut(pfn);
+        let page = &mut *inner.pfn_to_virt(pfn);
         inner.free_pages(page, order);
     }
 
