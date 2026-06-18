@@ -140,7 +140,9 @@ mod basic_tests {
     #[test]
     fn alloc_large_block() {
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
-        let page = BUDDY_ALLOC.alloc_pages(2).expect("alloc order=2 should succeed");
+        let page = BUDDY_ALLOC
+            .alloc_pages(2)
+            .expect("alloc order=2 should succeed");
         let after_free = BUDDY_ALLOC.memory_info().free_pages;
 
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
@@ -209,7 +211,9 @@ mod split_coalesce_tests {
     #[test]
     fn split_on_demand() {
         // Allocate order=1 (2 pages) — may trigger split from larger blocks
-        let page = BUDDY_ALLOC.alloc_pages(1).expect("alloc order=1 should succeed");
+        let page = BUDDY_ALLOC
+            .alloc_pages(1)
+            .expect("alloc order=1 should succeed");
         assert_eq!(unsafe { (*page).order }, 1);
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
         let info = BUDDY_ALLOC.memory_info();
