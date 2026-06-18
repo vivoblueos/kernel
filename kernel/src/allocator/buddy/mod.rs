@@ -57,7 +57,7 @@ pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 // reserved test memory region.
 
 use self::{
-    heap::{order_of_size, BuddyAllocatorCore, BuddyMemoryInfo},
+    heap::{order_of_size, BuddyMemoryInfo},
     page::{PageFlags, MAX_ORDER, PAGE_SIZE},
 };
 use alloc::vec::Vec;
@@ -78,23 +78,6 @@ fn kernel_virt_to_phys(addr: usize) -> usize {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper functions
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn check_conservation(core: &BuddyAllocatorCore) {
-    let info = core.memory_info();
-    assert_eq!(
-        info.total_pages,
-        info.free_pages + info.used_pages + info.reserved_pages,
-        "page conservation violated: total={} free={} used={} reserved={}",
-        info.total_pages,
-        info.free_pages,
-        info.used_pages,
-        info.reserved_pages
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Basic allocation / deallocation
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -105,69 +88,114 @@ mod basic_tests {
 
     #[test]
     fn init_creates_valid_state() {
-        let info = core.memory_info();
+        let info = BUDDY_ALLOC.memory_info();
         assert!(info.total_pages > 0);
         assert!(info.reserved_pages > 0);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn alloc_single_page() {
-        let before_free = core.memory_info().free_pages;
-        let page = core
+        let before_free = BUDDY_ALLOC.memory_info().free_pages;
+        let page = BUDDY_ALLOC
             .alloc_pages(0)
             .expect("alloc single page should succeed");
-        let after_free = core.memory_info().free_pages;
+        let after_free = BUDDY_ALLOC.memory_info().free_pages;
 
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
         assert_eq!(unsafe { (*page).order }, 0);
         assert_eq!(after_free, before_free - 1);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
 
-        unsafe { core.free_pages(&mut *page, 0) };
-        let final_free = core.memory_info().free_pages;
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
+        let final_free = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(final_free, before_free);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn alloc_large_block() {
-        let before_free = core.memory_info().free_pages;
-        let page = core.alloc_pages(2).expect("alloc order=2 should succeed");
-        let after_free = core.memory_info().free_pages;
+        let before_free = BUDDY_ALLOC.memory_info().free_pages;
+        let page = BUDDY_ALLOC.alloc_pages(2).expect("alloc order=2 should succeed");
+        let after_free = BUDDY_ALLOC.memory_info().free_pages;
 
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
         assert_eq!(unsafe { (*page).order }, 2);
         assert_eq!(after_free, before_free - 4);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
 
-        unsafe { core.free_pages(&mut *page, 2) };
-        let final_free = core.memory_info().free_pages;
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 2) };
+        let final_free = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(final_free, before_free);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn alloc_returns_null_when_exhausted() {
         // Exhaust all available pages
         let mut allocated = Vec::new();
-        while let Some(page) = core.alloc_pages(0) {
+        while let Some(page) = BUDDY_ALLOC.alloc_pages(0) {
             allocated.push(unsafe { (*page).pfn });
         }
 
         // Next allocation should fail
-        assert!(core.alloc_pages(0).is_none());
+        assert!(BUDDY_ALLOC.alloc_pages(0).is_none());
 
         // Free one and try again
         let pfn = allocated.pop().unwrap();
-        let page = unsafe { &mut *core.page_at_mut(pfn) };
-        unsafe { core.free_pages(page, 0) };
-        assert!(core.alloc_pages(0).is_some());
+        let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
+        unsafe { BUDDY_ALLOC.free_pages(page, 0) };
+        assert!(BUDDY_ALLOC.alloc_pages(0).is_some());
 
         // Clean up remaining allocations
         for pfn in allocated {
-            let page = unsafe { &mut *core.page_at_mut(pfn) };
-            unsafe { core.free_pages(page, 0) };
+            let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
+            unsafe { BUDDY_ALLOC.free_pages(page, 0) };
         }
     }
 }
@@ -184,23 +212,41 @@ mod split_coalesce_tests {
     #[test]
     fn split_on_demand() {
         // Allocate order=1 (2 pages) — may trigger split from larger blocks
-        let page = core.alloc_pages(1).expect("alloc order=1 should succeed");
+        let page = BUDDY_ALLOC.alloc_pages(1).expect("alloc order=1 should succeed");
         assert_eq!(unsafe { (*page).order }, 1);
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
 
-        unsafe { core.free_pages(&mut *page, 1) };
-        check_conservation(&core);
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn coalesce_adjacent_buddies() {
-        let total_free = core.memory_info().free_pages;
+        let total_free = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         let mut buddies = None;
 
         // Keep allocating pages until we find two pages whose PFNs are buddies of each other.
-        while let Some(page) = core.alloc_pages(1) {
+        while let Some(page) = BUDDY_ALLOC.alloc_pages(1) {
             let pfn = unsafe { (*page).pfn };
             if let Some(index) = allocated
                 .iter()
@@ -215,76 +261,103 @@ mod split_coalesce_tests {
 
         // Free the extra pages that were allocated earlier
         for (_, page) in allocated {
-            unsafe { core.free_pages(&mut *page, 1) };
+            unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
         }
 
         let (pfn1, p1, pfn2, p2) = buddies.expect("must find order=1 buddy pair");
         let block_pfn = pfn1.min(pfn2);
-        let before = core.memory_info().free_pages;
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(before, total_free - 4);
 
-        unsafe { core.free_pages(&mut *p1, 1) };
-        let mid = core.memory_info().free_pages;
+        unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 1) };
+        let mid = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(mid, total_free - 2);
 
-        unsafe { core.free_pages(&mut *p2, 1) };
-        let after = core.memory_info().free_pages;
+        unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 1) };
+        let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, total_free);
 
         // Since our design places the just-freed node at the head of the linked list and
         // allocation also takes from the head, we can be certain the block we get back
         // is the one we just freed.
-        let merged = core.alloc_pages(2).expect("merged order=2 block");
+        let merged = BUDDY_ALLOC.alloc_pages(2).expect("merged order=2 block");
         assert_eq!(unsafe { (*merged).pfn }, block_pfn);
-        unsafe { core.free_pages(&mut *merged, 2) };
-        check_conservation(&core);
+        unsafe { BUDDY_ALLOC.free_pages(&mut *merged, 2) };
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn coalesce_chain() {
-        let before = core.memory_info().free_pages;
+        let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Allocate four order=0 pages that form two order=1 pairs
         let pages: Vec<_> = (0..4)
-            .map(|_| core.alloc_pages(0).expect("alloc"))
+            .map(|_| BUDDY_ALLOC.alloc_pages(0).expect("alloc"))
             .collect();
 
         // Free all four in reverse order — should fully coalesce
         for page in pages.into_iter().rev() {
-            unsafe { core.free_pages(&mut *page, 0) };
+            unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
         }
 
-        let after = core.memory_info().free_pages;
+        let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn coalescing_clears_removed_buddy_head_metadata() {
-        let p1 = core.alloc_pages(0).expect("first page");
-        let p2 = core.alloc_pages(0).expect("second page");
+        let p1 = BUDDY_ALLOC.alloc_pages(0).expect("first page");
+        let p2 = BUDDY_ALLOC.alloc_pages(0).expect("second page");
         let p1_pfn = unsafe { (*p1).pfn };
         let p2_pfn = unsafe { (*p2).pfn };
 
         // They are not buddy pairs
         if p1_pfn ^ p2_pfn != 1 {
-            unsafe { core.free_pages(&mut *p1, 0) };
-            unsafe { core.free_pages(&mut *p2, 0) };
+            unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 0) };
+            unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 0) };
             return;
         }
 
         // They are buddy pairs
-        unsafe { core.free_pages(&mut *p1, 0) };
-        unsafe { core.free_pages(&mut *p2, 0) };
+        unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 0) };
+        unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 0) };
 
         let removed_buddy_pfn = p1_pfn.max(p2_pfn);
-        let removed_buddy = unsafe { &*core.page_at_mut(removed_buddy_pfn) };
+        let removed_buddy = unsafe { &*BUDDY_ALLOC.pfn_to_virt(removed_buddy_pfn) };
         assert!(
             !removed_buddy.flags.contains(PageFlags::FREE),
             "merged buddy head pfn={} must not remain marked free",
             removed_buddy_pfn
         );
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 }
 
@@ -300,43 +373,70 @@ mod aligned_tests {
     #[test]
     fn alloc_aligned_basic() {
         // Allocate 8KB (order=1) aligned to 16KB (align_order=2)
-        let page = core
+        let page = BUDDY_ALLOC
             .alloc_pages_aligned(1, 2)
             .expect("aligned alloc should succeed");
-        let addr = unsafe { core.pfn_to_phys((*page).pfn) };
+        let addr = unsafe { BUDDY_ALLOC.pfn_to_phys((*page).pfn) };
 
         assert_eq!(
             addr & ((4 * PAGE_SIZE) - 1),
             0,
             "address should be 16KB aligned"
         );
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
 
-        unsafe { core.free_pages(&mut *page, 1) };
-        check_conservation(&core);
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn alloc_aligned_does_not_leak() {
-        let before = core.memory_info().free_pages;
+        let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Multiple aligned allocations
         let mut allocated = Vec::new();
         for _ in 0..10 {
-            if let Some(page) = core.alloc_pages_aligned(1, 2) {
+            if let Some(page) = BUDDY_ALLOC.alloc_pages_aligned(1, 2) {
                 allocated.push(unsafe { (*page).pfn });
             }
         }
 
         // Free all
         for pfn in allocated {
-            let page = unsafe { &mut *core.page_at_mut(pfn) };
-            unsafe { core.free_pages(page, 1) };
+            let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
+            unsafe { BUDDY_ALLOC.free_pages(page, 1) };
         }
 
-        let after = core.memory_info().free_pages;
+        let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 }
 
@@ -352,25 +452,34 @@ mod boundary_tests {
     #[test]
     fn alloc_max_order() {
         // Try allocating the largest possible order
-        let page = core.alloc_pages(MAX_ORDER);
+        let page = BUDDY_ALLOC.alloc_pages(MAX_ORDER);
         if page.is_some() {
-            let addr = unsafe { core.pfn_to_phys((*page.unwrap()).pfn) };
+            let addr = unsafe { BUDDY_ALLOC.pfn_to_phys((*page.unwrap()).pfn) };
             assert_eq!(addr & ((PAGE_SIZE << MAX_ORDER) - 1), 0);
-            unsafe { core.free_pages(&mut *page.unwrap(), MAX_ORDER) };
+            unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), MAX_ORDER) };
         }
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn alloc_beyond_max_order_fails() {
-        assert!(core.alloc_pages(MAX_ORDER + 1).is_none());
+        assert!(BUDDY_ALLOC.alloc_pages(MAX_ORDER + 1).is_none());
     }
 
     #[test]
     fn alloc_zero_pages() {
-        let page = core.alloc_pages(0);
+        let page = BUDDY_ALLOC.alloc_pages(0);
         assert!(page.is_some());
-        unsafe { core.free_pages(&mut *page.unwrap(), 0) };
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), 0) };
     }
 }
 
@@ -385,13 +494,13 @@ mod stress_tests {
 
     #[test]
     fn random_alloc_free_sequence() {
-        let before = core.memory_info().free_pages;
+        let before = BUDDY_ALLOC.memory_info().free_pages;
 
         let mut allocated: Vec<(usize, usize)> = Vec::new();
         let orders = [0, 0, 1, 0, 1, 2, 0, 1, 0, 2];
 
         for &order in &orders {
-            if let Some(page) = core.alloc_pages(order) {
+            if let Some(page) = BUDDY_ALLOC.alloc_pages(order) {
                 let pfn = unsafe { (*page).pfn };
                 allocated.push((pfn, order));
             }
@@ -399,30 +508,48 @@ mod stress_tests {
 
         // Free in reverse order
         for (pfn, order) in allocated.into_iter().rev() {
-            let page = unsafe { &mut *core.page_at_mut(pfn) };
-            unsafe { core.free_pages(page, order) };
+            let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
+            unsafe { BUDDY_ALLOC.free_pages(page, order) };
         }
 
-        let after = core.memory_info().free_pages;
+        let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 
     #[test]
     fn alloc_free_alloc_no_leak() {
-        let before = core.memory_info().free_pages;
+        let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Allocate and free the same pattern multiple times
         for _ in 0..5 {
-            let p1 = core.alloc_pages(2).unwrap();
-            let p2 = core.alloc_pages(1).unwrap();
-            unsafe { core.free_pages(&mut *p1, 2) };
-            unsafe { core.free_pages(&mut *p2, 1) };
+            let p1 = BUDDY_ALLOC.alloc_pages(2).unwrap();
+            let p2 = BUDDY_ALLOC.alloc_pages(1).unwrap();
+            unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 2) };
+            unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 1) };
         }
 
-        let after = core.memory_info().free_pages;
+        let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        check_conservation(&core);
+        let info = BUDDY_ALLOC.memory_info();
+        assert_eq!(
+            info.total_pages,
+            info.free_pages + info.used_pages + info.reserved_pages,
+            "page conservation violated: total={} free={} used={} reserved={}",
+            info.total_pages,
+            info.free_pages,
+            info.used_pages,
+            info.reserved_pages
+        );
     }
 }
 
