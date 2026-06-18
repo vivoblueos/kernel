@@ -17,9 +17,6 @@ use crate::types::{Arc, ArcInner};
 pub mod heap;
 pub mod page;
 
-// #[cfg(test)]
-// mod tests;
-
 use heap::BuddyAllocator;
 
 #[allow(non_snake_case)]
