@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::devices::block::init_virtio_block;
+use crate::{
+    devices::block::init_virtio_block,
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys},
+};
 use alloc::alloc::{alloc_zeroed, dealloc, handle_alloc_error};
 use core::{alloc::Layout, mem::size_of, ptr::NonNull};
 use flat_device_tree::Fdt;
@@ -47,10 +50,10 @@ fn find_virtio_mmio_devices(fdt: &Fdt) {
                             size_of::<VirtIOHeader>()
                         );
                     } else {
-                        let header = NonNull::new(
-                            phys_to_virt(region.starting_address as usize) as *mut VirtIOHeader
-                        )
-                        .unwrap();
+                        let header =
+                            NonNull::new(kernel_phys_to_virt(region.starting_address as usize)
+                                as *mut VirtIOHeader)
+                            .unwrap();
                         // SAFETY: device tree is correct, VirtIO MMIO devices are mapped.
                         match unsafe { MmioTransport::new(header, region_size) } {
                             Err(MmioError::InvalidDeviceID(
@@ -109,7 +112,7 @@ unsafe impl Hal for VirtioHal {
         if vaddr.is_null() {
             handle_alloc_error(layout);
         }
-        let paddr = virt_to_phys(vaddr as _);
+        let paddr = kernel_virt_to_phys(vaddr as _);
         let vaddr = NonNull::new(vaddr).unwrap();
         (paddr, vaddr)
     }
@@ -121,41 +124,17 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: PhysAddr, _size: usize) -> NonNull<u8> {
-        NonNull::new(phys_to_virt(paddr) as _).unwrap()
+        NonNull::new(kernel_phys_to_virt(paddr) as _).unwrap()
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> PhysAddr {
         let vaddr = buffer.as_ptr() as *mut u8 as usize;
         // Nothing to do
-        virt_to_phys(vaddr)
+        kernel_virt_to_phys(vaddr)
     }
 
     unsafe fn unshare(_paddr: PhysAddr, _buffer: NonNull<[u8]>, _direction: BufferDirection) {
         // Nothing to do, as the host already has access to all memory and we didn't copy the buffer
         // anywhere else.
-    }
-}
-
-fn virt_to_phys(vaddr: usize) -> PhysAddr {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_virt_to_phys(vaddr)
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        vaddr
-    }
-}
-
-fn phys_to_virt(paddr: PhysAddr) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_phys_to_virt(paddr as u64) as usize
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        paddr
     }
 }

@@ -14,7 +14,10 @@
 
 extern crate alloc;
 
-use crate::static_arc;
+use crate::{
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys},
+    static_arc,
+};
 use alloc::alloc::Layout;
 use core::{alloc::GlobalAlloc, ptr};
 
@@ -168,30 +171,6 @@ unsafe impl GlobalAlloc for KernelAllocator {
 impl KernelAllocator {
     pub fn memory_info() -> MemoryInfo {
         HEAP.memory_info()
-    }
-}
-
-#[inline]
-fn kernel_phys_to_virt(addr: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_phys_to_virt(addr as u64) as usize
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        addr
-    }
-}
-
-#[inline]
-fn kernel_virt_to_phys(addr: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_virt_to_phys(addr)
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        addr
     }
 }
 

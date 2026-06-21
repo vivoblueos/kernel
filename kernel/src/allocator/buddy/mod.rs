@@ -56,17 +56,6 @@ fn assert_page_conservation() {
     );
 }
 
-fn kernel_virt_to_phys(addr: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_virt_to_phys(addr)
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        addr
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Basic allocation / deallocation
 // ─────────────────────────────────────────────────────────────────────────────

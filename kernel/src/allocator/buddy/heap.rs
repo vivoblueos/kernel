@@ -13,37 +13,14 @@
 // limitations under the License.
 
 use super::page::{LinkedList, Page, PageFlags, MAX_ORDER, PAGE_SHIFT, PAGE_SIZE};
-use crate::sync::spinlock::SpinLock;
+use crate::{
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys},
+    sync::spinlock::SpinLock,
+};
 use core::ptr;
 
 extern "C" {
     static mut _end: u8;
-}
-
-// FIXME: Keep this function for now because only aarch64 currently supports linear mapping.
-#[inline]
-fn kernel_phys_to_virt_addr(addr: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_phys_to_virt(addr as u64) as usize
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        addr
-    }
-}
-
-// FIXME: Keep this function for now because only aarch64 currently supports linear mapping.
-#[inline]
-fn kernel_virt_to_phys_addr(addr: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        crate::arch::aarch64::mmu::kernel_virt_to_phys(addr)
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        addr
-    }
 }
 
 /// Calculate the minimum order required to hold `size` bytes.
@@ -113,7 +90,7 @@ impl BuddyAllocatorCore {
         self.end_pfn = self.total_pages; // 数组上 end_pfn 不可用
 
         // Reserve space for struct Page[total_pages] after the kernel image and static heap.
-        let virt_mem_start = kernel_phys_to_virt_addr(phys_mem_start);
+        let virt_mem_start = kernel_phys_to_virt(phys_mem_start);
         let mut virt_page_array_start =
             crate::support::align_up_size(unsafe { ptr::addr_of_mut!(_end) as usize }, PAGE_SIZE);
         assert!(virt_page_array_start >= virt_mem_start);
@@ -123,7 +100,7 @@ impl BuddyAllocatorCore {
 
         // Align metadata end up to PAGE_SIZE boundary.
         let virt_metadata_end = crate::support::align_up_size(virt_page_array_end, PAGE_SIZE);
-        let phys_metadata_end = kernel_virt_to_phys_addr(virt_metadata_end);
+        let phys_metadata_end = kernel_virt_to_phys(virt_metadata_end);
         assert!(phys_metadata_end <= phys_mem_end);
         // start_pfn 指的是第一个可用的物理页的 pfn，因此它是 metadata 结束后的第一个页的 pfn。
         self.start_pfn = (phys_metadata_end - phys_mem_start) >> PAGE_SHIFT;

@@ -3,11 +3,4 @@ menu "Aarch64 Configuration"
 config NUM_IRQS
     int
 
-config KERNEL_VIRT_START
-    hex "Kernel virtual address start"
-    default 0xFFFFFF8000000000 if SOC_VIRT_AARCH64
-    default 0x0
-    help
-      Base virtual address used by the kernel linear mapping on AArch64.
-
 endmenu

@@ -72,6 +72,7 @@ pub mod error;
 pub mod ffi;
 pub mod irq;
 pub mod logger;
+pub mod mm;
 #[cfg(enable_net)]
 pub mod net;
 pub mod scheduler;

@@ -22,6 +22,14 @@ config FLASH_SIZE
 	help
 	  The Flash size in kB.
 
+config KERNEL_VIRT_OFFSET
+	hex "Kernel virtual address offset"
+	default 0xFFFFFF8000000000 if SOC_VIRT_AARCH64
+	default 0x0
+	help
+	  Offset added to physical addresses for the kernel linear mapping.
+	  Platforms without a high-address linear mapping should keep this at 0.
+
 config STACK_SIZE
 	int "Stack Size in kB"
 	help

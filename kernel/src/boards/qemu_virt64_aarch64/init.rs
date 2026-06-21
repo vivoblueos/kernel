@@ -90,7 +90,7 @@ crate::define_peripheral! {
      )),
 }
 
-pub const DRAM_BASE: u64 = mmu::kernel_phys_to_virt(0x4000_0000);
+pub const DRAM_BASE: usize = mmu::kernel_phys_to_virt(0x4000_0000);
 
 crate::define_pin_states!(None);
 
