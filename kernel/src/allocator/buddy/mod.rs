@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use self::{
+    heap::{order_of_size, BuddyMemoryInfo},
+    page::{PageFlags, MAX_ORDER, PAGE_SIZE},
+};
 use crate::types::{Arc, ArcInner};
+use alloc::vec::Vec;
+use core::{ptr, sync::atomic::Ordering};
 
 pub mod heap;
 pub mod page;
@@ -33,35 +39,22 @@ mod BUDDY_ALLOC {
 // 这里我们将 BUDDY_ALLOC 的 PTR 公开为 BUDDY_ALLOC，这样其他模块就可以通过 allocator::buddy::BUDDY_ALLOC 来访问全局的 BuddyAllocator 实例。
 pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// Buddy allocator unit tests.
-//
-// These tests require a real physical memory region to run.
-// They are intended to be run in a kernel test harness with a
-// reserved test memory region.
-
-use self::{
-    heap::{order_of_size, BuddyMemoryInfo},
-    page::{PageFlags, MAX_ORDER, PAGE_SIZE},
-};
-use alloc::vec::Vec;
-use core::{ptr, sync::atomic::Ordering};
-
 // 16 MiB test memory region — adjust based on test harness.
 const TEST_MEM_SIZE: usize = 16 * 1024 * 1024;
+
+#[cfg(test)]
+fn assert_page_conservation() {
+    let info = BUDDY_ALLOC.memory_info();
+    assert_eq!(
+        info.total_pages,
+        info.free_pages + info.used_pages + info.reserved_pages,
+        "page conservation violated: total={} free={} used={} reserved={}",
+        info.total_pages,
+        info.free_pages,
+        info.used_pages,
+        info.reserved_pages
+    );
+}
 
 fn kernel_virt_to_phys(addr: usize) -> usize {
     #[cfg(target_arch = "aarch64")]
@@ -88,16 +81,7 @@ mod basic_tests {
         let info = BUDDY_ALLOC.memory_info();
         assert!(info.total_pages > 0);
         assert!(info.reserved_pages > 0);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -111,30 +95,12 @@ mod basic_tests {
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
         assert_eq!(unsafe { (*page).order }, 0);
         assert_eq!(after_free, before_free - 1);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
 
         unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
         let final_free = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(final_free, before_free);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -148,30 +114,12 @@ mod basic_tests {
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
         assert_eq!(unsafe { (*page).order }, 2);
         assert_eq!(after_free, before_free - 4);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
 
         unsafe { BUDDY_ALLOC.free_pages(&mut *page, 2) };
         let final_free = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(final_free, before_free);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -216,28 +164,10 @@ mod split_coalesce_tests {
             .expect("alloc order=1 should succeed");
         assert_eq!(unsafe { (*page).order }, 1);
         assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
 
         unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -284,16 +214,7 @@ mod split_coalesce_tests {
         let merged = BUDDY_ALLOC.alloc_pages(2).expect("merged order=2 block");
         assert_eq!(unsafe { (*merged).pfn }, block_pfn);
         unsafe { BUDDY_ALLOC.free_pages(&mut *merged, 2) };
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -312,16 +233,7 @@ mod split_coalesce_tests {
 
         let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -349,16 +261,7 @@ mod split_coalesce_tests {
             "merged buddy head pfn={} must not remain marked free",
             removed_buddy_pfn
         );
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 }
 
@@ -384,28 +287,10 @@ mod aligned_tests {
             0,
             "address should be 16KB aligned"
         );
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
 
         unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -428,16 +313,7 @@ mod aligned_tests {
 
         let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 }
 
@@ -459,16 +335,7 @@ mod boundary_tests {
             assert_eq!(addr & ((PAGE_SIZE << MAX_ORDER) - 1), 0);
             unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), MAX_ORDER) };
         }
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -515,16 +382,7 @@ mod stress_tests {
 
         let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 
     #[test]
@@ -541,16 +399,7 @@ mod stress_tests {
 
         let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
-        let info = BUDDY_ALLOC.memory_info();
-        assert_eq!(
-            info.total_pages,
-            info.free_pages + info.used_pages + info.reserved_pages,
-            "page conservation violated: total={} free={} used={} reserved={}",
-            info.total_pages,
-            info.free_pages,
-            info.used_pages,
-            info.reserved_pages
-        );
+        assert_page_conservation();
     }
 }
 
