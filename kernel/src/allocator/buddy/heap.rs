@@ -239,11 +239,7 @@ impl BuddyAllocatorCore {
                 current_order
             );
 
-            debug_assert!(
-                buddy_pfn >= self.start_pfn,
-                "free_pages: buddy pfn must not be in reserved range"
-            );
-            if buddy_pfn >= self.end_pfn {
+            if buddy_pfn >= self.end_pfn || buddy_pfn < self.start_pfn {
                 break;
             }
 
