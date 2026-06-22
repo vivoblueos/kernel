@@ -18,7 +18,7 @@ use self::{
 };
 use crate::types::{Arc, ArcInner};
 use alloc::vec::Vec;
-use core::{ptr, sync::atomic::Ordering};
+use core::{mem, ptr, sync::atomic::Ordering};
 
 pub mod heap;
 pub mod page;
@@ -113,8 +113,9 @@ mod basic_tests {
 
     #[test]
     fn alloc_returns_null_when_exhausted() {
-        // Exhaust all available pages
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
+        // Exhaust all available pages
         while let Some(page) = BUDDY_ALLOC.alloc_pages(0) {
             allocated.push(unsafe { (*page).pfn });
         }
@@ -126,13 +127,24 @@ mod basic_tests {
         let pfn = allocated.pop().unwrap();
         let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
         unsafe { BUDDY_ALLOC.free_pages(page, 0) };
-        assert!(BUDDY_ALLOC.alloc_pages(0).is_some());
+        let recovered = BUDDY_ALLOC
+            .alloc_pages(0)
+            .expect("should succeed after free");
+        unsafe { BUDDY_ALLOC.free_pages(&mut *recovered, 0) };
 
         // Clean up remaining allocations
-        for pfn in allocated {
+        for pfn in allocated.drain(..) {
             let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
             unsafe { BUDDY_ALLOC.free_pages(page, 0) };
         }
+        // allocated is now empty; shrink_to_fit releases the backing heap memory
+        allocated.shrink_to_fit();
+        mem::drop(allocated);
+
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+
+        assert_eq!(after, before);
+        assert_page_conservation();
     }
 }
 
@@ -285,9 +297,8 @@ mod aligned_tests {
     #[test]
     fn alloc_aligned_does_not_leak() {
         let before = BUDDY_ALLOC.memory_info().free_pages;
-
-        // Multiple aligned allocations
         let mut allocated = Vec::new();
+        // Multiple aligned allocations
         for _ in 0..10 {
             if let Some(page) = BUDDY_ALLOC.alloc_pages_aligned(1, 2) {
                 allocated.push(unsafe { (*page).pfn });
@@ -295,10 +306,12 @@ mod aligned_tests {
         }
 
         // Free all
-        for pfn in allocated {
+        for pfn in allocated.drain(..) {
             let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
             unsafe { BUDDY_ALLOC.free_pages(page, 1) };
         }
+        allocated.shrink_to_fit();
+        mem::drop(allocated);
 
         let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, before);
