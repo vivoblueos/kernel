@@ -43,6 +43,9 @@ pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 const TEST_MEM_SIZE: usize = 16 * 1024 * 1024;
 
 #[cfg(test)]
+static BUDDY_TEST_LOCK: spin::Mutex<()> = spin::Mutex::new(());
+
+#[cfg(test)]
 fn assert_page_conservation() {
     let info = BUDDY_ALLOC.memory_info();
     assert_eq!(
@@ -67,6 +70,7 @@ mod basic_tests {
 
     #[test]
     fn init_creates_valid_state() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let info = BUDDY_ALLOC.memory_info();
         assert!(info.total_pages > 0);
@@ -78,6 +82,7 @@ mod basic_tests {
 
     #[test]
     fn alloc_single_page() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC
             .alloc_pages(0)
@@ -97,6 +102,7 @@ mod basic_tests {
 
     #[test]
     fn alloc_large_block() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC
             .alloc_pages(2)
@@ -116,6 +122,7 @@ mod basic_tests {
 
     #[test]
     fn alloc_returns_null_when_exhausted() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         // Exhaust all available pages
@@ -162,6 +169,7 @@ mod split_coalesce_tests {
 
     #[test]
     fn split_on_demand() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         // Allocate order=1 (2 pages) — may trigger split from larger blocks
         let page = BUDDY_ALLOC
@@ -179,6 +187,7 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalesce_adjacent_buddies() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let total_free = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         let mut buddies = None;
@@ -226,6 +235,7 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalesce_chain() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Allocate four order=0 pages that form two order=1 pairs
@@ -245,6 +255,7 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalescing_clears_removed_buddy_head_metadata() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let p1 = BUDDY_ALLOC.alloc_pages(0).expect("first page");
         let p2 = BUDDY_ALLOC.alloc_pages(0).expect("second page");
@@ -288,6 +299,7 @@ mod aligned_tests {
 
     #[test]
     fn alloc_aligned_basic() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         // Allocate 8KB (order=1) aligned to 16KB (align_order=2)
         let page = BUDDY_ALLOC
@@ -310,6 +322,7 @@ mod aligned_tests {
 
     #[test]
     fn alloc_aligned_does_not_leak() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         // Multiple aligned allocations
@@ -344,6 +357,7 @@ mod boundary_tests {
 
     #[test]
     fn alloc_max_order() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         // Try allocating the largest possible order
         let page = BUDDY_ALLOC.alloc_pages(MAX_ORDER);
@@ -359,11 +373,13 @@ mod boundary_tests {
 
     #[test]
     fn alloc_beyond_max_order_fails() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         assert!(BUDDY_ALLOC.alloc_pages(MAX_ORDER + 1).is_none());
     }
 
     #[test]
     fn alloc_zero_pages() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC.alloc_pages(0);
         assert!(page.is_some());
@@ -384,6 +400,7 @@ mod stress_tests {
 
     #[test]
     fn random_alloc_free_sequence() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
 
         let mut allocated: Vec<(usize, usize)> = Vec::new();
@@ -409,6 +426,7 @@ mod stress_tests {
 
     #[test]
     fn alloc_free_alloc_no_leak() {
+        let _guard = BUDDY_TEST_LOCK.lock();
         let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Allocate and free the same pattern multiple times
