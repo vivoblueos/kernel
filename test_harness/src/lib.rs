@@ -73,6 +73,7 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let repeat_count = test_config.repeat_count;
     let thread_count = test_config.thread_count;
+    let exclusive_buddy = test_config.exclusive_buddy;
     let input = parse_macro_input!(item as ItemFn);
     let test_name = &input.sig.ident;
     let input_block = &input.block;
@@ -124,6 +125,16 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     });
+
+    let exclusion_guard = if exclusive_buddy {
+        quote! {
+            let _blueos_buddy_exclusion_guard = blueos::BUDDY_EXCLUSION.write();
+        }
+    } else {
+        quote! {
+            let _blueos_buddy_exclusion_guard = blueos::BUDDY_EXCLUSION.read();
+        }
+    };
 
     let test_body = if thread_count == 1 && repeat_count == 1 {
         quote! {
@@ -235,6 +246,7 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
             #[cfg(use_defmt)]
             use defmt::println as println;
             #( let _ = #param_names; )*
+            #exclusion_guard
             #ignore_guard
             #test_body
         }
@@ -246,6 +258,7 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct TestConfig {
     repeat_count: usize,
     thread_count: usize,
+    exclusive_buddy: bool,
 }
 
 fn parse_test_config(attr: TokenStream) -> Result<TestConfig, syn::Error> {
@@ -253,6 +266,7 @@ fn parse_test_config(attr: TokenStream) -> Result<TestConfig, syn::Error> {
         return Ok(TestConfig {
             repeat_count: 1,
             thread_count: 1,
+            exclusive_buddy: false,
         });
     }
 
@@ -261,9 +275,11 @@ fn parse_test_config(attr: TokenStream) -> Result<TestConfig, syn::Error> {
     let mut config = TestConfig {
         repeat_count: 1,
         thread_count: 1,
+        exclusive_buddy: false,
     };
     let mut seen_repeat = false;
     let mut seen_thread = false;
+    let mut seen_exclusive = false;
 
     for meta in metas {
         match meta {
@@ -287,10 +303,20 @@ fn parse_test_config(attr: TokenStream) -> Result<TestConfig, syn::Error> {
                 config.thread_count = parse_usize_attr(&name_value, "thread")?;
                 seen_thread = true;
             }
+            Meta::NameValue(name_value) if name_value.path.is_ident("exclusive") => {
+                if seen_exclusive {
+                    return Err(syn::Error::new_spanned(
+                        name_value,
+                        "`exclusive` can only be specified once",
+                    ));
+                }
+                config.exclusive_buddy = parse_exclusive_attr(&name_value)?;
+                seen_exclusive = true;
+            }
             other => {
                 return Err(syn::Error::new_spanned(
                     other,
-                    "unsupported test attribute, expected #[test(repeat = N, thread = M)]",
+                    "unsupported test attribute, expected #[test(repeat = N, thread = M, exclusive = \"buddy\")]",
                 ));
             }
         }
@@ -317,4 +343,25 @@ fn parse_usize_attr(name_value: &syn::MetaNameValue, name: &str) -> Result<usize
         ));
     }
     Ok(parsed)
+}
+
+fn parse_exclusive_attr(name_value: &syn::MetaNameValue) -> Result<bool, syn::Error> {
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(lit_str),
+        ..
+    }) = &name_value.value
+    else {
+        return Err(syn::Error::new_spanned(
+            name_value,
+            "`exclusive` expects a string literal",
+        ));
+    };
+
+    match lit_str.value().as_str() {
+        "buddy" => Ok(true),
+        _ => Err(syn::Error::new_spanned(
+            lit_str,
+            "unsupported exclusive test group, expected \"buddy\"",
+        )),
+    }
 }
