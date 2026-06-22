@@ -67,10 +67,13 @@ mod basic_tests {
 
     #[test]
     fn init_creates_valid_state() {
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         let info = BUDDY_ALLOC.memory_info();
         assert!(info.total_pages > 0);
         assert!(info.reserved_pages > 0);
         assert_page_conservation();
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
     }
 
     #[test]
@@ -159,6 +162,7 @@ mod split_coalesce_tests {
 
     #[test]
     fn split_on_demand() {
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         // Allocate order=1 (2 pages) — may trigger split from larger blocks
         let page = BUDDY_ALLOC
             .alloc_pages(1)
@@ -168,6 +172,8 @@ mod split_coalesce_tests {
         assert_page_conservation();
 
         unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
         assert_page_conservation();
     }
 
@@ -239,6 +245,7 @@ mod split_coalesce_tests {
 
     #[test]
     fn coalescing_clears_removed_buddy_head_metadata() {
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         let p1 = BUDDY_ALLOC.alloc_pages(0).expect("first page");
         let p2 = BUDDY_ALLOC.alloc_pages(0).expect("second page");
         let p1_pfn = unsafe { (*p1).pfn };
@@ -248,6 +255,8 @@ mod split_coalesce_tests {
         if p1_pfn ^ p2_pfn != 1 {
             unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 0) };
             unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 0) };
+            let after = BUDDY_ALLOC.memory_info().free_pages;
+            assert_eq!(after, before);
             return;
         }
 
@@ -262,6 +271,8 @@ mod split_coalesce_tests {
             "merged buddy head pfn={} must not remain marked free",
             removed_buddy_pfn
         );
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
         assert_page_conservation();
     }
 }
@@ -277,6 +288,7 @@ mod aligned_tests {
 
     #[test]
     fn alloc_aligned_basic() {
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         // Allocate 8KB (order=1) aligned to 16KB (align_order=2)
         let page = BUDDY_ALLOC
             .alloc_pages_aligned(1, 2)
@@ -291,6 +303,8 @@ mod aligned_tests {
         assert_page_conservation();
 
         unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
         assert_page_conservation();
     }
 
@@ -330,6 +344,7 @@ mod boundary_tests {
 
     #[test]
     fn alloc_max_order() {
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         // Try allocating the largest possible order
         let page = BUDDY_ALLOC.alloc_pages(MAX_ORDER);
         if page.is_some() {
@@ -337,6 +352,8 @@ mod boundary_tests {
             assert_eq!(addr & ((PAGE_SIZE << MAX_ORDER) - 1), 0);
             unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), MAX_ORDER) };
         }
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
         assert_page_conservation();
     }
 
@@ -347,9 +364,12 @@ mod boundary_tests {
 
     #[test]
     fn alloc_zero_pages() {
+        let before = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC.alloc_pages(0);
         assert!(page.is_some());
         unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), 0) };
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
     }
 }
 
