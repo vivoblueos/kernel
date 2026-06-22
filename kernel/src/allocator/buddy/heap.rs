@@ -224,14 +224,35 @@ impl BuddyAllocatorCore {
 
         current_page.flags.set(PageFlags::FREE);
         current_page.order = current_order as u8;
+        log::info!(
+            "free_pages: current block pfn={}, order={}",
+            current_page.pfn,
+            current_page.order
+        );
 
         while current_order < MAX_ORDER {
             let buddy_pfn = current_page.pfn ^ (1 << current_order);
+
+            log::info!(
+                "free_pages: buddy pfn={}, current_order={}",
+                buddy_pfn,
+                current_order
+            );
+
+            debug_assert!(
+                buddy_pfn >= self.start_pfn,
+                "free_pages: buddy pfn must not be in reserved range"
+            );
             if buddy_pfn >= self.end_pfn {
                 break;
             }
 
             let buddy = &mut *self.pfn_to_virt(buddy_pfn);
+            log::info!(
+                "free_pages: buddy is_free={}, order={}",
+                buddy.flags.contains(PageFlags::FREE),
+                buddy.order
+            );
 
             // A free buddy with a smaller order means this buddy range has been
             // split into smaller blocks: the page at buddy_pfn may be a free
@@ -243,7 +264,7 @@ impl BuddyAllocatorCore {
                 break;
             }
             debug_assert!(
-                (buddy.order as usize) <= current_order,
+                (buddy.order as usize) == current_order,
                 "free buddy cannot have a larger order than current block"
             );
 
@@ -278,12 +299,19 @@ impl BuddyAllocatorCore {
     /// Get memory statistics.
     pub fn memory_info(&self) -> BuddyMemoryInfo {
         let mut free_pages = 0;
+
         for order in 0..=MAX_ORDER {
             let mut count = 0;
             let mut node = self.free_lists[order].peek();
             while let Some(ptr) = node {
                 count += 1;
-                let next = unsafe { (*ptr).list.next };
+                let (pfn, next) = unsafe { ((*ptr).pfn, (*ptr).list.next) };
+                log::info!(
+                    "buddy free list block: order={}, pfn={}, phys={:#x}",
+                    order,
+                    pfn,
+                    self.pfn_to_phys(pfn)
+                );
                 node = if next.is_null() { None } else { Some(next) };
             }
             free_pages += count * (1 << order);
