@@ -56,6 +56,13 @@ fn assert_page_conservation() {
     );
 }
 
+#[cfg(test)]
+macro_rules! buddy_test_exclusive {
+    () => {
+        let _buddy_test_guard = BUDDY_ALLOC.test_exclusive();
+    };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Basic allocation / deallocation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +74,7 @@ mod basic_tests {
 
     #[test(exclusive = "buddy")]
     fn init_creates_valid_state() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let info = BUDDY_ALLOC.memory_info();
         assert!(info.total_pages > 0);
@@ -78,6 +86,7 @@ mod basic_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_single_page() {
+        buddy_test_exclusive!();
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC
             .alloc_pages(0)
@@ -97,6 +106,7 @@ mod basic_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_large_block() {
+        buddy_test_exclusive!();
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC
             .alloc_pages(2)
@@ -116,6 +126,7 @@ mod basic_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_returns_null_when_exhausted() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         // Exhaust all available pages
@@ -179,6 +190,7 @@ mod split_coalesce_tests {
 
     #[test(exclusive = "buddy")]
     fn split_on_demand() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         // Allocate order=1 (2 pages) — may trigger split from larger blocks
         let page = BUDDY_ALLOC
@@ -196,6 +208,7 @@ mod split_coalesce_tests {
 
     #[test(exclusive = "buddy")]
     fn coalesce_adjacent_buddies() {
+        buddy_test_exclusive!();
         let total_free = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         let mut buddies = None;
@@ -243,6 +256,7 @@ mod split_coalesce_tests {
 
     #[test(exclusive = "buddy")]
     fn coalesce_chain() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Allocate four order=0 pages that form two order=1 pairs
@@ -262,6 +276,7 @@ mod split_coalesce_tests {
 
     #[test(exclusive = "buddy")]
     fn coalescing_clears_removed_buddy_head_metadata() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let p1 = BUDDY_ALLOC.alloc_pages(0).expect("first page");
         let p2 = BUDDY_ALLOC.alloc_pages(0).expect("second page");
@@ -305,6 +320,7 @@ mod aligned_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_aligned_basic() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         // Allocate 8KB (order=1) aligned to 16KB (align_order=2)
         let page = BUDDY_ALLOC
@@ -327,6 +343,7 @@ mod aligned_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_aligned_does_not_leak() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         // Multiple aligned allocations
@@ -361,6 +378,7 @@ mod boundary_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_max_order() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         // Try allocating the largest possible order
         let page = BUDDY_ALLOC.alloc_pages(MAX_ORDER);
@@ -376,11 +394,13 @@ mod boundary_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_beyond_max_order_fails() {
+        buddy_test_exclusive!();
         assert!(BUDDY_ALLOC.alloc_pages(MAX_ORDER + 1).is_none());
     }
 
     #[test(exclusive = "buddy")]
     fn alloc_zero_pages() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let page = BUDDY_ALLOC.alloc_pages(0);
         assert!(page.is_some());
@@ -401,6 +421,7 @@ mod stress_tests {
 
     #[test(exclusive = "buddy")]
     fn random_alloc_free_sequence() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
 
         let mut allocated: Vec<(usize, usize)> = Vec::new();
@@ -426,6 +447,7 @@ mod stress_tests {
 
     #[test(exclusive = "buddy")]
     fn alloc_free_alloc_no_leak() {
+        buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
 
         // Allocate and free the same pattern multiple times
