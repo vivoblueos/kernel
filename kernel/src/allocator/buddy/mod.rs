@@ -72,7 +72,7 @@ mod basic_tests {
     use super::*;
     use blueos_test_macro::test;
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn init_creates_valid_state() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -84,7 +84,7 @@ mod basic_tests {
         assert_eq!(after, before);
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_single_page() {
         buddy_test_exclusive!();
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
@@ -104,7 +104,7 @@ mod basic_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_large_block() {
         buddy_test_exclusive!();
         let before_free = BUDDY_ALLOC.memory_info().free_pages;
@@ -124,7 +124,7 @@ mod basic_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_returns_null_when_exhausted() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -188,7 +188,7 @@ mod split_coalesce_tests {
     use super::*;
     use blueos_test_macro::test;
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn split_on_demand() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -206,7 +206,7 @@ mod split_coalesce_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn coalesce_adjacent_buddies() {
         buddy_test_exclusive!();
         let total_free = BUDDY_ALLOC.memory_info().free_pages;
@@ -254,7 +254,7 @@ mod split_coalesce_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn coalesce_chain() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -274,7 +274,7 @@ mod split_coalesce_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn coalescing_clears_removed_buddy_head_metadata() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -318,7 +318,7 @@ mod aligned_tests {
     use super::*;
     use blueos_test_macro::test;
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_aligned_basic() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -341,7 +341,7 @@ mod aligned_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_aligned_does_not_leak() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -376,7 +376,7 @@ mod boundary_tests {
     use super::*;
     use blueos_test_macro::test;
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_max_order() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -392,13 +392,13 @@ mod boundary_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_beyond_max_order_fails() {
         buddy_test_exclusive!();
         assert!(BUDDY_ALLOC.alloc_pages(MAX_ORDER + 1).is_none());
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_zero_pages() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -419,7 +419,7 @@ mod stress_tests {
     use super::*;
     use blueos_test_macro::test;
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn random_alloc_free_sequence() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;
@@ -445,7 +445,7 @@ mod stress_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn alloc_free_alloc_no_leak() {
         buddy_test_exclusive!();
         let before = BUDDY_ALLOC.memory_info().free_pages;

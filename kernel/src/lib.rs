@@ -95,11 +95,6 @@ macro_rules! debug {
 
 pub(crate) static TRACER: spin::Mutex<()> = spin::Mutex::new(());
 
-#[cfg(test)]
-extern crate self as blueos;
-
-pub static BUDDY_EXCLUSION: spin::RwLock<()> = spin::RwLock::new(());
-
 #[macro_export]
 macro_rules! trace {
     ($($tt:tt)*) => {{
