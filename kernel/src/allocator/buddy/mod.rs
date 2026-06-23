@@ -161,7 +161,7 @@ mod basic_tests {
         assert_page_conservation();
     }
 
-    #[test(exclusive = "buddy")]
+    #[test]
     fn test_exclusive_guard_is_reentrant_for_owner() {
         let _outer_guard = BUDDY_ALLOC.test_exclusive();
         let _inner_guard = BUDDY_ALLOC.test_exclusive();
