@@ -25,6 +25,48 @@ pub mod page;
 
 use heap::BuddyAllocator;
 
+// Physical memory layout of buddy allocator
+// ============================================================================
+//
+//   mem_start (e.g. 0x4000_0000)
+//   +-- kernel image (.text .rodata .data .bss)
+//   +-- __heap_start -- __heap_end (a small memory region reserved by link.x)
+//   |
+//   |    +--------------------------------------------------------------+
+//   |    |  struct Page[total_pages]  <-- page descriptor array         |
+//   |    |  each page 32-48 bytes, flags: FREE/RESERVED/order/refcount  |
+//   |    +--------------------------------------------------------------+
+//   |
+//   +--> start_pfn (first usable page after metadata)
+//        |
+//        |  Usable region is split into the largest possible buddy-aligned
+//        |  blocks (up to MAX_ORDER=11, 8 MB). The head page of each block
+//        |  has FREE=1 and its actual order; all other pages have FREE=0
+//        |  (invalid). The first block's order may be < MAX_ORDER if
+//        |  start_pfn is not aligned to a MAX_ORDER boundary.
+//        |
+//        |  +----------+  +----------+         +----------+  +----------+
+//        |  | pfn=N    |  | pfn=N+1  |  ...    | pfn=M    |  | pfn=M+1  |  ...
+//        |  | FREE=1   |  | FREE=0   |         | FREE=1   |  | FREE=0   |
+//        |  | order=11 |  | (invalid)|         | order=11 |  | (invalid)|
+//        |  +----------+  +----------+         +----------+  +----------+
+//        |       ^ chunk 0 head                     ^ chunk 1 head
+//        |
+//        |           ... all pages in between FREE=0 ...
+//        |
+//        |  +----------+         +----------+
+//        |  | pfn=P    |  ...    | pfn=end  |
+//        |  | FREE=1   |         | FREE=0   |
+//        |  | order=K  |         | (invalid)|
+//        |  +----------+         +----------+
+//        |       ^ last chunk head (order=K < 11 if size < 8 MB)
+//        |
+//        +--> each MAX_ORDER chunk spans 2048 pages; only the head page
+//             has valid flags.
+//
+//   mem_end (e.g. 0x4800_0000)
+// ============================================================================
+
 #[allow(non_snake_case)]
 mod BUDDY_ALLOC {
     use super::*;
