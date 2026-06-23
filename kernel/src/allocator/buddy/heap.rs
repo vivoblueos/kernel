@@ -171,7 +171,6 @@ impl BuddyAllocatorCore {
     /// `search_order` is the minimum free-list order to search from; it may be
     /// larger than `order` when extra alignment is required.
     fn alloc_pages_from(&mut self, order: usize, search_order: usize) -> Option<*mut Page> {
-
         if order > MAX_ORDER || search_order > MAX_ORDER {
             return None;
         }
