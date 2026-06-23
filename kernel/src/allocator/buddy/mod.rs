@@ -39,9 +39,6 @@ mod BUDDY_ALLOC {
 // 这里我们将 BUDDY_ALLOC 的 PTR 公开为 BUDDY_ALLOC，这样其他模块就可以通过 allocator::buddy::BUDDY_ALLOC 来访问全局的 BuddyAllocator 实例。
 pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 
-// 16 MiB test memory region — adjust based on test harness.
-const TEST_MEM_SIZE: usize = 16 * 1024 * 1024;
-
 #[cfg(test)]
 fn assert_page_conservation() {
     let info = BUDDY_ALLOC.memory_info();
