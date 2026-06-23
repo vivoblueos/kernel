@@ -19,6 +19,11 @@ use crate::{
 };
 use core::ptr;
 
+#[cfg(test)]
+use crate::scheduler;
+#[cfg(test)]
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 extern "C" {
     static mut _end: u8;
 }
@@ -373,12 +378,32 @@ impl BuddyAllocatorCore {
 /// All public methods are thread-safe — the lock is acquired internally.
 pub struct BuddyAllocator {
     inner: SpinLock<BuddyAllocatorCore>,
+    #[cfg(test)]
+    test_owner: AtomicUsize,
+    #[cfg(test)]
+    test_owner_depth: AtomicUsize,
+}
+
+#[cfg(test)]
+pub struct BuddyTestExclusiveGuard<'a> {
+    allocator: &'a BuddyAllocator,
+}
+
+#[cfg(test)]
+impl Drop for BuddyTestExclusiveGuard<'_> {
+    fn drop(&mut self) {
+        self.allocator.release_test_exclusive();
+    }
 }
 
 impl BuddyAllocator {
     pub const fn new() -> Self {
         BuddyAllocator {
             inner: SpinLock::new(BuddyAllocatorCore::new()),
+            #[cfg(test)]
+            test_owner: AtomicUsize::new(0),
+            #[cfg(test)]
+            test_owner_depth: AtomicUsize::new(0),
         }
     }
 
@@ -454,5 +479,66 @@ impl BuddyAllocator {
     pub fn memory_info(&self) -> BuddyMemoryInfo {
         let inner = self.inner.irqsave_lock();
         inner.memory_info()
+    }
+
+    #[cfg(test)]
+    pub fn test_exclusive(&self) -> BuddyTestExclusiveGuard<'_> {
+        self.acquire_test_exclusive();
+        BuddyTestExclusiveGuard { allocator: self }
+    }
+
+    #[cfg(test)]
+    fn acquire_test_exclusive(&self) {
+        let current = scheduler::current_thread_id();
+
+        loop {
+            let owner = self.test_owner.load(Ordering::Acquire);
+            if owner == current {
+                self.test_owner_depth.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+
+            if owner == 0
+                && self
+                    .test_owner
+                    .compare_exchange(0, current, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            {
+                self.test_owner_depth.store(1, Ordering::Release);
+                return;
+            }
+
+            core::hint::spin_loop();
+        }
+    }
+
+    #[cfg(test)]
+    fn release_test_exclusive(&self) {
+        let current = scheduler::current_thread_id();
+        debug_assert_eq!(self.test_owner.load(Ordering::Acquire), current);
+
+        let previous_depth = self.test_owner_depth.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous_depth > 0);
+
+        if previous_depth == 1 {
+            self.test_owner.store(0, Ordering::Release);
+        }
+    }
+
+    #[cfg(test)]
+    fn wait_for_test_access(&self) {
+        loop {
+            let owner = self.test_owner.load(Ordering::Acquire);
+            if owner == 0 {
+                return;
+            }
+
+            let current = scheduler::current_thread_id();
+            if owner == current {
+                return;
+            }
+
+            core::hint::spin_loop();
+        }
     }
 }
