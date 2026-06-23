@@ -251,10 +251,6 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
             #test_body
         }
     };
-    if std::env::var_os("BLUEOS_DUMP_TEST_MACRO").is_some() {
-        eprintln!("---- expanded test {} ----\n{}\n", test_name, expanded);
-    }
-
     expanded.into()
 }
 
