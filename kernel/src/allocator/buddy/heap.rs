@@ -351,8 +351,6 @@ impl BuddyAllocator {
     /// # Safety
     /// `phys_mem_start..phys_mem_end` must be valid, exclusively owned, writable physical memory.
     pub unsafe fn init(&self, phys_mem_start: usize, phys_mem_end: usize) {
-        #[cfg(test)]
-        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.init(phys_mem_start, phys_mem_end);
     }
