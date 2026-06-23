@@ -149,6 +149,23 @@ mod basic_tests {
         assert_eq!(after, before);
         assert_page_conservation();
     }
+
+    #[test(exclusive = "buddy")]
+    fn test_exclusive_guard_is_reentrant_for_owner() {
+        let _outer_guard = BUDDY_ALLOC.test_exclusive();
+        let _inner_guard = BUDDY_ALLOC.test_exclusive();
+
+        let before = BUDDY_ALLOC.memory_info().free_pages;
+        let page = BUDDY_ALLOC
+            .alloc_pages(0)
+            .expect("owner should allocate while holding nested guards");
+
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
+
+        let after = BUDDY_ALLOC.memory_info().free_pages;
+        assert_eq!(after, before);
+        assert_page_conservation();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
