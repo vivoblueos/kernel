@@ -162,11 +162,6 @@ impl BuddyAllocatorCore {
 
     /// Allocate `2^order` contiguous physical pages aligned to `2^align_order` pages.
     pub fn alloc_pages_aligned(&mut self, order: usize, align_order: usize) -> Option<*mut Page> {
-        log::info!(
-            "alloc_pages_aligned: order={}, align_order={}",
-            order,
-            align_order
-        );
         self.alloc_pages_from(order, order.max(align_order))
     }
 
@@ -176,12 +171,6 @@ impl BuddyAllocatorCore {
     /// `search_order` is the minimum free-list order to search from; it may be
     /// larger than `order` when extra alignment is required.
     fn alloc_pages_from(&mut self, order: usize, search_order: usize) -> Option<*mut Page> {
-
-        log::info!(
-            "alloc_pages_from: order={} or search_order={}",
-            order,
-            search_order
-        );
 
         if order > MAX_ORDER || search_order > MAX_ORDER {
             return None;
@@ -194,11 +183,6 @@ impl BuddyAllocatorCore {
             };
             let mut current_order = o;
 
-            log::info!(
-                "alloc_pages_from: current_order={}",
-                current_order
-            );
-
             debug_assert!(unsafe { (*page_ptr).flags.contains(PageFlags::FREE) });
 
             while current_order > order {
@@ -208,12 +192,6 @@ impl BuddyAllocatorCore {
                 let buddy = unsafe { &mut *self.pfn_to_virt(buddy_pfn) };
                 buddy.flags.set(PageFlags::FREE);
                 buddy.order = current_order as u8;
-
-                log::info!(
-                    "alloc_pages_from: buddy_pfn={}",
-                    buddy_pfn
-                );
-
                 unsafe {
                     self.free_lists[current_order].push(buddy);
                 }
@@ -224,12 +202,6 @@ impl BuddyAllocatorCore {
             let page = unsafe { &mut *page_ptr };
             page.flags.clear(PageFlags::FREE);
             page.order = order as u8;
-
-            log::info!(
-                "alloc_pages_from exit: page pfn={}, order={}",
-                page.pfn,
-                page.order
-            );
 
             return Some(page_ptr);
         }
@@ -262,31 +234,15 @@ impl BuddyAllocatorCore {
 
         current_page.flags.set(PageFlags::FREE);
         current_page.order = current_order as u8;
-        log::info!(
-            "free_pages: current block pfn={}, order={}",
-            current_page.pfn,
-            current_page.order
-        );
 
         while current_order < MAX_ORDER {
             let buddy_pfn = current_page.pfn ^ (1 << current_order);
-
-            log::info!(
-                "free_pages: buddy pfn={}, current_order={}",
-                buddy_pfn,
-                current_order
-            );
 
             if buddy_pfn >= self.end_pfn || buddy_pfn < self.start_pfn {
                 break;
             }
 
             let buddy = &mut *self.pfn_to_virt(buddy_pfn);
-            log::info!(
-                "free_pages: buddy is_free={}, order={}",
-                buddy.flags.contains(PageFlags::FREE),
-                buddy.order
-            );
 
             // A free buddy with a smaller order means this buddy range has been
             // split into smaller blocks: the page at buddy_pfn may be a free
@@ -302,11 +258,6 @@ impl BuddyAllocatorCore {
                 "free buddy cannot have a larger order than current block"
             );
 
-            log::info!(
-                "free_pages: remove buddy from free_lists, buddy_pfn={}, order={}",
-                buddy_pfn,
-                current_order
-            );
             self.free_lists[current_order].remove(buddy);
 
             if buddy_pfn < current_page.pfn {
@@ -321,11 +272,6 @@ impl BuddyAllocatorCore {
             current_page.order = current_order as u8;
         }
 
-        log::info!(
-            "free_pages: push block to free_lists, pfn={}, order={}",
-            current_page.pfn,
-            current_order
-        );
         self.free_lists[current_order].push(current_page);
     }
 
@@ -350,12 +296,6 @@ impl BuddyAllocatorCore {
             while let Some(ptr) = node {
                 count += 1;
                 let (pfn, next) = unsafe { ((*ptr).pfn, (*ptr).list.next) };
-                log::info!(
-                    "buddy free list block: order={}, pfn={}, phys={:#x}",
-                    order,
-                    pfn,
-                    self.pfn_to_phys(pfn)
-                );
                 node = if next.is_null() { None } else { Some(next) };
             }
             free_pages += count * (1 << order);
@@ -431,11 +371,6 @@ impl BuddyAllocator {
         #[cfg(test)]
         self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
-        log::info!(
-            "alloc_pages_aligned: order={}, align_order={}",
-            order,
-            align_order
-        );
         inner.alloc_pages_aligned(order, align_order)
     }
 
