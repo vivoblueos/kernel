@@ -92,7 +92,7 @@ impl BuddyAllocatorCore {
     pub unsafe fn init(&mut self, phys_mem_start: usize, phys_mem_end: usize) {
         self.base_addr = phys_mem_start;
         self.total_pages = (phys_mem_end - phys_mem_start) >> PAGE_SHIFT;
-        self.end_pfn = self.total_pages; // 数组上 end_pfn 不可用
+        self.end_pfn = self.total_pages; // end_pfn is unavailable as an array index
 
         // Reserve space for struct Page[total_pages] after the kernel image and static heap.
         let virt_mem_start = kernel_phys_to_virt(phys_mem_start);
@@ -107,12 +107,12 @@ impl BuddyAllocatorCore {
         let virt_metadata_end = crate::support::align_up_size(virt_page_array_end, PAGE_SIZE);
         let phys_metadata_end = kernel_virt_to_phys(virt_metadata_end);
         assert!(phys_metadata_end <= phys_mem_end);
-        // start_pfn 指的是第一个可用的物理页的 pfn，因此它是 metadata 结束后的第一个页的 pfn。
+        // start_pfn is the pfn of the first available physical page, right after the metadata.
         self.start_pfn = (phys_metadata_end - phys_mem_start) >> PAGE_SHIFT;
 
         // Zero the entire page descriptor array / struct Page array.
         core::ptr::write_bytes(virt_page_array_start as *mut u8, 0, page_array_size);
-        // 把 pages 指针指向这个数组的起始位置，后续通过 pfn 索引访问对应的 Page 结构体。
+        // Point pages to the start of this array, used to access the corresponding Page struct by pfn index.
         self.pages = virt_page_array_start as *mut Page;
 
         // Initialize each page descriptor / struct Page.

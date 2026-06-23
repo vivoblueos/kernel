@@ -29,14 +29,14 @@ use heap::BuddyAllocator;
 mod BUDDY_ALLOC {
     use super::*;
 
-    // ArcInner 包含堆上内存（BuddyAllocator）和引用计数，这是一个不可变引用
+    // ArcInner contains heap memory (BuddyAllocator) and a reference count, this is an immutable reference
     static CTRL_BLOCK: ArcInner<BuddyAllocator> = ArcInner::new(BuddyAllocator::new());
-    // 用 Arc 包含这个 ArcInner，形成一个全局可访问的 Arc<BuddyAllocator>，并且在编译时初始化
+    // Wrap ArcInner with Arc to form a globally accessible Arc<BuddyAllocator>, initialized at compile time
     pub(in crate::allocator) static PTR: Arc<BuddyAllocator> =
         unsafe { Arc::from_static_inner_ref(&CTRL_BLOCK) };
 }
 
-// 这里我们将 BUDDY_ALLOC 的 PTR 公开为 BUDDY_ALLOC，这样其他模块就可以通过 allocator::buddy::BUDDY_ALLOC 来访问全局的 BuddyAllocator 实例。
+// Expose BUDDY_ALLOC's PTR as BUDDY_ALLOC so other modules can access the global BuddyAllocator instance via allocator::buddy::BUDDY_ALLOC.
 pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 
 #[cfg(test)]
