@@ -78,7 +78,7 @@ fn to_ticks(timeout: *const timespec) -> Option<Tick> {
         return None;
     }
     let ts = unsafe { &*timeout };
-    let ms = ts.tv_sec * 1000 + ts.tv_nsec / 1_000_000;
+    let ms = ts.tv_sec * 1000 + (ts.tv_nsec as i64) / 1_000_000;
     if ms < 0 {
         return Some(Tick(0));
     }
