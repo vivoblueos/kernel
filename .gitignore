@@ -1,7 +1,6 @@
 # Build artifacts
 out/
 target/
-.worktrees/
 
 # Config files
 *.config
