@@ -58,6 +58,7 @@ static_arc! {
 }
 
 unsafe impl GlobalAlloc for KernelAllocator {
+    // TODO: support slab requesting pages from buddy as memory pool
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         #[cfg(buddy_allocator)]
         {
@@ -74,6 +75,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
     }
 
+    // TODO: support slab releasing pages back to buddy memory pool
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         #[cfg(buddy_allocator)]
         {
@@ -93,6 +95,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
         HEAP.dealloc(ptr, layout);
     }
 
+    // TODO: support slab reallocating pages from buddy as memory pool
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         #[cfg(buddy_allocator)]
         {
@@ -193,6 +196,8 @@ impl KernelAllocator {
 /// The physical memory range is currently hard-coded per board via
 /// `PHYS_DRAM_BASE` and `PHYS_DRAM_SIZE`. This should be replaced with
 /// FDT/DTB dynamic detection in a future update.
+///
+/// TODO: support slab initialization based on buddy allocator
 pub fn init_heap(start: *mut u8, end: *mut u8) {
     #[cfg(buddy_allocator)]
     {
