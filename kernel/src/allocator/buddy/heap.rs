@@ -412,18 +412,24 @@ impl BuddyAllocator {
     /// # Safety
     /// `phys_mem_start..phys_mem_end` must be valid, exclusively owned, writable physical memory.
     pub unsafe fn init(&self, phys_mem_start: usize, phys_mem_end: usize) {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.init(phys_mem_start, phys_mem_end);
     }
 
     /// Allocate `2^order` contiguous physical pages.
     pub fn alloc_pages(&self, order: usize) -> Option<*mut Page> {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.alloc_pages(order)
     }
 
     /// Allocate `2^order` contiguous physical pages aligned to `2^align_order` pages.
     pub fn alloc_pages_aligned(&self, order: usize, align_order: usize) -> Option<*mut Page> {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         log::info!(
             "alloc_pages_aligned: order={}, align_order={}",
@@ -435,6 +441,8 @@ impl BuddyAllocator {
 
     /// Allocate pages and return the physical address.
     pub fn alloc_pages_phys_addr(&self, order: usize) -> Option<usize> {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.alloc_pages(order).map(|p| {
             let pfn = unsafe { (*p).pfn };
@@ -447,6 +455,8 @@ impl BuddyAllocator {
     /// # Safety
     /// `page` must be the head of an allocated block of the given `order`.
     pub unsafe fn free_pages(&self, page: &mut Page, order: usize) {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.free_pages(page, order);
     }
@@ -456,6 +466,8 @@ impl BuddyAllocator {
     /// # Safety
     /// `pfn` must be the head of an allocated block of the given `order`.
     pub unsafe fn free_pages_pfn(&self, pfn: usize, order: usize) {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         let page = &mut *inner.pfn_to_virt(pfn);
         inner.free_pages(page, order);
@@ -465,18 +477,24 @@ impl BuddyAllocator {
     ///
     /// Returns a mutable pointer to the `Page` descriptor for the given `pfn`.
     pub fn pfn_to_virt(&self, pfn: usize) -> *mut Page {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.pfn_to_virt(pfn)
     }
 
     /// Convert pfn to physical address.
     pub fn pfn_to_phys(&self, pfn: usize) -> usize {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         inner.pfn_to_phys(pfn)
     }
 
     /// Get memory statistics.
     pub fn memory_info(&self) -> BuddyMemoryInfo {
+        #[cfg(test)]
+        self.wait_for_test_access();
         let inner = self.inner.irqsave_lock();
         inner.memory_info()
     }
