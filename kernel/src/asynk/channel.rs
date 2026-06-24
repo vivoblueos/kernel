@@ -41,8 +41,9 @@ use crate::{
 };
 use alloc::sync::Arc as AllocArc;
 use core::{
-    cell::UnsafeCell,
+    cell::{Cell, UnsafeCell},
     future::Future,
+    marker::PhantomData,
     mem::MaybeUninit,
     pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
@@ -287,7 +288,10 @@ impl<T, const N: usize> AsyncChannel<T, N> {
             Sender {
                 inner: inner.clone(),
             },
-            Receiver { inner },
+            Receiver {
+                inner,
+                _not_sync: PhantomData,
+            },
         )
     }
 }
@@ -297,6 +301,10 @@ impl<T, const N: usize> AsyncChannel<T, N> {
 // ---------------------------------------------------------------------------
 
 /// The producing half of an `AsyncChannel`.
+///
+/// FIXME: `Sender` is currently `Sync` because C API callbacks keep a shared
+/// handle to it. Callers must still uphold the SPSC invariant and ensure only
+/// one execution context accesses the sender at a time.
 pub struct Sender<T, const N: usize> {
     inner: AllocArc<ChanInner<T, N>>,
 }
@@ -365,6 +373,7 @@ impl<T, const N: usize> Drop for Sender<T, N> {
 /// The consuming half of an `AsyncChannel`.
 pub struct Receiver<T, const N: usize> {
     inner: AllocArc<ChanInner<T, N>>,
+    _not_sync: PhantomData<Cell<()>>,
 }
 
 impl<T, const N: usize> core::fmt::Debug for Receiver<T, N> {
