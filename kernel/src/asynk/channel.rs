@@ -19,7 +19,7 @@
 //!
 //! # Integration with asynk
 //!
-//!     let (tx, rx) = channel::<Message, 16>();
+//!     let (mut tx, mut rx) = channel::<Message, 16>();
 //!     asynk::spawn(async move {
 //!         tx.send(msg).await;
 //!     });
@@ -303,8 +303,9 @@ impl<T, const N: usize> AsyncChannel<T, N> {
 /// The producing half of an `AsyncChannel`.
 ///
 /// FIXME: `Sender` is currently `Sync` because C API callbacks keep a shared
-/// handle to it. Callers must still uphold the SPSC invariant and ensure only
-/// one execution context accesses the sender at a time.
+/// handle to it. The synchronous entry points are caller-synchronized and
+/// must still uphold the SPSC invariant by ensuring only one execution
+/// context accesses the sender at a time.
 pub struct Sender<T, const N: usize> {
     inner: AllocArc<ChanInner<T, N>>,
 }
@@ -322,7 +323,7 @@ impl<T, const N: usize> Sender<T, N> {
     }
 
     /// Async send: await until space is available.
-    pub fn send(&self, val: T) -> SendFuture<'_, T, N> {
+    pub fn send(&mut self, val: T) -> SendFuture<'_, T, N> {
         SendFuture {
             inner: &self.inner,
             item: MaybeUninit::new(val),
@@ -384,17 +385,17 @@ impl<T, const N: usize> core::fmt::Debug for Receiver<T, N> {
 
 impl<T, const N: usize> Receiver<T, N> {
     /// Non-blocking recv.
-    pub fn try_recv(&self) -> Result<T, TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         self.inner.try_recv().map_err(|()| TryRecvError)
     }
 
     /// Async recv: await until data is available.
-    pub fn recv(&self) -> RecvFuture<'_, T, N> {
+    pub fn recv(&mut self) -> RecvFuture<'_, T, N> {
         RecvFuture { inner: &self.inner }
     }
 
     /// Blocking recv (via `atomic_wait`).
-    pub fn recv_blocking(&self) -> Result<T, RecvError> {
+    pub fn recv_blocking(&mut self) -> Result<T, RecvError> {
         loop {
             if self.inner.is_disconnected() && self.inner.is_empty() {
                 return Err(RecvError);
@@ -568,7 +569,7 @@ mod tests {
     #[test]
     fn test_try_send_recv() {
         const CAP: usize = 4;
-        let (tx, rx) = channel::<u32, CAP>();
+        let (tx, mut rx) = channel::<u32, CAP>();
 
         for i in 0..CAP {
             assert!(tx.try_send(i as u32).is_ok());
@@ -586,7 +587,7 @@ mod tests {
     #[test]
     fn test_send_blocking_recv_blocking() {
         const CAP: usize = 8;
-        let (tx, rx) = channel::<u64, CAP>();
+        let (tx, mut rx) = channel::<u64, CAP>();
 
         for i in 0..CAP {
             tx.send_blocking(i as u64).unwrap();
@@ -600,7 +601,7 @@ mod tests {
     /// Drop sender: receiver can drain remaining items, then gets error.
     #[test]
     fn test_disconnect_sender() {
-        let (tx, rx) = channel::<u32, 4>();
+        let (tx, mut rx) = channel::<u32, 4>();
         tx.try_send(10).unwrap();
         tx.try_send(20).unwrap();
 
@@ -625,7 +626,7 @@ mod tests {
     #[test]
     fn test_async_send_recv() {
         const CAP: usize = 4;
-        let (tx, rx) = channel::<u32, CAP>();
+        let (mut tx, mut rx) = channel::<u32, CAP>();
 
         for i in 0..CAP {
             tx.send_blocking(i as u32).unwrap();
@@ -650,7 +651,7 @@ mod tests {
     /// Async recv after sender drops.
     #[test]
     fn test_async_disconnect() {
-        let (tx, rx) = channel::<u32, 4>();
+        let (tx, mut rx) = channel::<u32, 4>();
         tx.send_blocking(100).unwrap();
         tx.send_blocking(200).unwrap();
         drop(tx);
@@ -667,7 +668,7 @@ mod tests {
     /// Explicit close via sender.
     #[test]
     fn test_sender_close() {
-        let (tx, rx) = channel::<u32, 4>();
+        let (tx, mut rx) = channel::<u32, 4>();
         tx.try_send(77).unwrap();
         tx.close();
 
@@ -688,7 +689,7 @@ mod tests {
     #[test]
     fn test_wrap_around() {
         const CAP: usize = 4;
-        let (tx, rx) = channel::<i32, CAP>();
+        let (tx, mut rx) = channel::<i32, CAP>();
 
         for cycle in 0..8 {
             for i in 0..CAP {
