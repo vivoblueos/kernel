@@ -408,13 +408,6 @@ impl<T, const N: usize> Drop for Receiver<T, N> {
     }
 }
 
-impl<T, const N: usize> Clone for Receiver<T, N> {
-    fn clone(&self) -> Self {
-        // SPSC: cloning receiver breaks the protocol. Panic to signal misuse.
-        panic!("Receiver::clone() called on an SPSC channel (only one consumer allowed)");
-    }
-}
-
 // ---------------------------------------------------------------------------
 // SendFuture
 // ---------------------------------------------------------------------------
