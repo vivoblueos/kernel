@@ -122,7 +122,16 @@ impl<T, const N: usize> core::fmt::Debug for ChanInner<T, N> {
 }
 
 unsafe impl<T: Send, const N: usize> Send for ChanInner<T, N> {}
-unsafe impl<T: Send + Sync, const N: usize> Sync for ChanInner<T, N> {}
+
+// SAFETY: `ChanInner` is shared by exactly one `Sender` and one `Receiver`.
+// The producer is the only writer of `head` and the only initializer of empty
+// slots; the consumer is the only writer of `tail` and the only reader that
+// moves initialized values out. The release/acquire ordering on `head` and
+// `tail` publishes slot initialization before receive and slot reclamation
+// before reuse. No shared references to `T` are ever exposed, so `T: Sync` is
+// not required; `T: Send` is enough because values are transferred by ownership
+// between execution contexts.
+unsafe impl<T: Send, const N: usize> Sync for ChanInner<T, N> {}
 
 impl<T, const N: usize> ChanInner<T, N> {
     const fn new() -> Self {
