@@ -278,7 +278,6 @@ impl<T, const N: usize> AsyncChannel<T, N> {
 // ---------------------------------------------------------------------------
 
 /// The producing half of an `AsyncChannel`.
-#[derive(Clone)]
 pub struct Sender<T, const N: usize> {
     inner: AllocArc<ChanInner<T, N>>,
 }
