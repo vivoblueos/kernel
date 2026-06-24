@@ -327,7 +327,7 @@ impl<T, const N: usize> Sender<T, N> {
         SendFuture {
             inner: &self.inner,
             item: MaybeUninit::new(val),
-            done: false,
+            result: None,
         }
     }
 
@@ -391,10 +391,18 @@ impl<T, const N: usize> Receiver<T, N> {
 
     /// Async recv: await until data is available.
     pub fn recv(&mut self) -> RecvFuture<'_, T, N> {
-        RecvFuture { inner: &self.inner }
+        RecvFuture {
+            inner: &self.inner,
+            done: false,
+        }
     }
 
     /// Blocking recv (via `atomic_wait`).
+    ///
+    /// If close races with send, observing `disconnected && empty` is terminal:
+    /// this receiver may return `RecvError` even if a racing sender later
+    /// publishes a value after it had already observed the channel as connected.
+    /// Such late values are not guaranteed to be received.
     pub fn recv_blocking(&mut self) -> Result<T, RecvError> {
         loop {
             if self.inner.is_disconnected() && self.inner.is_empty() {
@@ -437,7 +445,7 @@ impl<T, const N: usize> Drop for Receiver<T, N> {
 pub struct SendFuture<'a, T, const N: usize> {
     inner: &'a ChanInner<T, N>,
     item: MaybeUninit<T>,
-    done: bool,
+    result: Option<Result<(), SendError>>,
 }
 
 impl<T, const N: usize> Future for SendFuture<'_, T, N> {
@@ -445,18 +453,18 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        if this.done {
-            return Poll::Ready(Ok(()));
+        if let Some(result) = this.result {
+            return Poll::Ready(result);
         }
         if this.inner.is_disconnected() {
             unsafe { this.item.assume_init_drop() };
-            this.done = true;
+            this.result = Some(Err(SendError));
             return Poll::Ready(Err(SendError));
         }
         let val = unsafe { this.item.assume_init_read() };
         match this.inner.try_send(val) {
             Ok(()) => {
-                this.done = true;
+                this.result = Some(Ok(()));
                 Poll::Ready(Ok(()))
             }
             Err(val) => {
@@ -466,7 +474,7 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
                 if this.inner.is_disconnected() {
                     this.inner.send_waker.lock().take();
                     unsafe { this.item.assume_init_drop() };
-                    this.done = true;
+                    this.result = Some(Err(SendError));
                     return Poll::Ready(Err(SendError));
                 }
 
@@ -474,7 +482,7 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
                 match this.inner.try_send(val) {
                     Ok(()) => {
                         this.inner.send_waker.lock().take();
-                        this.done = true;
+                        this.result = Some(Ok(()));
                         Poll::Ready(Ok(()))
                     }
                     Err(val) => {
@@ -482,7 +490,7 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
                         if this.inner.is_disconnected() {
                             this.inner.send_waker.lock().take();
                             unsafe { this.item.assume_init_drop() };
-                            this.done = true;
+                            this.result = Some(Err(SendError));
                             Poll::Ready(Err(SendError))
                         } else {
                             Poll::Pending
@@ -496,7 +504,8 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
 
 impl<T, const N: usize> Drop for SendFuture<'_, T, N> {
     fn drop(&mut self) {
-        if !self.done {
+        if self.result.is_none() {
+            self.inner.send_waker.lock().take();
             unsafe { self.item.assume_init_drop() };
         }
     }
@@ -507,32 +516,49 @@ impl<T, const N: usize> Drop for SendFuture<'_, T, N> {
 // ---------------------------------------------------------------------------
 
 /// Future yielded by [`Receiver::recv`].
+///
+/// If close races with send, observing `disconnected && empty` is terminal:
+/// this future may resolve to `RecvError` even if a racing sender later
+/// publishes a value after it had already observed the channel as connected.
+/// Such late values are not guaranteed to be received.
 #[must_use = "futures do nothing unless polled"]
 pub struct RecvFuture<'a, T, const N: usize> {
     inner: &'a ChanInner<T, N>,
+    done: bool,
 }
 
 impl<T, const N: usize> Future for RecvFuture<'_, T, N> {
     type Output = Result<T, RecvError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.inner.is_disconnected() && self.inner.is_empty() {
+        let this = unsafe { self.get_unchecked_mut() };
+        if this.done {
             return Poll::Ready(Err(RecvError));
         }
-        match self.inner.try_recv() {
-            Ok(val) => Poll::Ready(Ok(val)),
+        if this.inner.is_disconnected() && this.inner.is_empty() {
+            this.done = true;
+            return Poll::Ready(Err(RecvError));
+        }
+        match this.inner.try_recv() {
+            Ok(val) => {
+                this.done = true;
+                Poll::Ready(Ok(val))
+            }
             Err(()) => {
                 // Buffer empty — register waker.
-                *self.inner.recv_waker.lock() = Some(cx.waker().clone());
+                *this.inner.recv_waker.lock() = Some(cx.waker().clone());
                 // Re-check to avoid lost wakeup.
-                match self.inner.try_recv() {
+                match this.inner.try_recv() {
                     Ok(val) => {
                         // Waker was stored but we got data — clean up.
-                        self.inner.recv_waker.lock().take();
+                        this.inner.recv_waker.lock().take();
+                        this.done = true;
                         Poll::Ready(Ok(val))
                     }
                     Err(()) => {
-                        if self.inner.is_disconnected() && self.inner.is_empty() {
+                        if this.inner.is_disconnected() && this.inner.is_empty() {
+                            this.inner.recv_waker.lock().take();
+                            this.done = true;
                             Poll::Ready(Err(RecvError))
                         } else {
                             Poll::Pending
@@ -540,6 +566,14 @@ impl<T, const N: usize> Future for RecvFuture<'_, T, N> {
                     }
                 }
             }
+        }
+    }
+}
+
+impl<T, const N: usize> Drop for RecvFuture<'_, T, N> {
+    fn drop(&mut self) {
+        if !self.done {
+            self.inner.recv_waker.lock().take();
         }
     }
 }
