@@ -315,7 +315,7 @@ impl<T, const N: usize> core::fmt::Debug for Sender<T, N> {
 
 impl<T, const N: usize> Sender<T, N> {
     /// Non-blocking send.
-    pub fn try_send(&self, val: T) -> Result<(), TrySendError<T>> {
+    pub fn try_send(&mut self, val: T) -> Result<(), TrySendError<T>> {
         self.inner.try_send(val).map_err(TrySendError)
     }
 
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn test_try_send_recv() {
         const CAP: usize = 4;
-        let (tx, mut rx) = channel::<u32, CAP>();
+        let (mut tx, mut rx) = channel::<u32, CAP>();
 
         for i in 0..CAP {
             assert!(tx.try_send(i as u32).is_ok());
@@ -632,7 +632,7 @@ mod tests {
     /// Drop sender: receiver can drain remaining items, then gets error.
     #[test]
     fn test_disconnect_sender() {
-        let (tx, mut rx) = channel::<u32, 4>();
+        let (mut tx, mut rx) = channel::<u32, 4>();
         tx.try_send(10).unwrap();
         tx.try_send(20).unwrap();
 
@@ -647,7 +647,7 @@ mod tests {
     /// Drop receiver: sender gets error.
     #[test]
     fn test_disconnect_receiver() {
-        let (tx, rx) = channel::<u32, 4>();
+        let (mut tx, rx) = channel::<u32, 4>();
         drop(rx);
         assert!(tx.send_blocking(42).is_err());
         assert!(tx.try_send(42).is_err());
@@ -699,7 +699,7 @@ mod tests {
     /// Explicit close via sender.
     #[test]
     fn test_sender_close() {
-        let (tx, mut rx) = channel::<u32, 4>();
+        let (mut tx, mut rx) = channel::<u32, 4>();
         tx.try_send(77).unwrap();
         tx.close();
 
@@ -736,7 +736,7 @@ mod tests {
     /// After disconnect, try_send returns the original value.
     #[test]
     fn test_send_after_disconnect() {
-        let (tx, rx) = channel::<u32, 4>();
+        let (mut tx, rx) = channel::<u32, 4>();
         drop(rx);
 
         let err = tx.try_send(7).unwrap_err();
