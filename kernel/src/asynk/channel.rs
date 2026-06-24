@@ -177,7 +177,17 @@ impl<T, const N: usize> ChanInner<T, N> {
         self.len() >= N
     }
 
-    /// Attempt a send. Returns `Err(val)` if full or disconnected.
+    /// Attempt a send. Returns `Err(val)` if full or already disconnected.
+    ///
+    /// A concurrent close is allowed to race with send. Once this function has
+    /// observed the channel as connected and reserved space, it may still
+    /// publish the value even if the other half disconnects before the `head`
+    /// update. This keeps the SPSC fast path to atomic loads/stores only.
+    /// Enforcing a stronger "no send succeeds after close starts" guarantee
+    /// would require serializing send and close with a lock, folding the close
+    /// bit into a CAS-updated queue state, or supporting rollback after a slot
+    /// write; those options add fast-path synchronization cost and complicate
+    /// slot ownership/drop handling.
     pub(crate) fn try_send(&self, val: T) -> Result<(), T> {
         if self.is_disconnected() {
             return Err(val);
