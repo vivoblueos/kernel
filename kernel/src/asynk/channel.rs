@@ -122,7 +122,7 @@ impl<T, const N: usize> core::fmt::Debug for ChanInner<T, N> {
 }
 
 unsafe impl<T: Send, const N: usize> Send for ChanInner<T, N> {}
-unsafe impl<T: Send, const N: usize> Sync for ChanInner<T, N> {}
+unsafe impl<T: Send + Sync, const N: usize> Sync for ChanInner<T, N> {}
 
 impl<T, const N: usize> ChanInner<T, N> {
     const fn new() -> Self {
