@@ -429,6 +429,7 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
             return Poll::Ready(Ok(()));
         }
         if this.inner.is_disconnected() {
+            unsafe { this.item.assume_init_drop() };
             this.done = true;
             return Poll::Ready(Err(SendError));
         }
@@ -441,7 +442,33 @@ impl<T, const N: usize> Future for SendFuture<'_, T, N> {
             Err(val) => {
                 this.item.write(val);
                 *this.inner.send_waker.lock() = Some(cx.waker().clone());
-                Poll::Pending
+
+                if this.inner.is_disconnected() {
+                    this.inner.send_waker.lock().take();
+                    unsafe { this.item.assume_init_drop() };
+                    this.done = true;
+                    return Poll::Ready(Err(SendError));
+                }
+
+                let val = unsafe { this.item.assume_init_read() };
+                match this.inner.try_send(val) {
+                    Ok(()) => {
+                        this.inner.send_waker.lock().take();
+                        this.done = true;
+                        Poll::Ready(Ok(()))
+                    }
+                    Err(val) => {
+                        this.item.write(val);
+                        if this.inner.is_disconnected() {
+                            this.inner.send_waker.lock().take();
+                            unsafe { this.item.assume_init_drop() };
+                            this.done = true;
+                            Poll::Ready(Err(SendError))
+                        } else {
+                            Poll::Pending
+                        }
+                    }
+                }
             }
         }
     }
