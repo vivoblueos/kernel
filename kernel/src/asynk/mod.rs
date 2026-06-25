@@ -15,6 +15,7 @@
 // Asynk contains a simple executor, however runs fast.
 
 extern crate alloc;
+pub(crate) mod channel;
 use crate::{
     config::MAX_THREAD_PRIORITY,
     scheduler,
