@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::SlabHeap as Slab;
-use crate::{allocator::MemoryInfo, sync::spinlock::SpinLock};
+use crate::sync::spinlock::SpinLock;
+use allocator_crate::{slab::SlabHeap as Slab, MemoryInfo};
 use core::{alloc::Layout, ptr::NonNull};
 
 pub type Heap = SlabHeap<2, 4, 2, 1, 1, 1, 1, 1, 1, 1>;
@@ -160,7 +160,7 @@ impl<
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(allocator = "slab_dynamic")]
-use super::DynamicSlabHeap as DynHeap;
+use allocator_crate::slab::DynamicSlabHeap as DynHeap;
 
 #[cfg(allocator = "slab_dynamic")]
 pub struct DynamicSlabHeap {
@@ -225,9 +225,9 @@ impl DynamicSlabHeap {
         heap.reallocate_unknown_align(NonNull::new_unchecked(ptr), new_size)
     }
 
-    pub fn memory_info(&self) -> crate::allocator::MemoryInfo {
+    pub fn memory_info(&self) -> allocator_crate::MemoryInfo {
         let heap = self.heap.irqsave_lock();
-        crate::allocator::MemoryInfo {
+        allocator_crate::MemoryInfo {
             total: heap.total(),
             used: heap.allocated(),
             max_used: heap.maximum(),

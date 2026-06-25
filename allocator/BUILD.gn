@@ -15,9 +15,17 @@
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 
-build_rust("core_traits") {
+build_rust("allocator_crate") {
   crate_type = "rlib"
+  crate_name = "allocator_crate"
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  deps = []
+  deps = [
+    "//external/vendor/const-default-1.0.0:const_default",
+    "//external/vendor/log-0.4.28:log",
+    "//kernel/infra:blueos_infra",
+    "//kernel/kconfig:blueos_kconfig",
+    "//kernel/kconfig:generate_rustflags_file",
+  ]
+  configs += [ "//kernel/kconfig:kconfigs" ]
 }
