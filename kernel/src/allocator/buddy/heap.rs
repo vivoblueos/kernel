@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::page::{LinkedList, Page, PageFlags, MAX_ORDER, PAGE_SHIFT, PAGE_SIZE};
+use super::page::{Page, PageFlags, PageListNodeAdapter, MAX_ORDER, PAGE_SHIFT, PAGE_SIZE};
 use crate::{
     mm::{kernel_phys_to_virt, kernel_virt_to_phys},
     sync::spinlock::SpinLock,
+    types::{Ilist, IlistHead},
 };
 use core::ptr;
 
@@ -51,7 +52,7 @@ pub struct BuddyMemoryInfo {
 /// Core buddy allocator state (protected by `SpinLock` in [`BuddyAllocator`]).
 pub struct BuddyAllocatorCore {
     /// Free page block list heads for each order.
-    free_lists: [LinkedList; MAX_ORDER + 1],
+    free_lists: [Ilist<Page, PageListNodeAdapter>; MAX_ORDER + 1],
     /// Total number of physical pages.
     total_pages: usize,
     /// First available pfn (after metadata region).
@@ -67,7 +68,10 @@ pub struct BuddyAllocatorCore {
 impl BuddyAllocatorCore {
     pub const fn new() -> Self {
         BuddyAllocatorCore {
-            free_lists: [LinkedList::new(); MAX_ORDER + 1],
+            // `List::new()` leaves detached head/tail sentinels; `init()`
+            // links them before the lists are first used. Inline const blocks
+            // are used because `List` is not `Copy`.
+            free_lists: [const { Ilist::new() }; MAX_ORDER + 1],
             total_pages: 0,
             start_pfn: 0,
             end_pfn: 0,
@@ -90,6 +94,13 @@ impl BuddyAllocatorCore {
     /// 5. Add remaining free pages to free lists as largest possible aligned blocks.
     ///    Each block starts at a pfn aligned to its size (buddy invariant).
     pub unsafe fn init(&mut self, phys_mem_start: usize, phys_mem_end: usize) {
+        // Link the detached head/tail sentinels left by `List::new()` so the
+        // free lists are usable. `init()` is idempotent only on empty lists;
+        // this runs before any page is inserted.
+        for list in self.free_lists.iter_mut() {
+            list.init();
+        }
+
         self.base_addr = phys_mem_start;
         self.total_pages = (phys_mem_end - phys_mem_start) >> PAGE_SHIFT;
         self.end_pfn = self.total_pages; // end_pfn is unavailable as an array index
@@ -141,9 +152,9 @@ impl BuddyAllocatorCore {
             let page = &mut *self.pages.add(pfn);
             page.flags.set(PageFlags::FREE);
             page.order = order as u8;
-            unsafe {
-                self.free_lists[order].push(page);
-            }
+            self.free_lists[order]
+                .push(page)
+                .expect("new free block page must not already be linked");
 
             pfn += 1 << order;
         }
@@ -176,10 +187,14 @@ impl BuddyAllocatorCore {
         }
 
         for o in search_order..=MAX_ORDER {
-            let page_ptr = match unsafe { self.free_lists[o].pop() } {
-                Some(p) => p,
+            let (pfn, front_ptr) = match self.free_lists[o].front() {
+                Some(page) => (page.pfn, page as *const Page),
                 None => continue,
             };
+            let page_ptr = self.pfn_to_virt(pfn);
+            debug_assert_eq!(page_ptr as *const Page, front_ptr);
+            let detached = unsafe { IlistHead::detach(&mut (*page_ptr).list_node) };
+            debug_assert!(detached);
             let mut current_order = o;
 
             debug_assert!(unsafe { (*page_ptr).flags.contains(PageFlags::FREE) });
@@ -191,9 +206,9 @@ impl BuddyAllocatorCore {
                 let buddy = unsafe { &mut *self.pfn_to_virt(buddy_pfn) };
                 buddy.flags.set(PageFlags::FREE);
                 buddy.order = current_order as u8;
-                unsafe {
-                    self.free_lists[current_order].push(buddy);
-                }
+                self.free_lists[current_order]
+                    .push(buddy)
+                    .expect("split buddy page must not already be linked");
             }
 
             debug_assert!(current_order == order);
@@ -257,7 +272,8 @@ impl BuddyAllocatorCore {
                 "free buddy cannot have a larger order than current block"
             );
 
-            self.free_lists[current_order].remove(buddy);
+            let detached = IlistHead::detach(&mut buddy.list_node);
+            debug_assert!(detached);
 
             if buddy_pfn < current_page.pfn {
                 current_page.flags.clear(PageFlags::FREE);
@@ -271,7 +287,9 @@ impl BuddyAllocatorCore {
             current_page.order = current_order as u8;
         }
 
-        self.free_lists[current_order].push(current_page);
+        self.free_lists[current_order]
+            .push(current_page)
+            .expect("coalesced free page must not already be linked");
     }
 
     /// Return the physical address for a page pfn.
@@ -290,13 +308,7 @@ impl BuddyAllocatorCore {
         let mut free_pages = 0;
 
         for order in 0..=MAX_ORDER {
-            let mut count = 0;
-            let mut node = self.free_lists[order].peek();
-            while let Some(ptr) = node {
-                count += 1;
-                let (pfn, next) = unsafe { ((*ptr).pfn, (*ptr).list.next) };
-                node = if next.is_null() { None } else { Some(next) };
-            }
+            let count = self.free_lists[order].iter().count();
             free_pages += count * (1 << order);
         }
 

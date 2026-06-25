@@ -272,7 +272,6 @@ mod split_coalesce_tests {
         }
 
         let (pfn1, p1, pfn2, p2) = buddies.expect("must find order=1 buddy pair");
-        let block_pfn = pfn1.min(pfn2);
         let before = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(before, total_free - 4);
 
@@ -284,11 +283,29 @@ mod split_coalesce_tests {
         let after = BUDDY_ALLOC.memory_info().free_pages;
         assert_eq!(after, total_free);
 
-        // Since our design places the just-freed node at the head of the linked list and
-        // allocation also takes from the head, we can be certain the block we get back
-        // is the one we just freed.
-        let merged = BUDDY_ALLOC.alloc_pages(2).expect("merged order=2 block");
-        assert_eq!(unsafe { (*merged).pfn }, block_pfn);
+        // The two order=1 buddies should have coalesced into a single larger
+        // block (order >= 2, possibly merged further with neighboring free
+        // buddies). Verify coalescing directly via the page descriptors without
+        // relying on any particular free-list ordering: after the merge, the two
+        // original buddy heads can no longer BOTH remain free order=1 blocks.
+        let head1 = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn1) };
+        let head2 = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn2) };
+        let both_still_order1_free = head1.flags.contains(PageFlags::FREE)
+            && head1.order == 1
+            && head2.flags.contains(PageFlags::FREE)
+            && head2.order == 1;
+        assert!(
+            !both_still_order1_free,
+            "buddies pfn={} and pfn={} did not coalesce (both still free order=1 heads)",
+            pfn1, pfn2
+        );
+
+        // The coalesced block is now available, so an order=2 allocation must
+        // succeed. Its pfn is not asserted: under FIFO free lists the block
+        // returned need not be the one just coalesced.
+        let merged = BUDDY_ALLOC
+            .alloc_pages(2)
+            .expect("order=2 alloc after coalescing");
         unsafe { BUDDY_ALLOC.free_pages(&mut *merged, 2) };
         assert_page_conservation();
     }

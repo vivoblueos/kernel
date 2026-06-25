@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::{ptr, sync::atomic::AtomicUsize};
+use crate::types::{impl_simple_intrusive_adapter, IlistHead};
+use core::sync::atomic::AtomicUsize;
 
 pub const PAGE_SIZE: usize = 4096;
 pub const PAGE_SHIFT: usize = 12;
@@ -45,21 +46,9 @@ impl PageFlags {
     }
 }
 
-/// Intrusive doubly-linked list node embedded within [`Page`].
-#[derive(Debug, Clone, Copy)]
-pub struct LinkedListNode {
-    pub next: *mut Page,
-    pub prev: *mut Page,
-}
-
-impl LinkedListNode {
-    pub const fn new() -> Self {
-        LinkedListNode {
-            next: ptr::null_mut(),
-            prev: ptr::null_mut(),
-        }
-    }
-}
+/// Adapter linking [`Page`] into a free-list [`crate::types::Ilist`] via the
+/// `list_node` field. Used by [`BuddyAllocatorCore`](super::heap::BuddyAllocatorCore).
+impl_simple_intrusive_adapter!(PageListNodeAdapter, Page, list_node);
 
 /// Physical page descriptor.
 ///
@@ -67,7 +56,9 @@ impl LinkedListNode {
 /// in a contiguous array starting from the beginning of physical memory.
 #[repr(C)]
 pub struct Page {
-    pub list: LinkedListNode,
+    /// Intrusive free-list node. Detached (default) when not linked into a
+    /// free list; the buddy allocator links it via the typed intrusive list.
+    pub list_node: IlistHead<Page, PageListNodeAdapter>,
     pub pfn: usize,
     pub order: u8,
     pub flags: PageFlags,
@@ -77,88 +68,11 @@ pub struct Page {
 impl Page {
     pub const fn new() -> Self {
         Page {
-            list: LinkedListNode::new(),
+            list_node: IlistHead::new(),
             pfn: 0,
             order: 0,
             flags: PageFlags::new(),
             refcount: AtomicUsize::new(0),
-        }
-    }
-}
-
-/// Intrusive doubly-linked list of `Page` descriptors.
-///
-/// Uses the `list` field embedded in each `Page` for linkage.
-/// No heap allocations — all nodes are `Page` structs in the mem_map array.
-#[derive(Clone, Copy)]
-pub struct LinkedList {
-    head: *mut Page,
-}
-
-impl LinkedList {
-    pub const fn new() -> Self {
-        LinkedList {
-            head: ptr::null_mut(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.head.is_null()
-    }
-
-    /// Insert `page` at the head of the list.
-    pub unsafe fn push(&mut self, page: *mut Page) {
-        (*page).list.next = self.head;
-        (*page).list.prev = ptr::null_mut();
-        if !self.head.is_null() {
-            (*self.head).list.prev = page;
-        }
-        self.head = page;
-    }
-
-    /// Remove `page` from the list.
-    ///
-    /// # Safety
-    /// `page` must be currently present in this list.
-    pub unsafe fn remove(&mut self, page: *mut Page) {
-        let prev = (*page).list.prev;
-        let next = (*page).list.next;
-
-        if prev.is_null() {
-            self.head = next;
-        } else {
-            (*prev).list.next = next;
-        }
-
-        if !next.is_null() {
-            (*next).list.prev = prev;
-        }
-
-        (*page).list.next = ptr::null_mut();
-        (*page).list.prev = ptr::null_mut();
-    }
-
-    /// Pop the head page from the list.
-    pub unsafe fn pop(&mut self) -> Option<*mut Page> {
-        if self.head.is_null() {
-            return None;
-        }
-        let page = self.head;
-        self.head = (*page).list.next;
-        if !self.head.is_null() {
-            (*self.head).list.prev = ptr::null_mut();
-        }
-        (*page).list.next = ptr::null_mut();
-        (*page).list.prev = ptr::null_mut();
-        Some(page)
-    }
-
-    /// Peek at the head page without removing.
-    pub fn peek(&self) -> Option<*mut Page> {
-        if self.head.is_null() {
-            None
-        } else {
-            Some(self.head)
         }
     }
 }
