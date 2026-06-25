@@ -729,7 +729,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
 
             // Get a free block: `block`
             let first_free = self.first_free.get_unchecked_mut(fl).get_unchecked_mut(sl);
-            let block = first_free.unwrap_or_else(|| {
+            let mut block = first_free.unwrap_or_else(|| {
                 debug_assert!(false, "bitmap outdated");
                 // Safety: It's unreachable
                 unreachable_unchecked()
@@ -756,6 +756,29 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
                 }
             }
 
+            // Leading-gap reclamation: if the alignment is >= GRANULARITY, carve
+            // the wasted leading gap into a standalone free block `L` and relocate
+            // the used block header to `aligned_payload - GRANULARITY`.
+            let size = if layout.align() >= GRANULARITY {
+                let block_start = block.as_ptr() as usize;
+                let aligned_payload = (block_start + mem::size_of::<UsedBlockHdr>())
+                    .wrapping_add(layout.align() - 1)
+                    & !(layout.align() - 1);
+                let u_start = aligned_payload - GRANULARITY;
+                let l_size = u_start - block_start;
+                if l_size >= GRANULARITY {
+                    block = self
+                        .carve_leading_free_block(block.cast(), l_size)
+                        .cast::<FreeBlockHdr>();
+                    // Recalculate size from new block position to next_phys_block
+                    next_phys_block.as_ptr() as usize - block.as_ptr() as usize
+                } else {
+                    size
+                }
+            } else {
+                size
+            };
+
             // Decide the starting address of the payload
             let unaligned_ptr = block.as_ptr() as *mut u8 as usize + mem::size_of::<UsedBlockHdr>();
             let ptr = NonNull::new_unchecked(
@@ -775,6 +798,8 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
 
             let new_size = overhead + layout.size();
             let new_size = (new_size + GRANULARITY - 1) & !(GRANULARITY - 1);
+            // After leading-gap reclamation, new_size = GRANULARITY + layout.size()
+            // (rounded), which is strictly less than search_size (= size + align).
             debug_assert!(new_size <= search_size);
 
             let new_size = if new_size == size {
@@ -822,6 +847,40 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
 
             Some(ptr)
         }
+    }
+
+    /// Carve a leading free block `L` of size `l_size` from `block`, link it
+    /// into the free lists, and return a pointer to the new used-block header
+    /// position `U` at `block + l_size`.
+    ///
+    /// # Safety
+    ///
+    /// - `block` must be an unlinked (already removed from the free list) free
+    ///   block owned by `self`.
+    /// - `l_size` must be `>= GRANULARITY` and `< block's total size`.
+    /// - `l_size` must be a multiple of `GRANULARITY`.
+    unsafe fn carve_leading_free_block(
+        &mut self,
+        block: NonNull<BlockHdr>,
+        l_size: usize,
+    ) -> NonNull<BlockHdr> {
+        debug_assert!(l_size >= GRANULARITY);
+        debug_assert_eq!(l_size % GRANULARITY, 0);
+
+        // Read prev_phys_block before overwriting the struct (fix aliasing hazard).
+        let prev_phys = block.as_ref().prev_phys_block;
+
+        // Create free block L at `block` with L.prev_phys_block inherited.
+        let mut l: NonNull<FreeBlockHdr> = block.cast();
+        l.as_mut().common = BlockHdr::new(l_size, prev_phys);
+        self.link_free_block(l, l_size);
+
+        // Write only the prev_phys_block field of U via raw pointer to avoid
+        // forming a reference to uninitialised memory (the rest of U is not yet
+        // written; writing through &mut FreeBlockHdr would be UB).
+        let u_ptr = block.as_ptr().cast::<u8>().add(l_size).cast::<BlockHdr>();
+        core::ptr::addr_of_mut!((*u_ptr).prev_phys_block).write(Some(l.cast()));
+        NonNull::new_unchecked(u_ptr)
     }
 
     /// Search for a non-empty free block list for allocation.
@@ -1556,5 +1615,182 @@ impl BlockInfo<'_> {
     #[inline]
     pub fn is_occupied(&self) -> bool {
         (self.block_hdr.size & SIZE_USED) != 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    // FLLEN=12 ensures MAX_POOL_SIZE = GRANULARITY << 12 >= 65536 on both 32-bit
+    // (GRANULARITY=16) and 64-bit (GRANULARITY=32), so a 4K-aligned 4K alloc
+    // (search_size=8192) fits comfortably within the pool.
+    type TestTlsf<'a> = Tlsf<'a, u16, u8, 12, 8>;
+
+    // Pool and allocator in .bss — avoids stack overflow on embedded targets.
+    #[repr(align(32))]
+    struct AlignedPool([core::mem::MaybeUninit<u8>; 32768]);
+    static mut POOL: AlignedPool = AlignedPool([core::mem::MaybeUninit::uninit(); 32768]);
+    static mut TLSF: TestTlsf<'static> = TestTlsf::new();
+
+    fn with_pool<F: FnOnce(&mut TestTlsf<'_>, *mut u8, usize)>(f: F) {
+        // Safety: kernel test harness runs tests single-threaded; concurrent
+        // access to these statics cannot occur within this test suite.
+        unsafe {
+            TLSF = TestTlsf::new();
+            let pool_start = POOL.0.as_mut_ptr() as *mut u8;
+            let pool_len = TLSF
+                .insert_free_block_ptr(
+                    core::ptr::NonNull::new(core::ptr::slice_from_raw_parts_mut(pool_start, 32768))
+                        .unwrap(),
+                )
+                .map(|n| n.get())
+                .unwrap_or(0);
+            assert!(pool_len > 0, "insert_free_block_ptr returned empty pool");
+            f(&mut TLSF, pool_start, pool_len);
+        }
+    }
+
+    /// Walk the physical chain and assert structural invariants:
+    /// - every block is GRANULARITY-aligned
+    /// - prev_phys_block links are consistent
+    /// - no two adjacent free blocks
+    unsafe fn check_pool_integrity(pool_start: *mut u8, _pool_len: usize) {
+        let mut cursor: NonNull<BlockHdr> = NonNull::new_unchecked(pool_start.cast());
+        let mut prev: Option<NonNull<BlockHdr>> = None;
+        let mut prev_was_free = false;
+        loop {
+            let size_and_flags = cursor.as_ref().size;
+            let is_free = (size_and_flags & SIZE_USED) == 0;
+            let is_sentinel = (size_and_flags & SIZE_SENTINEL) == SIZE_SENTINEL;
+            assert_eq!(
+                cursor.as_ptr() as usize % GRANULARITY,
+                0,
+                "block {:p} not GRANULARITY-aligned",
+                cursor.as_ptr()
+            );
+            assert_eq!(
+                cursor.as_ref().prev_phys_block,
+                prev,
+                "prev_phys_block mismatch at {:p}",
+                cursor.as_ptr()
+            );
+            assert!(
+                !(prev_was_free && is_free),
+                "two adjacent free blocks at {:p}",
+                cursor.as_ptr()
+            );
+            if is_sentinel {
+                break;
+            }
+            let next = cursor.as_ref().next_phys_block();
+            prev = Some(cursor);
+            prev_was_free = is_free;
+            cursor = next;
+        }
+    }
+
+    /// Returns the used-block size (header + payload rounded up) for a live allocation.
+    unsafe fn allocated_block_size(ptr: NonNull<u8>, align: usize) -> usize {
+        let block = used_block_hdr_for_allocation(ptr, align).unwrap();
+        block.as_ref().common.size & SIZE_SIZE_MASK
+    }
+
+    #[test]
+    fn test_aligned_4k_reclaims_gap() {
+        with_pool(|tlsf, pool_start, pool_len| unsafe {
+            // 4096-aligned 4096-byte alloc: old retained ~8K, new ~4K+GRANULARITY
+            let layout = core::alloc::Layout::from_size_align(4096, 4096).unwrap();
+            let ptr = tlsf.allocate(&layout).expect("alloc failed");
+            assert_eq!(ptr.as_ptr() as usize % 4096, 0, "alignment");
+
+            let block_size = allocated_block_size(ptr, 4096);
+            assert!(
+                block_size < GRANULARITY + 4096 + GRANULARITY,
+                "block_size {} should be ~4K not ~8K (reclamation working)",
+                block_size
+            );
+            check_pool_integrity(pool_start, pool_len);
+
+            // The reclaimed leading block L must be back in the free list and
+            // usable — verify by allocating a small block that fits in L.
+            let small = core::alloc::Layout::from_size_align(GRANULARITY, GRANULARITY).unwrap();
+            let ptr2 = tlsf
+                .allocate(&small)
+                .expect("L not reclaimed into free list");
+            check_pool_integrity(pool_start, pool_len);
+            tlsf.deallocate(ptr2, GRANULARITY);
+            tlsf.deallocate(ptr, 4096);
+            check_pool_integrity(pool_start, pool_len);
+        });
+    }
+
+    #[test]
+    fn test_aligned_minimum_gap() {
+        // Construct an allocation where l_size == GRANULARITY (minimum split).
+        // Layout(size, align) where align_up(block+G/2, align) - G == block+G,
+        // i.e. the gap is exactly one GRANULARITY.
+        // With align == 2*GRANULARITY: payload lands at next 2G boundary,
+        // u_start = payload - G; if block is G-aligned then l_size = G.
+        with_pool(|tlsf, pool_start, pool_len| unsafe {
+            let align = 2 * GRANULARITY;
+            let layout = core::alloc::Layout::from_size_align(GRANULARITY, align).unwrap();
+            let ptr = tlsf.allocate(&layout).expect("alloc failed");
+            assert_eq!(ptr.as_ptr() as usize % align, 0, "alignment");
+            check_pool_integrity(pool_start, pool_len);
+            tlsf.deallocate(ptr, align);
+            check_pool_integrity(pool_start, pool_len);
+        });
+    }
+
+    #[test]
+    fn test_reclaimed_alloc_freeable() {
+        with_pool(|tlsf, pool_start, pool_len| unsafe {
+            let layout = core::alloc::Layout::from_size_align(4096, 4096).unwrap();
+            let ptr = tlsf.allocate(&layout).expect("alloc failed");
+            check_pool_integrity(pool_start, pool_len);
+
+            tlsf.deallocate(ptr, 4096);
+            check_pool_integrity(pool_start, pool_len);
+        });
+    }
+
+    #[test]
+    fn test_small_align_unchanged() {
+        with_pool(|tlsf, pool_start, pool_len| unsafe {
+            // align < GRANULARITY: no leading-gap reclamation, path unchanged
+            let layout = core::alloc::Layout::from_size_align(64, 8).unwrap();
+            let ptr = tlsf.allocate(&layout).expect("alloc failed");
+            check_pool_integrity(pool_start, pool_len);
+            tlsf.deallocate(ptr, 8);
+            check_pool_integrity(pool_start, pool_len);
+        });
+    }
+
+    #[test]
+    fn test_stress_mixed_alignments() {
+        with_pool(|tlsf, pool_start, pool_len| unsafe {
+            let configs: &[(usize, usize)] = &[
+                (64, 8),
+                (128, 32),
+                (256, 64),
+                (512, 256),
+                (1024, 1024),
+                (32, 8),
+            ];
+            let mut ptrs = [(core::ptr::NonNull::<u8>::dangling(), 0usize); 6];
+            for (i, &(size, align)) in configs.iter().enumerate() {
+                let layout = core::alloc::Layout::from_size_align(size, align).unwrap();
+                let ptr = tlsf.allocate(&layout).expect("alloc failed");
+                assert_eq!(ptr.as_ptr() as usize % align, 0, "alignment");
+                ptrs[i] = (ptr, align);
+            }
+            check_pool_integrity(pool_start, pool_len);
+            for (ptr, align) in ptrs.iter() {
+                tlsf.deallocate(*ptr, *align);
+            }
+            check_pool_integrity(pool_start, pool_len);
+        });
     }
 }

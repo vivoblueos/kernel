@@ -15,6 +15,7 @@
 // This code is based on https://github.com/yvt/rlsf/blob/main/crates/rlsf/src/tlsf.rs.
 // Copyright 2021 yvt
 // SPDX-LICENSE: MIT
+// Divergence from upstream: overhead model updated to reflect leading-gap reclamation (align >= GRANULARITY reduces retained footprint to size + GRANULARITY).
 
 use core::{
     alloc::Layout,
