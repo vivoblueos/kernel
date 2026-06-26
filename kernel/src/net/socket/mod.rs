@@ -14,20 +14,11 @@
 
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
-use crate::net::{
-    connection::{Operation, OperationIPCReply, OperationResult},
-    net_interface::NetInterface,
-    socket::socket_err::SocketError,
-    SocketResult,
-};
+use crate::net::{connection::OperationIPCReply, smoltcp::iface::NetIface, types::SocketResult};
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
-use core::{cell::RefCell, net::SocketAddr};
 
-pub mod icmp;
 pub mod socket_err;
 pub mod socket_waker;
-pub mod tcp;
-pub mod udp;
 
 pub(crate) type FnSend = Box<dyn FnOnce(&mut [u8]) -> (usize, usize) + Send>;
 pub(crate) type FnSendMsg = Box<dyn FnOnce(&mut [u8]) -> usize + Send>;
@@ -36,7 +27,7 @@ pub(crate) type FnRecvWithEndpoint = Box<dyn FnOnce(&[u8], IpEndpoint) -> usize 
 
 pub trait PosixSocket {
     // smoltcp need to bind socket with interface
-    fn bind_interface(&mut self, interface: Rc<RefCell<NetInterface<'static>>>);
+    fn bind_interface(&mut self, interface: Arc<NetIface>);
 
     fn accept(&self, _local_endpoint: IpListenEndpoint) -> SocketResult;
 

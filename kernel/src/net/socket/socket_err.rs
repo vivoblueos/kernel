@@ -52,6 +52,9 @@ pub enum SocketError {
     #[error("Unsupported socket protocol {0}")]
     UnsupportedSocketProtocol(i32),
 
+    #[error("Unsupported operation")]
+    UnsupportedOperation,
+
     #[error("Invalid params : {0} for operation {1}")]
     InvalidParam(String, String),
 
@@ -87,64 +90,4 @@ pub enum SocketError {
 
     #[error("smoltcp icmp recv error: {0}")]
     SmoltcpIcmpRecvError(smoltcp::socket::icmp::RecvError),
-}
-
-impl From<smoltcp::socket::tcp::ListenError> for SocketError {
-    fn from(err: smoltcp::socket::tcp::ListenError) -> Self {
-        Self::SmoltcpTcpListenError(err)
-    }
-}
-
-impl From<smoltcp::socket::tcp::ConnectError> for SocketError {
-    fn from(err: smoltcp::socket::tcp::ConnectError) -> Self {
-        Self::SmoltcpTcpConnectError(err)
-    }
-}
-
-impl From<smoltcp::socket::tcp::SendError> for SocketError {
-    fn from(err: smoltcp::socket::tcp::SendError) -> Self {
-        Self::SmoltcpTcpSendError(err)
-    }
-}
-
-impl From<smoltcp::socket::tcp::RecvError> for SocketError {
-    fn from(err: smoltcp::socket::tcp::RecvError) -> Self {
-        Self::SmoltcpTcpRecvError(err)
-    }
-}
-
-impl From<smoltcp::socket::udp::BindError> for SocketError {
-    fn from(err: smoltcp::socket::udp::BindError) -> Self {
-        Self::SmoltcpUdpBindError(err)
-    }
-}
-
-impl From<smoltcp::socket::udp::SendError> for SocketError {
-    fn from(err: smoltcp::socket::udp::SendError) -> Self {
-        Self::SmoltcpUdpSendError(err)
-    }
-}
-
-impl From<smoltcp::socket::udp::RecvError> for SocketError {
-    fn from(err: smoltcp::socket::udp::RecvError) -> Self {
-        Self::SmoltcpUdpRecvError(err)
-    }
-}
-
-impl From<smoltcp::socket::icmp::BindError> for SocketError {
-    fn from(err: smoltcp::socket::icmp::BindError) -> Self {
-        Self::SmoltcpIcmpBindError(err)
-    }
-}
-
-impl From<smoltcp::socket::icmp::SendError> for SocketError {
-    fn from(err: smoltcp::socket::icmp::SendError) -> Self {
-        Self::SmoltcpIcmpSendError(err)
-    }
-}
-
-impl From<smoltcp::socket::icmp::RecvError> for SocketError {
-    fn from(err: smoltcp::socket::icmp::RecvError) -> Self {
-        Self::SmoltcpIcmpRecvError(err)
-    }
 }

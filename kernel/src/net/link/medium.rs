@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,5 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(virtio)]
-pub mod virtio_net_device;
+//! Medium types for the link layer.
+//!
+//! Mirrors `smoltcp::phy::Medium` to avoid direct smoltcp dependency at the
+//! `LinkLayer` trait boundary. Convert to/from smoltcp in the compat layer.
+
+/// The medium type of a link-layer device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Medium {
+    /// Ethernet (IEEE 802.3)
+    Ethernet,
+    /// IP (no L2 header, e.g., loopback/tun)
+    Ip,
+    /// IEEE 802.15.4
+    Ieee802154,
+}

@@ -14,7 +14,6 @@
 
 use crate::net::{
     connection::{Operation, OperationIPCReply, OperationResult},
-    net_interface::NetInterface,
     net_manager::NetworkManager,
     socket::{
         socket_err::SocketError, socket_waker, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg,
@@ -33,21 +32,21 @@ use smoltcp::{
     socket::{icmp::Endpoint, udp},
     wire::{IpAddress, IpEndpoint, IpListenEndpoint},
 };
-pub struct UdpSocket<'a> {
+
+use crate::net::smoltcp::iface::NetIface;
+
+pub struct UdpSocket {
     socket_fd: SocketFd,
     socket_domain: SocketDomain,
     is_shutdown: Rc<Cell<bool>>,
-    network_manager: Rc<RefCell<NetworkManager<'a>>>,
+    network_manager: Rc<RefCell<NetworkManager>>,
     smoltcp_socket_handle: Option<SocketHandle>,
-    smoltcp_interface: Option<Rc<RefCell<NetInterface<'a>>>>,
+    smoltcp_interface: Option<Arc<NetIface>>,
 }
 
-impl<'a> UdpSocket<'a>
-where
-    'a: 'static,
-{
+impl UdpSocket {
     pub fn new(
-        network_manager: Rc<RefCell<NetworkManager<'a>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         socket_fd: SocketFd,
         socket_domain: SocketDomain,
     ) -> Self {
@@ -78,8 +77,7 @@ where
             udp::Socket::new(udp_rx_buffer, udp_tx_buffer)
         };
 
-        // Save socket handle
-        let mut interface = interface.borrow_mut();
+        // Save socket handle via NetIface::add_socket
         if let Some(socket_handle) = interface.add_socket(udp_socket) {
             self.smoltcp_socket_handle.replace(socket_handle);
             Some(socket_handle)
@@ -90,27 +88,22 @@ where
 
     pub fn with<F>(&mut self, f: F) -> SocketResult
     where
-        F: FnOnce(&mut udp::Socket<'a>, &mut Interface) -> SocketResult,
+        F: FnOnce(&mut udp::Socket<'static>, &mut Interface) -> SocketResult,
     {
-        if let Some(interface) = &self.smoltcp_interface {
-            let mut interface = interface.borrow_mut();
-            let socket_sets = interface.socket_sets_mut();
-            let mut socket_sets = socket_sets.borrow_mut();
-
-            let socket = socket_sets.get_mut::<udp::Socket>(
-                self.smoltcp_socket_handle
-                    .ok_or(SocketError::InvalidHandle)?,
-            );
-
-            f(socket, &mut interface.inner_interface_mut().borrow_mut())
-        } else {
-            Err(SocketError::InterfaceNoAvailable)
+        match &self.smoltcp_interface {
+            Some(iface) => {
+                let handle = self
+                    .smoltcp_socket_handle
+                    .ok_or(SocketError::InvalidHandle)?;
+                iface.with_socket::<udp::Socket<'static>, F, usize>(handle, f)
+            }
+            None => Err(SocketError::InterfaceNoAvailable),
         }
     }
 }
 
-impl PosixSocket for UdpSocket<'static> {
-    fn bind_interface(&mut self, interface: Rc<RefCell<NetInterface<'static>>>) {
+impl PosixSocket for UdpSocket {
+    fn bind_interface(&mut self, interface: Arc<NetIface>) {
         self.smoltcp_interface.replace(interface.clone());
     }
 
@@ -337,25 +330,21 @@ impl PosixSocket for UdpSocket<'static> {
     fn shutdown(&self) -> SocketResult {
         self.is_shutdown.set(true);
 
-        if let Some(interface) = &self.smoltcp_interface {
-            let mut interface = interface.borrow_mut();
-            let socket_sets = interface.socket_sets_mut();
-            let mut socket_sets = socket_sets.borrow_mut();
-
-            let socket = socket_sets.get_mut::<udp::Socket>(
-                self.smoltcp_socket_handle
-                    .ok_or(SocketError::InvalidHandle)?,
-            );
-
-            socket.close();
-
-            let _ = socket_sets.remove(
-                self.smoltcp_socket_handle
-                    .ok_or(SocketError::InvalidHandle)?,
-            );
-            Ok(0)
-        } else {
-            Err(SocketError::InvalidState("shutdown".into()))
+        match &self.smoltcp_interface {
+            Some(iface) => {
+                let handle = self
+                    .smoltcp_socket_handle
+                    .ok_or(SocketError::InvalidHandle)?;
+                // Close the socket first
+                let _ = iface.with_socket::<udp::Socket<'static>, _, i32>(handle, |socket, _| {
+                    socket.close();
+                    Ok(0i32)
+                });
+                // Remove from socket set
+                iface.remove_socket(handle);
+                Ok(0)
+            }
+            None => Err(SocketError::InvalidState("shutdown".into())),
         }
     }
 

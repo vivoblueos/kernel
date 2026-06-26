@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,5 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(virtio)]
-pub mod virtio_net_device;
+//! smoltcp socket module.
+
+pub(crate) mod icmp;
+pub(crate) mod socket_err;
+pub(crate) mod tcp;
+pub(crate) mod udp;

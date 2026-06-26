@@ -14,7 +14,10 @@
 
 use crate::{
     error::{code, Error},
-    net::connection::Connection,
+    net::{
+        connection::Connection,
+        iface::control::{NetIfaceControl, NetIfaceError},
+    },
     vfs::{
         fd_manager::get_fd_manager,
         file::{FileAttr, FileOps, OpenFlags},
@@ -146,8 +149,28 @@ impl FileOps for SocketFile {
     }
 
     fn ioctl(&self, cmd: u32, arg: usize) -> Result<i32, Error> {
-        warn!("Illegal ioctl on socket, ioctl is not implemented");
-        Err(code::ERROR)
+        // Convert raw POSIX ioctl (cmd, arg) into a type-safe NetIfaceControl,
+        // then dispatch through the IPC queue to the network stack thread.
+        let control = unsafe { NetIfaceControl::from_raw_ioctl(cmd, arg) }.map_err(|err| {
+            debug!("SocketFile ioctl: cmd=0x{:x} error {:?}", cmd, err);
+            match err {
+                NetIfaceError::InvalidParam => code::EINVAL,
+                _ => code::ENOTTY,
+            }
+        })?;
+
+        let Some(socket) = self.socket() else {
+            warn!("SocketFile: No socket for ioctl operation.");
+            return Err(code::EINVAL);
+        };
+
+        match socket.control(control) {
+            Ok(_) => Ok(0),
+            Err(e) => {
+                debug!("SocketFile ioctl: control error {:?}", e);
+                Err(code::ENOTTY)
+            }
+        }
     }
 
     fn flush(&self) -> Result<(), Error> {

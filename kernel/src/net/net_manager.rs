@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(virtio)]
-use crate::devices::net::virtio_net_device::net_dev_exist;
 use crate::{
-    allocator,
-    config::MAX_THREAD_PRIORITY,
     net::{
         connection::Connection,
-        net_interface::NetInterface,
-        socket::{icmp::IcmpSocket, tcp::TcpSocket, udp::UdpSocket, PosixSocket},
+        iface_list,
+        protocol::{iana, PROTOCOL_REGISTRY},
+        socket::PosixSocket,
         SocketDomain, SocketFd, SocketProtocol, SocketType,
     },
     scheduler,
@@ -34,101 +31,89 @@ use alloc::{
     collections::btree_map::BTreeMap,
     rc::Rc,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 use blueos_kconfig::CONFIG_NETWORK_STACK_SIZE as NETWORK_STACK_SIZE;
 use core::{cell::RefCell, mem::MaybeUninit, time};
 use smoltcp::{
     time::{Duration, Instant},
-    wire::{IpAddress, IpEndpoint},
+    wire::IpEndpoint,
 };
+use spin;
 
 const DEFAULT_DELAY_TIME_IN_MILLIS: u64 = 100;
 
-pub struct NetworkManager<'a> {
-    net_interfaces: Vec<Rc<RefCell<NetInterface<'a>>>>,
+pub struct NetworkManager {
     socket_maps: BTreeMap<SocketFd, Rc<RefCell<dyn PosixSocket>>>,
-    default_interface: Option<Rc<RefCell<NetInterface<'a>>>>,
 }
 
-impl<'a> NetworkManager<'a>
-where
-    'a: 'static,
-{
+impl NetworkManager {
     // Using Rc<RefCell<T>> while `static T` need T to impl Sync in rust
-    pub fn init() -> Rc<RefCell<NetworkManager<'a>>> {
+    pub fn init() -> Rc<RefCell<NetworkManager>> {
         let manager = NetworkManager::new();
         Rc::new(RefCell::new(manager))
     }
 
     // It will only access by a standalone tcp/ip stack thread, so no need for Critical Section .
     fn new() -> Self {
-        let mut net_interfaces = Vec::new();
         let socket_maps = BTreeMap::new();
-        let mut default_interface = None;
-
-        // Add Loopback interface which always exist
-        let dev = NetInterface::create_loopback_interface();
-        let rc = Rc::new(RefCell::new(dev));
-        log::debug!("Add NetDevice : Loopback");
-
-        net_interfaces.push(rc.clone());
-        // Set loopback as default net interface
-        default_interface.replace(rc);
-
-        // Add other interfaces which may not exist
-        #[cfg(virtio)]
-        if net_dev_exist() {
-            let dev = NetInterface::create_virtio_device();
-            let rc = Rc::new(RefCell::new(dev));
-            net_interfaces.push(rc.clone());
-
-            // Using net interface other than loopback as default interface, later we need to setup default interface by net dev api
-            default_interface.replace(rc);
-            log::debug!("Add NetDevice : virtio-net");
-        }
-
-        Self {
-            net_interfaces,
-            socket_maps,
-            default_interface,
-        }
+        // Device registration moved to net::init() via smoltcp::register_device()
+        Self { socket_maps }
     }
 
     pub fn create_posix_socket(
         &mut self,
         socket_fd: SocketFd,
-        network_manager: Rc<RefCell<NetworkManager<'a>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         socket_domain: SocketDomain,
         socket_type: SocketType,
         socket_protocol: SocketProtocol,
     ) -> SocketFd {
-        let socket: Rc<RefCell<dyn PosixSocket>> = match (socket_type, socket_protocol) {
-            (SocketType::SockStream, _) => {
-                let tcp_socket = TcpSocket::new(network_manager, socket_fd, socket_domain);
-                Rc::new(RefCell::new(tcp_socket))
-            }
-            (SocketType::SockDgram, _) => {
-                let udp_socket = UdpSocket::new(network_manager, socket_fd, socket_domain);
-                Rc::new(RefCell::new(udp_socket))
-            }
-            (SocketType::SockRaw, SocketProtocol::Icmp)
-            | (SocketType::SockRaw, SocketProtocol::Icmpv6) => {
-                let icmp_socket = IcmpSocket::new(network_manager, socket_fd);
-                Rc::new(RefCell::new(icmp_socket))
-            }
-            _ => {
-                log::error!(
-                    "No support socket type={}, protocol={:#?}",
-                    socket_type,
-                    socket_protocol
-                );
-                return -1;
-            }
+        // ProtocolRegistry dispatch: delegate to Protocol::create_socket()
+        //
+        // FIXME: IANA=0 (IPPROTO_IP) or 41 (IPPROTO_IPV6) means "default protocol"
+        // — resolve based on socket_type: SOCK_STREAM → TCP (6), SOCK_DGRAM → UDP (17),
+        // SOCK_RAW → ICMP (1).
+        // This is a workaround for callers that pass IPPROTO_IP/IPPROTO_IPV6 instead of
+        // the actual protocol number. A proper fix would enforce the correct protocol
+        // at the socket() syscall level.
+        let iana_proto = match socket_protocol.iana() {
+            0 | 41 => match socket_type {
+                SocketType::SockStream => iana::TCP,
+                SocketType::SockDgram => iana::UDP,
+                SocketType::SockRaw => iana::ICMP,
+                _ => {
+                    log::error!("No default protocol for socket_type={}", socket_type);
+                    return -1;
+                }
+            },
+            n => n,
         };
+        if let Some(protocol) = PROTOCOL_REGISTRY.get_by_key(socket_type, iana_proto) {
+            match protocol.create_socket(socket_fd, socket_domain, network_manager.clone()) {
+                Ok(socket) => {
+                    self.socket_maps.insert(socket_fd, socket);
+                    return socket_fd;
+                }
+                Err(e) => {
+                    log::error!(
+                        "[NetManager] Protocol {} create_socket failed: {:?}",
+                        protocol.name(),
+                        e
+                    );
+                    return -1;
+                }
+            }
+        }
 
-        self.socket_maps.insert(socket_fd, socket);
-        socket_fd
+        log::error!(
+            "No registered protocol for socket_type={}, protocol={:#?} (iana={})",
+            socket_type,
+            socket_protocol,
+            iana_proto,
+        );
+        -1
     }
 
     pub fn get_posix_socket(
@@ -138,55 +123,12 @@ where
         self.socket_maps.get(&socket_fd).cloned()
     }
 
-    pub fn bind_defualt_smoltcp_interface(&self, socket_fd: SocketFd) {
-        if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            // Use default net interface when we find no subnet match with remote_addr
-            if let Some(interface) = self.default_interface.clone() {
-                let mut socket = socket.borrow_mut();
-                socket.bind_interface(interface.clone());
-                log::debug!("Socket Fd={} binding to {}", socket_fd, interface.borrow());
-            } else {
-                log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
-            }
-        }
-    }
-
-    pub fn bind_smoltcp_interface(&self, socket_fd: SocketFd, binding_addr: IpAddress) {
-        if let Some(socket) = self.socket_maps.get(&socket_fd) {
-            self.net_interfaces
-                .iter()
-                .find(|dev| dev.borrow().contains_addr(binding_addr))
-                .map_or_else(
-                    || {
-                        // Use default net interface when we find no subnet match with remote_addr
-                        if let Some(interface) = self.default_interface.clone() {
-                            let mut socket = socket.borrow_mut();
-                            socket.bind_interface(interface.clone());
-                            log::debug!(
-                                "Socket Fd={} binding to {}",
-                                socket_fd,
-                                interface.borrow()
-                            );
-                        } else {
-                            log::error!("Socket Fd={} binding fail, find no interface", socket_fd);
-                        }
-                    },
-                    |dev| {
-                        // Otherwise choose the match net interface
-                        let mut socket = socket.borrow_mut();
-                        socket.bind_interface(dev.clone());
-                        log::debug!("Socket Fd={} binding to {}", socket_fd, dev.borrow());
-                    },
-                )
-        }
-    }
-
     pub fn loop_within_single_thread<F>(
-        network_manager: Rc<RefCell<NetworkManager<'static>>>,
+        network_manager: Rc<RefCell<NetworkManager>>,
         timeout_millis: usize,
         mut f: F,
     ) where
-        F: FnMut(Rc<RefCell<NetworkManager<'a>>>) -> bool,
+        F: FnMut(Rc<RefCell<NetworkManager>>) -> bool,
     {
         let is_forever = timeout_millis == 0;
         let timeout = sysclk::now().as_millis() as usize + timeout_millis;
@@ -202,22 +144,11 @@ where
         while is_forever || (sysclk::now().as_millis() as usize) < timeout {
             // Step1 : poll smoltcp network stack
             {
-                let network_manager = network_manager.borrow();
-
-                if let Err(e) = network_manager.net_interfaces.iter().try_for_each(
-                    |interface| -> Result<(), String> {
-                        let millis_i64 =
-                            i64::try_from(sysclk::now().as_millis()).map_err(|e| e.to_string())?;
-                        interface
-                            .borrow_mut()
-                            .poll(Instant::from_millis(millis_i64));
-                        Ok(())
-                    },
-                ) {
-                    log::error!("[NetworkManager]: looper exit with poll error {}", e);
-                    break;
-                } else {
-                    // Do nothing and just continue when poll success
+                // Poll all registered NetIface instances from the global list.
+                if let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) {
+                    for iface in iface_list::iter() {
+                        iface.poll(Instant::from_millis(millis_i64));
+                    }
                 }
             }
 
@@ -229,35 +160,16 @@ where
 
             // Step3 : get next poll time from smoltcp network stack
             {
-                let network_manager = network_manager.borrow();
-                let sleep_time = network_manager
-                    .net_interfaces
+                let sleep_time = iface_list::iter()
                     .iter()
-                    .map(|interface| {
+                    .map(|iface| {
                         let Ok(millis_i64) = i64::try_from(sysclk::now().as_millis()) else {
-                            log::error!("[NetworkManager]: Interface poll_delay get ms fail");
                             return DEFAULT_DELAY_TIME_IN_MILLIS;
                         };
-
-                        match interface
-                            .borrow_mut()
-                            .poll_delay(Instant::from_millis(millis_i64))
-                        {
-                            Some(Duration::ZERO) => {
-                                log::debug!("[NetworkManager]: Interface resuming");
-                                // Do next poll immediately
-                                0
-                            }
-                            Some(delay) => {
-                                log::debug!("[NetworkManager]: Interface poll delay for {}", delay);
-                                // Do next poll after delay.millis()
-                                delay.millis()
-                            }
-                            None => {
-                                // Wait until there is a task before the next poll
-                                // TODO add trigger when enqueue task
-                                DEFAULT_DELAY_TIME_IN_MILLIS
-                            }
+                        match iface.poll_delay(Instant::from_millis(millis_i64)) {
+                            Some(smoltcp::time::Duration::ZERO) => 0,
+                            Some(delay) => delay.millis() as u64,
+                            None => DEFAULT_DELAY_TIME_IN_MILLIS,
                         }
                     })
                     .min()
@@ -284,7 +196,7 @@ extern "C" fn net_stack_main_loop() {
     NetworkManager::loop_within_single_thread(
         network_manager.clone(),
         0,
-        |network_manager: Rc<RefCell<NetworkManager<'static>>>| -> bool {
+        |network_manager: Rc<RefCell<NetworkManager>>| -> bool {
             // msg loop , one msg at a time
             Connection::handle_socket_msg(network_manager)
         },

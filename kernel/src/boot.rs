@@ -145,7 +145,10 @@ extern "C" fn init() {
     #[cfg(kernel_async)]
     asynk::init();
     #[cfg(enable_net)]
-    net::net_manager::init();
+    {
+        net::init();
+        net::net_manager::init();
+    }
     #[cfg(enable_vfs)]
     init_vfs();
     init_apps();
