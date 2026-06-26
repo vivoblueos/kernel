@@ -96,6 +96,10 @@ impl NetIfaceControl {
             0x8913 => Ok(NetIfaceControl::GetFlags),
             // SIOCSIFFLAGS (0x8914) — set interface flags
             0x8914 => {
+                if arg == 0 {
+                    return Err(NetIfaceError::InvalidParam);
+                }
+
                 // arg: pointer to struct ifreq, flags at offset 4
                 let flags = unsafe { ptr::read_unaligned(arg as *const u16) };
                 Ok(NetIfaceControl::SetFlags(InterfaceFlags {
@@ -108,6 +112,10 @@ impl NetIfaceControl {
             0x8927 => Ok(NetIfaceControl::GetMacAddress),
             // SIOCSIFHWADDR (0x8924) — set hardware address
             0x8924 => {
+                if arg == 0 {
+                    return Err(NetIfaceError::InvalidParam);
+                }
+
                 // arg: pointer to struct ifreq with sa_family + sa_data(14)
                 let mut mac = [0u8; 6];
                 unsafe {
@@ -120,6 +128,10 @@ impl NetIfaceControl {
             0x8921 => Ok(NetIfaceControl::GetMtu),
             // SIOCSIFMTU (0x8922) — set MTU
             0x8922 => {
+                if arg == 0 {
+                    return Err(NetIfaceError::InvalidParam);
+                }
+
                 let mtu = unsafe { ptr::read_unaligned(arg as *const i32) };
                 Ok(NetIfaceControl::SetMtu(mtu as usize))
             }

@@ -14,7 +14,10 @@
 
 use crate::{
     error::{code, Error},
-    net::{connection::Connection, iface::control::NetIfaceControl},
+    net::{
+        connection::Connection,
+        iface::control::{NetIfaceControl, NetIfaceError},
+    },
     vfs::{
         fd_manager::get_fd_manager,
         file::{FileAttr, FileOps, OpenFlags},
@@ -148,9 +151,12 @@ impl FileOps for SocketFile {
     fn ioctl(&self, cmd: u32, arg: usize) -> Result<i32, Error> {
         // Convert raw POSIX ioctl (cmd, arg) into a type-safe NetIfaceControl,
         // then dispatch through the IPC queue to the network stack thread.
-        let control = unsafe { NetIfaceControl::from_raw_ioctl(cmd, arg) }.map_err(|_| {
-            debug!("SocketFile ioctl: unsupported cmd=0x{:x}", cmd);
-            code::ENOTTY
+        let control = unsafe { NetIfaceControl::from_raw_ioctl(cmd, arg) }.map_err(|err| {
+            debug!("SocketFile ioctl: cmd=0x{:x} error {:?}", cmd, err);
+            match err {
+                NetIfaceError::InvalidParam => code::EINVAL,
+                _ => code::ENOTTY,
+            }
         })?;
 
         let Some(socket) = self.socket() else {
