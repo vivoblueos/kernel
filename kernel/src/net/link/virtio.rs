@@ -94,13 +94,11 @@ impl LinkLayer for VirtioLink {
     }
 
     fn can_send(&self) -> bool {
-        crate::devices::net::virtio_net_device::with_net_device(0, |net| net.can_send())
-            .unwrap_or(false)
+        self.inner.can_send()
     }
 
     fn can_recv(&self) -> bool {
-        crate::devices::net::virtio_net_device::with_net_device(0, |net| net.can_recv())
-            .unwrap_or(false)
+        self.inner.can_recv()
     }
 }
 

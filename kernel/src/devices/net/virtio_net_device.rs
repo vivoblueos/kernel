@@ -68,6 +68,14 @@ impl VirtIONetDevice {
         with_net_device(self.net_device_index, |net| net.mac_address())
             .unwrap_or(FALLBACK_VIRTIO_NET_MAC_ADDRESS)
     }
+
+    pub fn can_send(&self) -> bool {
+        with_net_device(self.net_device_index, |net| net.can_send()).unwrap_or(false)
+    }
+
+    pub fn can_recv(&self) -> bool {
+        with_net_device(self.net_device_index, |net| net.can_recv()).unwrap_or(false)
+    }
 }
 
 impl Device for VirtIONetDevice {
