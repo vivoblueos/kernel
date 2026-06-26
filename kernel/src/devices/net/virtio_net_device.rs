@@ -26,6 +26,8 @@ use virtio_drivers::{
     transport::SomeTransport,
 };
 
+pub const FALLBACK_VIRTIO_NET_MAC_ADDRESS: [u8; 6] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x01];
+
 const VIRTIO_NET_BUFFER_SIZE: usize = 4096;
 const VIRTIO_NET_QUEUE_SIZE: usize = 16;
 
@@ -60,6 +62,11 @@ impl VirtIONetDevice {
         Self {
             net_device_index: device_index,
         }
+    }
+
+    pub fn mac_address(&self) -> [u8; 6] {
+        with_net_device(self.net_device_index, |net| net.mac_address())
+            .unwrap_or(FALLBACK_VIRTIO_NET_MAC_ADDRESS)
     }
 }
 

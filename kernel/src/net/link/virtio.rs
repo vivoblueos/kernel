@@ -86,7 +86,7 @@ impl LinkLayer for VirtioLink {
     }
 
     fn hw_addr(&self) -> Option<HwAddr> {
-        Some(HwAddr::from_ethernet([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]))
+        Some(HwAddr::from_ethernet(self.inner.mac_address()))
     }
 
     fn kind(&self) -> LinkKind {
@@ -109,7 +109,7 @@ impl SmoltcpDevice for VirtioLink {
         let caps = self.capabilities();
         let config = match caps.medium {
             smoltcp::phy::Medium::Ethernet => {
-                let mac = [0x02, 0x00, 0x00, 0x00, 0x00, 0x01];
+                let mac = self.inner.mac_address();
                 Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)))
             }
             smoltcp::phy::Medium::Ip => Config::new(HardwareAddress::Ip),
