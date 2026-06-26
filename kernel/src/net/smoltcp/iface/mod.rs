@@ -31,20 +31,24 @@
 pub(crate) use crate::net::iface::control::{
     InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult,
 };
-use alloc::{rc::Rc, string::String, sync::Arc, vec::Vec};
-use core::cell::RefCell;
+use alloc::{string::String, sync::Arc, vec::Vec};
 use smoltcp::{
     iface::{Interface, SocketHandle, SocketSet},
     socket::AnySocket,
     time::Instant,
 };
-use spin::RwLock;
+use spin::{Mutex, RwLock};
 
 use crate::net::{
     link::{HwAddr, Medium},
     smoltcp::link::SmoltcpDevice,
     socket::socket_err::SocketError,
 };
+
+struct SmoltcpState {
+    iface: Option<Interface>,
+    sockets: Option<SocketSet<'static>>,
+}
 
 /// L3 network interface.
 ///
@@ -56,21 +60,11 @@ pub struct NetIface {
     name: String,
     /// Link-layer device (L2 control + smoltcp lifecycle).
     link: Arc<RwLock<dyn SmoltcpDevice>>,
-    /// smoltcp interface.
-    smoltcp_iface: Rc<RefCell<Option<Interface>>>,
-    /// smoltcp socket set.
-    smoltcp_sockets: Rc<RefCell<Option<SocketSet<'static>>>>,
+    /// smoltcp interface and socket set.
+    smoltcp: Mutex<SmoltcpState>,
     /// Index into `LINK_REGISTRY`.
     link_index: usize,
 }
-
-// SAFETY: NetIface contains Rc<RefCell<...>> and dyn SmoltcpDevice which are
-// !Send + !Sync, but the network stack runs on a single dedicated thread.
-// All access to NetIface is guarded by spin::RwLock, so sharing Arc<NetIface>
-// across threads is safe — the inner Rc<RefCell> is only ever accessed from
-// the network thread.
-unsafe impl Send for NetIface {}
-unsafe impl Sync for NetIface {}
 
 impl NetIface {
     pub(crate) fn new(
@@ -83,8 +77,10 @@ impl NetIface {
         NetIface {
             name,
             link,
-            smoltcp_iface: Rc::new(RefCell::new(Some(iface))),
-            smoltcp_sockets: Rc::new(RefCell::new(Some(sockets))),
+            smoltcp: Mutex::new(SmoltcpState {
+                iface: Some(iface),
+                sockets: Some(sockets),
+            }),
             link_index,
         }
     }
@@ -103,8 +99,9 @@ impl NetIface {
 
     /// Add a smoltcp socket to this interface's socket set.
     pub fn add_socket<T: AnySocket<'static>>(&self, socket: T) -> Option<SocketHandle> {
-        self.smoltcp_sockets
-            .borrow_mut()
+        self.smoltcp
+            .lock()
+            .sockets
             .as_mut()
             .map(|sockets| sockets.add(socket))
     }
@@ -118,24 +115,24 @@ impl NetIface {
         T: AnySocket<'static>,
         F: FnOnce(&mut T, &mut Interface) -> Result<R, SocketError>,
     {
-        let mut sockets = self.smoltcp_sockets.borrow_mut();
+        let mut smoltcp = self.smoltcp.lock();
+        let SmoltcpState { iface, sockets } = &mut *smoltcp;
         let sockets = sockets.as_mut().ok_or(SocketError::InterfaceNoAvailable)?;
         let socket = sockets.get_mut::<T>(handle);
-        let mut iface = self.smoltcp_iface.borrow_mut();
         let iface = iface.as_mut().ok_or(SocketError::InterfaceNoAvailable)?;
         f(socket, iface)
     }
 
     /// Remove a socket from this interface's socket set.
     pub fn remove_socket(&self, handle: SocketHandle) {
-        if let Some(ref mut sockets) = *self.smoltcp_sockets.borrow_mut() {
+        if let Some(sockets) = self.smoltcp.lock().sockets.as_mut() {
             sockets.remove(handle);
         }
     }
 
     /// Check if the interface contains an IP address.
     pub fn contains_addr(&self, addr: smoltcp::wire::IpAddress) -> bool {
-        if let Some(ref iface) = *self.smoltcp_iface.borrow() {
+        if let Some(iface) = self.smoltcp.lock().iface.as_ref() {
             iface
                 .ip_addrs()
                 .iter()
@@ -150,11 +147,9 @@ impl NetIface {
     /// Dispatches to `SmoltcpDevice::poll_smoltcp()` which uses the concrete
     /// device type internally, keeping the L2 `LinkLayer` trait smoltcp-free.
     pub fn poll(&self, timestamp: Instant) {
-        let mut iface_guard = self.smoltcp_iface.borrow_mut();
-        let mut sockets_guard = self.smoltcp_sockets.borrow_mut();
-        if let (Some(ref mut iface), Some(ref mut sockets)) =
-            (iface_guard.as_mut(), sockets_guard.as_mut())
-        {
+        let mut state = self.smoltcp.lock();
+        let SmoltcpState { iface, sockets } = &mut *state;
+        if let (Some(iface), Some(sockets)) = (iface.as_mut(), sockets.as_mut()) {
             let mut smoltcp = self.link.write();
             smoltcp.poll_smoltcp(timestamp, iface, sockets);
 
@@ -173,9 +168,9 @@ impl NetIface {
     /// `poll_delay` does not need the device (only `iface.poll_delay` is
     /// called), so it is handled directly without going through LinkLayer.
     pub fn poll_delay(&self, timestamp: Instant) -> Option<smoltcp::time::Duration> {
-        let mut iface_guard = self.smoltcp_iface.borrow_mut();
-        let sockets_guard = self.smoltcp_sockets.borrow();
-        if let (Some(iface), Some(sockets)) = (iface_guard.as_mut(), sockets_guard.as_ref()) {
+        let mut smoltcp = self.smoltcp.lock();
+        let SmoltcpState { iface, sockets } = &mut *smoltcp;
+        if let (Some(iface), Some(sockets)) = (iface.as_mut(), sockets.as_ref()) {
             iface.poll_delay(timestamp, sockets)
         } else {
             None
@@ -240,7 +235,7 @@ impl NetIface {
                 Err(NetIfaceError::DeviceTraitNotAvailable)
             }
             NetIfaceControl::AddAddress(cidr) => {
-                if let Some(ref mut iface) = *self.smoltcp_iface.borrow_mut() {
+                if let Some(iface) = self.smoltcp.lock().iface.as_mut() {
                     iface.update_ip_addrs(|addrs| {
                         addrs.push(cidr);
                     });
