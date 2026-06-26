@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,14 +14,18 @@
 
 use crate::arch::{aarch64::mmu, irq::IrqNumber};
 
-pub const UART0_BASE_S: u64 = mmu::kernel_phys_to_virt(0x59303000);
+pub const UART0_BASE_S: usize = mmu::kernel_phys_to_virt(0x59303000);
 pub const APBP_CLOCK: u32 = 0x16e3600;
-pub const PL011_UART0_BASE: u64 = mmu::kernel_phys_to_virt(0x900_0000);
+pub const PL011_UART0_BASE: usize = mmu::kernel_phys_to_virt(0x900_0000);
 pub const PL011_UART0_IRQNUM: IrqNumber = IrqNumber::new(33);
 pub const GENERIC_TIMER_IRQNUM: IrqNumber = IrqNumber::new(30);
 pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
 pub const PSCI_BASE: u32 = 0x84000000;
-pub const GICD: usize = mmu::kernel_phys_to_virt(0x8000000) as usize;
-pub const GICR: usize = mmu::kernel_phys_to_virt(0x80a0000) as usize;
+pub const GICD: usize = mmu::kernel_phys_to_virt(0x8000000);
+pub const GICR: usize = mmu::kernel_phys_to_virt(0x80a0000);
 pub const MMU_L1_NORMAL_BASES: &[u64] = &[0x4008_0000];
 pub const MMU_L1_DEVICE_BASES: &[u64] = &[0x0];
+
+// Physical memory range for buddy allocator (QEMU virt defaults to 128MB).
+pub const PHYS_DRAM_BASE: u64 = 0x4000_0000;
+pub const PHYS_DRAM_SIZE: u64 = 128 * 1024 * 1024;
