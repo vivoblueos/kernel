@@ -359,6 +359,9 @@ impl BuddyAllocatorCore {
 /// All public methods are thread-safe — the lock is acquired internally.
 pub struct BuddyAllocator {
     inner: SpinLock<BuddyAllocatorCore>,
+    // The member translation is split out of `BuddyAllocatorCore` because it is read-only
+    // after initialization, does not change during allocation, and therefore does
+    // not need to be protected by the allocator lock.
     translation: UnsafeCell<BuddyTranslation>,
     #[cfg(test)]
     test_owner: AtomicUsize,

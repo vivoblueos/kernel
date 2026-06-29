@@ -557,7 +557,6 @@ mod translation_tests {
     #[test]
     fn pfn_to_virt_returns_descriptor_for_same_pfn() {
         buddy_test_exclusive!();
-
         let page = BUDDY_ALLOC.alloc_pages(0).expect("alloc single page");
         let pfn = unsafe { (*page).pfn };
         let descriptor = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn) };
@@ -572,7 +571,6 @@ mod translation_tests {
     #[test]
     fn pfn_to_phys_matches_page_stride() {
         buddy_test_exclusive!();
-
         let first = BUDDY_ALLOC.alloc_pages(0).expect("first page");
         let second = BUDDY_ALLOC.alloc_pages(0).expect("second page");
         let first_pfn = unsafe { (*first).pfn };
