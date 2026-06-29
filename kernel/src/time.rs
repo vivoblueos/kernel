@@ -32,8 +32,19 @@ impl Tick {
         Self((millis * (TICKS_PER_SECOND as u64) / 1000) as usize)
     }
 
+    pub fn as_millis(&self) -> u64 {
+        (self.0 as u64 * 1000) / (TICKS_PER_SECOND as u64)
+    }
+
     pub fn from_micros(micros: u64) -> Self {
-        Self((micros * (TICKS_PER_SECOND as u64) / 1_000_000) as usize)
+        match micros.checked_mul(TICKS_PER_SECOND as u64) {
+            Some(v) => Self((v / 1_000_000) as usize),
+            None => Self::MAX,
+        }
+    }
+
+    pub fn as_micros(&self) -> u64 {
+        (self.0 as u64 * 1_000_000) / (TICKS_PER_SECOND as u64)
     }
 
     pub fn from_nanos(nanos: u64) -> Self {

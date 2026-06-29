@@ -63,7 +63,7 @@ pub(crate) extern "C" fn claim_switch_context() -> bool {
 }
 
 #[inline]
-pub(crate) extern "C" fn local_irq_enabled() -> bool {
+pub extern "C" fn local_irq_enabled() -> bool {
     let x: usize;
     unsafe {
         core::arch::asm!("csrr {}, mstatus", out(reg) x,
@@ -315,24 +315,24 @@ macro_rules! rv_save_context {
 }
 
 #[inline]
-pub(crate) extern "C" fn disable_local_irq() {
+pub extern "C" fn disable_local_irq() {
     compiler_fence(Ordering::SeqCst);
     unsafe { core::arch::asm!(clear_mstatus_mie!(), options(nostack)) };
 }
 
 #[inline]
-pub(crate) extern "C" fn enable_local_irq() {
+pub extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!(set_mstatus_mie!(), options(nostack)) };
     compiler_fence(Ordering::SeqCst);
 }
 
 #[inline]
-pub(crate) extern "C" fn idle() {
+pub extern "C" fn idle() {
     unsafe { core::arch::asm!("wfi", options(nostack)) };
 }
 
 #[inline]
-pub(crate) extern "C" fn disable_local_irq_save() -> usize {
+pub extern "C" fn disable_local_irq_save() -> usize {
     compiler_fence(Ordering::SeqCst);
     let old: usize;
     unsafe {
@@ -346,7 +346,7 @@ pub(crate) extern "C" fn disable_local_irq_save() -> usize {
 }
 
 #[inline]
-pub(crate) extern "C" fn enable_local_irq_restore(old: usize) {
+pub extern "C" fn enable_local_irq_restore(old: usize) {
     unsafe {
         core::arch::asm!("csrw mstatus, {old}", old = in(reg) old,
                          options(nostack))
