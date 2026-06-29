@@ -24,7 +24,7 @@ use core::{alloc::GlobalAlloc, ptr};
 // Raw heap implementations are in the allocator_crate.
 // This module only contains SpinLock wrappers and the GlobalAlloc impl.
 
-#[cfg(buddy_allocator)]
+#[cfg(allocator_buddy)]
 mod buddy;
 #[cfg(any(allocator = "tlsf", allocator = "slab", allocator = "slab_dynamic"))]
 mod tlsf;
@@ -60,7 +60,7 @@ static_arc! {
 unsafe impl GlobalAlloc for KernelAllocator {
     // TODO: support slab requesting pages from buddy as memory pool
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        #[cfg(buddy_allocator)]
+        #[cfg(allocator_buddy)]
         {
             use buddy::{heap::order_of_size, page::PAGE_SIZE};
             let size = layout.size().max(layout.align());
@@ -77,7 +77,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
     // TODO: support slab releasing pages back to buddy memory pool
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        #[cfg(buddy_allocator)]
+        #[cfg(allocator_buddy)]
         {
             use buddy::{
                 heap::order_of_size,
@@ -97,7 +97,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
     // TODO: support slab reallocating pages from buddy as memory pool
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
-        #[cfg(buddy_allocator)]
+        #[cfg(allocator_buddy)]
         {
             use buddy::{
                 heap::order_of_size,
@@ -163,7 +163,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             }
         }
 
-        #[cfg(not(buddy_allocator))]
+        #[cfg(not(allocator_buddy))]
         {
             HEAP.realloc(ptr, old_layout, new_size)
                 .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
@@ -179,7 +179,7 @@ impl KernelAllocator {
 
 /// Initialize the kernel heap.
 ///
-/// # Two-Level Architecture (buddy_allocator enabled)
+/// # Two-Level Architecture (allocator_buddy enabled)
 ///
 /// 1. **Level 1 — Physical page management**: The buddy allocator is
 ///    initialized with the full physical DRAM range. It manages all
@@ -199,7 +199,7 @@ impl KernelAllocator {
 ///
 /// TODO: support slab initialization based on buddy allocator
 pub fn init_heap(start: *mut u8, end: *mut u8) {
-    #[cfg(buddy_allocator)]
+    #[cfg(allocator_buddy)]
     {
         // Level 1: Initialize buddy allocator to manage all physical memory.
         let phys_dram_base = crate::boards::PHYS_DRAM_BASE as usize;
@@ -224,7 +224,7 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         }
     }
 
-    #[cfg(not(buddy_allocator))]
+    #[cfg(not(allocator_buddy))]
     {
         let start_addr = start as usize;
         let size = unsafe { end.offset_from(start) as usize };
@@ -482,7 +482,7 @@ mod tests {
         boxed.resize(smaller_size, 0);
     }
 
-    #[cfg(buddy_allocator)]
+    #[cfg(allocator_buddy)]
     #[test]
     fn realloc_crosses_buddy_threshold() {
         let small_layout = Layout::from_size_align(2048, core::mem::size_of::<usize>()).unwrap();
@@ -506,7 +506,7 @@ mod tests {
         }
     }
 
-    #[cfg(buddy_allocator)]
+    #[cfg(allocator_buddy)]
     #[test]
     fn realloc_shrinks_below_buddy_threshold() {
         let large_layout = Layout::from_size_align(4096, core::mem::size_of::<usize>()).unwrap();
