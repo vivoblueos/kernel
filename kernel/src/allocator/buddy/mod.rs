@@ -541,3 +541,54 @@ mod order_tests {
         assert_eq!(order_of_size(16 * PAGE_SIZE), 4);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PFN translation helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod translation_tests {
+    use super::{
+        page::{Page, PAGE_SHIFT},
+        *,
+    };
+    use blueos_test_macro::test;
+
+    #[test]
+    fn pfn_to_virt_returns_descriptor_for_same_pfn() {
+        buddy_test_exclusive!();
+
+        let page = BUDDY_ALLOC.alloc_pages(0).expect("alloc single page");
+        let pfn = unsafe { (*page).pfn };
+        let descriptor = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn) };
+
+        assert_eq!(descriptor.pfn, pfn);
+        assert_eq!(descriptor as *const Page, page as *const Page);
+
+        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
+        assert_page_conservation();
+    }
+
+    #[test]
+    fn pfn_to_phys_matches_page_stride() {
+        buddy_test_exclusive!();
+
+        let first = BUDDY_ALLOC.alloc_pages(0).expect("first page");
+        let second = BUDDY_ALLOC.alloc_pages(0).expect("second page");
+        let first_pfn = unsafe { (*first).pfn };
+        let second_pfn = unsafe { (*second).pfn };
+        let first_phys = BUDDY_ALLOC.pfn_to_phys(first_pfn);
+        let second_phys = BUDDY_ALLOC.pfn_to_phys(second_pfn);
+
+        assert_eq!(
+            second_phys.wrapping_sub(first_phys),
+            (second_pfn - first_pfn) << PAGE_SHIFT
+        );
+
+        unsafe {
+            BUDDY_ALLOC.free_pages(&mut *first, 0);
+            BUDDY_ALLOC.free_pages(&mut *second, 0);
+        }
+        assert_page_conservation();
+    }
+}

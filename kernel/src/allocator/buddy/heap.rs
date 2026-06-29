@@ -18,7 +18,7 @@ use crate::{
     sync::spinlock::SpinLock,
     types::{Ilist, IlistHead},
 };
-use core::ptr;
+use core::{cell::UnsafeCell, ptr};
 
 #[cfg(test)]
 use crate::scheduler;
@@ -47,6 +47,36 @@ pub struct BuddyMemoryInfo {
     pub free_pages: usize,
     pub used_pages: usize,
     pub reserved_pages: usize,
+}
+
+/// Immutable translation metadata snapshot from buddy init.
+///
+/// Captured once after `BuddyAllocatorCore::init()` completes, then
+/// used for lock-free pfn-to-phys and pfn-to-virt translation.
+#[derive(Clone, Copy)]
+struct BuddyTranslation {
+    base_addr: usize,
+    pages: *mut Page,
+    total_pages: usize,
+}
+
+impl BuddyTranslation {
+    const fn new() -> Self {
+        Self {
+            base_addr: 0,
+            pages: ptr::null_mut(),
+            total_pages: 0,
+        }
+    }
+
+    fn pfn_to_phys(&self, pfn: usize) -> usize {
+        self.base_addr + (pfn << PAGE_SHIFT)
+    }
+
+    fn pfn_to_virt(&self, pfn: usize) -> *mut Page {
+        debug_assert!(pfn < self.total_pages);
+        unsafe { self.pages.add(pfn) }
+    }
 }
 
 /// Core buddy allocator state (protected by `SpinLock` in [`BuddyAllocator`]).
@@ -298,7 +328,7 @@ impl BuddyAllocatorCore {
     }
 
     /// Get a mutable pointer to the `Page` descriptor for `pfn`.
-    pub(crate) fn pfn_to_virt(&mut self, pfn: usize) -> *mut Page {
+    pub(crate) fn pfn_to_virt(&self, pfn: usize) -> *mut Page {
         debug_assert!(pfn < self.total_pages);
         unsafe { self.pages.add(pfn) }
     }
@@ -329,6 +359,7 @@ impl BuddyAllocatorCore {
 /// All public methods are thread-safe — the lock is acquired internally.
 pub struct BuddyAllocator {
     inner: SpinLock<BuddyAllocatorCore>,
+    translation: UnsafeCell<BuddyTranslation>,
     #[cfg(test)]
     test_owner: AtomicUsize,
     #[cfg(test)]
@@ -351,6 +382,7 @@ impl BuddyAllocator {
     pub const fn new() -> Self {
         BuddyAllocator {
             inner: SpinLock::new(BuddyAllocatorCore::new()),
+            translation: UnsafeCell::new(BuddyTranslation::new()),
             #[cfg(test)]
             test_owner: AtomicUsize::new(0),
             #[cfg(test)]
@@ -365,6 +397,13 @@ impl BuddyAllocator {
     pub unsafe fn init(&self, phys_mem_start: usize, phys_mem_end: usize) {
         let mut inner = self.inner.irqsave_lock();
         inner.init(phys_mem_start, phys_mem_end);
+        unsafe {
+            *self.translation.get() = BuddyTranslation {
+                base_addr: inner.base_addr,
+                pages: inner.pages,
+                total_pages: inner.total_pages,
+            };
+        }
     }
 
     /// Allocate `2^order` contiguous physical pages.
@@ -421,18 +460,14 @@ impl BuddyAllocator {
     ///
     /// Returns a mutable pointer to the `Page` descriptor for the given `pfn`.
     pub fn pfn_to_virt(&self, pfn: usize) -> *mut Page {
-        #[cfg(test)]
-        self.wait_for_test_access();
-        let mut inner = self.inner.irqsave_lock();
-        inner.pfn_to_virt(pfn)
+        let translation = unsafe { &*self.translation.get() };
+        translation.pfn_to_virt(pfn)
     }
 
     /// Convert pfn to physical address.
     pub fn pfn_to_phys(&self, pfn: usize) -> usize {
-        #[cfg(test)]
-        self.wait_for_test_access();
-        let mut inner = self.inner.irqsave_lock();
-        inner.pfn_to_phys(pfn)
+        let translation = unsafe { &*self.translation.get() };
+        translation.pfn_to_phys(pfn)
     }
 
     /// Get memory statistics.
