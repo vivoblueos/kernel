@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// SPDX-License-Identifier: MIT OR Apache-2.0
+pub const KERNEL_VIRT_OFFSET: usize = blueos_kconfig::CONFIG_KERNEL_VIRT_OFFSET as usize;
 
-use crate::arch::irq::IrqNumber;
+#[inline]
+pub const fn kernel_phys_to_virt(addr: usize) -> usize {
+    debug_assert!(addr.checked_add(KERNEL_VIRT_OFFSET).is_some());
+    addr + KERNEL_VIRT_OFFSET
+}
 
-pub const PLIC_BASE: usize = 0x0c00_0000;
-pub const NS16550_UART0_BASE: u32 = 0x1000_0000;
-pub const NS16550_UART0_IRQNUM: IrqNumber = IrqNumber::new(10);
-
-// Physical memory range for buddy allocator (QEMU virt defaults to 128MB).
-pub const PHYS_DRAM_BASE: usize = 0x8000_0000;
-pub const PHYS_DRAM_SIZE: usize = 128 * 1024 * 1024;
+#[inline]
+pub const fn kernel_virt_to_phys(addr: usize) -> usize {
+    debug_assert!(addr.checked_sub(KERNEL_VIRT_OFFSET).is_some());
+    addr - KERNEL_VIRT_OFFSET
+}
