@@ -16,10 +16,12 @@ pub const KERNEL_VIRT_OFFSET: usize = blueos_kconfig::CONFIG_KERNEL_VIRT_OFFSET 
 
 #[inline]
 pub const fn kernel_phys_to_virt(addr: usize) -> usize {
+    debug_assert!(addr.checked_add(KERNEL_VIRT_OFFSET).is_some());
     addr + KERNEL_VIRT_OFFSET
 }
 
 #[inline]
 pub const fn kernel_virt_to_phys(addr: usize) -> usize {
+    debug_assert!(addr.checked_sub(KERNEL_VIRT_OFFSET).is_some());
     addr - KERNEL_VIRT_OFFSET
 }
