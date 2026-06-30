@@ -22,30 +22,24 @@ use alloc::boxed::Box;
 use arch_crate as arch;
 use blueos::{
     scheduler,
-    scheduler::{wait_queue, wait_queue::WaitEntry, InsertToEnd},
-    sync::SpinLock,
-    thread::{Entry, Stack, ThreadNode, SUSPENDED},
+    scheduler::{InsertToEnd, wait_queue, wait_queue::WaitEntry},
+    thread::{Entry, SUSPENDED, Stack, ThreadNode},
     time::Tick,
     types::{Arc, ThreadPriority},
     with_iou,
 };
-use core::{
-    cell::UnsafeCell,
-    ffi::c_void,
-    ptr::NonNull,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::{cell::UnsafeCell, ffi::c_void, ptr::NonNull};
 use esp_radio_rtos_driver::{
-    queue::{CompatQueue, QueueHandle, QueuePtr},
+    SchedulerImplementation, ThreadPtr,
+    queue::{CompatQueue, QueueHandle},
     register_queue_implementation, register_scheduler_implementation,
     register_semaphore_implementation, register_timer_implementation,
     register_wait_queue_implementation,
     semaphore::{
         CompatSemaphore, SemaphoreHandle, SemaphoreImplementation, SemaphoreKind, SemaphorePtr,
     },
-    timer::{CompatTimer, TimerHandle, TimerPtr},
+    timer::{CompatTimer, TimerHandle},
     wait_queue::{WaitQueueHandle, WaitQueueImplementation, WaitQueuePtr},
-    SchedulerImplementation, ThreadPtr,
 };
 extern crate alloc;
 
@@ -152,10 +146,15 @@ impl SchedulerImplementation for BkScheduler {
     }
 
     unsafe fn set_task_priority(&self, task: ThreadPtr, priority: u32) {
-        let thread = &mut *(task.as_ptr() as *mut blueos::thread::Thread);
+        let thread = &*(task.as_ptr() as *const blueos::thread::Thread);
+        let thread = Arc::clone_from(thread);
         let blueos_prio = blueos::config::MAX_THREAD_PRIORITY
-            .saturating_sub(priority.min(blueos::config::MAX_THREAD_PRIORITY));
-        thread.set_priority(blueos_prio as ThreadPriority);
+            .saturating_sub(priority.min(blueos::config::MAX_THREAD_PRIORITY))
+            as ThreadPriority;
+
+        if scheduler::update_ready_thread_priority(&thread, blueos_prio).is_err() {
+            thread.lock().set_priority(blueos_prio);
+        }
     }
 
     fn usleep(&self, us: u32) {
@@ -172,11 +171,11 @@ impl SchedulerImplementation for BkScheduler {
     }
 }
 
-/// Wrapper around a spinlocked kernel WaitQueue for use with the esp-radio driver.
+/// Wrapper around a kernel WaitQueue for use with the esp-radio driver.
 ///
 /// The kernel's `WaitQueue` (`Ilist<WaitEntry, OffsetOfWait>`) is an intrusive linked list.
-/// We wrap it in a `SpinLock` for thread safety, heap-allocate it, and expose it as an opaque
-/// `WaitQueuePtr` to the esp-radio layer.
+/// The FFI caller is responsible for serializing access to this opaque object; we heap-allocate
+/// it and expose it as a `WaitQueuePtr` to the esp-radio layer.
 struct EspWaitQueue(wait_queue::WaitQueue);
 
 impl WaitQueueImplementation for EspWaitQueue {
@@ -192,29 +191,31 @@ impl WaitQueueImplementation for EspWaitQueue {
         let _ = Box::from_raw(ptr);
     }
 
+    #[allow(clippy::drop_non_drop)]
     unsafe fn wait_until(queue: WaitQueuePtr, deadline_instant: Option<u64>) {
         let this = &mut *(queue.as_ptr() as *mut EspWaitQueue);
         let this_thread = scheduler::current_thread();
         let deadline = deadline_instant.map(Tick::from_micros).unwrap_or(Tick::MAX);
-        let mut w = &mut this.0;
+        let w = &mut this.0;
         with_iou!(|borrowed_wait_entry| {
             let mut wait_entry = WaitEntry::new(this_thread.clone());
             borrowed_wait_entry =
-                wait_queue::insert(&mut w, &mut wait_entry, InsertToEnd::MODE).unwrap();
+                wait_queue::insert(w, &mut wait_entry, InsertToEnd::MODE).unwrap();
             let _ = scheduler::suspend_me_until::<()>(deadline, None);
-            w = &mut this.0;
             borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
         });
     }
 
     unsafe fn notify(queue: WaitQueuePtr) {
         let this = &*(queue.as_ptr() as *const EspWaitQueue);
-        let mut w = &this.0;
+        let w = &this.0;
         let mut woke = false;
         for entry in w.iter() {
             let t = entry.thread.clone();
-            woke = scheduler::queue_ready_thread(SUSPENDED, t).is_ok();
-            break;
+            if scheduler::queue_ready_thread(SUSPENDED, t).is_ok() {
+                woke = true;
+                break;
+            }
         }
         if woke {
             scheduler::yield_me_now_or_later();
@@ -222,16 +223,16 @@ impl WaitQueueImplementation for EspWaitQueue {
     }
 
     unsafe fn notify_from_isr(queue: WaitQueuePtr, mut higher_prio_task_waken: Option<&mut bool>) {
-        let this = &mut *(queue.as_ptr() as *mut EspWaitQueue);
-        let mut w = &mut this.0;
+        let this = &*(queue.as_ptr() as *const EspWaitQueue);
+        let w = &this.0;
         for entry in w.iter() {
             let t = entry.thread.clone();
             if scheduler::queue_ready_thread(SUSPENDED, t).is_ok() {
                 if let Some(hptw) = higher_prio_task_waken.as_mut() {
                     **hptw = true;
                 }
+                break;
             }
-            break;
         }
     }
 }
@@ -542,7 +543,7 @@ register_scheduler_implementation!(static SCHEDULER: BkScheduler = BkScheduler);
 mod tests {
     use super::*;
     use blueos::{
-        allocator::{memory_info, KernelAllocator},
+        allocator::{KernelAllocator, memory_info},
         arch, scheduler,
         thread::{Builder, Entry, Thread, ThreadNode},
     };
