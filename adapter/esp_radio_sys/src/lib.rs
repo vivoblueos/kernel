@@ -49,14 +49,6 @@ use esp_radio_rtos_driver::{
 };
 extern crate alloc;
 
-fn semaphore_kind_name(kind: &SemaphoreKind) -> &'static str {
-    match kind {
-        SemaphoreKind::Counting { .. } => "counting",
-        SemaphoreKind::Mutex => "mutex",
-        SemaphoreKind::RecursiveMutex => "recursive_mutex",
-    }
-}
-
 struct BkScheduler;
 
 impl SchedulerImplementation for BkScheduler {
@@ -366,41 +358,34 @@ impl SemaphoreImplementation for BkSemaphore {
             // saved IRQ state.
             let current_thread = scheduler::current_thread();
             let current_owner = Arc::as_ptr(&current_thread) as usize;
-            let (available, waiting, current, max, kind, is_mutex, owner, recursion, owner_thread) =
-                sem.with_irq_safe(|data| {
-                    let available = match &data.kind {
-                        SemaphoreKind::RecursiveMutex if data.owner == current_owner => {
-                            data.recursion = data.recursion.saturating_add(1);
-                            true
-                        }
-                        SemaphoreKind::Mutex | SemaphoreKind::RecursiveMutex
-                            if data.current > 0 =>
-                        {
-                            data.current -= 1;
-                            data.owner = current_owner;
-                            data.owner_thread = Some(current_thread.clone());
-                            data.owner_boosted = false;
-                            data.recursion = 1;
-                            true
-                        }
-                        _ if data.current > 0 => {
-                            data.current -= 1;
-                            true
-                        }
-                        _ => false,
-                    };
-                    (
-                        available,
-                        data.waiting,
-                        data.current,
-                        data.max,
-                        semaphore_kind_name(&data.kind),
-                        Self::is_mutex_kind(&data.kind),
-                        data.owner,
-                        data.recursion,
-                        data.owner_thread.clone(),
-                    )
-                });
+            let (available, waiting, is_mutex, owner, owner_thread) = sem.with_irq_safe(|data| {
+                let available = match &data.kind {
+                    SemaphoreKind::RecursiveMutex if data.owner == current_owner => {
+                        data.recursion = data.recursion.saturating_add(1);
+                        true
+                    }
+                    SemaphoreKind::Mutex | SemaphoreKind::RecursiveMutex if data.current > 0 => {
+                        data.current -= 1;
+                        data.owner = current_owner;
+                        data.owner_thread = Some(current_thread.clone());
+                        data.owner_boosted = false;
+                        data.recursion = 1;
+                        true
+                    }
+                    _ if data.current > 0 => {
+                        data.current -= 1;
+                        true
+                    }
+                    _ => false,
+                };
+                (
+                    available,
+                    data.waiting,
+                    Self::is_mutex_kind(&data.kind),
+                    data.owner,
+                    data.owner_thread.clone(),
+                )
+            });
 
             if available {
                 return true;
@@ -439,18 +424,7 @@ impl SemaphoreImplementation for BkSemaphore {
         let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
         let current_thread = scheduler::current_thread();
         let current_owner = Arc::as_ptr(&current_thread) as usize;
-        let (
-            ok,
-            released,
-            waiting,
-            current,
-            max,
-            kind,
-            owner,
-            recursion,
-            owner_thread,
-            owner_boosted,
-        ) = sem.with_irq_safe(|data| {
+        let (ok, released, waiting, owner_thread, owner_boosted) = sem.with_irq_safe(|data| {
             let mut released_owner_thread = None;
             let mut released_owner_boosted = false;
             let (ok, released) = match &data.kind {
@@ -483,11 +457,6 @@ impl SemaphoreImplementation for BkSemaphore {
                 ok,
                 released,
                 data.waiting,
-                data.current,
-                data.max,
-                semaphore_kind_name(&data.kind),
-                data.owner,
-                data.recursion,
                 released_owner_thread,
                 released_owner_boosted,
             )
@@ -508,8 +477,7 @@ impl SemaphoreImplementation for BkSemaphore {
         higher_prio_task_waken: Option<&mut bool>,
     ) -> bool {
         let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
-        let has_hptw = higher_prio_task_waken.is_some();
-        let (ok, waiting, current, max, kind, owner, recursion) = sem.with_irq_safe(|data| {
+        let (ok, waiting) = sem.with_irq_safe(|data| {
             let ok = match &data.kind {
                 SemaphoreKind::Mutex | SemaphoreKind::RecursiveMutex => false,
                 _ if data.current < data.max => {
@@ -518,15 +486,7 @@ impl SemaphoreImplementation for BkSemaphore {
                 }
                 _ => false,
             };
-            (
-                ok,
-                data.waiting,
-                data.current,
-                data.max,
-                semaphore_kind_name(&data.kind),
-                data.owner,
-                data.recursion,
-            )
+            (ok, data.waiting)
         });
         if ok {
             unsafe { EspWaitQueue::notify_from_isr(waiting, higher_prio_task_waken) };
