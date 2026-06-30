@@ -86,8 +86,8 @@ fn init_pin_states<P: blueos_hal::pinctrl::AlterFuncPin>(pin_states: &[&P]) {
 
 extern "C" fn init() {
     boards::init();
-    init_runtime();
     init_heap();
+    init_runtime();
     init_pin_states(crate::boards::PIN_STATES);
 
     // FIXME: 4KB paging can only be used after heap initialization is complete.
@@ -151,6 +151,9 @@ extern "C" fn init() {
     }
     #[cfg(enable_vfs)]
     init_vfs();
+    // it's an bug in fact, but at now we use a workaround let newlib do the c++ runtime initialization
+    #[cfg(not(target_board = "newlib_mps3_an547"))]
+    run_init_array();
     init_apps();
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
@@ -158,7 +161,6 @@ extern "C" fn init() {
 
 pub(crate) fn init_runtime() {
     init_bss();
-    run_init_array();
 }
 
 #[cfg(enable_vfs)]
@@ -191,7 +193,7 @@ fn init_bss() {
 }
 
 #[inline(never)]
-fn run_init_array() {
+pub(crate) fn run_init_array() {
     unsafe {
         if INIT_ARRAY_DONE {
             return;

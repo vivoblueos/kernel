@@ -64,41 +64,53 @@ impl From<u8> for DirentType {
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct Dirent {
-    d_ino: usize,
-    d_off: i64,
+    d_ino: libc::ino_t,
+    d_off: libc::off_t,
     /// The length of the dirent
-    d_reclen: u16,
+    d_reclen: libc::c_ushort,
     /// The type of the file
-    d_type: u8,
-    // The file name - flexible array member
-    d_name: [u8; 0],
+    d_type: libc::c_uchar,
+    d_namlen: libc::c_ushort,
+    // The file name - flexible array member (getdents returns variable-length entries)
+    d_name: [libc::c_char; 0],
 }
 
-crate::static_assert!(size_of::<Dirent>() == size_of::<libc::dirent>());
 crate::static_assert!(align_of::<Dirent>() == align_of::<libc::dirent>());
+crate::static_assert!(offset_of!(Dirent, d_ino) == offset_of!(libc::dirent, d_ino));
+crate::static_assert!(offset_of!(Dirent, d_off) == offset_of!(libc::dirent, d_off));
+crate::static_assert!(offset_of!(Dirent, d_reclen) == offset_of!(libc::dirent, d_reclen));
+crate::static_assert!(offset_of!(Dirent, d_type) == offset_of!(libc::dirent, d_type));
+crate::static_assert!(offset_of!(Dirent, d_namlen) == offset_of!(libc::dirent, d_namlen));
 crate::static_assert!(offset_of!(Dirent, d_name) == offset_of!(libc::dirent, d_name));
 
 impl Dirent {
     pub const NAME_OFFSET: usize = offset_of!(Self, d_name);
 
     /// Create a new Dirent instance
-    pub const fn new(ino: usize, off: i64, type_: DirentType, reclen: u16) -> Self {
+    pub const fn new(
+        ino: libc::ino_t,
+        off: libc::off_t,
+        type_: DirentType,
+        namlen: libc::c_ushort,
+        reclen: libc::c_ushort,
+    ) -> Self {
         Self {
             d_ino: ino,
             d_off: off,
             d_reclen: reclen,
             d_type: type_ as u8,
+            d_namlen: namlen,
             d_name: [],
         }
     }
 
     /// Get the inode number
-    pub fn ino(&self) -> usize {
+    pub fn ino(&self) -> libc::ino_t {
         self.d_ino
     }
 
     /// Get the offset
-    pub fn off(&self) -> i64 {
+    pub fn off(&self) -> libc::off_t {
         self.d_off
     }
 
@@ -158,7 +170,13 @@ impl<'a> DirBufferReader<'a> {
             return Err(code::ENOMEM);
         }
         // write dirent
-        let dir = Dirent::new(ino, off, DirentType::from(type_), dirent_size as u16);
+        let dir = Dirent::new(
+            ino as libc::ino_t,
+            off as libc::off_t,
+            DirentType::from(type_),
+            name_len as libc::c_ushort,
+            dirent_size as libc::c_ushort,
+        );
         let dir_bytes: &[u8] = unsafe {
             core::slice::from_raw_parts(&dir as *const Dirent as *const u8, Dirent::NAME_OFFSET)
         };

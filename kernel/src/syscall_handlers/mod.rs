@@ -412,7 +412,7 @@ atomic_wait(addr: usize, val: usize, timeout: *const timespec) -> c_long {
         Tick::MAX
     } else {
         let timeout = unsafe { &*timeout };
-        time::Tick::from_millis((timeout.tv_sec * 1000 + timeout.tv_nsec / 1000000) as u64)
+        time::Tick::from_millis((timeout.tv_sec * 1000 + (timeout.tv_nsec as i64) / 1000000) as u64)
     };
     let ptr = addr as *const AtomicUsize;
     let atom = unsafe { &*ptr };
