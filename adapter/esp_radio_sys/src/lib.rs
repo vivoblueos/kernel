@@ -22,15 +22,14 @@ use alloc::boxed::Box;
 use arch_crate as arch;
 use blueos::{
     scheduler,
-    scheduler::{InsertToEnd, wait_queue, wait_queue::WaitEntry},
-    thread::{Entry, SUSPENDED, Stack, ThreadNode},
+    scheduler::{wait_queue, wait_queue::WaitEntry, InsertToEnd},
+    thread::{Entry, Stack, ThreadNode, SUSPENDED},
     time::Tick,
     types::{Arc, ThreadPriority},
     with_iou,
 };
 use core::{cell::UnsafeCell, ffi::c_void, ptr::NonNull};
 use esp_radio_rtos_driver::{
-    SchedulerImplementation, ThreadPtr,
     queue::{CompatQueue, QueueHandle},
     register_queue_implementation, register_scheduler_implementation,
     register_semaphore_implementation, register_timer_implementation,
@@ -40,6 +39,7 @@ use esp_radio_rtos_driver::{
     },
     timer::{CompatTimer, TimerHandle},
     wait_queue::{WaitQueueHandle, WaitQueueImplementation, WaitQueuePtr},
+    SchedulerImplementation, ThreadPtr,
 };
 extern crate alloc;
 
@@ -543,7 +543,7 @@ register_scheduler_implementation!(static SCHEDULER: BkScheduler = BkScheduler);
 mod tests {
     use super::*;
     use blueos::{
-        allocator::{KernelAllocator, memory_info},
+        allocator::{memory_info, KernelAllocator},
         arch, scheduler,
         thread::{Builder, Entry, Thread, ThreadNode},
     };
