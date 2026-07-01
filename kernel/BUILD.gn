@@ -49,6 +49,8 @@ _shared_deps = [
   "//external/vendor/bitflags-2.10.0:bitflags",
   "//external/vendor/cfg-if-1.0.4:cfg_if",
   "//external/vendor/const-default-1.0.0:const_default",
+  "//external/vendor/embedded-hal-1.0.0:embedded_hal",
+  "//external/vendor/embedded-hal-bus-0.3.0:embedded_hal_bus",
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",

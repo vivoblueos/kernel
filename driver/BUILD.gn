@@ -20,6 +20,7 @@ build_rust("blueos_driver") {
   deps = [
            "//external/vendor/bitflags-2.10.0:bitflags",
            "//external/vendor/cfg-if-1.0.4:cfg_if",
+           "//external/vendor/embedded-hal-1.0.0:embedded_hal",
            "//external/vendor/safe-mmio-0.2.5:safe_mmio",
            "//external/vendor/spin-0.9.8:spin",
            "//external/vendor/tock-registers-0.9.0:tock_registers",
