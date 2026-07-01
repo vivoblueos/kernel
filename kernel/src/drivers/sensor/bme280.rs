@@ -12,32 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::time::Tick;
 use blueos_driver::i2c::I2cConfig;
 use blueos_hal::PlatPeri;
 use blueos_infra::tinyarc::TinyArc;
 use bme280::i2c::BME280;
-use embedded_hal::delay::DelayNs;
 
 use crate::{
     devices::{bus::Bus, i2c_core::block_i2c::BlockI2c, DeviceData},
     drivers::{DriverModule, InitDriver},
-    scheduler,
-    sync::SpinLock,
+    sync::{KernelDelay, SpinLock},
 };
-
-struct KernelDelay;
-
-impl DelayNs for KernelDelay {
-    fn delay_ns(&mut self, ns: u32) {
-        let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as u32 * ns / 1_000_000_000;
-        if ticks == 0 {
-            scheduler::yield_me();
-        } else {
-            scheduler::suspend_me_for::<()>(Tick(ticks as usize), None);
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct Bme280Config {
