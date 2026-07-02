@@ -10,6 +10,7 @@ ENV_FILE="${SCRIPT_DIR}/blueos-env.sh"
 LINK_RUSTUP=0
 DRY_RUN=0
 USE_SSH=0
+CURRENT_STEP="startup"
 
 TARGETS=(
   aarch64-vivo-blueos-newlib
@@ -44,7 +45,8 @@ log() {
 }
 
 section() {
-  local title="[blueos-rust] $*"
+  CURRENT_STEP="$*"
+  local title="[blueos-rust] ${CURRENT_STEP}"
   local width=78
   local inner_width=$((width - 4))
   local line
@@ -60,13 +62,54 @@ die() {
   exit 1
 }
 
+print_recovery_hint() {
+  case "$CURRENT_STEP" in
+    "Load environment")
+      printf '[blueos-rust] recovery: check that --env-file is readable if you expect to load one, then rerun the script.\n' >&2
+      ;;
+    "Check prerequisites")
+      printf '[blueos-rust] recovery: run setup-blueos-base-env.sh first, source the generated env file, and verify the BlueOS workspace exists.\n' >&2
+      ;;
+    "Clone or update Rust sources")
+      printf '[blueos-rust] recovery: check git network/proxy access and permissions for %s, then rerun the script.\n' "$SRC_DIR" >&2
+      ;;
+    "Build BlueOS Rust toolchain")
+      printf '[blueos-rust] recovery: inspect the Rust build error above. After fixing dependencies or source state, rerun this script; x.py will reuse completed work.\n' >&2
+      ;;
+    "Register rustup toolchain")
+      printf '[blueos-rust] recovery: install rustup or rerun without --link-rustup, then source the generated env file directly.\n' >&2
+      ;;
+    *)
+      printf '[blueos-rust] recovery: fix the command error above, then rerun the script.\n' >&2
+      ;;
+  esac
+}
+
+report_command_failure() {
+  local status="$1"
+  shift
+
+  printf '[blueos-rust] error: command failed with exit code %s\n' "$status" >&2
+  printf '[blueos-rust] failed step: %s\n' "$CURRENT_STEP" >&2
+  printf '[blueos-rust] failed command:' >&2
+  printf ' %q' "$@" >&2
+  printf '\n' >&2
+  print_recovery_hint
+}
+
 run() {
   if [[ "$DRY_RUN" == 1 ]]; then
     printf '[dry-run]'
     printf ' %q' "$@"
     printf '\n'
   else
-    "$@"
+    if "$@"; then
+      return 0
+    else
+      local status="$?"
+      report_command_failure "$status" "$@"
+      exit "$status"
+    fi
   fi
 }
 

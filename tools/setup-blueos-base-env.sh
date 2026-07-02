@@ -13,6 +13,7 @@ SKIP_QEMU=0
 SKIP_REPO_SYNC=0
 ARM_VERSION="14.3.rel1"
 QEMU_VERSION="10.0.2"
+CURRENT_STEP="startup"
 
 APT_PACKAGES=(
   build-essential cmake ninja-build pkg-config libssl-dev gdb-multiarch
@@ -47,7 +48,8 @@ log() {
 }
 
 section() {
-  local title="[blueos-base] $*"
+  CURRENT_STEP="$*"
+  local title="[blueos-base] ${CURRENT_STEP}"
   local width=78
   local inner_width=$((width - 4))
   local line
@@ -63,13 +65,66 @@ die() {
   exit 1
 }
 
+print_recovery_hint() {
+  case "$CURRENT_STEP" in
+    "Check platform")
+      printf '[blueos-base] recovery: run this script on Ubuntu 24.04+ or Debian 12+.\n' >&2
+      ;;
+    "Install distribution packages")
+      printf '[blueos-base] recovery: check apt/network/proxy/sudo, then rerun the script. Use --skip-apt only if packages are already installed.\n' >&2
+      ;;
+    "Prepare install directories")
+      printf '[blueos-base] recovery: check that --prefix and the cache directory are writable directories, then rerun the script.\n' >&2
+      ;;
+    "Install repo launcher")
+      printf '[blueos-base] recovery: check network/proxy access to the repo launcher mirror, then rerun the script.\n' >&2
+      ;;
+    "Check GN")
+      printf '[blueos-base] recovery: install the distro package that provides gn/generate-ninja, then rerun the script.\n' >&2
+      ;;
+    "Install ARM toolchains")
+      printf '[blueos-base] recovery: check network/proxy access to developer.arm.com. If an archive is partial, remove it from %s and rerun.\n' "$CACHE_DIR" >&2
+      ;;
+    "Build and install QEMU")
+      printf '[blueos-base] recovery: check QEMU build dependencies and network access. If the source/build tree is partial, remove %s/src/qemu-%s and rerun.\n' "$BLUEOS_BIN_TOOLS_PREFIX" "$QEMU_VERSION" >&2
+      ;;
+    "Write environment file")
+      printf '[blueos-base] recovery: check that --env-file points to a writable location, then rerun the script.\n' >&2
+      ;;
+    "Initialize and sync BlueOS workspace")
+      printf '[blueos-base] recovery: check repo/git network access and workspace permissions. Rerun the script; use --skip-repo-sync only to defer syncing.\n' >&2
+      ;;
+    *)
+      printf '[blueos-base] recovery: fix the command error above, then rerun the script.\n' >&2
+      ;;
+  esac
+}
+
+report_command_failure() {
+  local status="$1"
+  shift
+
+  printf '[blueos-base] error: command failed with exit code %s\n' "$status" >&2
+  printf '[blueos-base] failed step: %s\n' "$CURRENT_STEP" >&2
+  printf '[blueos-base] failed command:' >&2
+  printf ' %q' "$@" >&2
+  printf '\n' >&2
+  print_recovery_hint
+}
+
 run() {
   if [[ "$DRY_RUN" == 1 ]]; then
     printf '[dry-run]'
     printf ' %q' "$@"
     printf '\n'
   else
-    "$@"
+    if "$@"; then
+      return 0
+    else
+      local status="$?"
+      report_command_failure "$status" "$@"
+      exit "$status"
+    fi
   fi
 }
 
