@@ -36,6 +36,7 @@ pub mod i2c_core;
 #[cfg(enable_net)]
 pub(crate) mod net;
 mod null;
+pub mod spi_core;
 pub mod tty;
 #[cfg(virtio)]
 pub mod virtio;
