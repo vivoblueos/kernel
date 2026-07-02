@@ -45,7 +45,7 @@ mod idle;
 pub use idle::{
     current_idle_thread, current_idle_thread_ref, get_idle_thread, get_idle_thread_ref,
 };
-pub(crate) mod wait_queue;
+pub mod wait_queue;
 
 static READY_CORES: AtomicU8 = AtomicU8::new(0);
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;

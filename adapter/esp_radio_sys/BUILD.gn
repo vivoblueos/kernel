@@ -1,0 +1,90 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+adapter_deps = [
+  "//external/vendor/esp-radio-rtos-driver-0.3.0:esp_radio_rtos_driver",
+  "//kernel/arch:arch_crate",
+  "//kernel/kconfig:blueos_kconfig",
+  "//kernel/kernel:blueos",
+]
+
+build_rust("esp_radio_sys") {
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  deps = adapter_deps
+  deps += [ "//kernel/kconfig:generate_rustflags_file" ]
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
+  ]
+}
+
+run_clippy("esp_radio_sys_clippy") {
+  deps = [ ":esp_radio_sys" ]
+}
+
+build_rust("esp_radio_sys_unittest") {
+  testonly = true
+  crate_name = "esp_radio_sys_unittest"
+  crate_type = "bin"
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+  deps = adapter_deps
+  deps += [
+    ":esp_radio_sys",
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//kernel/kconfig:generate_rustflags_file",
+  ]
+  linker_script = default_linker_script
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
+  ]
+  rustflags = [ "--test" ]
+}
+
+run_clippy("esp_radio_sys_unittest_clippy") {
+  testonly = true
+  deps = [ ":esp_radio_sys_unittest" ]
+}
+
+gen_esp32_qemu_runner("esp_radio_sys_unittest_runner") {
+  testonly = true
+  elf = ":esp_radio_sys_unittest"
+  chip = "${chip}"
+  bootloader = qemu_esp32_bootloader_bin
+  partition_table = qemu_esp32_partition_table_bin
+  qemu = qemu_exe
+  machine = qemu_machine
+  qemu_args = qemu_extra_args
+  net_args = qemu_net_args
+  block_args = qemu_block_args
+  semihosting = true
+}
+
+run_qemu_check("run_esp_radio_sys_unittest") {
+  testonly = true
+  runner = ":esp_radio_sys_unittest_runner"
+  if (coverage) {
+    img = ":esp_radio_sys_unittest"
+    checker = "//kernel/adapter/coverage.checker"
+  } else {
+    checker = "//kernel/adapter/unittests.checker"
+  }
+}
