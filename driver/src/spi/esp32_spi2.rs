@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// ESP32-C3 GPSPI2 (SPI2) register-level driver
-//
-// Reference: ESP32-C3 Technical Reference Manual, Chapter 7 (SPI)
+//! ESP32-C3 GPSPI2 (SPI2) register-level driver.
 
 use crate::{
     spi::{SpiBitOrder, SpiConfig, SpiPhase, SpiPolarity},
@@ -222,7 +220,7 @@ register_structs! {
     }
 }
 
-// Minimal system registers for SPI2 clock gating and reset
+// System registers for SPI2 clock gating and reset.
 register_structs! {
     SystemRegisters {
         (0x00 => _reserved_sys0),
@@ -309,8 +307,7 @@ impl Esp32Spi2 {
         while regs.cmd.is_set(CMD::UPDATE) {}
     }
 
-    // AFIFO reset must be a SET-then-CLEAR pulse; leaving the bit set keeps the
-    // FIFO held in reset and corrupts subsequent transfers on real hardware.
+    // AFIFO reset is a SET-then-CLEAR pulse.
     fn reset_tx_fifo(&self) {
         let regs = &*SPI2_BASE;
         regs.dma_conf.modify(DMA_CONF::BUF_AFIFO_RST::SET);
@@ -333,22 +330,16 @@ impl Esp32Spi2 {
 
     fn start_transfer(&self) {
         let regs = &*SPI2_BASE;
-        // Sync config registers into the shadow registers before each transfer.
-        // Matches esp-hal start_operation: update() first.
+        // Sync shadow registers, clear stale TRANS_DONE, then start (USR self-clears).
         regs.cmd.modify(CMD::UPDATE.val(1));
         while regs.cmd.is_set(CMD::UPDATE) {}
-        // Clear any pending TRANS_DONE from a previous transfer before starting.
         regs.dma_int_clr.write(DMA_INT_CLR::TRANS_DONE::SET);
-        // Kick off the user-defined transaction. USR self-clears on completion.
-        // Use modify (not write) so other CMD bits stay untouched.
         regs.cmd.modify(CMD::USR.val(1));
         while regs.cmd.is_set(CMD::USR) {}
     }
 
     fn wait_done(&self) {
-        // let regs = &*SPI2_BASE;
-        // while !regs.dma_int_raw.is_set(DMA_INT_RAW::TRANS_DONE) {}
-        // regs.dma_int_clr.write(DMA_INT_CLR::TRANS_DONE::SET);
+        // No DMA in use; with DMA, poll dma_int_raw TRANS_DONE then clear it via dma_int_clr.
     }
 
     fn configure_clock(&self, baudrate: u32) -> blueos_hal::err::Result<()> {
@@ -358,11 +349,9 @@ impl Esp32Spi2 {
             return Ok(());
         }
 
-        // f_spi = f_apb / ((pre+1) * (n+1)), minimum divisor = 2
+        // f_spi = f_apb / ((pre+1) * (n+1)), minimum divisor = 2; prefer larger n for duty cycle.
         let divisor = (APB_CLK_HZ / baudrate).max(2);
 
-        // Find pre and n such that (pre+1)*(n+1) = divisor
-        // Prefer larger n for better duty cycle
         let mut best_pre = 0u32;
         let mut best_n_plus_one = 0u32;
         for pre in 0..16u32 {
@@ -381,7 +370,7 @@ impl Esp32Spi2 {
             }
         }
 
-        // No valid combination found — minimum achievable is APB/1024 (~78kHz)
+        // No valid combination: minimum is APB/1024 (~78kHz).
         if best_n_plus_one == 0 {
             return Err(blueos_hal::err::HalError::NotSupport);
         }
@@ -430,9 +419,8 @@ impl Esp32Spi2 {
         }
         let regs = &*SPI2_BASE;
 
-        // Full-duplex dummy read: write 0x00 while reading, so SCLK is driven by
-        // the MOSI phase. Matches esp-hal Driver::read (USR_MOSI+USR_MISO+DOUTDIN).
-        // Half-duplex MISO-only was returning misaligned data on real hardware.
+        // Full-duplex dummy read (write 0x00 while reading): half-duplex MISO-only
+        // returned misaligned data on real hardware.
         regs.user.modify(
             USER::DOUTDIN.val(1)
                 + USER::USR_MOSI::SET
@@ -474,10 +462,7 @@ impl Esp32Spi2 {
                 + USER::USR_DUMMY::CLEAR,
         );
 
-        // Independent read/write cursors (matches esp-hal Driver::transfer):
-        // each side advances min(FIFO_SIZE, remaining) on its own. When read
-        // exceeds write in a chunk, the write side is padded with EMPTY_WRITE_PAD
-        // so enough SCLK cycles are generated for the read.
+        // Independent read/write cursors; pad the shorter side with EMPTY_WRITE_PAD.
         let mut write_from = 0usize;
         let mut read_from = 0usize;
         loop {
@@ -521,8 +506,7 @@ impl PlatPeri for Esp32Spi2 {
     fn enable(&self) {
         let sys = &*SYSTEM_BASE;
         sys.perip_clk_en0.modify(PERIP_CLK_EN0::SPI2_CLK_EN::SET);
-        // Reset pulse (assert then release), matching ESP-IDF spi_ll_reset_register,
-        // so SPI2 starts from a clean state — otherwise CMD::UPDATE may never clear.
+        // Reset pulse; without it CMD::UPDATE may never clear.
         sys.perip_rst_en0.modify(PERIP_RST_EN0::SPI2_RST::SET);
         sys.perip_rst_en0.modify(PERIP_RST_EN0::SPI2_RST::CLEAR);
 

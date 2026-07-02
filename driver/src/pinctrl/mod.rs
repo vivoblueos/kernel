@@ -15,3 +15,6 @@
 pub mod gd32_af;
 pub mod gd32_afio;
 pub mod rpi_pico;
+
+#[cfg(target_chip = "esp32c3")]
+pub mod esp32_pinctrl;

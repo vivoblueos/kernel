@@ -26,9 +26,7 @@ impl DelayNs for KernelDelay {
         if !scheduler::is_schedule_ready() {
             #[cfg(target_arch = "riscv32")]
             {
-                // rdcycle is unreliable on ESP32-C3 (mcycle may not advance), so a
-                // cycle-counter-based spin hangs forever. Spin a fixed count instead.
-                // ~ns CPU cycles at 160 MHz, conservative (spin_loop == 1 cycle).
+                // rdcycle may not advance on ESP32-C3; spin a fixed count (~ns cycles @ 160MHz).
                 let spins = (ns as u64).saturating_mul(160) / 1_000;
                 for _ in 0..spins {
                     core::hint::spin_loop();
@@ -42,8 +40,7 @@ impl DelayNs for KernelDelay {
         }
         let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as u32 * ns / 1_000_000_000;
         if ticks == 0 {
-            // yield_me() is a no-op in single-task shell; spin a real delay so
-            // flash wait_busy gets a real per-iteration budget.
+            // yield_me() is a no-op in single-task shell; spin so wait_busy gets a real budget.
             #[cfg(target_arch = "riscv32")]
             {
                 let spins = (ns as u64).saturating_mul(160) / 1_000;

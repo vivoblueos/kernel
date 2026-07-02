@@ -15,30 +15,21 @@
 #[cfg(target_chip = "esp32c3")]
 pub mod esp32_spi2;
 
-/// SPI clock phase configuration
-///
-/// Phase0 (CPHA=0): Data captured on the first clock transition.
-/// Phase1 (CPHA=1): Data captured on the second clock transition.
+/// SPI clock phase (CPHA).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpiPhase {
     Phase0,
     Phase1,
 }
 
-/// SPI clock polarity configuration
-///
-/// Low (CPOL=0): Clock signal low when idle.
-/// High (CPOL=1): Clock signal high when idle.
+/// SPI clock polarity (CPOL).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpiPolarity {
     Low,
     High,
 }
 
-/// SPI bit order configuration
-///
-/// MsbFirst: Most significant bit transmitted first (standard for SPI NOR Flash).
-/// LsbFirst: Least significant bit transmitted first.
+/// SPI bit order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpiBitOrder {
     MsbFirst,

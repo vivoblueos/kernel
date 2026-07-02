@@ -14,20 +14,12 @@
 
 /// SPI peripheral trait — full-duplex transfer + half-duplex read/write
 pub trait Spi<P, T>: super::PlatPeri + super::Configuration<P, Target = T> {
-    /// Full-duplex transfer: simultaneously write `write` and read into `read`.
-    ///
-    /// Runs for `max(read.len(), write.len())` bytes. Overlapping/aliasing
-    /// buffers is permitted (SPI hardware reads MISO and writes MOSI on
-    /// separate lines simultaneously).
+    /// Full-duplex transfer over `max(read.len(), write.len())` bytes.
     fn transfer(&self, read: &mut [u8], write: &[u8]) -> super::err::Result<()>;
 
-    /// Half-duplex read: read data into `buf` from the SPI slave.
-    ///
-    /// The word value sent on MOSI during reading is implementation-defined,
-    /// typically `0x00` or `0xFF`.
+    /// Half-duplex read; MOSI value during read is implementation-defined.
     fn read(&self, buf: &mut [u8]) -> super::err::Result<()>;
 
-    /// Half-duplex write: write data from `buf` to the SPI slave,
-    /// discarding all incoming bytes on MISO.
+    /// Half-duplex write, discarding MISO.
     fn write(&self, buf: &[u8]) -> super::err::Result<()>;
 }
