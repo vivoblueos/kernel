@@ -166,9 +166,6 @@ impl Has8bitDataReg for Esp32UsbSerial {
         USB_SERIAL_BASE
             .ep1_reg
             .write(EP1_REG::RDWR_BYTE.val(data as u32));
-        USB_SERIAL_BASE
-            .ep1_conf_reg
-            .write(EP1_CONF_REG::WR_DONE.val(1));
     }
 
     fn is_data_ready(&self) -> bool {
@@ -211,6 +208,12 @@ impl HasFifo for Esp32UsbSerial {
             .ep1_conf_reg
             .is_set(EP1_CONF_REG::OUT_EP_DATA_AVAIL)
             != true
+    }
+
+    fn flush_tx_fifo(&self) {
+        USB_SERIAL_BASE
+            .ep1_conf_reg
+            .write(EP1_CONF_REG::WR_DONE.val(1));
     }
 }
 

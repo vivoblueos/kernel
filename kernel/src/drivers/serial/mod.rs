@@ -334,6 +334,8 @@ impl Serial {
     fn send_byte_polling(&self, c: u8) {
         while self.dev.is_tx_fifo_full() {}
         self.dev.write_data8(c);
+        use blueos_hal::HasFifo;
+        self.dev.flush_tx_fifo();
     }
 
     #[inline(always)]
@@ -363,7 +365,9 @@ impl Serial {
         // as there is no previous. But it's not common in MCU where TX is usually
         // a level interrupt, active for as long as TX buffer is empty. So we should
         // consider to make this behavior configurable in the future.
-        self.consumer_byte();
+        while self.consumer_byte() {}
+        use blueos_hal::HasFifo;
+        self.dev.flush_tx_fifo();
     }
 
     #[inline(always)]
@@ -429,12 +433,13 @@ impl Serial {
 
     /// only be used in irq handler
     pub(crate) fn xmitchars(&self) {
-        use blueos_hal::HasInterruptReg;
+        use blueos_hal::{HasFifo, HasInterruptReg};
 
         #[cfg(smp)]
         let _lock = self.critical_section_guard.irqsave_lock();
 
-        self.consumer_byte();
+        while self.consumer_byte() {}
+        self.dev.flush_tx_fifo();
     }
 
     /// only be used in irq handler
