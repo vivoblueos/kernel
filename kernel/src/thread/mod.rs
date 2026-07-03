@@ -36,7 +36,7 @@ use crate::{
 use alloc::boxed::Box;
 use core::{
     alloc::Layout,
-    cell::Cell,
+    cell::{Cell, UnsafeCell},
     ptr::NonNull,
     sync::atomic::{AtomicI32, AtomicUsize, Ordering},
 };
@@ -189,6 +189,14 @@ pub struct Thread {
     // Cleanup function will be invoked when retiring.
     cleanup: Option<Entry>,
     kind: ThreadKind,
+    // Back-pointer to the Process this thread belongs to.
+    //
+    // This is a non-owning raw pointer (not an `Arc`) to avoid circular
+    // reference: the Process owns `Arc<Thread>` references.  The pointer
+    // becomes dangling once the Process is dropped, so callers must check
+    // `Option::is_some()` before dereferencing.
+    #[cfg(target_arch = "aarch64")]
+    process: UnsafeCell<Option<NonNull<crate::process::Process>>>,
     // Thread owns Stack::Alloc. It calls dealloc when dropping its self.
     stack: Stack,
     // If saved_sp is 0, the thread should be in RUNNING state. Otherwise, it's
@@ -348,6 +356,22 @@ impl Thread {
         }
     }
 
+    /// Return the process this thread belongs to, if the process is still alive.
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub fn process(&self) -> Option<NonNull<crate::process::Process>> {
+        unsafe { *self.process.get() }
+    }
+
+    /// Set (or clear) the process back-pointer.
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub(crate) fn set_process(&self, process: NonNull<crate::process::Process>) {
+        unsafe {
+            *self.process.get() = Some(process);
+        }
+    }
+
     #[inline]
     pub fn transfer_state(&self, from: Uint, to: Uint) -> Result<(), Uint> {
         self.state
@@ -437,6 +461,8 @@ impl Thread {
             #[cfg(thread_stats)]
             stats: ThreadStats::new(),
             kind,
+            #[cfg(target_arch = "aarch64")]
+            process: UnsafeCell::new(None),
             #[cfg(event_flags)]
             event_flags_mode: EventFlagsMode::empty(),
             #[cfg(event_flags)]

@@ -1,0 +1,4 @@
+// TOTAL-TIMEOUT: 30
+// ASSERT-SUCC: Hello from EL0!
+// ASSERT-SUCC: Kernel integration test end.
+// ASSERT-FAIL: Backtrace in Panic.*

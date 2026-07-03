@@ -152,6 +152,22 @@ extern "C" fn init() {
     #[cfg(enable_vfs)]
     init_vfs();
     init_apps();
+
+    // Phase 3: start the first user-space process on AArch64.
+    #[cfg(target_arch = "aarch64")]
+    {
+        // The embedded ELF bytes are provided by first_process::FIRST_ELF_BYTES.
+        let first_proc = crate::process::first_process::init_first_process(
+            crate::process::first_process::FIRST_ELF_BYTES,
+            None,
+        );
+        // Store the Process to keep it (and its address space) alive.
+        // Without this, the Process drops immediately and the page table is freed
+        // while the thread is still queued, causing use-after-free when the
+        // scheduler dereferences thread.process().
+        crate::process::FIRST_PROCESS.lock().replace(first_proc);
+    }
+
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }

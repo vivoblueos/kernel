@@ -73,6 +73,8 @@ pub mod ffi;
 pub mod irq;
 pub mod logger;
 pub mod mm;
+#[cfg(target_arch = "aarch64")]
+pub mod process;
 #[cfg(enable_net)]
 pub mod net;
 pub mod scheduler;

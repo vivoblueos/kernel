@@ -214,7 +214,39 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     arch::mpu::update_thread_stack_guard(&next);
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
+    #[cfg(target_arch = "aarch64")]
+    let next_proc = next.process();
     let mut old = set_current_thread(next);
+    // Switch TTBR0_EL1 when the next thread belongs to a different process.
+    //
+    // The address space (page table) is owned by the Process.  Each time the
+    // scheduler switches to a thread from a different process we must write
+    // the new process's root page-table physical address into TTBR0_EL1.
+    #[cfg(target_arch = "aarch64")]
+    {
+        use tock_registers::interfaces::Writeable;
+        let old_proc = old.process();
+        if next_proc != old_proc {
+            if let Some(proc) = next_proc {
+                let pa = unsafe { proc.as_ref() }.address_space.root_pa();
+                // TTBR0_EL1.BADDR occupies bits [47:1] but the hardware expects
+                // the raw register value to be the physical address directly.
+                // The hardware extracts bits [47:1] internally.
+                crate::arch::aarch64::registers::ttbr0_el1::TTBR0_EL1
+                    .set(pa as u64);
+                // Invalidate all EL1&0 TLB entries to flush stale entries from
+                // the previous address space.  Required by ARM ARM DDI 0487
+                // §D8.14.4 when switching TTBR0_EL1 without ASID tagging.
+                // Phase 4 (task 3.6) should switch to TLBI ASIDE1IS once ASID
+                // is assigned, to avoid full TLB invalidation on every switch.
+                crate::arch::aarch64::asm::tlbi_all();
+                crate::arch::aarch64::asm::dsb(
+                    crate::arch::aarch64::asm::DsbOptions::InnerShareable,
+                );
+                crate::arch::aarch64::asm::isb();
+            }
+        }
+    }
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     #[cfg(debugging_scheduler)]

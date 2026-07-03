@@ -44,6 +44,51 @@ group("check_kernel_probe") {
   deps = [ ":run_unittest" ]
 }
 
+# ---------------------------------------------------------------------------
+# First user-space process ELF
+# ---------------------------------------------------------------------------
+
+# first_elf is AArch64-only: it uses AArch64 SVC calling conventions.
+_is_aarch64 = board == "qemu_virt64_aarch64" || board == "qemu_mps3_an547"
+if (_is_aarch64) {
+  # Build the minimal first-process ELF as a static PIE binary.
+  build_rust("first_elf") {
+    crate_type = "bin"
+    sources = [ "src/process/first_elf/src/main.rs" ]
+    edition = "2021"
+    rustflags = [
+      "-Cpanic=abort",
+      "-Crelocation-model=pic",
+      "-Clink-arg=-Wl,-static",
+      "-Clink-arg=-Wl,-pie",
+      "-Clink-arg=-Wl,-no-dynamic-linker",
+      "-Clink-arg=-nostartfiles",
+    ]
+  }
+
+  # Generate a .rs file containing the first_elf binary as a byte array.
+  action("generate_first_elf_bytes") {
+    script = "src/process/first_elf/gen_bytes.py"
+    deps = [ ":first_elf" ]
+    _first_elf_root_out_dir = get_label_info(":first_elf", "root_out_dir")
+    _first_elf_bin = "${_first_elf_root_out_dir}/bin/first_elf"
+    _output_rs = "${target_gen_dir}/first_elf_bytes.rs"
+    args = [
+      rebase_path(_first_elf_bin),
+      rebase_path(_output_rs),
+    ]
+    inputs = [ _first_elf_bin ]
+    outputs = [ _output_rs ]
+  }
+
+  _first_elf_rs_path =
+      get_label_info(":generate_first_elf_bytes", "target_gen_dir")
+}
+
+# ---------------------------------------------------------------------------
+# Shared dependencies for all kernel targets
+# ---------------------------------------------------------------------------
+
 _shared_deps = [
   ":atomic",
   "//external/rust-fatfs/v0.4:fatfs",
@@ -67,6 +112,7 @@ _shared_deps = [
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
+  "//external/vendor/goblin-0.9.3:goblin",
   "//libc",
 ]
 _shared_deps += board_deps
@@ -91,9 +137,15 @@ build_rust("kernel_unittest") {
     "//kernel/test_harness:blueos_test_macro",
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
+  if (_is_aarch64) {
+    rustenv += [ "FIRST_ELF_RS_PATH=" + rebase_path("${_first_elf_rs_path}/first_elf_bytes.rs", "", root_build_dir) ]
+  }
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
   deps += [ "//external/vendor/semihosting-0.1.20:semihosting" ]
+  if (_is_aarch64) {
+    deps += [ ":generate_first_elf_bytes" ]
+  }
   configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
@@ -162,8 +214,14 @@ build_rust("blueos") {
     "//kernel/macro:blueos_macro",
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
+  if (_is_aarch64) {
+    rustenv += [ "FIRST_ELF_RS_PATH=" + rebase_path("${_first_elf_rs_path}/first_elf_bytes.rs", "", root_build_dir) ]
+  }
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
+  if (_is_aarch64) {
+    deps += [ ":generate_first_elf_bytes" ]
+  }
   public_deps = board_deps
   public_deps += [ "//kernel/kconfig:generate_rustflags_file" ]
   public_configs += [
@@ -219,6 +277,8 @@ run_qemu_check("run_integration_test") {
   if (coverage) {
     img = ":kernel_integration_test"
     checker = "src/coverage.checker"
+  } else if (_is_aarch64) {
+    checker = "tests/integration_aarch64.checker"
   } else {
     checker = "tests/integration.checker"
   }

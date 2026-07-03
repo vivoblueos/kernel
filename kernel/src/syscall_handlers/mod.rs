@@ -48,7 +48,33 @@ mod vfs_syscalls {
     use super::*;
     pub struct Stat;
     pub struct StatFs;
-    pub fn write(_fd: i32, _buf: *const u8, _size: usize) -> isize {
+    pub fn write(fd: i32, buf: *const u8, size: usize) -> isize {
+        // Route stdout/stderr to semihosting so EL0 programs can print.
+        if fd == 1 || fd == 2 {
+            // Validate user pointer before dereferencing.
+            // User space on AArch64 is 0x0000_0000_0000_0000 to 0x0000_FFFF_FFFF_FFFF.
+            const USER_SPACE_MAX: usize = 0x0000_FFFF_FFFF_FFFF;
+
+            if buf.is_null() {
+                return -libc::EFAULT as isize;
+            }
+
+            let buf_addr = buf as usize;
+            let end_addr = buf_addr.checked_add(size);
+
+            if end_addr.is_none() || end_addr.unwrap() > USER_SPACE_MAX {
+                return -libc::EFAULT as isize;
+            }
+            // Phase 3: does not verify the address is actually mapped in the
+            // user page table.  An unmapped-but-in-range pointer will fault at
+            // the hardware level.  Full mapping validation is deferred to Phase 4.
+
+            let slice = unsafe { core::slice::from_raw_parts(buf, size) };
+            if let Ok(s) = core::str::from_utf8(slice) {
+                semihosting::print!("{}", s);
+            }
+            return size as isize;
+        }
         -libc::ENOTSUP as isize
     }
     pub fn read(_fd: i32, _buf: *mut u8, _size: usize) -> isize {
@@ -274,7 +300,7 @@ macro_rules! syscall_table {
             match ctx.nr {
                 $(val if val == NR::$nr as usize =>
                     return $crate::syscalls::$mod::handle_context(ctx) as usize,)*
-                _ => return usize::MAX,
+                _ => return (-libc::ENOSYS) as isize as usize,
             }
         }
 

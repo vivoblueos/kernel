@@ -55,7 +55,7 @@ mod test_everything {
         let res = read_all(unsafe { EVERYTHING_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::DirectAllocator::new();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_ok());
         let f = unsafe { core::mem::transmute::<usize, fn() -> ()>(mapper.real_entry().unwrap()) };
@@ -73,7 +73,7 @@ mod test_everything {
         let res = read_all(unsafe { INVALID_ENTRY_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::DirectAllocator::new();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -84,7 +84,7 @@ mod test_everything {
         let res = read_all(unsafe { INVALID_MAGIC_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::DirectAllocator::new();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -95,7 +95,7 @@ mod test_everything {
         let res = read_all(unsafe { INVALID_SEGMENT_SIZE_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::DirectAllocator::new();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
