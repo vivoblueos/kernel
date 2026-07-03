@@ -12,19 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Medium types for the link layer.
-//!
-//! Mirrors `smoltcp::phy::Medium` to avoid direct smoltcp dependency at the
-//! `LinkLayer` trait boundary. Convert to/from smoltcp in the compat layer.
+pub struct Esp32c3Rng;
 
-/// The medium type of a link-layer device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Medium {
-    /// Ethernet (IEEE 802.3)
-    Ethernet,
-    /// IP (no L2 header, e.g., loopback/tun)
-    Ip,
-    /// IEEE 802.15.4
-    Ieee802154,
+impl Esp32c3Rng {
+    pub const fn new() -> Self {
+        Self
+    }
+
+    pub fn read_one(&self) -> u32 {
+        unsafe { core::ptr::read_volatile(0x6002_60B0 as *const u32) }
+    }
 }

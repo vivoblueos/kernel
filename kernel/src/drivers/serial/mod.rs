@@ -82,7 +82,7 @@ pub static TTY_SERIAL: Serial = Serial {
 
 impl Serial {
     pub fn send_bytes(&self, bytes: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
-        if is_in_irq() {
+        if true {
             // Caution: logging in IRQ context can extend interrupt-off latency.
             //
             // We intentionally use polling here (same behavior as `kearly_printkln!`) instead

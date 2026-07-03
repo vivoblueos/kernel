@@ -33,6 +33,8 @@
 //! - **Any bound**: `LinkLayer: Any + 'static` enables safe downcasting.
 //! - **dyn-compatible**: `LinkLayer` is dyn-compatible.
 
+#[cfg(soc_esp32c3)]
+pub(crate) mod esp32_wlan;
 pub(crate) mod ethernet_ops;
 pub(crate) mod link_kind;
 pub(crate) mod loopback;
@@ -194,6 +196,28 @@ pub(crate) fn handle_control(cmd: NetIfaceControl) -> Result<NetIfaceResult, Net
             running: true,
             promiscuous: false,
         })),
+        // WiFi operations: look up the device by interface name.
+        NetIfaceControl::WifiScan(ref config) => {
+            let ifname = config
+                .ifname
+                .iter()
+                .take_while(|&&b| b != 0)
+                .copied()
+                .collect::<alloc::vec::Vec<u8>>();
+            let ifname = core::str::from_utf8(&ifname).unwrap_or("");
+            let link_arc = LINK_REGISTRY
+                .find_by_name(ifname)
+                .ok_or(NetIfaceError::DeviceNotFound)?;
+            let mut link = link_arc.write();
+            let wifi = link
+                .as_wifi()
+                .ok_or(NetIfaceError::DeviceTraitNotAvailable)?;
+            let results = wifi
+                .scan(config)
+                .map_err(|_| NetIfaceError::DeviceTraitNotAvailable)?;
+
+            Ok(NetIfaceResult::WifiScanResult(results))
+        }
         NetIfaceControl::GetMacAddress => {
             let hw = link
                 .hw_addr()

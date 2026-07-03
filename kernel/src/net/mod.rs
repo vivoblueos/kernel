@@ -63,6 +63,14 @@ pub(crate) fn init() {
             )),
         ));
     }
+
+    #[cfg(soc_esp32c3)]
+    {
+        let device = Arc::new(spin::RwLock::new(
+            crate::net::link::esp32_wlan::Esp32WlanLink::new(),
+        ));
+        devices.push(("esp32-wlan", true, device));
+    }
     // DEVICE_ENTRY here must match DeviceEntry in smoltcp/mod.rs.
     smoltcp::init_devices(&devices);
 }

@@ -36,10 +36,5 @@ build_rust("blueos_driver") {
     "target_board=\"${board}\"",
   ]
 
-  if (defined(chip)) {
-    rustflags += [
-      "--cfg",
-      "target_chip=\"${chip}\"",
-    ]
-  }
+  configs += [ "//kernel/kconfig:kconfigs" ]
 }

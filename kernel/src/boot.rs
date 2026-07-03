@@ -138,6 +138,8 @@ extern "C" fn init() {
         // initialize virtio
         virtio::init_virtio(&fdt);
     }
+    #[cfg(enable_vfs)]
+    init_vfs();
 
     scheduler::init();
     logger::logger_init();
@@ -149,11 +151,11 @@ extern "C" fn init() {
         net::init();
         net::net_manager::init();
     }
-    #[cfg(enable_vfs)]
-    init_vfs();
+
     // it's an bug in fact, but at now we use a workaround let newlib do the c++ runtime initialization
     #[cfg(not(target_board = "newlib_mps3_an547"))]
     run_init_array();
+
     init_apps();
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");

@@ -16,12 +16,14 @@
 #![feature(const_nonnull_new)]
 
 pub mod clock_control;
-pub mod hwinfo;
 pub mod gpio;
+pub mod hwinfo;
 pub mod i2c;
 pub mod interrupt_controller;
 pub mod pinctrl;
+pub mod power;
 pub mod reset;
+pub mod rng;
 pub mod spi;
 pub mod static_ref;
 pub mod systimer;

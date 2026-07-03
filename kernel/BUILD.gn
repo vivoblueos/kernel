@@ -54,6 +54,7 @@ _shared_deps = [
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
+  "//external/vendor/num-traits-0.2.19:num_traits",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
   "//external/vendor/spin-0.9.8:spin",
   "//external/vendor/thiserror-2.0.17:thiserror",
@@ -92,6 +93,7 @@ build_rust("kernel_unittest") {
   edition = "2021"
   proc_macro_deps = [
     "//external/vendor/delegate-0.13.4:delegate",
+    "//external/vendor/num-derive-0.4.2:num_derive",
     "//external/vendor/paste-1.0.15:paste",
     "//kernel/macro:blueos_macro",
     "//kernel/test_harness:blueos_test_macro",
@@ -164,6 +166,7 @@ build_rust("blueos") {
   edition = "2021"
   proc_macro_deps = [
     "//external/vendor/delegate-0.13.4:delegate",
+    "//external/vendor/num-derive-0.4.2:num_derive",
     "//external/vendor/paste-1.0.15:paste",
     "//kernel/macro:blueos_macro",
   ]

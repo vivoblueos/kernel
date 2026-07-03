@@ -19,12 +19,16 @@
 //! (`SocketFile::ioctl`) is the only place where raw `(cmd, arg)` is
 //! converted to/from these typed values.
 
+use crate::{
+    alloc::borrow::ToOwned,
+    net::link::{
+        link_kind::LinkKind,
+        wifi_ops::{WifiScanConfig, WifiScanResult},
+    },
+};
 use alloc::{string::String, vec::Vec};
 use core::ptr;
-
 use smoltcp::wire::IpCidr;
-
-use crate::net::link::{link_kind::LinkKind, wifi_ops::WifiScanResult};
 
 /// Type-safe control commands for network interfaces.
 ///
@@ -52,10 +56,12 @@ pub enum NetIfaceControl {
     GetLinkKind,
 
     // ── WiFi operations ──
-    /// Scan for WiFi networks.
-    WifiScan,
+    /// Scan for WiFi networks with the given configuration.
+    WifiScan(WifiScanConfig),
+    /// Cache the WiFi passphrase (sent by SIOCSIWENCODE before SIOCSIWESSID).
+    WifiPassphrase(String),
     /// Connect to a WiFi network.
-    WifiConnect { ssid: String, passphrase: String },
+    WifiConnect { ifname: [u8; 16], ssid: String },
     /// Disconnect from WiFi.
     WifiDisconnect,
     /// Get WiFi signal strength.
@@ -134,6 +140,61 @@ impl NetIfaceControl {
 
                 let mtu = unsafe { ptr::read_unaligned(arg as *const i32) };
                 Ok(NetIfaceControl::SetMtu(mtu as usize))
+            }
+            // SIOCSIWSCAN (0x8B18) — trigger WiFi scan with optional SSID filter
+            0x8B18 => {
+                // arg: pointer to struct iwreq
+                //   ifrn_name: [i8; 16]  at offset 0
+                //   u.essid (iw_point):  at offset 16
+                //     pointer: *mut c_void  (4 bytes on riscv32)
+                //     length:  u16          (2 bytes)
+                //     flags:   u16          (2 bytes)
+                let mut ifrn_name = [0u8; 16];
+                unsafe {
+                    ptr::copy_nonoverlapping(arg as *const u8, ifrn_name.as_mut_ptr(), 16);
+                }
+
+                let iwreq_arg = arg + 16;
+                let essid_ptr =
+                    unsafe { ptr::read_unaligned(iwreq_arg as *const *mut core::ffi::c_void) };
+                let essid_len = unsafe {
+                    ptr::read_unaligned(
+                        (iwreq_arg + core::mem::size_of::<*mut core::ffi::c_void>()) as *const u16,
+                    )
+                } as usize;
+
+                // When length > IW_ESSID_MAX_SIZE (32), the pointer is to a
+                // struct iw_scan_req whose first byte is scan_type. When
+                // length <= 32 it's a bare SSID string and we use active (0).
+                let scan_type = if essid_len > 32 && !essid_ptr.is_null() {
+                    unsafe { ptr::read_unaligned(essid_ptr as *const u8) }
+                } else {
+                    0
+                };
+
+                let mut buf = [0u8; 32];
+                if !essid_ptr.is_null() && essid_len > 0 && essid_len <= 32 {
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            essid_ptr as *const u8,
+                            buf.as_mut_ptr(),
+                            essid_len,
+                        );
+                    }
+                }
+
+                Ok(NetIfaceControl::WifiScan(WifiScanConfig {
+                    ifname: ifrn_name,
+                    ssid: if essid_len > 0 && essid_len <= 32 && !essid_ptr.is_null() {
+                        Some(unsafe {
+                            core::str::from_utf8_unchecked(&buf[..essid_len]).to_owned()
+                        })
+                    } else {
+                        None
+                    },
+                    scan_type,
+                    channel: 0,
+                }))
             }
             // SIOCADDRT / SIOCDELRT — routing (not yet implemented)
             // SIOCSIFFLAGS-like WiFi extension commands

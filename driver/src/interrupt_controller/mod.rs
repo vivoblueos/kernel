@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_chip = "esp32c3")]
+#[cfg(soc_esp32c3)]
 pub mod esp32_intc;
 
+#[derive(Debug, Clone, Copy)]
 pub struct Interrupt {
     pub(crate) source_no: usize,
     pub(crate) irq_no: usize,
