@@ -42,7 +42,7 @@ impl_simple_intrusive_adapter!(TaskletLock, Tasklet, lock);
 pub struct Tasklet {
     node: IlistHead<Tasklet, TaskletNode>,
     lock: ISpinLock<Tasklet, TaskletLock>,
-    future: Pin<Box<dyn Future<Output = ()>>>,
+    future: Option<Pin<Box<dyn Future<Output = ()>>>>,
     blocked: Option<ThreadNode>,
     state: AtomicUsize,
 }
@@ -51,7 +51,7 @@ impl Tasklet {
     pub fn new(future: Pin<Box<dyn Future<Output = ()>>>) -> Self {
         Self {
             node: IlistHead::new(),
-            future,
+            future: Some(future),
             lock: ISpinLock::new(),
             blocked: None,
             state: AtomicUsize::new(TASKLET_IDLE),
@@ -240,21 +240,30 @@ fn poll_inner() {
         );
         debug_assert_eq!(old, Ok(TASKLET_QUEUED));
 
+        let mut future = {
+            let mut l = task.lock();
+            l.future.take().expect("tasklet future is missing")
+        };
+
         let waker = tasklet_waker(task.clone());
         let mut ctx = Context::from_waker(&waker);
-        let mut l = task.lock();
-        match l.future.as_mut().poll(&mut ctx) {
+        match future.as_mut().poll(&mut ctx) {
             Poll::Ready(()) => {
-                task.state.store(TASKLET_COMPLETED, Ordering::Release);
-                let blocked = l.blocked.take();
-                drop(l);
+                let blocked = {
+                    let mut l = task.lock();
+                    task.state.store(TASKLET_COMPLETED, Ordering::Release);
+                    l.blocked.take()
+                };
                 if let Some(t) = blocked {
                     let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
                     debug_assert_eq!(ok, Ok(()));
                 }
             }
             Poll::Pending => {
-                drop(l);
+                {
+                    let mut l = task.lock();
+                    l.future = Some(future);
+                }
                 finish_pending_poll(task);
             }
         }
