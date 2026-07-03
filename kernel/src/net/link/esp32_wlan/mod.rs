@@ -44,20 +44,22 @@ use esp_hal::ram;
 use esp_wifi_sys_esp32c3::{
     c_types,
     include::{
-        esp_err_t, esp_interface_t_ESP_IF_WIFI_STA, esp_supplicant_init, esp_wifi_deinit_internal,
-        esp_wifi_get_mode, esp_wifi_init_internal, esp_wifi_internal_reg_rxcb,
-        esp_wifi_scan_get_ap_num, esp_wifi_scan_get_ap_records, esp_wifi_scan_start,
-        esp_wifi_set_country, esp_wifi_set_mode, esp_wifi_set_ps, esp_wifi_set_tx_done_cb,
-        esp_wifi_start, esp_wifi_stop, g_wifi_default_wpa_crypto_funcs, wifi_ap_record_t,
-        wifi_auth_mode_t, wifi_auth_mode_t_WIFI_AUTH_OPEN, wifi_auth_mode_t_WIFI_AUTH_WEP,
-        wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA2_WPA3_PSK,
-        wifi_auth_mode_t_WIFI_AUTH_WPA3_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA_PSK,
-        wifi_auth_mode_t_WIFI_AUTH_WPA_WPA2_PSK, wifi_country_policy_t_WIFI_COUNTRY_POLICY_MANUAL,
-        wifi_country_t, wifi_init_config_t, wifi_mode_t, wifi_mode_t_WIFI_MODE_NULL,
-        wifi_mode_t_WIFI_MODE_STA, wifi_osi_funcs_t, wifi_ps_type_t_WIFI_PS_NONE,
+        esp_err_t, esp_interface_t_ESP_IF_WIFI_STA, esp_supplicant_init, esp_wifi_connect_internal,
+        esp_wifi_deinit_internal, esp_wifi_disconnect_internal, esp_wifi_get_mode,
+        esp_wifi_init_internal, esp_wifi_internal_reg_rxcb, esp_wifi_scan_get_ap_num,
+        esp_wifi_scan_get_ap_records, esp_wifi_scan_start, esp_wifi_set_config,
+        esp_wifi_set_country, esp_wifi_set_mode, esp_wifi_set_protocols, esp_wifi_set_ps,
+        esp_wifi_set_tx_done_cb, esp_wifi_start, esp_wifi_stop, g_wifi_default_wpa_crypto_funcs,
+        wifi_ap_record_t, wifi_auth_mode_t, wifi_auth_mode_t_WIFI_AUTH_OPEN,
+        wifi_auth_mode_t_WIFI_AUTH_WEP, wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK,
+        wifi_auth_mode_t_WIFI_AUTH_WPA2_WPA3_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA3_PSK,
+        wifi_auth_mode_t_WIFI_AUTH_WPA_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA_WPA2_PSK, wifi_config_t,
+        wifi_country_policy_t_WIFI_COUNTRY_POLICY_MANUAL, wifi_country_t, wifi_init_config_t,
+        wifi_interface_t_WIFI_IF_STA, wifi_mode_t, wifi_mode_t_WIFI_MODE_NULL,
+        wifi_mode_t_WIFI_MODE_STA, wifi_osi_funcs_t, wifi_protocols_t, wifi_ps_type_t_WIFI_PS_NONE,
         wifi_scan_config_t, wifi_scan_type_t_WIFI_SCAN_TYPE_ACTIVE,
-        wifi_scan_type_t_WIFI_SCAN_TYPE_PASSIVE, ESP_OK, ESP_WIFI_OS_ADAPTER_MAGIC,
-        ESP_WIFI_OS_ADAPTER_VERSION, WIFI_INIT_CONFIG_MAGIC,
+        wifi_scan_type_t_WIFI_SCAN_TYPE_PASSIVE, wifi_sort_method_t_WIFI_CONNECT_AP_BY_SIGNAL,
+        ESP_OK, ESP_WIFI_OS_ADAPTER_MAGIC, ESP_WIFI_OS_ADAPTER_VERSION, WIFI_INIT_CONFIG_MAGIC,
     },
 };
 use libc::IW_SCAN_TYPE_ACTIVE;
@@ -68,6 +70,14 @@ use smoltcp::{
     wire::{HardwareAddress, IpAddress, IpCidr, Ipv4Address},
 };
 use spin::Once;
+
+pub const WIFI_PROTOCOL_11B: u32 = 1;
+pub const WIFI_PROTOCOL_11G: u32 = 2;
+pub const WIFI_PROTOCOL_11N: u32 = 4;
+pub const WIFI_PROTOCOL_LR: u32 = 8;
+pub const WIFI_PROTOCOL_11A: u32 = 16;
+pub const WIFI_PROTOCOL_11AC: u32 = 32;
+pub const WIFI_PROTOCOL_11AX: u32 = 64;
 
 const EVENTINFO_CHANNEL_SIZE: usize = 16;
 
@@ -488,7 +498,102 @@ impl WifiOps for Esp32WlanLink {
     }
 
     fn connect(&mut self, ssid: &str, passphrase: &str) -> Result<(), NetError> {
-        todo!()
+        log::info!(
+            "WiFi connecting to SSID: {} (passphrase len: {})",
+            ssid,
+            passphrase.len()
+        );
+
+        let ssid_bytes = ssid.as_bytes();
+        if ssid_bytes.len() > 32 {
+            log::error!("WiFi connect: SSID too long: {}", ssid_bytes.len());
+            return Err(NetError::NoRoute);
+        }
+
+        let pwd_bytes = passphrase.as_bytes();
+        if pwd_bytes.len() > 64 {
+            log::error!("WiFi connect: passphrase too long: {}", pwd_bytes.len());
+            return Err(NetError::NoRoute);
+        }
+
+        unsafe {
+            let mut cfg: wifi_config_t = core::mem::zeroed();
+
+            cfg.sta.ssid[..ssid_bytes.len()].copy_from_slice(ssid_bytes);
+            cfg.sta.password[..pwd_bytes.len()].copy_from_slice(pwd_bytes);
+
+            cfg.sta.scan_method = 0; // WIFI_FAST_SCAN
+            cfg.sta.bssid_set = false;
+            cfg.sta.channel = 0;
+            cfg.sta.listen_interval = 3;
+            cfg.sta.sort_method = wifi_sort_method_t_WIFI_CONNECT_AP_BY_SIGNAL;
+            cfg.sta.threshold.rssi = -99;
+            cfg.sta.threshold.authmode = if passphrase.is_empty() {
+                esp_wifi_sys_esp32c3::include::wifi_auth_mode_t_WIFI_AUTH_OPEN
+            } else {
+                esp_wifi_sys_esp32c3::include::wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK
+            };
+            cfg.sta.threshold.rssi_5g_adjustment = 0;
+            cfg.sta.pmf_cfg.capable = true;
+            cfg.sta.pmf_cfg.required = false;
+            cfg.sta.sae_pwe_h2e = 3;
+            cfg.sta.failure_retry_cnt = 1;
+            cfg.sta.sae_pk_mode = 0;
+
+            // ── Disconnect any stale connection first ──
+            // Must disconnect before calling esp_wifi_set_config, otherwise
+            // set_config may return ESP_ERR_WIFI_STATE ("still connecting").
+            // esp_wifi_disconnect_internal resets STA state from "connecting"
+            // or "connected" back to "started" (state 1), allowing set_config
+            // to proceed.
+            let _ = esp_wifi_disconnect_internal();
+
+            // ── Set STA config while WiFi is running ──
+            // Per ESP-IDF documentation, esp_wifi_set_config can be called
+            // only when the interface is enabled (i.e., WiFi is started).
+            // When WiFi is already started and STA is in state 1 (started,
+            // not connecting), wifi_set_config_process detects the config
+            // change and triggers wifi_connect_process internally.
+            // This is the same approach used by the esp-radio crate:
+            // set_config() handles mode+config+start in one step, then
+            // connect_impl() just calls esp_wifi_connect_internal().
+            //
+            // DO NOT use stop→set_config→start here! esp_wifi_stop()
+            // deinitializes the WPA supplicant (clears WPA/WPA2 callback
+            // registrations done by esp_supplicant_init), but esp_wifi_start()
+            // does NOT re-register them. After stop→start, the supplicant
+            // is dead and WPA2 authentication cannot trigger.
+            let ret = esp_wifi_set_config(
+                wifi_interface_t_WIFI_IF_STA,
+                &cfg as *const wifi_config_t as *mut wifi_config_t,
+            );
+            if ret != (ESP_OK as i32) {
+                log::error!("WiFi connect: esp_wifi_set_config failed: {}", ret);
+                return Err(NetError::NoRoute);
+            }
+
+            let p = wifi_protocols_t {
+                ghz_2g: (WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N) as u16,
+                ghz_5g: 0,
+            };
+            let ret = esp_wifi_set_protocols(
+                wifi_interface_t_WIFI_IF_STA,
+                &p as *const wifi_protocols_t as *mut wifi_protocols_t,
+            );
+            if ret != (ESP_OK as i32) {
+                log::error!("WiFi connect: esp_wifi_set_protocols failed: {}", ret);
+                return Err(NetError::NoRoute);
+            }
+
+            // ── Trigger connection ──
+            let ret = esp_wifi_connect_internal();
+            if ret != (ESP_OK as i32) {
+                log::error!("WiFi connect: esp_wifi_connect_internal failed: {}", ret);
+                return Err(NetError::NoRoute);
+            }
+        }
+        log::info!("WiFi connect triggered for SSID: {}", ssid);
+        Ok(())
     }
 
     fn disconnect(&mut self) -> Result<(), NetError> {

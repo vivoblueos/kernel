@@ -55,6 +55,10 @@ use crate::net::{
     link::{ethernet_ops::EthernetOps, wifi_ops::WifiOps},
 };
 
+/// Global cache for the WiFi passphrase, set by SIOCSIWENCODE and consumed by
+/// the subsequent SIOCSIWESSID (WifiConnect) ioctl.
+static WIFI_PASSPHRASE_CACHE: spin::Mutex<Option<String>> = spin::Mutex::new(None);
+
 /// A hardware address (MAC or similar).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HwAddr {
@@ -217,6 +221,36 @@ pub(crate) fn handle_control(cmd: NetIfaceControl) -> Result<NetIfaceResult, Net
                 .map_err(|_| NetIfaceError::DeviceTraitNotAvailable)?;
 
             Ok(NetIfaceResult::WifiScanResult(results))
+        }
+        NetIfaceControl::WifiPassphrase(ref passphrase) => {
+            *WIFI_PASSPHRASE_CACHE.lock() = Some(passphrase.clone());
+            Ok(NetIfaceResult::Void)
+        }
+        // ── WiFi connect (SIOCSIWESSID) ──
+        NetIfaceControl::WifiConnect {
+            ref ifname,
+            ref ssid,
+        } => {
+            let ifname = ifname
+                .iter()
+                .take_while(|&&b| b != 0)
+                .copied()
+                .collect::<alloc::vec::Vec<u8>>();
+            let ifname = core::str::from_utf8(&ifname).unwrap_or("");
+            let link_arc = LINK_REGISTRY
+                .find_by_name(ifname)
+                .ok_or(NetIfaceError::DeviceNotFound)?;
+            let mut link = link_arc.write();
+            let wifi = link
+                .as_wifi()
+                .ok_or(NetIfaceError::DeviceTraitNotAvailable)?;
+
+            let passphrase = WIFI_PASSPHRASE_CACHE.lock().take().unwrap_or_default();
+
+            wifi.connect(ssid, &passphrase)
+                .map_err(|_| NetIfaceError::DeviceTraitNotAvailable)?;
+
+            Ok(NetIfaceResult::Void)
         }
         NetIfaceControl::GetMacAddress => {
             let hw = link
