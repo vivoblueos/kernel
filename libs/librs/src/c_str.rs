@@ -21,7 +21,11 @@
 use core::{ffi::c_char, marker::PhantomData, ptr::NonNull, str::Utf8Error};
 
 use alloc::{borrow::Cow, string::String};
-
+#[cfg(target_board = "newlib_mps3_an547")]
+unsafe extern "C" {
+    fn strlen(s: *const c_char) -> usize;
+}
+#[cfg(not(target_board = "newlib_mps3_an547"))]
 use crate::string::strlen;
 /// C string wrapper, guaranteed to be
 #[derive(Clone, Copy)]

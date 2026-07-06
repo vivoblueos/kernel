@@ -147,7 +147,8 @@ pub extern "C" fn clock() -> clock_t {
     }
     let ts = unsafe { ts.assume_init() };
 
-    let clocks = ts.tv_sec * CLOCKS_PER_SEC + (ts.tv_nsec / (1_000_000_000 / CLOCKS_PER_SEC));
+    let clocks = ts.tv_sec as i64 * CLOCKS_PER_SEC as i64
+        + ts.tv_nsec as i64 / (1_000_000_000_i64 / CLOCKS_PER_SEC as i64);
     match clock_t::try_from(clocks) {
         Ok(ok) => ok,
         Err(_err) => -1,

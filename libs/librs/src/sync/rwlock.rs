@@ -16,7 +16,11 @@
 // https://github.com/redox-os/relibc/blob/master/LICENSE
 // standard MIT license
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::{
+    cell::UnsafeCell,
+    ops::{Deref, DerefMut},
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use super::futex_wait;
 use libc::{c_int, timespec};
@@ -154,6 +158,81 @@ impl Rwlock {
             if self.state.fetch_sub(1, Ordering::Release) & COUNT_MASK == 1 {
                 let _ = crate::sync::futex_wake(&self.state, usize::MAX);
             }
+        }
+    }
+}
+
+pub struct RwLockReadGuard<'a, T> {
+    lock: &'a Rwlock,
+    data: &'a T,
+}
+
+pub struct RwLockWriteGuard<'a, T> {
+    lock: &'a Rwlock,
+    data: &'a mut T,
+}
+
+impl<T> Deref for RwLockReadGuard<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.data
+    }
+}
+
+impl<T> Deref for RwLockWriteGuard<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.data
+    }
+}
+
+impl<T> DerefMut for RwLockWriteGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.data
+    }
+}
+
+impl<T> Drop for RwLockReadGuard<'_, T> {
+    fn drop(&mut self) {
+        self.lock.unlock();
+    }
+}
+
+impl<T> Drop for RwLockWriteGuard<'_, T> {
+    fn drop(&mut self) {
+        self.lock.unlock();
+    }
+}
+
+pub struct RwLock<T> {
+    inner: Rwlock,
+    data: UnsafeCell<T>,
+}
+
+unsafe impl<T: Send> Send for RwLock<T> {}
+unsafe impl<T: Send + Sync> Sync for RwLock<T> {}
+
+impl<T> RwLock<T> {
+    pub const fn new(val: T) -> Self {
+        Self {
+            inner: Rwlock::new(),
+            data: UnsafeCell::new(val),
+        }
+    }
+
+    pub fn read(&self) -> RwLockReadGuard<'_, T> {
+        self.inner.acquire_read_lock(None);
+        RwLockReadGuard {
+            lock: &self.inner,
+            data: unsafe { &*self.data.get() },
+        }
+    }
+
+    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
+        self.inner.acquire_write_lock(None);
+        RwLockWriteGuard {
+            lock: &self.inner,
+            data: unsafe { &mut *self.data.get() },
         }
     }
 }

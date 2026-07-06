@@ -1,0 +1,78 @@
+import("//build/boards/${board}.gni")
+import("//build/sysroot.gni")
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+
+# C++ support libraries for newlib target
+_libstdcxx_path = exec_script("//build/scripts/get_lib_path.py",
+                              [
+                                "arm-none-fv-eabi-g++",
+                                "libstdc++.a",
+                                "-mthumb",
+                                "-march=armv8-m.main+fp.dp",
+                                "-mfloat-abi=hard",
+                              ],
+                              "string")
+_libc_path = exec_script("//build/scripts/get_lib_path.py",
+                         [
+                           "arm-none-fv-eabi-g++",
+                           "libc.a",
+                           "-mthumb",
+                           "-march=armv8-m.main+fp.dp",
+                           "-mfloat-abi=hard",
+                         ],
+                         "string")
+_libgcc_path = exec_script("//build/scripts/get_lib_path.py",
+                           [
+                             "arm-none-fv-eabi-g++",
+                             "libgcc.a",
+                             "-mthumb",
+                             "-march=armv8-m.main+fp.dp",
+                             "-mfloat-abi=hard",
+                           ],
+                           "string")
+
+template("librs_newlib_c_cc_case") {
+  forward_variables_from(invoker, "*")
+  case_name = target_name
+  exe_name = "librs_newlib_c_cc_image_${case_name}"
+  runner_name = "librs_newlib_c_cc_runner_${case_name}"
+  checker_name = "run_librs_newlib_c_cc_${case_name}"
+
+  executable(exe_name) {
+    sources = [ "//librs/tests/newlib_c_cc/${case_name}.cc" ]
+    deps = [ "//librs/tests/newlib_c_cc:librs_newlib_c_cc" ]
+
+    configs += [ "//build/boards/${board}:kernel_config" ]
+
+    ldflags = [
+      "-Wl,-T",
+      rebase_path(default_linker_script),
+    ]
+
+    libs = [
+      _libstdcxx_path,
+      _libc_path,
+      _libgcc_path,
+    ]
+  }
+
+  gen_qemu_runner(runner_name) {
+    semihosting = true
+    img = ":${exe_name}"
+    qemu = qemu_exe
+    machine = qemu_machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_img = "${exe_name}_block.img"
+    block_args = qemu_block_args
+  }
+
+  run_qemu_check(checker_name) {
+    if (coverage) {
+      img = ":${exe_name}"
+    }
+    runner = ":${runner_name}"
+    checker = "//librs/tests/newlib_c_cc/common_checker.test"
+  }
+}

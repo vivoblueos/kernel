@@ -1,0 +1,105 @@
+import("//build/sysroot.gni")
+import("//build/templates/bindgen.gni")
+import("//build/templates/rust.gni")
+import("//librs/tests/newlib_c_cc/testcase.gni")
+
+group("check_newlib_c_cc") {
+  deps = [
+    ":run_librs_newlib_c_cc_cpp_basic",
+    ":run_librs_newlib_c_cc_cpp_exception",
+    ":run_librs_newlib_c_cc_cpp_future",
+    ":run_librs_newlib_c_cc_cpp_locale",
+    ":run_librs_newlib_c_cc_cpp_lockfree",
+    ":run_librs_newlib_c_cc_cpp_rvalue",
+    ":run_librs_newlib_c_cc_cpp_shared_ptr",
+    ":run_librs_newlib_c_cc_cpp_stdio_printf",
+    ":run_librs_newlib_c_cc_cpp_syncs",
+    ":run_librs_newlib_c_cc_cpp_threads",
+  ]
+}
+
+# workaround for bindgen need libclang, it's not consistency with the c/c++ toolchain
+# but type info is same
+config("newlib_include_config") {
+  cflags = [
+    "-I${current_sysroot}/include",
+    "--target=arm-none-eabi",
+  ]
+}
+
+bindgen("newlib_reent_header") {
+  bindgen_flags = [
+    "--use-core",
+    "--ctypes-prefix",
+    "core::ffi",
+    "--allowlist-type",
+    "_reent",
+    "--allowlist-type",
+    "_Bigint",
+    "--allowlist-type",
+    "__tm",
+    "--allowlist-type",
+    "_atexit",
+    "--allowlist-type",
+    "_on_exit_args",
+    "--allowlist-type",
+    "_glue",
+    "--allowlist-type",
+    "__sFILE",
+    "--allowlist-type",
+    "__sbuf",
+  ]
+  sources = [ "wrapper.h" ]
+  configs += [ ":newlib_include_config" ]
+  deps = board_deps
+}
+
+build_rust("librs_newlib_c_cc") {
+  crate_type = "staticlib"
+  crate_name = "librs"
+  sources = [ "//librs/src/newlib.rs" ]
+  deps = [
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/kconfig:blueos_kconfig",
+    "//kernel/kernel:blueos",
+    "//kernel/scal:blueos_scal",
+    "//libc",
+  ]
+  features = []
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  public_deps = board_deps
+  build_deps = [ ":newlib_reent_header" ]
+  output_file = get_target_outputs(":newlib_reent_header")
+  rustenv = [ "BINDGEN_DIR=" + rebase_path(output_file[0]) ]
+}
+
+librs_newlib_c_cc_case("cpp_basic") {
+}
+
+librs_newlib_c_cc_case("cpp_shared_ptr") {
+}
+
+librs_newlib_c_cc_case("cpp_threads") {
+}
+
+librs_newlib_c_cc_case("cpp_stdio_printf") {
+}
+
+librs_newlib_c_cc_case("cpp_future") {
+}
+
+librs_newlib_c_cc_case("cpp_syncs") {
+}
+
+librs_newlib_c_cc_case("cpp_rvalue") {
+}
+
+librs_newlib_c_cc_case("cpp_exception") {
+}
+
+librs_newlib_c_cc_case("cpp_lockfree") {
+}
+
+librs_newlib_c_cc_case("cpp_locale") {
+}
