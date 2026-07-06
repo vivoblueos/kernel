@@ -49,7 +49,7 @@ use semihosting::println;
 // In esp32c3, we use usb-serial as the console output,
 // which does not support on qemu yet, so we skip this test on esp32c3 for now.
 // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
-#[cfg_attr(not(target_chip = "esp32c3"), test)]
+#[cfg_attr(not(soc_esp32c3), test)]
 fn test_uart() {
     // Test UART device path
     let uart_path = c"/dev/ttyS0";
@@ -423,7 +423,7 @@ fn verify_directory(path: *const c_char) -> Result<(), c_int> {
 // In esp32c3, we use usb-serial as the console output,
 // which does not support on qemu yet, so we skip this test on esp32c3 for now.
 // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
-#[cfg_attr(not(target_chip = "esp32c3"), test)]
+#[cfg_attr(not(soc_esp32c3), test)]
 fn test_std_fds() {
     // Test writing to stdout (fd 1)
     let test_data = b"Hello, this is a test message to stdout!\n";

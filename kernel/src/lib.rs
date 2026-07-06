@@ -316,7 +316,7 @@ mod tests {
     // In esp32c3, we use usb-serial as the console output,
     // which does not support on qemu yet, so we skip this test on esp32c3 for now.
     // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
-    #[cfg_attr(not(target_chip = "esp32c3"), test)]
+    #[cfg_attr(not(soc_esp32c3), test)]
     fn test_early_printk() {
         kearly_println!("Hello from early_printk!");
     }
