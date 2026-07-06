@@ -14,10 +14,7 @@
 
 //! ESP32-C3 GPSPI2 (SPI2) register-level driver.
 
-use crate::{
-    spi::{SpiBitOrder, SpiConfig, SpiPhase, SpiPolarity},
-    static_ref::StaticRef,
-};
+use crate::spi::{SpiBitOrder, SpiConfig, SpiPhase, SpiPolarity};
 use blueos_hal::{Configuration, PlatPeri};
 use tock_registers::{
     interfaces::{ReadWriteable, Readable, Writeable},
@@ -25,13 +22,6 @@ use tock_registers::{
     registers::ReadWrite,
 };
 
-const SPI2_BASE: StaticRef<Spi2Registers> =
-    unsafe { StaticRef::new(0x6002_4000 as *const Spi2Registers) };
-
-const SYSTEM_BASE: StaticRef<SystemRegisters> =
-    unsafe { StaticRef::new(0x600C_0000 as *const SystemRegisters) };
-
-const APB_CLK_HZ: u32 = 80_000_000;
 const SPI2_DATA_BUF_SIZE: usize = 64;
 
 // Pad byte for full-duplex reads where read length exceeds write length.
@@ -231,19 +221,36 @@ register_structs! {
     }
 }
 
-pub struct Esp32Spi2 {}
+/// ESP32-C3 GPSPI2 (SPI2) peripheral, generic over register base and APB clock.
+pub struct Esp32Spi2<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32> {}
 
-unsafe impl Send for Esp32Spi2 {}
-unsafe impl Sync for Esp32Spi2 {}
+unsafe impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32> Send
+    for Esp32Spi2<SPI_BASE, SYS_BASE, APB_HZ>
+{
+}
+unsafe impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32> Sync
+    for Esp32Spi2<SPI_BASE, SYS_BASE, APB_HZ>
+{
+}
 
-impl Esp32Spi2 {
+impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
+    Esp32Spi2<SPI_BASE, SYS_BASE, APB_HZ>
+{
     pub const fn new() -> Self {
         Self {}
     }
 
+    fn spi_regs() -> &'static Spi2Registers {
+        unsafe { &*(SPI_BASE as *const Spi2Registers) }
+    }
+
+    fn sys_regs() -> &'static SystemRegisters {
+        unsafe { &*(SYS_BASE as *const SystemRegisters) }
+    }
+
     fn write_buf(&self, data: &[u8]) {
         debug_assert!(data.len() <= SPI2_DATA_BUF_SIZE);
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         let words = data.chunks(4);
         for (i, chunk) in words.enumerate() {
             let mut word = 0u32;
@@ -273,7 +280,7 @@ impl Esp32Spi2 {
     }
 
     fn read_buf(&self, data: &mut [u8]) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         let words = [
             regs.w0.get(),
             regs.w1.get(),
@@ -302,26 +309,26 @@ impl Esp32Spi2 {
     }
 
     fn apply_config(&self) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         regs.cmd.write(CMD::UPDATE.val(1));
         while regs.cmd.is_set(CMD::UPDATE) {}
     }
 
     // AFIFO reset is a SET-then-CLEAR pulse.
     fn reset_tx_fifo(&self) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         regs.dma_conf.modify(DMA_CONF::BUF_AFIFO_RST::SET);
         regs.dma_conf.modify(DMA_CONF::BUF_AFIFO_RST::CLEAR);
     }
 
     fn reset_rx_fifo(&self) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         regs.dma_conf.modify(DMA_CONF::RX_AFIFO_RST::SET);
         regs.dma_conf.modify(DMA_CONF::RX_AFIFO_RST::CLEAR);
     }
 
     fn reset_tx_rx_fifo(&self) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         regs.dma_conf
             .modify(DMA_CONF::BUF_AFIFO_RST::SET + DMA_CONF::RX_AFIFO_RST::SET);
         regs.dma_conf
@@ -329,7 +336,7 @@ impl Esp32Spi2 {
     }
 
     fn start_transfer(&self) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         // Sync shadow registers, clear stale TRANS_DONE, then start (USR self-clears).
         regs.cmd.modify(CMD::UPDATE.val(1));
         while regs.cmd.is_set(CMD::UPDATE) {}
@@ -343,14 +350,14 @@ impl Esp32Spi2 {
     }
 
     fn configure_clock(&self, baudrate: u32) -> blueos_hal::err::Result<()> {
-        let regs = &*SPI2_BASE;
-        if baudrate >= APB_CLK_HZ {
+        let regs = Self::spi_regs();
+        if baudrate >= APB_HZ {
             regs.clock.write(CLOCK::CLK_EQU_SYSCLK.val(1));
             return Ok(());
         }
 
         // f_spi = f_apb / ((pre+1) * (n+1)), minimum divisor = 2; prefer larger n for duty cycle.
-        let divisor = (APB_CLK_HZ / baudrate).max(2);
+        let divisor = (APB_HZ / baudrate).max(2);
 
         let mut best_pre = 0u32;
         let mut best_n_plus_one = 0u32;
@@ -391,7 +398,7 @@ impl Esp32Spi2 {
         if data.is_empty() {
             return Ok(());
         }
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
 
         regs.user.modify(
             USER::DOUTDIN.val(0)
@@ -417,7 +424,7 @@ impl Esp32Spi2 {
         if data.is_empty() {
             return Ok(());
         }
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
 
         // Full-duplex dummy read (write 0x00 while reading): half-duplex MISO-only
         // returned misaligned data on real hardware.
@@ -451,7 +458,7 @@ impl Esp32Spi2 {
         if read.is_empty() && write.is_empty() {
             return Ok(());
         }
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
 
         regs.user.modify(
             USER::DOUTDIN.val(1)
@@ -502,15 +509,17 @@ impl Esp32Spi2 {
     }
 }
 
-impl PlatPeri for Esp32Spi2 {
+impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32> PlatPeri
+    for Esp32Spi2<SPI_BASE, SYS_BASE, APB_HZ>
+{
     fn enable(&self) {
-        let sys = &*SYSTEM_BASE;
+        let sys = Self::sys_regs();
         sys.perip_clk_en0.modify(PERIP_CLK_EN0::SPI2_CLK_EN::SET);
         // Reset pulse; without it CMD::UPDATE may never clear.
         sys.perip_rst_en0.modify(PERIP_RST_EN0::SPI2_RST::SET);
         sys.perip_rst_en0.modify(PERIP_RST_EN0::SPI2_RST::CLEAR);
 
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         regs.clk_gate.write(
             CLK_GATE::CLK_EN.val(1)
                 + CLK_GATE::MST_CLK_ACTIVE.val(1)
@@ -519,18 +528,20 @@ impl PlatPeri for Esp32Spi2 {
     }
 
     fn disable(&self) {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
         regs.clk_gate.modify(CLK_GATE::MST_CLK_ACTIVE::CLEAR);
-        let sys = &*SYSTEM_BASE;
+        let sys = Self::sys_regs();
         sys.perip_clk_en0.modify(PERIP_CLK_EN0::SPI2_CLK_EN::CLEAR);
     }
 }
 
-impl Configuration<SpiConfig> for Esp32Spi2 {
+impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32> Configuration<SpiConfig>
+    for Esp32Spi2<SPI_BASE, SYS_BASE, APB_HZ>
+{
     type Target = ();
 
     fn configure(&self, config: &SpiConfig) -> blueos_hal::err::Result<Self::Target> {
-        let regs = &*SPI2_BASE;
+        let regs = Self::spi_regs();
 
         // Ensure peripheral is enabled
         self.enable();
@@ -588,7 +599,9 @@ impl Configuration<SpiConfig> for Esp32Spi2 {
     }
 }
 
-impl blueos_hal::spi::Spi<SpiConfig, ()> for Esp32Spi2 {
+impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
+    blueos_hal::spi::Spi<SpiConfig, ()> for Esp32Spi2<SPI_BASE, SYS_BASE, APB_HZ>
+{
     fn transfer(&self, read: &mut [u8], write: &[u8]) -> blueos_hal::err::Result<()> {
         self.do_full_duplex_transfer(read, write)
     }

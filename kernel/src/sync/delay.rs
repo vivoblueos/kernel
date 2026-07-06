@@ -15,6 +15,10 @@
 use crate::{scheduler, time::Tick};
 use embedded_hal::delay::DelayNs;
 
+/// ESP32-C3 CPU clock. The systimer (`ClockImpl::hz()` = 16MHz) is not the CPU clock.
+#[cfg(target_board = "seeed_xiao_esp32c3")]
+const CPU_HZ: u32 = 160_000_000;
+
 /// Kernel delay adapter — implements `embedded_hal::delay::DelayNs`
 ///
 /// Converts nanosecond delays into kernel scheduler operations:
@@ -24,15 +28,15 @@ pub struct KernelDelay;
 impl DelayNs for KernelDelay {
     fn delay_ns(&mut self, ns: u32) {
         if !scheduler::is_schedule_ready() {
-            #[cfg(target_arch = "riscv32")]
+            #[cfg(target_board = "seeed_xiao_esp32c3")]
             {
-                // rdcycle may not advance on ESP32-C3; spin a fixed count (~ns cycles @ 160MHz).
-                let spins = (ns as u64).saturating_mul(160) / 1_000;
+                // rdcycle may not advance on ESP32-C3; spin ~ns cycles @ CPU_HZ.
+                let spins = (ns as u64).saturating_mul(CPU_HZ as u64) / 1_000_000_000;
                 for _ in 0..spins {
                     core::hint::spin_loop();
                 }
             }
-            #[cfg(not(target_arch = "riscv32"))]
+            #[cfg(not(target_board = "seeed_xiao_esp32c3"))]
             {
                 let _ = ns;
             }
@@ -41,14 +45,14 @@ impl DelayNs for KernelDelay {
         let ticks = blueos_kconfig::CONFIG_TICKS_PER_SECOND as u32 * ns / 1_000_000_000;
         if ticks == 0 {
             // yield_me() is a no-op in single-task shell; spin so wait_busy gets a real budget.
-            #[cfg(target_arch = "riscv32")]
+            #[cfg(target_board = "seeed_xiao_esp32c3")]
             {
-                let spins = (ns as u64).saturating_mul(160) / 1_000;
+                let spins = (ns as u64).saturating_mul(CPU_HZ as u64) / 1_000_000_000;
                 for _ in 0..spins {
                     core::hint::spin_loop();
                 }
             }
-            #[cfg(not(target_arch = "riscv32"))]
+            #[cfg(not(target_board = "seeed_xiao_esp32c3"))]
             {
                 scheduler::yield_me();
             }

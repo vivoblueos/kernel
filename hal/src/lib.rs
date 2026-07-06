@@ -22,6 +22,7 @@ use core::num::NonZeroUsize;
 use err::Result;
 pub mod clock;
 pub mod clock_control;
+pub mod gpio;
 pub mod i2c;
 pub mod isr;
 pub mod pinctrl;

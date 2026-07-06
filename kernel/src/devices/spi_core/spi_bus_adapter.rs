@@ -12,86 +12,105 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! SPI block transport bridge — HAL `Spi` trait → `embedded_hal::spi::SpiBus<u8>`
+//! SPI bus adapter — HAL `Spi` trait → `embedded_hal::spi::SpiBus<u8>`
 //!
-//! BlockSpiBus wraps a HAL `Spi` peripheral into an `embedded_hal::spi::SpiBus<u8>`,
-//! providing the bus-level interface that device drivers consume via
-//! `ExclusiveDevice<SpiBus, OutputPin>` to get a full `SpiDevice<u8>` with
-//! CS lifecycle management.
+//! Wraps a HAL `Spi` peripheral into an `embedded_hal::spi::SpiBus<u8>`,
+//! the bus-level interface that device drivers consume via
+//! `ExclusiveDevice<SpiBus, OutputPin>` for full `SpiDevice<u8>` with CS management.
 
 use blueos_driver::spi::SpiConfig;
 use blueos_hal::PlatPeri;
 
-/// SPI block transport wrapper (bus-level)
+/// SPI bus adapter (bus-level)
 ///
 /// Wraps a HAL `Spi` peripheral into an `embedded_hal::spi::SpiBus<u8>`.
 /// CS management is handled separately by `ExclusiveDevice` combining
 /// this bus with a GPIO `OutputPin` (e.g., `Esp32GpioOutputPin`).
-pub struct BlockSpiBus<T: PlatPeri> {
+pub struct SpiBusAdapter<T: PlatPeri> {
     inner: &'static T,
 }
 
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>> BlockSpiBus<T> {
-    /// Create a new BlockSpiBus, configuring the underlying HAL peripheral
+impl<T: blueos_hal::spi::Spi<SpiConfig, ()>> SpiBusAdapter<T> {
+    /// Create a new SpiBusAdapter, configuring the underlying HAL peripheral
     /// with SPI NOR Flash default settings (Mode 0, 20MHz, MSB-first).
     pub fn new(inner: &'static T) -> Result<Self, blueos_hal::err::HalError> {
         inner.configure(&SpiConfig::spi_flash_default())?;
-        Ok(BlockSpiBus { inner })
+        Ok(SpiBusAdapter { inner })
     }
 }
 
-// Error type for SpiBus implementation
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>> embedded_hal::spi::ErrorType for BlockSpiBus<T> {
-    type Error = SpiBlockError;
+impl<T: blueos_hal::spi::Spi<SpiConfig, ()>> embedded_hal::spi::ErrorType for SpiBusAdapter<T> {
+    type Error = SpiBusAdapterError;
 }
 
-/// SPI block transport error type
-///
-/// Maps HAL errors to embedded-hal's SPI error framework.
+/// SPI bus adapter error type — maps HAL errors to embedded-hal's SPI error framework.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SpiBlockError {
+pub enum SpiBusAdapterError {
     /// Error originating from the underlying HAL Spi peripheral
     HalError,
 }
 
-impl embedded_hal::spi::Error for SpiBlockError {
+impl embedded_hal::spi::Error for SpiBusAdapterError {
     fn kind(&self) -> embedded_hal::spi::ErrorKind {
         match self {
-            SpiBlockError::HalError => embedded_hal::spi::ErrorKind::Other,
+            SpiBusAdapterError::HalError => embedded_hal::spi::ErrorKind::Other,
         }
     }
 }
 
-/// SpiBus<u8> implementation — bridges HAL Spi to embedded-hal SpiBus
-///
-/// Translates `SpiBus` method calls into the underlying HAL `Spi` trait.
-/// The HAL peripheral already waits for completion after each transfer,
-/// so `flush()` is a no-op.
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>> embedded_hal::spi::SpiBus<u8> for BlockSpiBus<T> {
+/// SpiBus<u8> implementation — bridges HAL Spi to embedded-hal SpiBus.
+/// The HAL peripheral already waits for completion after each transfer, so `flush()` is a no-op.
+impl<T: blueos_hal::spi::Spi<SpiConfig, ()>> embedded_hal::spi::SpiBus<u8> for SpiBusAdapter<T> {
     fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
-        self.inner.read(words).map_err(|_| SpiBlockError::HalError)
+        self.inner
+            .read(words)
+            .map_err(|_| SpiBusAdapterError::HalError)
     }
 
     fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
-        self.inner.write(words).map_err(|_| SpiBlockError::HalError)
+        self.inner
+            .write(words)
+            .map_err(|_| SpiBusAdapterError::HalError)
     }
 
     fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
         self.inner
             .transfer(read, write)
-            .map_err(|_| SpiBlockError::HalError)
+            .map_err(|_| SpiBusAdapterError::HalError)
     }
 
     fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         // Write then read back into same buffer (two-step since HAL transfer can't alias)
         self.inner
             .write(words)
-            .map_err(|_| SpiBlockError::HalError)?;
-        self.inner.read(words).map_err(|_| SpiBlockError::HalError)
+            .map_err(|_| SpiBusAdapterError::HalError)?;
+        self.inner
+            .read(words)
+            .map_err(|_| SpiBusAdapterError::HalError)
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
         // Esp32Spi2 waits for completion after each transfer, so bus is always idle
+        Ok(())
+    }
+}
+
+/// Adapts a `blueos_hal::gpio::OutputPin` to `embedded_hal::digital::OutputPin`,
+/// so a HAL pin can feed `embedded_hal_bus::spi::ExclusiveDevice` (CS bound).
+pub struct HalOutputPinAdapter<P: blueos_hal::gpio::OutputPin>(pub P);
+
+impl<P: blueos_hal::gpio::OutputPin> embedded_hal::digital::ErrorType for HalOutputPinAdapter<P> {
+    type Error = core::convert::Infallible;
+}
+
+impl<P: blueos_hal::gpio::OutputPin> embedded_hal::digital::OutputPin for HalOutputPinAdapter<P> {
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        let _ = self.0.set_low();
+        Ok(())
+    }
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        let _ = self.0.set_high();
         Ok(())
     }
 }
@@ -104,10 +123,8 @@ mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
     use embedded_hal::spi::SpiBus;
 
-    /// Mock HAL Spi peripheral for testing BlockSpiBus
-    ///
-    /// Implements all required HAL traits (PlatPeri, Configuration, Spi)
-    /// to create a BlockSpiBus wrapper for testing SpiBus method handling.
+    /// Mock HAL Spi peripheral for testing SpiBusAdapter.
+    /// Implements all required HAL traits (PlatPeri, Configuration, Spi).
     static MOCK_SPI: MockHalSpi = MockHalSpi;
 
     struct MockHalSpi;
@@ -126,7 +143,7 @@ mod tests {
         }
     }
 
-    // Spi<SpiConfig, ()>: required for BlockSpiBus::new and SpiBus impl
+    // Spi<SpiConfig, ()>: required for SpiBusAdapter::new and SpiBus impl
     impl blueos_hal::spi::Spi<SpiConfig, ()> for MockHalSpi {
         fn transfer(&self, read: &mut [u8], write: &[u8]) -> HalResult<()> {
             if SHOULD_FAIL.load(Ordering::Relaxed) != 0 {
@@ -135,7 +152,6 @@ mod tests {
             // Copy write data into read buffer (simulates SPI loopback)
             let len = read.len().min(write.len());
             read[..len].copy_from_slice(&write[..len]);
-            // Record the operation
             WRITE_COUNT.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
@@ -144,7 +160,6 @@ mod tests {
             if SHOULD_FAIL.load(Ordering::Relaxed) != 0 {
                 return Err(HalError::Fail);
             }
-            // Fill with configurable test data
             let data = READ_DATA.load(Ordering::Relaxed) as u8;
             for byte in buf.iter_mut() {
                 *byte = data;
@@ -157,14 +172,12 @@ mod tests {
             if SHOULD_FAIL.load(Ordering::Relaxed) != 0 {
                 return Err(HalError::Fail);
             }
-            // Record the written data
             LAST_WRITE_LEN.store(buf.len(), Ordering::Relaxed);
             WRITE_COUNT.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
     }
 
-    // Atomic counters for tracking HAL operations in tests
     static WRITE_COUNT: AtomicUsize = AtomicUsize::new(0);
     static READ_COUNT: AtomicUsize = AtomicUsize::new(0);
     static LAST_WRITE_LEN: AtomicUsize = AtomicUsize::new(0);
@@ -180,14 +193,14 @@ mod tests {
     }
 
     #[test]
-    fn test_block_spi_bus_new() {
-        let result = BlockSpiBus::new(&MOCK_SPI);
+    fn test_spi_bus_adapter_new() {
+        let result = SpiBusAdapter::new(&MOCK_SPI);
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_block_spi_bus_write() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+    fn test_spi_bus_adapter_write() {
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
 
         bus.write(&[0x9F, 0x00, 0x00, 0x00]).unwrap();
@@ -196,8 +209,8 @@ mod tests {
     }
 
     #[test]
-    fn test_block_spi_bus_read() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+    fn test_spi_bus_adapter_read() {
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
         READ_DATA.store(0xAB, Ordering::Relaxed);
 
@@ -209,8 +222,8 @@ mod tests {
     }
 
     #[test]
-    fn test_block_spi_bus_transfer() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+    fn test_spi_bus_adapter_transfer() {
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
 
         let mut read_buf = [0u8; 4];
@@ -223,8 +236,8 @@ mod tests {
     }
 
     #[test]
-    fn test_block_spi_bus_transfer_in_place() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+    fn test_spi_bus_adapter_transfer_in_place() {
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
         READ_DATA.store(0xFF, Ordering::Relaxed);
 
@@ -234,53 +247,51 @@ mod tests {
         // TransferInPlace: write then read back (two-step)
         assert_eq!(WRITE_COUNT.load(Ordering::Relaxed), 1);
         assert_eq!(READ_COUNT.load(Ordering::Relaxed), 1);
-        // After read, buf is filled with mock read data
         assert_eq!(buf, [0xFF, 0xFF, 0xFF, 0xFF]);
     }
 
     #[test]
-    fn test_block_spi_bus_flush() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
-        // flush is a no-op — should always succeed
+    fn test_spi_bus_adapter_flush() {
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         assert!(bus.flush().is_ok());
     }
 
     #[test]
-    fn test_spi_block_error_kind() {
+    fn test_spi_bus_adapter_error_kind() {
         use embedded_hal::spi::Error as SpiError;
 
         assert_eq!(
-            SpiError::kind(&SpiBlockError::HalError),
+            SpiError::kind(&SpiBusAdapterError::HalError),
             embedded_hal::spi::ErrorKind::Other
         );
     }
 
     #[test]
     fn test_hal_write_error_propagation() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
         SHOULD_FAIL.store(1, Ordering::Relaxed);
 
         let result = bus.write(&[0x9F, 0x00, 0x00, 0x00]);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), SpiBlockError::HalError);
+        assert_eq!(result.unwrap_err(), SpiBusAdapterError::HalError);
     }
 
     #[test]
     fn test_hal_read_error_propagation() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
         SHOULD_FAIL.store(1, Ordering::Relaxed);
 
         let mut read_buf = [0u8; 3];
         let result = bus.read(&mut read_buf);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), SpiBlockError::HalError);
+        assert_eq!(result.unwrap_err(), SpiBusAdapterError::HalError);
     }
 
     #[test]
     fn test_hal_transfer_error_propagation() {
-        let mut bus = BlockSpiBus::new(&MOCK_SPI).unwrap();
+        let mut bus = SpiBusAdapter::new(&MOCK_SPI).unwrap();
         reset_counters();
         SHOULD_FAIL.store(1, Ordering::Relaxed);
 
@@ -288,6 +299,6 @@ mod tests {
         let write_buf = [0x03, 0x00, 0x10, 0x00];
         let result = bus.transfer(&mut read_buf, &write_buf);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), SpiBlockError::HalError);
+        assert_eq!(result.unwrap_err(), SpiBusAdapterError::HalError);
     }
 }

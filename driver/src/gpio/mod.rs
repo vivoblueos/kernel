@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(target_chip = "esp32c3")]
+#[cfg(soc_esp32c3)]
 pub mod esp32_gpio;

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod gd32_af;
-pub mod gd32_afio;
-pub mod rpi_pico;
+/// GPIO output pin — drives a GPIO output latch.
+///
+/// Uses `&self` (shared reference): the multitasking kernel shares peripheral
+/// references across contexts, and mutual exclusion is provided at a higher
+/// level (e.g. `embedded_hal_bus::spi::ExclusiveDevice` guards CS transitions).
+pub trait OutputPin: super::PlatPeri {
+    /// Drive the pin low.
+    fn set_low(&self) -> super::err::Result<()>;
 
-#[cfg(soc_esp32c3)]
-pub mod esp32_pinctrl;
+    /// Drive the pin high.
+    fn set_high(&self) -> super::err::Result<()>;
+}

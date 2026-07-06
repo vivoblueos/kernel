@@ -16,7 +16,6 @@
 //! `pinctrl::esp32_pinctrl`; this driver only flips the output data latch.
 
 use crate::static_ref::StaticRef;
-use embedded_hal::digital::OutputPin;
 use tock_registers::{
     interfaces::Writeable, register_bitfields, register_structs, registers::ReadWrite,
 };
@@ -58,18 +57,16 @@ impl<const PIN: u8> Esp32GpioOutputPin<PIN> {
     }
 }
 
-impl<const PIN: u8> embedded_hal::digital::ErrorType for Esp32GpioOutputPin<PIN> {
-    type Error = core::convert::Infallible;
-}
+impl<const PIN: u8> blueos_hal::PlatPeri for Esp32GpioOutputPin<PIN> {}
 
-impl<const PIN: u8> OutputPin for Esp32GpioOutputPin<PIN> {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
+impl<const PIN: u8> blueos_hal::gpio::OutputPin for Esp32GpioOutputPin<PIN> {
+    fn set_low(&self) -> blueos_hal::err::Result<()> {
         let gpio_regs = &*GPIO_BASE;
         gpio_regs.out_w1tc.write(GpioOut::DATA.val(1 << PIN));
         Ok(())
     }
 
-    fn set_high(&mut self) -> Result<(), Self::Error> {
+    fn set_high(&self) -> blueos_hal::err::Result<()> {
         let gpio_regs = &*GPIO_BASE;
         gpio_regs.out_w1ts.write(GpioOut::DATA.val(1 << PIN));
         Ok(())
