@@ -33,7 +33,7 @@ use crate::{
     scheduler, thread,
     thread::{Entry, SystemThreadStorage, ThreadKind, ThreadNode},
 };
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{collections::VecDeque, string::String, vec, vec::Vec};
 use api::*;
 use core::{
     mem::MaybeUninit,
@@ -46,20 +46,22 @@ use esp_wifi_sys_esp32c3::{
     include::{
         esp_err_t, esp_interface_t_ESP_IF_WIFI_STA, esp_supplicant_init, esp_wifi_connect_internal,
         esp_wifi_deinit_internal, esp_wifi_disconnect_internal, esp_wifi_get_mode,
-        esp_wifi_init_internal, esp_wifi_internal_reg_rxcb, esp_wifi_scan_get_ap_num,
-        esp_wifi_scan_get_ap_records, esp_wifi_scan_start, esp_wifi_set_config,
-        esp_wifi_set_country, esp_wifi_set_mode, esp_wifi_set_protocols, esp_wifi_set_ps,
-        esp_wifi_set_tx_done_cb, esp_wifi_start, esp_wifi_stop, g_wifi_default_wpa_crypto_funcs,
-        wifi_ap_record_t, wifi_auth_mode_t, wifi_auth_mode_t_WIFI_AUTH_OPEN,
-        wifi_auth_mode_t_WIFI_AUTH_WEP, wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK,
-        wifi_auth_mode_t_WIFI_AUTH_WPA2_WPA3_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA3_PSK,
-        wifi_auth_mode_t_WIFI_AUTH_WPA_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA_WPA2_PSK, wifi_config_t,
+        esp_wifi_init_internal, esp_wifi_internal_free_rx_buffer, esp_wifi_internal_reg_rxcb,
+        esp_wifi_internal_tx, esp_wifi_scan_get_ap_num, esp_wifi_scan_get_ap_records,
+        esp_wifi_scan_start, esp_wifi_set_config, esp_wifi_set_country, esp_wifi_set_mode,
+        esp_wifi_set_protocols, esp_wifi_set_ps, esp_wifi_set_tx_done_cb, esp_wifi_start,
+        esp_wifi_stop, g_wifi_default_wpa_crypto_funcs, wifi_ap_record_t, wifi_auth_mode_t,
+        wifi_auth_mode_t_WIFI_AUTH_OPEN, wifi_auth_mode_t_WIFI_AUTH_WEP,
+        wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA2_WPA3_PSK,
+        wifi_auth_mode_t_WIFI_AUTH_WPA3_PSK, wifi_auth_mode_t_WIFI_AUTH_WPA_PSK,
+        wifi_auth_mode_t_WIFI_AUTH_WPA_WPA2_PSK, wifi_config_t,
         wifi_country_policy_t_WIFI_COUNTRY_POLICY_MANUAL, wifi_country_t, wifi_init_config_t,
         wifi_interface_t_WIFI_IF_STA, wifi_mode_t, wifi_mode_t_WIFI_MODE_NULL,
         wifi_mode_t_WIFI_MODE_STA, wifi_osi_funcs_t, wifi_protocols_t, wifi_ps_type_t_WIFI_PS_NONE,
         wifi_scan_config_t, wifi_scan_type_t_WIFI_SCAN_TYPE_ACTIVE,
         wifi_scan_type_t_WIFI_SCAN_TYPE_PASSIVE, wifi_sort_method_t_WIFI_CONNECT_AP_BY_SIGNAL,
-        ESP_OK, ESP_WIFI_OS_ADAPTER_MAGIC, ESP_WIFI_OS_ADAPTER_VERSION, WIFI_INIT_CONFIG_MAGIC,
+        ESP_ERR_NO_MEM, ESP_OK, ESP_WIFI_OS_ADAPTER_MAGIC, ESP_WIFI_OS_ADAPTER_VERSION,
+        WIFI_INIT_CONFIG_MAGIC,
     },
 };
 use libc::IW_SCAN_TYPE_ACTIVE;
@@ -78,7 +80,7 @@ pub const WIFI_PROTOCOL_LR: u32 = 8;
 pub const WIFI_PROTOCOL_11A: u32 = 16;
 pub const WIFI_PROTOCOL_11AC: u32 = 32;
 pub const WIFI_PROTOCOL_11AX: u32 = 64;
-
+const WIFI_RX_QUEUE_SIZE: usize = 8;
 const EVENTINFO_CHANNEL_SIZE: usize = 16;
 
 #[repr(transparent)]
@@ -92,14 +94,16 @@ unsafe impl Sync for InternalEventSender {}
 /// Safety: initialized in `wifi_inner_init` before being used.
 pub(super) static mut EVENT_SENDER: MaybeUninit<InternalEventSender> = MaybeUninit::uninit();
 
-static WIFI_TX_INFLIGHT: AtomicUsize = AtomicUsize::new(0);
-
 fn get_wlan_singleton() -> &'static WifiController {
     static WLAN_SINGLETON: Once<WifiController> = Once::new();
     WLAN_SINGLETON.call_once(|| WifiController {
         init_done: AtomicBool::new(false),
         started: AtomicBool::new(false),
         connected: AtomicBool::new(false),
+        tx_inflight: AtomicUsize::new(0),
+        rx_queue_size: WIFI_RX_QUEUE_SIZE,
+        tx_queue_size: 4,
+        rx_queue: spin::Mutex::new(VecDeque::new()),
     })
 }
 
@@ -110,7 +114,8 @@ pub(crate) unsafe extern "C" fn esp_wifi_tx_done_cb(
     _data_len: *mut u16,
     _tx_status: bool,
 ) {
-    WIFI_TX_INFLIGHT
+    get_wlan_singleton()
+        .tx_inflight
         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
             Some(x.saturating_sub(1))
         })
@@ -123,13 +128,32 @@ pub(crate) unsafe extern "C" fn recv_cb_sta(
     len: u16,
     eb: *mut c_types::c_void,
 ) -> esp_err_t {
-    todo!()
+    let packet = PacketBuffer { buffer, len, eb };
+    let queued = {
+        let mut queue = get_wlan_singleton().rx_queue.lock();
+        if queue.len() < get_wlan_singleton().rx_queue_size {
+            queue.push_back(packet);
+            true
+        } else {
+            false
+        }
+    };
+
+    if queued {
+        ESP_OK as esp_err_t
+    } else {
+        ESP_ERR_NO_MEM as esp_err_t
+    }
 }
 
 struct WifiController {
     init_done: AtomicBool,
     started: AtomicBool,
     connected: AtomicBool,
+    tx_inflight: AtomicUsize,
+    tx_queue_size: usize,
+    rx_queue_size: usize,
+    rx_queue: spin::Mutex<VecDeque<PacketBuffer>>,
 }
 
 impl WifiController {
@@ -232,6 +256,17 @@ impl WifiController {
 
         Ok(())
     }
+
+    #[inline(always)]
+    fn can_send(&self) -> bool {
+        self.connected.load(Ordering::Acquire)
+            && self.tx_inflight.load(Ordering::SeqCst) < self.tx_queue_size
+    }
+
+    #[inline(always)]
+    fn can_recv(&self) -> bool {
+        self.connected.load(Ordering::Acquire) && !get_wlan_singleton().rx_queue.lock().is_empty()
+    }
 }
 
 impl Drop for WifiController {
@@ -303,11 +338,11 @@ impl LinkLayer for Esp32WlanLink {
     }
 
     fn can_send(&self) -> bool {
-        false
+        self.controller.can_send()
     }
 
     fn can_recv(&self) -> bool {
-        false
+        self.controller.can_recv()
     }
 
     fn as_wifi(&mut self) -> Option<&mut dyn super::wifi_ops::WifiOps> {
@@ -319,16 +354,47 @@ impl LinkLayer for Esp32WlanLink {
     }
 }
 
+struct PacketBuffer {
+    buffer: *mut c_types::c_void,
+    len: u16,
+    eb: *mut c_types::c_void,
+}
+
+unsafe impl Send for PacketBuffer {}
+
+impl Drop for PacketBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            esp_wifi_internal_free_rx_buffer(self.eb);
+        }
+    }
+}
+
+impl PacketBuffer {
+    fn as_slice(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.buffer as *const u8, self.len as usize) }
+    }
+}
+
 pub struct WifiTxToken {}
 
-pub struct WifiRxToken {}
+pub struct WifiRxToken {
+    packet: PacketBuffer,
+}
+
+impl WifiRxToken {
+    pub(crate) fn get_packet() -> Option<Self> {
+        let packet = get_wlan_singleton().rx_queue.lock().pop_front()?;
+        Some(Self { packet })
+    }
+}
 
 impl RxToken for WifiRxToken {
     fn consume<R, F>(self, f: F) -> R
     where
         F: FnOnce(&[u8]) -> R,
     {
-        todo!()
+        f(self.packet.as_slice())
     }
 }
 
@@ -337,7 +403,38 @@ impl TxToken for WifiTxToken {
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        todo!()
+        const WIFI_MTU: usize = 1500;
+        static mut BUFFER: [u8; WIFI_MTU] = [0; WIFI_MTU];
+        let frame = unsafe { &mut BUFFER[..len.min(WIFI_MTU)] };
+        let result = f(frame);
+
+        if len > WIFI_MTU {
+            log::warn!("wifi tx frame dropped: len={} mtu={}", len, WIFI_MTU);
+            return result;
+        }
+
+        get_wlan_singleton()
+            .tx_inflight
+            .fetch_add(1, Ordering::SeqCst);
+        let ret = unsafe {
+            esp_wifi_internal_tx(
+                wifi_interface_t_WIFI_IF_STA,
+                frame.as_mut_ptr() as *mut c_types::c_void,
+                len as u16,
+            )
+        };
+
+        if ret != (ESP_OK as i32) {
+            get_wlan_singleton()
+                .tx_inflight
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                    Some(x.saturating_sub(1))
+                })
+                .ok();
+            log::warn!("esp_wifi_internal_tx failed: ret={} len={}", ret, len);
+        }
+
+        result
     }
 }
 
@@ -355,11 +452,19 @@ impl Device for Esp32WlanLink {
         &mut self,
         _timestamp: smoltcp::time::Instant,
     ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        None
+        if !self.controller.can_recv() {
+            return None;
+        }
+
+        WifiRxToken::get_packet().map(|rx| (rx, WifiTxToken {}))
     }
 
     fn transmit(&mut self, _timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
-        None
+        if self.controller.can_send() {
+            Some(WifiTxToken {})
+        } else {
+            None
+        }
     }
 
     fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
@@ -384,11 +489,11 @@ impl SmoltcpDevice for Esp32WlanLink {
             Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
         );
         iface.update_ip_addrs(|addrs| {
-            let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 232, 39, 110), 24));
+            let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 58, 218, 197), 24));
         });
         let _ = iface
             .routes_mut()
-            .add_default_ipv4_route(Ipv4Address::new(10, 232, 39, 109));
+            .add_default_ipv4_route(Ipv4Address::new(10, 58, 218, 198));
         let sockets = SocketSet::new(vec![]);
         (iface, sockets)
     }

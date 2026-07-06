@@ -173,6 +173,7 @@ impl LinkRegistry {
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
+        log::info!("Searching for link device by name: {}", name);
         self.devices
             .lock()
             .iter()
