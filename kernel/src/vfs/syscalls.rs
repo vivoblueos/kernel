@@ -579,12 +579,13 @@ pub struct Stat {
     pub st_gid: libc::gid_t,
     pub st_rdev: libc::dev_t,
     pub st_size: libc::off_t,
-    pub st_atime: Timespec,
-    pub st_mtime: Timespec,
-    pub st_ctime: Timespec,
+    __st_size_padding: libc::c_int,
+    pub st_atim: Timespec,
+    pub st_mtim: Timespec,
+    pub st_ctim: Timespec,
     pub st_blksize: libc::blksize_t,
     pub st_blocks: libc::blkcnt_t,
-    pub st_spare4: [libc::c_long; 2usize],
+    __st_spare: [libc::c_int; 2usize],
 }
 
 impl From<FileAttr> for Stat {
@@ -598,12 +599,13 @@ impl From<FileAttr> for Stat {
             st_gid: attr.gid as libc::gid_t,
             st_rdev: attr.rdev as libc::dev_t,
             st_size: attr.size as libc::off_t,
+            __st_size_padding: 0,
             st_blksize: attr.blk_size as libc::blksize_t,
             st_blocks: (attr.blocks * (attr.blk_size / 512)) as libc::blkcnt_t,
-            st_atime: attr.atime.into(),
-            st_mtime: attr.mtime.into(),
-            st_ctime: attr.ctime.into(),
-            st_spare4: [0; 2],
+            st_atim: attr.atime.into(),
+            st_mtim: attr.mtime.into(),
+            st_ctim: attr.ctime.into(),
+            __st_spare: [0; 2],
         }
     }
 }

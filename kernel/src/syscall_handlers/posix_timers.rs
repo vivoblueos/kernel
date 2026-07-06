@@ -97,6 +97,14 @@ pub(crate) fn realtime_time_ns() -> i64 {
     monotonic_time_ns().saturating_add(offset)
 }
 
+pub(crate) fn realtime_offset_ns() -> i64 {
+    #[cfg(target_has_atomic = "64")]
+    let offset = REALTIME_OFFSET_NS.load(Ordering::Relaxed);
+    #[cfg(not(target_has_atomic = "64"))]
+    let offset = *REALTIME_OFFSET_NS.lock();
+    offset
+}
+
 pub(crate) fn set_realtime_offset_ns(offset: i64) {
     #[cfg(target_has_atomic = "64")]
     REALTIME_OFFSET_NS.store(offset, Ordering::Relaxed);
@@ -261,7 +269,9 @@ pub(crate) fn clock_nanosleep(
     };
     let remaining_ns = match remaining_ns {
         Ok(ns) => ns,
-        Err(errno) => return errno,
+        Err(errno) => {
+            return errno;
+        }
     };
     if remaining_ns <= 0 {
         clear_remaining_time(rmtp);
