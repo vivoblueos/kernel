@@ -149,13 +149,16 @@ pub(crate) fn init() {
     let power_domain = PowerDomain::new(0x6000_8000);
     power_domain.enable_wifi();
 
+    #[cfg(enable_net)]
     unsafe {
         use esp_wifi_sys_esp32c3::include::{
             esp_wifi_internal_set_log_level, wifi_log_level_t_WIFI_LOG_VERBOSE,
         };
 
         esp_wifi_internal_set_log_level(wifi_log_level_t_WIFI_LOG_VERBOSE);
+    }
 
+    unsafe {
         // open wifi clk
         // modified from https://github.com/esp-rs/esp-hal/blob/63ff86ca206fc1bd25699527ed30094f3bb9a872/esp-radio/src/radio_clocks/clocks_ll/esp32c3.rs#L35-L42
         const SYSTEM_WIFI_CLK_I2C_CLK_EN: u32 = 1 << 5;

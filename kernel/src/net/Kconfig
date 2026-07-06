@@ -6,6 +6,12 @@ config ENABLE_NET
     help
       Enable network stack support. When enabled, smoltcp TCP/IP stack will be available.
 
+config NET_STATIC_IP
+    string "Set device ipv4 address"
+    default ""
+    help
+      Set device ipv4 address
+
 config NETWORK_STACK_SIZE
     depends on ENABLE_NET
     default 24576
@@ -119,5 +125,31 @@ config DNS_MAX_SERVER_COUNT
     range 1 32
     help
       Maximum amount of DNS servers that can be configured in one DNS socket.
+
+config NET_ROUTER_IP
+    string "Default Router ip"
+    default "0.0.0.0"
+    help
+      Default router ip
+
+config ENABLE_WLAN
+    bool "Enable wlan device"
+    default n
+    help
+      Enable wlan device
+
+if ENABLE_WLAN
+    config WLAN_SSID
+        string "SSID for access point"
+        default ""
+        help
+          SSID for access point
+    
+    config WLAN_PASSWORD
+        string "Password for access point"
+        default ""
+        help
+          Password for access point
+endif
 
 endmenu # SMOLTCP

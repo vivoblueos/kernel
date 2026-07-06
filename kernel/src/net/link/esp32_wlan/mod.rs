@@ -480,6 +480,17 @@ impl SmoltcpDevice for Esp32WlanLink {
     fn create_smoltcp_iface(&mut self) -> (Interface, SocketSet<'static>) {
         use smoltcp::iface::Config;
 
+        let ip_parser = |ip_str: &str| -> Option<Ipv4Address> {
+            let ip_str = ip_str.trim_end_matches('\0');
+            let mut parts = ip_str.split('.');
+            let octets: Result<Vec<u8>, _> = parts.map(|s| s.parse::<u8>()).collect();
+            match octets {
+                Ok(octets) if octets.len() == 4 => {
+                    Some(Ipv4Address::new(octets[0], octets[1], octets[2], octets[3]))
+                }
+                _ => None,
+            }
+        };
         let config = Config::new(HardwareAddress::Ethernet(smoltcp::wire::EthernetAddress(
             self.mac_address(),
         )));
@@ -488,12 +499,16 @@ impl SmoltcpDevice for Esp32WlanLink {
             self,
             Instant::from_millis(i64::try_from(crate::time::now().as_millis()).unwrap_or(0)),
         );
+        let router_ip =
+            ip_parser(core::str::from_utf8(blueos_kconfig::CONFIG_NET_ROUTER_IP).unwrap_or(""))
+                .unwrap_or(Ipv4Address::new(0, 0, 0, 0));
+        let static_ip =
+            ip_parser(core::str::from_utf8(blueos_kconfig::CONFIG_NET_STATIC_IP).unwrap_or(""))
+                .unwrap_or(Ipv4Address::new(0, 0, 0, 0));
         iface.update_ip_addrs(|addrs| {
-            let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 58, 218, 197), 24));
+            let _ = addrs.push(IpCidr::new(IpAddress::Ipv4(static_ip), 24));
         });
-        let _ = iface
-            .routes_mut()
-            .add_default_ipv4_route(Ipv4Address::new(10, 58, 218, 198));
+        let _ = iface.routes_mut().add_default_ipv4_route(router_ip);
         let sockets = SocketSet::new(vec![]);
         (iface, sockets)
     }
