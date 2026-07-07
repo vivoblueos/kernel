@@ -24,7 +24,7 @@ pub struct Gd32ClockControl;
 cfg_if::cfg_if! {
     if #[cfg(soc_gd32e507z)] {
         use rcu::init_soc;
-    } else if #[cfg(soc_gc32vw553)] {
+    } else if #[cfg(soc_gd32vw553)] {
         unsafe extern "C" {
             fn init_soc();
         }

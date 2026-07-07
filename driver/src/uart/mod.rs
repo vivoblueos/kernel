@@ -19,7 +19,7 @@ pub mod dumb;
 pub mod esp32_usb_serial;
 #[cfg(soc_gd32e507z)]
 pub mod gd32e5x_uart;
-#[cfg(soc_gc32vw553)]
+#[cfg(soc_gd32vw553)]
 pub mod gd32vw55x;
 pub mod ns16x50;
 
