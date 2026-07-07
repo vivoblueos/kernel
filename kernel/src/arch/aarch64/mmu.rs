@@ -287,7 +287,7 @@ impl PageEntry {
     }
 
     // Check the entry is valid
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(self.0)
             .is_set(PAGE_DESCRIPTOR::VALID)
     }
@@ -297,7 +297,7 @@ impl PageEntry {
             .is_set(PAGE_DESCRIPTOR::TYPE)
     }
 
-    fn table_ptr(&self) -> Option<*mut PageTableManager> {
+    pub fn table_ptr(&self) -> Option<*mut PageTableManager> {
         if !self.is_valid() || !self.is_table_or_page() {
             return None;
         }
@@ -322,6 +322,12 @@ pub struct PageTableManager([PageEntry; 512]);
 impl PageTableManager {
     const fn new() -> Self {
         PageTableManager([PageEntry::new(); 512])
+    }
+
+    /// Return a reference to the page entry at the given index (0..512).
+    #[inline]
+    pub fn entry(&self, index: usize) -> &PageEntry {
+        &self.0[index]
     }
 
     fn init() {

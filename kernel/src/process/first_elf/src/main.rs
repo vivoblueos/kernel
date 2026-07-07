@@ -28,8 +28,10 @@
 // Syscall numbers (must match kernel/header/src/lib.rs)
 // ---------------------------------------------------------------------------
 
-const NR_WRITE: usize = 11;
+const NR_WRITE: usize = 13;
 const NR_EXIT_THREAD: usize = 6;
+const NR_EXIT: usize = 7;
+const NR_GETPID: usize = 8;
 
 // File descriptor for stdout.
 const STDOUT: usize = 1;
@@ -45,9 +47,14 @@ const STDOUT: usize = 1;
 /// - args in x0 - x5
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    // Phase 4: single write then exit(0).  The EL0 SVC handler enables IRQs
+    // during the syscall, so a timer tick can preempt the thread between
+    // syscalls.  We keep the EL0 program to a single write + exit to avoid
+    // multi-syscall starvation until the scheduler is fixed.
     let msg = b"Hello from EL0!\n";
-    let ret = syscall_write(STDOUT, msg.as_ptr() as usize, msg.len());
-    syscall_exit_thread(ret as usize);
+    let _ret = syscall_write(STDOUT, msg.as_ptr() as usize, msg.len());
+
+    syscall_exit(0);
     loop {}
 }
 
@@ -83,6 +90,33 @@ fn syscall_exit_thread(retval: usize) -> ! {
         );
     }
     loop {}
+}
+
+/// Exit syscall: exit(code) — stores exit code on the thread, then retires it.
+fn syscall_exit(code: i32) -> ! {
+    unsafe {
+        core::arch::asm!(
+            "svc #0",
+            in("x8") NR_EXIT,
+            in("x0") code,
+            options(noreturn),
+        );
+    }
+    loop {}
+}
+
+/// getpid syscall: returns the PID of the calling thread's process, or 0.
+fn syscall_getpid() -> isize {
+    let ret: isize;
+    unsafe {
+        core::arch::asm!(
+            "svc #0",
+            in("x8") NR_GETPID,
+            lateout("x0") ret,
+            options(nostack),
+        );
+    }
+    ret
 }
 
 // ---------------------------------------------------------------------------

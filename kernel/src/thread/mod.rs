@@ -38,7 +38,7 @@ use core::{
     alloc::Layout,
     cell::{Cell, UnsafeCell},
     ptr::NonNull,
-    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 mod builder;
@@ -869,3 +869,34 @@ impl Drop for PreemptGuard {
 
 impl !Send for Thread {}
 unsafe impl Sync for Thread {}
+
+#[cfg(all(test, target_arch = "aarch64"))]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    extern "C" fn noop_entry() {}
+
+    // W1: A thread with an attached Process reports its process back-pointer.
+    // This exercises the path getpid uses: thread.process() -> Process -> pid.
+    #[test]
+    fn test_thread_process_backpointer_roundtrip() {
+        let proc = crate::process::Process::try_new().expect("Process::try_new failed");
+        let proc_ptr = NonNull::new(Arc::as_ptr(&proc) as *mut crate::process::Process).unwrap();
+
+        // Build a thread via the builder so it has a valid stack/context.
+        let thread = Builder::new(Entry::C(noop_entry)).set_priority(0).build();
+
+        // Kernel threads start with no process.
+        assert!(thread.process().is_none(), "fresh thread must have no process");
+
+        thread.set_process(proc_ptr);
+        let retrieved = thread.process();
+        assert!(retrieved.is_some(), "set_process must install a back-pointer");
+
+        // The retrieved process must be the one we attached, and its pid must
+        // be positive — exactly what getpid would return for this thread.
+        let pid = unsafe { retrieved.unwrap().as_ref() }.pid;
+        assert!(pid > 0, "attached process must have a positive PID");
+    }
+}

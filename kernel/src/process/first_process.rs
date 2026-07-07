@@ -122,8 +122,8 @@ pub(crate) fn init_first_process(
     elf_data: &[u8],
     elf_priority: Option<ThreadPriority>,
 ) -> Arc<Process> {
-    // 1. Create Process with empty address space.  PID 1 = init process.
-    let mut process = Process::try_new(1).expect("Failed to create Process");
+    // 1. Create Process with empty address space.  PID allocated by alloc_pid().
+    let mut process = Process::try_new().expect("Failed to create Process");
 
     // 2. Load ELF into the process address space.
     let loaded = load_user_elf(
@@ -176,8 +176,8 @@ pub(crate) fn init_first_process(
         .expect("Failed to queue first user thread");
 
     log::info!(
-        "init_first_process: EL0 thread queued, entry={:#x} stack_top={:#x}",
-        loaded.entry, loaded.stack_top
+        "init_first_process: PID={} EL0 thread queued, entry={:#x} stack_top={:#x}",
+        process.pid, loaded.entry, loaded.stack_top
     );
 
     process
