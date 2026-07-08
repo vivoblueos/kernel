@@ -38,7 +38,10 @@ pub(crate) use goblin::elf::Elf;
 ///
 /// Steps: parse → build virtual-memory layout → allocate physical backing →
 /// copy file-backed content → apply relocations.
-pub(crate) fn load_elf(buffer: &[u8], allocator: &mut impl MemoryAllocator) -> Result<(), &'static str> {
+pub(crate) fn load_elf(
+    buffer: &[u8],
+    allocator: &mut impl MemoryAllocator,
+) -> Result<(), &'static str> {
     let Ok(binary) = Elf::parse(buffer) else {
         return Err("Unable to parse the ELF buffer");
     };
@@ -109,9 +112,7 @@ fn build_memory_layout(
     Ok(())
 }
 
-fn allocate_memory_for_segments(
-    allocator: &mut impl MemoryAllocator,
-) -> Result<(), &'static str> {
+fn allocate_memory_for_segments(allocator: &mut impl MemoryAllocator) -> Result<(), &'static str> {
     allocator.allocate()?;
     Ok(())
 }
@@ -125,8 +126,7 @@ fn copy_content_to_memory(
         if ph.p_type != goblin::elf::program_header::PT_LOAD {
             continue;
         }
-        let Some(src) =
-            buffer.get(ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize)
+        let Some(src) = buffer.get(ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize)
         else {
             return Err("Invalid indices to the buffer");
         };
@@ -146,10 +146,7 @@ fn handle_relative_reloc(
     Ok(())
 }
 
-fn relocate(
-    binary: &Elf,
-    allocator: &mut impl MemoryAllocator,
-) -> Result<(), &'static str> {
+fn relocate(binary: &Elf, allocator: &mut impl MemoryAllocator) -> Result<(), &'static str> {
     let reloc_section = &binary.dynrelas;
     for reloc in reloc_section.iter() {
         // R_AARCH64_RELATIVE = 1027, R_RISCV_RELATIVE = 3

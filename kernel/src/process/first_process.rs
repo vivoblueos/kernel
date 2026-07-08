@@ -34,7 +34,10 @@
 
 use crate::{
     arch::Context,
-    process::{elf::MemoryAllocator, elf::PageTableAllocator, loader, AddressSpace, Process},
+    process::{
+        elf::{MemoryAllocator, PageTableAllocator},
+        loader, AddressSpace, Process,
+    },
     scheduler,
     thread::{self, Entry, Stack, Thread, ThreadNode},
     types::{Arc, ThreadPriority},
@@ -85,8 +88,7 @@ pub(crate) fn load_user_elf(
     let mut allocator = PageTableAllocator::new(address_space);
 
     // 2. Parse and load the ELF via the local loader.
-    let binary = loader::Elf::parse(elf_data)
-        .map_err(|_| "ELF parse failed")?;
+    let binary = loader::Elf::parse(elf_data).map_err(|_| "ELF parse failed")?;
     loader::load_elf(elf_data, &mut allocator)?;
 
     // 3. Zero BSS segments (p_memsz > p_filesz).
@@ -177,7 +179,9 @@ pub(crate) fn init_first_process(
 
     log::info!(
         "init_first_process: PID={} EL0 thread queued, entry={:#x} stack_top={:#x}",
-        process.pid, loaded.entry, loaded.stack_top
+        process.pid,
+        loaded.entry,
+        loaded.stack_top
     );
 
     process

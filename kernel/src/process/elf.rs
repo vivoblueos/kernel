@@ -31,8 +31,8 @@
 //!   loading yet.
 
 use crate::{
-    arch::aarch64::mmu::{self, MemAttributes, map_user_range_in_pgtbl, PageTableManager},
-    mm::{kernel_virt_to_phys},
+    arch::aarch64::mmu::{self, map_user_range_in_pgtbl, MemAttributes, PageTableManager},
+    mm::kernel_virt_to_phys,
     process::AddressSpace,
 };
 use core::{alloc::Layout, ptr::NonNull};
@@ -158,10 +158,8 @@ impl MemoryAllocator for PageTableAllocator {
         }
 
         // Round up to page boundary.
-        let page_size = size
-            .checked_add(PAGE_ALIGN - 1)
-            .ok_or("size overflow")?
-            & !(PAGE_ALIGN - 1);
+        let page_size =
+            size.checked_add(PAGE_ALIGN - 1).ok_or("size overflow")? & !(PAGE_ALIGN - 1);
 
         // Allocate page-aligned kernel heap memory.
         let layout = Layout::from_size_align(page_size, PAGE_ALIGN)
@@ -171,7 +169,9 @@ impl MemoryAllocator for PageTableAllocator {
             return Err("Failed to allocate pages for ELF segment");
         }
         // Zero the memory (BSS segments require zero-initialised memory).
-        unsafe { core::ptr::write_bytes(ptr, 0, page_size); }
+        unsafe {
+            core::ptr::write_bytes(ptr, 0, page_size);
+        }
 
         let kernel_va = ptr as usize;
         let phys_base = kernel_virt_to_phys(kernel_va);
@@ -193,25 +193,19 @@ impl MemoryAllocator for PageTableAllocator {
         Ok(())
     }
 
-    fn write_slice_at(
-        &mut self,
-        vaddr: usize,
-        data: &[u8],
-    ) -> Result<usize> {
+    fn write_slice_at(&mut self, vaddr: usize, data: &[u8]) -> Result<usize> {
         let size = data.len();
         if size == 0 {
             return Ok(size);
         }
         let dst = self.inner_real_ptr(vaddr)?;
-        unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), dst, size); }
+        unsafe {
+            core::ptr::copy_nonoverlapping(data.as_ptr(), dst, size);
+        }
         Ok(size)
     }
 
-    fn write_value_at<T: Sized>(
-        &mut self,
-        vaddr: usize,
-        val: T,
-    ) -> Result<usize> {
+    fn write_value_at<T: Sized>(&mut self, vaddr: usize, val: T) -> Result<usize> {
         let size = core::mem::size_of::<T>();
         // Bounds-check the full write range, not just the start address.
         let end = vaddr.checked_add(size).ok_or("vaddr + size overflow")?;
@@ -219,7 +213,9 @@ impl MemoryAllocator for PageTableAllocator {
             return Err("write_value_at: write would exceed allocated segment range");
         }
         let dst = self.inner_real_ptr(vaddr)? as *mut T;
-        unsafe { dst.write(val); }
+        unsafe {
+            dst.write(val);
+        }
         Ok(size)
     }
 
@@ -262,20 +258,20 @@ impl PageTableAllocator {
 /// The stack is mapped at `USER_STACK_BASE` with EL0 RW permissions.
 /// Returns the *top* of the stack (base + size), suitable for use as
 /// the initial SP in `Context::init_el0`.
-pub(crate) fn allocate_user_stack(
-    address_space: &mut AddressSpace,
-) -> Result<usize> {
+pub(crate) fn allocate_user_stack(address_space: &mut AddressSpace) -> Result<usize> {
     let pgtbl = unsafe { &mut *address_space.root_ptr() };
 
     // Allocate page-aligned kernel heap memory for the stack.
-    let layout = Layout::from_size_align(USER_STACK_SIZE, PAGE_ALIGN)
-        .map_err(|_| "Invalid stack layout")?;
+    let layout =
+        Layout::from_size_align(USER_STACK_SIZE, PAGE_ALIGN).map_err(|_| "Invalid stack layout")?;
     let ptr = unsafe { alloc::alloc::alloc(layout) };
     if ptr.is_null() {
         return Err("Failed to allocate user stack");
     }
     // Zero the stack.
-    unsafe { core::ptr::write_bytes(ptr, 0, USER_STACK_SIZE); }
+    unsafe {
+        core::ptr::write_bytes(ptr, 0, USER_STACK_SIZE);
+    }
 
     let kernel_va = ptr as usize;
     let phys_base = kernel_virt_to_phys(kernel_va);

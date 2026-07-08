@@ -138,17 +138,11 @@ impl AsidAllocator {
 
         // 2. Bump generation (wrapping u8).  Because generations start at
         //    u8::MAX, the first bump of a slot yields 0.
-        //
-        //    Release on success so that a concurrent `free()` on another CPU
-        //    which Acquire-loads this generation observes the bump before it
-        //    could clear `live` (narrowing the TOCTOU window between alloc's
-        //    generation bump and live-flag set).
+        //    Release so a concurrent `free()` on another CPU that Acquire-loads
+        //    the generation observes the bump before clearing `live`.
         let new_gen = self.generations[slot]
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |g| {
-                Some(g.wrapping_add(1))
-            })
-            .map(|old| old.wrapping_add(1))
-            .unwrap_or(0);
+            .fetch_add(1, Ordering::Release)
+            .wrapping_add(1);
 
         // 3. Invalidate stale TLB entries for this ASID, then synchronise.
         //    Inner-Shareable so other CPUs observe the invalidation.
@@ -221,13 +215,6 @@ impl AsidAllocator {
 // SAFETY: `AsidAllocator` contains only atomic integers; it is `Sync` by
 // construction (all access is via atomic operations).
 static ASID_ALLOCATOR: AsidAllocator = AsidAllocator::EMPTY;
-
-/// Allocate an ASID for a new process (production entry point).
-///
-/// Thin wrapper over [`ASID_ALLOCATOR.alloc()`] returning `(asid, generation)`.
-fn alloc_asid() -> (u8, u8) {
-    ASID_ALLOCATOR.alloc()
-}
 
 // ---------------------------------------------------------------------------
 // AddressSpace
@@ -366,7 +353,7 @@ impl Process {
     /// if the page-table allocation fails.
     pub fn try_new() -> Result<Arc<Self>, &'static str> {
         let address_space = AddressSpace::try_new()?;
-        let (asid, asid_generation) = alloc_asid();
+        let (asid, asid_generation) = ASID_ALLOCATOR.alloc();
         Ok(Arc::new(Self {
             address_space,
             pid: alloc_pid(),
@@ -409,8 +396,7 @@ impl Process {
         // for the duration of this call.  The raw pointer stored in the
         // thread is valid until the Process is dropped.
         let this = unsafe { NonNull::new_unchecked(Arc::as_ptr(process) as *mut Process) };
-        let proc = Arc::get_mut(process)
-            .expect("attach_thread: Arc must have unique ownership");
+        let proc = Arc::get_mut(process).expect("attach_thread: Arc must have unique ownership");
         thread.set_process(this);
         proc.threads.push(thread.clone());
     }
@@ -448,13 +434,6 @@ mod tests {
         let c = alloc_pid();
         assert!(b > a, "PIDs must be monotonically increasing");
         assert!(c > b, "PIDs must be monotonically increasing");
-    }
-
-    #[test]
-    fn test_alloc_pid_unique() {
-        let a = alloc_pid();
-        let b = alloc_pid();
-        assert_ne!(a, b, "each alloc_pid call must return a distinct PID");
     }
 
     // ---- ASID allocator unit tests (Phase 5a §5) ----
@@ -581,7 +560,10 @@ mod tests {
     #[test]
     fn test_process_asid_nonzero() {
         let p = Process::try_new().expect("Process::try_new failed");
-        assert!(p.asid > 0, "ASID 0 is reserved for kernel; process ASIDs start at 1");
+        assert!(
+            p.asid > 0,
+            "ASID 0 is reserved for kernel; process ASIDs start at 1"
+        );
         // 6.5: the generation of the assigned ASID is recorded on the process.
         // We don't assert a specific value: Process::try_new uses the global
         // ASID_ALLOCATOR, whose slots may have been bumped by earlier tests
@@ -603,7 +585,10 @@ mod tests {
     fn test_two_processes_have_distinct_pids() {
         let p1 = Process::try_new().expect("Process::try_new failed");
         let p2 = Process::try_new().expect("Process::try_new failed");
-        assert_ne!(p1.pid, p2.pid, "each Process::try_new must yield a unique PID");
+        assert_ne!(
+            p1.pid, p2.pid,
+            "each Process::try_new must yield a unique PID"
+        );
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -611,7 +596,10 @@ mod tests {
     fn test_two_processes_have_distinct_asids() {
         let p1 = Process::try_new().expect("Process::try_new failed");
         let p2 = Process::try_new().expect("Process::try_new failed");
-        assert_ne!(p1.asid, p2.asid, "each Process::try_new must yield a unique ASID");
+        assert_ne!(
+            p1.asid, p2.asid,
+            "each Process::try_new must yield a unique ASID"
+        );
         // 6.5: two live processes must have distinct (asid, generation) pairs.
         // Distinct ASIDs already guarantee this, but assert the pair (not just
         // the asid) so the generation field's participation in the identity
@@ -649,7 +637,11 @@ mod tests {
         let p = Process::try_new().expect("Process::try_new failed");
         assert_ne!(p.exit_code(), 0, "sentinel must differ from a real exit(0)");
         p.set_exit_code(0);
-        assert_eq!(p.exit_code(), 0, "exit(0) must read back as 0, not the sentinel");
+        assert_eq!(
+            p.exit_code(),
+            0,
+            "exit(0) must read back as 0, not the sentinel"
+        );
     }
 
     // 6.3: a positive exit code round-trips.
@@ -658,6 +650,10 @@ mod tests {
     fn test_set_exit_code_positive() {
         let p = Process::try_new().expect("Process::try_new failed");
         p.set_exit_code(42);
-        assert_eq!(p.exit_code(), 42, "exit_code must round-trip a positive value");
+        assert_eq!(
+            p.exit_code(),
+            42,
+            "exit_code must round-trip a positive value"
+        );
     }
 }

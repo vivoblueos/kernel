@@ -72,15 +72,18 @@ mod vfs_syscalls {
             #[cfg(target_arch = "aarch64")]
             {
                 let t = scheduler::current_thread();
-                if let Some(proc) = t.process() {
-                    let proc_ref = unsafe { proc.as_ref() };
-                    if !crate::process::vm::is_user_range_mapped(
-                        &proc_ref.address_space,
-                        buf_addr,
-                        size,
-                    ) {
-                        return -libc::EFAULT as isize;
-                    }
+                let Some(proc) = t.process() else {
+                    // Kernel threads have no user address space to validate against.
+                    // Calling write() from a kernel thread is not supported.
+                    return -libc::EFAULT as isize;
+                };
+                let proc_ref = unsafe { proc.as_ref() };
+                if !crate::process::vm::is_user_range_mapped(
+                    &proc_ref.address_space,
+                    buf_addr,
+                    size,
+                ) {
+                    return -libc::EFAULT as isize;
                 }
             }
 
@@ -1008,7 +1011,10 @@ mod tests {
     #[test]
     fn test_getpid_kernel_thread_returns_zero() {
         let result = getpid::handle();
-        assert_eq!(result, 0, "getpid on a kernel thread with no process must return 0");
+        assert_eq!(
+            result, 0,
+            "getpid on a kernel thread with no process must return 0"
+        );
     }
 
     // W1: getpid is consistent across multiple calls from the same thread.
@@ -1028,9 +1034,17 @@ mod tests {
     #[test]
     fn test_exit_code_stored_zero() {
         let p = crate::process::Process::try_new().expect("Process::try_new failed");
-        assert_eq!(p.exit_code(), i32::MIN, "fresh process must report not-exited sentinel");
+        assert_eq!(
+            p.exit_code(),
+            i32::MIN,
+            "fresh process must report not-exited sentinel"
+        );
         p.set_exit_code(0);
-        assert_eq!(p.exit_code(), 0, "exit_code must round-trip 0 (distinct from sentinel)");
+        assert_eq!(
+            p.exit_code(),
+            0,
+            "exit_code must round-trip 0 (distinct from sentinel)"
+        );
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -1038,7 +1052,11 @@ mod tests {
     fn test_exit_code_stored_positive() {
         let p = crate::process::Process::try_new().expect("Process::try_new failed");
         p.set_exit_code(42);
-        assert_eq!(p.exit_code(), 42, "exit_code must round-trip a positive value");
+        assert_eq!(
+            p.exit_code(),
+            42,
+            "exit_code must round-trip a positive value"
+        );
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -1046,6 +1064,10 @@ mod tests {
     fn test_exit_code_stored_negative() {
         let p = crate::process::Process::try_new().expect("Process::try_new failed");
         p.set_exit_code(-1);
-        assert_eq!(p.exit_code(), -1, "exit_code must round-trip a negative value");
+        assert_eq!(
+            p.exit_code(),
+            -1,
+            "exit_code must round-trip a negative value"
+        );
     }
 }

@@ -99,61 +99,38 @@ pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
 static mut PER_CPU_TIMER: [MaybeUninit<Timer>; NUM_CORES] =
     [const { MaybeUninit::zeroed() }; NUM_CORES];
 
-// Cache the PA of the page table currently installed in TTBR0_EL1 for each
-// CPU core.  0 means no user page table is active (kernel thread running).
-// Allows same-process thread switches and kernel→same-user switches to skip
-// the TTBR0_EL1 write + full TLB flush (task 3.5).
-//
+// Per-CPU cache of the (PA, ASID, generation) triple currently installed in
+// TTBR0_EL1.  All-zeros means no user process active (kernel thread running).
 // SAFETY: Each CPU core only ever accesses its own slot via
-// `arch::current_cpu_id()`.  There is no cross-CPU read or write, so the
-// `static mut` array is data-race-free without external synchronisation.
-// This mirrors the pre-existing `RUNNING_THREADS` / `PER_CPU_TIMER` pattern.
+// `arch::current_cpu_id()`.  No cross-CPU access, so `static mut` is
+// data-race-free — same invariant as `RUNNING_THREADS` / `PER_CPU_TIMER`.
 #[cfg(target_arch = "aarch64")]
-static mut PER_CPU_ACTIVE_PROC_PA: [usize; NUM_CORES] = [0; NUM_CORES];
-
-// Cache the ASID of the process whose page table is currently in TTBR0_EL1.
-// 0 means kernel thread / no user process active.
-// SAFETY: Same per-CPU access invariant as `PER_CPU_ACTIVE_PROC_PA` above.
-#[cfg(target_arch = "aarch64")]
-static mut PER_CPU_ACTIVE_PROC_ASID: [u8; NUM_CORES] = [0; NUM_CORES];
-
-// Cache the generation of the (asid, generation) pair currently installed in
-// TTBR0_EL1.  A cache hit (skip TTBR0 write + TLBI flush) requires the PA,
-// ASID, *and* generation to all match — generation participates so that a
-// recycled ASID (same asid, new generation) cannot falsely hit against a
-// stale cache entry.  0 means kernel thread / no user process active.
-// SAFETY: Same per-CPU access invariant as `PER_CPU_ACTIVE_PROC_PA` above.
-#[cfg(target_arch = "aarch64")]
-static mut PER_CPU_ACTIVE_PROC_GEN: [u8; NUM_CORES] = [0; NUM_CORES];
-
-#[cfg(target_arch = "aarch64")]
-fn get_active_proc_pa() -> usize {
-    unsafe { PER_CPU_ACTIVE_PROC_PA[arch::current_cpu_id()] }
+#[derive(Copy, Clone)]
+struct ProcCache {
+    pa: usize,
+    asid: u8,
+    gen: u8,
 }
 
 #[cfg(target_arch = "aarch64")]
-fn set_active_proc_pa(pa: usize) {
-    unsafe { PER_CPU_ACTIVE_PROC_PA[arch::current_cpu_id()] = pa; }
+static mut PER_CPU_PROC_CACHE: [ProcCache; NUM_CORES] = [const {
+    ProcCache {
+        pa: 0,
+        asid: 0,
+        gen: 0,
+    }
+}; NUM_CORES];
+
+#[cfg(target_arch = "aarch64")]
+fn get_proc_cache() -> ProcCache {
+    unsafe { PER_CPU_PROC_CACHE[arch::current_cpu_id()] }
 }
 
 #[cfg(target_arch = "aarch64")]
-fn get_active_proc_asid() -> u8 {
-    unsafe { PER_CPU_ACTIVE_PROC_ASID[arch::current_cpu_id()] }
-}
-
-#[cfg(target_arch = "aarch64")]
-fn set_active_proc_asid(asid: u8) {
-    unsafe { PER_CPU_ACTIVE_PROC_ASID[arch::current_cpu_id()] = asid; }
-}
-
-#[cfg(target_arch = "aarch64")]
-fn get_active_proc_gen() -> u8 {
-    unsafe { PER_CPU_ACTIVE_PROC_GEN[arch::current_cpu_id()] }
-}
-
-#[cfg(target_arch = "aarch64")]
-fn set_active_proc_gen(gen: u8) {
-    unsafe { PER_CPU_ACTIVE_PROC_GEN[arch::current_cpu_id()] = gen; }
+fn set_proc_cache(c: ProcCache) {
+    unsafe {
+        PER_CPU_PROC_CACHE[arch::current_cpu_id()] = c;
+    }
 }
 
 /// Install the next thread's address space in `TTBR0_EL1`, with a per-CPU
@@ -182,34 +159,18 @@ pub(crate) fn switch_address_space(next_proc: Option<NonNull<crate::process::Pro
         // table), ASID (same TLB tag), and generation (same generation of
         // that ASID — a recycled ASID with a new generation must NOT hit
         // against a stale cache entry, design D4).
-        if pa != get_active_proc_pa()
-            || asid != get_active_proc_asid()
-            || gen != get_active_proc_gen()
-        {
-            let old_asid = get_active_proc_asid();
+        let cache = get_proc_cache();
+        if pa != cache.pa || asid != cache.asid || gen != cache.gen {
+            let old_asid = cache.asid;
             crate::arch::aarch64::registers::ttbr0_el1::TTBR0_EL1
                 .set((asid as u64) << 48 | pa as u64);
-            crate::arch::aarch64::asm::tlbi_aside1is(old_asid);
-            crate::arch::aarch64::asm::dsb(
-                crate::arch::aarch64::asm::DsbOptions::InnerShareable,
-            );
+            // ASID 0 is never assigned to user processes; skip the no-op flush.
+            if old_asid != 0 {
+                crate::arch::aarch64::asm::tlbi_aside1is(old_asid);
+            }
+            crate::arch::aarch64::asm::dsb(crate::arch::aarch64::asm::DsbOptions::InnerShareable);
             crate::arch::aarch64::asm::isb();
-            set_active_proc_pa(pa);
-            set_active_proc_asid(asid);
-            set_active_proc_gen(gen);
-        } else {
-            // Full cache hit (PA + ASID + generation): same page table
-            // with the same TLB tag is already installed.  Belt-and-braces
-            // debug checks — a mismatch here would imply a logic bug in
-            // the cache key or the allocator's generation tracking.
-            debug_assert_eq!(
-                asid, get_active_proc_asid(),
-                "cache hit but ASID mismatch: page-table reuse detected"
-            );
-            debug_assert_eq!(
-                gen, get_active_proc_gen(),
-                "cache hit but generation mismatch: ASID recycled without cache reset"
-            );
+            set_proc_cache(ProcCache { pa, asid, gen });
         }
     } else {
         // Switching to a kernel thread (next_proc == None): clear
@@ -220,13 +181,13 @@ pub(crate) fn switch_address_space(next_proc: Option<NonNull<crate::process::Pro
         // switches are rare relative to same-process switches (design D2).
         crate::arch::aarch64::registers::ttbr0_el1::TTBR0_EL1.set(0);
         crate::arch::aarch64::asm::tlbi_vmalle1is();
-        crate::arch::aarch64::asm::dsb(
-            crate::arch::aarch64::asm::DsbOptions::InnerShareable,
-        );
+        crate::arch::aarch64::asm::dsb(crate::arch::aarch64::asm::DsbOptions::InnerShareable);
         crate::arch::aarch64::asm::isb();
-        set_active_proc_pa(0);
-        set_active_proc_asid(0);
-        set_active_proc_gen(0);
+        set_proc_cache(ProcCache {
+            pa: 0,
+            asid: 0,
+            gen: 0,
+        });
     }
 }
 
@@ -663,8 +624,7 @@ pub(crate) fn notify_idle_cores(how_many: usize) {
 #[cfg(all(test, target_arch = "aarch64"))]
 mod tests {
     use super::*;
-    use crate::process::Process;
-    use crate::types::Arc;
+    use crate::{process::Process, types::Arc};
     use blueos_test_macro::test;
     use core::ptr::NonNull;
     use tock_registers::interfaces::Readable;
@@ -691,7 +651,11 @@ mod tests {
         // its (pa, asid, gen).
         let p = Process::try_new().expect("Process::try_new failed");
         switch_address_space(proc_ref(&p));
-        assert_ne!(read_ttbr0(), 0, "user process must install a non-zero TTBR0");
+        assert_ne!(
+            read_ttbr0(),
+            0,
+            "user process must install a non-zero TTBR0"
+        );
 
         // Now switch to a kernel thread (None).
         let (aside_before, vmall_before) = crate::arch::aarch64::asm::read_tlbi_counters();
@@ -700,11 +664,13 @@ mod tests {
 
         assert_eq!(read_ttbr0(), 0, "kernel-thread switch must clear TTBR0_EL1");
         assert_eq!(
-            vmall_after - vmall_before, 1,
+            vmall_after - vmall_before,
+            1,
             "kernel-thread switch must issue exactly one TLBI VMALLE1IS"
         );
         assert_eq!(
-            aside_after - aside_before, 0,
+            aside_after - aside_before,
+            0,
             "kernel-thread switch must NOT use ASIDE1IS (uses VMALLE1IS)"
         );
         // Caches reset to 0 (observable: a subsequent user-thread switch with
@@ -726,7 +692,8 @@ mod tests {
         let (aside, vmall) = crate::arch::aarch64::asm::read_tlbi_counters();
 
         assert_eq!(
-            read_ttbr0(), ttbr0_after_prime,
+            read_ttbr0(),
+            ttbr0_after_prime,
             "same-process switch must NOT rewrite TTBR0_EL1 (cache hit)"
         );
         assert_eq!(aside, 0, "same-process switch must NOT issue ASIDE1IS");
@@ -783,15 +750,25 @@ mod tests {
 
         // Prime the cache with A's real (pa, asid, gen).
         switch_address_space(proc_ref(&a));
-        let cached_gen = get_active_proc_gen();
-        assert_eq!(cached_gen, a.asid_generation, "cache must hold A's generation after install");
+        let cached_gen = get_proc_cache().gen;
+        assert_eq!(
+            cached_gen, a.asid_generation,
+            "cache must hold A's generation after install"
+        );
 
         // Simulate a stale cache entry: same PA and ASID, but a different
         // generation (as if the ASID was recycled to a new process with a
         // bumped generation while the cache still holds the old gen).
         let stale_gen = cached_gen.wrapping_add(1);
-        assert_ne!(stale_gen, cached_gen, "test precondition: stale gen must differ");
-        set_active_proc_gen(stale_gen);
+        assert_ne!(
+            stale_gen, cached_gen,
+            "test precondition: stale gen must differ"
+        );
+        let c = get_proc_cache();
+        set_proc_cache(ProcCache {
+            gen: stale_gen,
+            ..c
+        });
 
         // Re-install A.  Because the cached generation (stale_gen) != A's
         // real generation, this must be a cache MISS — TTBR0 rewritten and
@@ -807,7 +784,7 @@ mod tests {
         );
         assert_eq!(vmall, 0, "must use ASIDE1IS, not VMALLE1IS");
         assert_eq!(
-            get_active_proc_gen(),
+            get_proc_cache().gen,
             a.asid_generation,
             "cache must be updated to A's real generation after the miss"
         );
@@ -816,6 +793,9 @@ mod tests {
         crate::arch::aarch64::asm::reset_tlbi_counters();
         switch_address_space(proc_ref(&a));
         let (aside_hit, _) = crate::arch::aarch64::asm::read_tlbi_counters();
-        assert_eq!(aside_hit, 0, "A→A with matching generation must be a cache hit");
+        assert_eq!(
+            aside_hit, 0,
+            "A→A with matching generation must be a cache hit"
+        );
     }
 }

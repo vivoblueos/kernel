@@ -364,9 +364,11 @@ impl Thread {
     }
 
     /// Set (or clear) the process back-pointer.
+    /// Exposed for integration testing; production code should use the
+    /// syscall path (e.g. `exec` / `fork`) which sets this internally.
     #[cfg(target_arch = "aarch64")]
     #[inline]
-    pub(crate) fn set_process(&self, process: NonNull<crate::process::Process>) {
+    pub fn set_process(&self, process: NonNull<crate::process::Process>) {
         unsafe {
             *self.process.get() = Some(process);
         }
@@ -888,11 +890,17 @@ mod tests {
         let thread = Builder::new(Entry::C(noop_entry)).set_priority(0).build();
 
         // Kernel threads start with no process.
-        assert!(thread.process().is_none(), "fresh thread must have no process");
+        assert!(
+            thread.process().is_none(),
+            "fresh thread must have no process"
+        );
 
         thread.set_process(proc_ptr);
         let retrieved = thread.process();
-        assert!(retrieved.is_some(), "set_process must install a back-pointer");
+        assert!(
+            retrieved.is_some(),
+            "set_process must install a back-pointer"
+        );
 
         // The retrieved process must be the one we attached, and its pid must
         // be positive — exactly what getpid would return for this thread.
