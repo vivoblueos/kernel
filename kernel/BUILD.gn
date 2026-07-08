@@ -96,6 +96,7 @@ _shared_deps = [
   "//external/vendor/cfg-if-1.0.4:cfg_if",
   "//external/vendor/const-default-1.0.0:const_default",
   "//external/vendor/embedded-io-0.6.1:embedded_io",
+  "//external/vendor/goblin-0.9.3:goblin",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
@@ -112,7 +113,6 @@ _shared_deps = [
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
-  "//external/vendor/goblin-0.9.3:goblin",
   "//libc",
 ]
 _shared_deps += board_deps
@@ -138,7 +138,10 @@ build_rust("kernel_unittest") {
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
   if (_is_aarch64) {
-    rustenv += [ "FIRST_ELF_RS_PATH=" + rebase_path("${_first_elf_rs_path}/first_elf_bytes.rs", "", root_build_dir) ]
+    rustenv += [ "FIRST_ELF_RS_PATH=" +
+                 rebase_path("${_first_elf_rs_path}/first_elf_bytes.rs",
+                             "",
+                             root_build_dir) ]
   }
   cfgs = _kernel_default_cfgs
   deps = _shared_deps
@@ -215,7 +218,10 @@ build_rust("blueos") {
   ]
   rustenv = [ "TARGET_BOARD=${board}" ]
   if (_is_aarch64) {
-    rustenv += [ "FIRST_ELF_RS_PATH=" + rebase_path("${_first_elf_rs_path}/first_elf_bytes.rs", "", root_build_dir) ]
+    rustenv += [ "FIRST_ELF_RS_PATH=" +
+                 rebase_path("${_first_elf_rs_path}/first_elf_bytes.rs",
+                             "",
+                             root_build_dir) ]
   }
   cfgs = _kernel_default_cfgs
   deps = _shared_deps

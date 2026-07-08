@@ -443,8 +443,11 @@ fn map_user_page_in_pgtbl(
     let l2_table = unsafe { &mut *l1_table };
     let l2_table = next_level_table(&mut l2_table.0[page_table_index(va, L2_SHIFT)])?;
     let l3_table = unsafe { &mut *l2_table };
-    l3_table.0[page_table_index(va, L3_SHIFT)]
-        .set_page_with_ap(pa as u64, flags, PAGE_DESCRIPTOR::AP::EL0_RW.value)
+    l3_table.0[page_table_index(va, L3_SHIFT)].set_page_with_ap(
+        pa as u64,
+        flags,
+        PAGE_DESCRIPTOR::AP::EL0_RW.value,
+    )
 }
 
 // only supports L3 4KB granularity now

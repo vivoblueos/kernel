@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use super::{irq, registers::esr_el1::ESR_EL1, Context, NR_SWITCH};
-use log::error;
 use crate::{
     arch::aarch64::{disable_local_irq, enable_local_irq},
     scheduler::{self, ContextSwitchHookHolder},
@@ -25,6 +24,7 @@ use core::{
     mem::offset_of,
     sync::atomic::{compiler_fence, fence, Ordering},
 };
+use log::error;
 use tock_registers::interfaces::Readable;
 
 /// Read the raw value of FAR_EL1 (Fault Address Register) via MRS.

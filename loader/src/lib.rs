@@ -19,9 +19,9 @@ extern crate alloc;
 
 mod allocator;
 mod memory_mapper;
+pub use allocator::{DirectAllocator, MemoryAllocator};
 use goblin::elf::{reloc::R_RISCV_RELATIVE, Elf, Reloc};
 use librs::string::memcpy;
-pub use allocator::{DirectAllocator, MemoryAllocator};
 pub use memory_mapper::MemoryMapper;
 
 // Re-export goblin types needed by kernel callers.
@@ -90,7 +90,11 @@ fn allocate_memory_for_segments(_binary: &Elf, mapper: &mut impl MemoryAllocator
     Ok(())
 }
 
-fn copy_content_to_memory(buffer: &[u8], binary: &Elf, mapper: &mut impl MemoryAllocator) -> Result {
+fn copy_content_to_memory(
+    buffer: &[u8],
+    binary: &Elf,
+    mapper: &mut impl MemoryAllocator,
+) -> Result {
     // FIXME: We are assuming if filesize < memsize, (memsize -
     // filesize) bits are .bss. I need to read more about ELF spec to
     // find out exceptions. Currently, it just works.

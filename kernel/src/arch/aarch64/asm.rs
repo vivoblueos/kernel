@@ -188,7 +188,11 @@ mod tests {
     #[test]
     fn test_tlbi_spy_counters_increment_and_reset() {
         reset_tlbi_counters();
-        assert_eq!(read_tlbi_counters(), (0, 0), "counters must start at 0 after reset");
+        assert_eq!(
+            read_tlbi_counters(),
+            (0, 0),
+            "counters must start at 0 after reset"
+        );
         tlbi_aside1is(7);
         tlbi_aside1is(8);
         tlbi_vmalle1is();
@@ -196,6 +200,10 @@ mod tests {
         assert_eq!(aside, 2, "aside1is counter must record 2 calls");
         assert_eq!(vmall, 1, "vmalle1is counter must record 1 call");
         reset_tlbi_counters();
-        assert_eq!(read_tlbi_counters(), (0, 0), "reset must zero both counters");
+        assert_eq!(
+            read_tlbi_counters(),
+            (0, 0),
+            "reset must zero both counters"
+        );
     }
 }
