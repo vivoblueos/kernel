@@ -22,10 +22,12 @@ use core::num::NonZeroUsize;
 use err::Result;
 pub mod clock;
 pub mod clock_control;
+pub mod gpio;
 pub mod i2c;
 pub mod isr;
 pub mod pinctrl;
 pub mod reset;
+pub mod spi;
 pub mod uart;
 
 /// Hardware abstraction layer peripheral configuration trait

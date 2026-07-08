@@ -17,10 +17,12 @@
 
 pub mod clock_control;
 pub mod hwinfo;
+pub mod gpio;
 pub mod i2c;
 pub mod interrupt_controller;
 pub mod pinctrl;
 pub mod reset;
+pub mod spi;
 pub mod static_ref;
 pub mod systimer;
 pub mod uart;
