@@ -150,6 +150,13 @@ extern "C" fn init() {
         net::net_manager::init();
     }
     #[cfg(enable_vfs)]
+    if let Err(err) = crate::devices::framebuffer::init() {
+        panic!(
+            "Failed to init framebuffer: {}",
+            crate::error::Error::from(err)
+        );
+    }
+    #[cfg(enable_vfs)]
     init_vfs();
     // it's an bug in fact, but at now we use a workaround let newlib do the c++ runtime initialization
     #[cfg(not(target_board = "newlib_mps3_an547"))]

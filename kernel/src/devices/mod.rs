@@ -32,6 +32,7 @@ pub mod bus;
 pub mod clock;
 pub mod console;
 mod error;
+pub mod framebuffer;
 pub mod i2c_core;
 #[cfg(enable_net)]
 pub(crate) mod net;
