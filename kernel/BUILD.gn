@@ -49,7 +49,7 @@ group("check_kernel_probe") {
 # ---------------------------------------------------------------------------
 
 # first_elf is AArch64-only: it uses AArch64 SVC calling conventions.
-_is_aarch64 = board == "qemu_virt64_aarch64" || board == "qemu_mps3_an547"
+_is_aarch64 = board == "qemu_virt64_aarch64"
 if (_is_aarch64) {
   # Build the minimal first-process ELF as a static PIE binary.
   build_rust("first_elf") {
