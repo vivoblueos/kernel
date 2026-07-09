@@ -162,6 +162,8 @@ extern "C" fn init() {
     #[cfg(not(target_board = "newlib_mps3_an547"))]
     run_init_array();
     init_apps();
+    crate::boards::init_spi_bus();
+
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }
