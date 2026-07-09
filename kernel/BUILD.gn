@@ -61,6 +61,7 @@ _shared_deps = [
   "//external/vendor/zerocopy-0.8.27:zerocopy",
   "//kernel/allocator:allocator_crate",
   "//kernel/arch:arch_crate",
+  "//kernel/bkapi:blueos_bkapi",
   "//kernel/core_traits",
   "//kernel/driver:blueos_driver",
   "//kernel/hal:blueos_hal",
