@@ -17,6 +17,7 @@
 use crate::devices::bus::{Bus, BusInterface};
 
 pub(crate) mod ic;
+pub(crate) mod lcd;
 pub(crate) mod msip;
 pub(crate) mod sensor;
 pub(crate) mod serial;
@@ -25,7 +26,7 @@ pub(crate) mod timer;
 /// use c-compatible error type
 pub type Result<T> = core::result::Result<T, crate::error::Error>;
 
-pub trait InitDriver<B: BusInterface>: Sized + Default {
+pub trait InitDriver<B: BusInterface>: Sized {
     type Data;
     fn init(self, bus: &Bus<B>) -> Result<Self::Data>;
 }

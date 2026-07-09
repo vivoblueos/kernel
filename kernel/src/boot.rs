@@ -156,6 +156,8 @@ extern "C" fn init() {
     run_init_array();
 
     init_apps();
+    crate::boards::init_spi_bus();
+
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }
