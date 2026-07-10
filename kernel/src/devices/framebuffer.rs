@@ -323,11 +323,6 @@ fn memory_variable_info() -> FramebufferVariableInfo {
     }
 }
 
-/// Register the initial memory-backed framebuffer.
-pub fn init() -> Result<(), ErrorKind> {
-    FramebufferDevice::register(0, Arc::new(MemoryFramebuffer::new()))
-}
-
 /// Character-device wrapper for a framebuffer implementation.
 pub struct FramebufferDevice {
     name: String,
@@ -360,6 +355,7 @@ impl FramebufferDevice {
     /// Register an already constructed framebuffer device.
     pub fn register_device(device: Arc<Self>) -> Result<(), ErrorKind> {
         let name = device.name.clone();
+        log::debug!("Registering framebuffer device: {}", name);
         DeviceManager::get().register_device(name, device)
     }
 
