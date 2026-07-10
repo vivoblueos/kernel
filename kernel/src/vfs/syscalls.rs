@@ -247,10 +247,6 @@ pub fn ioctl(fd: c_int, request: c_ulong, arg: *mut c_void) -> c_int {
 
 /// Seek in a file
 pub fn lseek(fd: i32, offset: i64, whence: i32) -> i64 {
-    debug!(
-        "lseek: fd = {}, offset = {}, whence = {}",
-        fd, offset, whence
-    );
     let seek_from = match whence {
         0 => {
             if offset < 0 {
