@@ -85,3 +85,5 @@ pub const SYS_RECVMSG: i32 = 297;
 
 pub const SYS_GETADDRINFO: i32 = 298;
 pub const SYS_FREEADDRINFO: i32 = 299;
+
+pub const SYS_IOCTL: i32 = 54;

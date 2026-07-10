@@ -447,7 +447,7 @@ pub extern "C" fn pthread_setspecific(key: pthread_key_t, val: *const c_void) ->
     }
     let tid = pthread_self();
     let Some(tcb) = get_tcb(tid) else {
-        panic!("{:x}: My tcb is gone!", tid)
+        return EINVAL;
     };
     tcb.kv.write().insert(key, val as usize);
     0
@@ -461,7 +461,7 @@ pub extern "C" fn pthread_getspecific(key: pthread_key_t) -> *mut c_void {
     }
     let tid = pthread_self();
     let Some(tcb) = get_tcb(tid) else {
-        panic!("0x{:x}: My tcb is gone!", tid)
+        return core::ptr::null_mut();
     };
     {
         let read_tcb_kv = tcb.kv.read();

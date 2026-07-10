@@ -20,14 +20,14 @@ use crate::{
 };
 use blueos_header::syscalls::NR::{
     Accept, Bind, Chdir, ClockGetTime, ClockNanoSleep, Close, Connect, FStat, Fcntl, FreeAddrinfo,
-    Ftruncate, GetAddrinfo, GetDents, Getcwd, Getsockopt, Link, Listen, Lseek, Mkdir, Open, Read,
-    Recv, Recvfrom, Recvmsg, Rmdir, Send, Sendmsg, Sendto, Setsockopt, Shutdown, Socket, Statfs,
-    Unlink, Write,
+    Ftruncate, GetAddrinfo, GetDents, Getcwd, Getsockopt, Ioctl, Link, Listen, Lseek, Mkdir, Open,
+    Read, Recv, Recvfrom, Recvmsg, Rmdir, Send, Sendmsg, Sendto, Setsockopt, Shutdown, Socket,
+    Statfs, Unlink, Write,
 };
 use blueos_scal::bk_syscall;
 use libc::{
-    c_char, c_int, c_uint, c_void, clockid_t, dev_t, mode_t, msghdr, off_t, size_t, sockaddr,
-    socklen_t, ssize_t, statvfs, timespec, utsname,
+    c_char, c_int, c_uint, c_ulong, c_void, clockid_t, dev_t, mode_t, msghdr, off_t, size_t,
+    sockaddr, socklen_t, ssize_t, statvfs, timespec, utsname,
 };
 
 // convert value returned by syscall to user Result.
@@ -434,5 +434,10 @@ impl Syscall for Sys {
     unsafe fn freeaddrinfo(res: *mut libc::addrinfo) -> Result<()> {
         bk_syscall!(FreeAddrinfo, res);
         Ok(())
+    }
+
+    unsafe fn ioctl(fd: c_int, request: c_ulong, arg: *mut c_void) -> Result<c_int> {
+        to_result(bk_syscall!(Ioctl, fd, request, arg as *mut core::ffi::c_void) as usize)
+            .map(|r| r as c_int)
     }
 }

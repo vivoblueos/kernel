@@ -14,8 +14,8 @@
 
 use crate::{c_str::CStr, errno::Result, mqueue::mq_attr};
 use libc::{
-    addrinfo, c_char, c_int, c_uint, c_void, clockid_t, dev_t, mode_t, msghdr, off_t, size_t,
-    sockaddr, socklen_t, ssize_t, statvfs, timespec, utsname,
+    addrinfo, c_char, c_int, c_uint, c_ulong, c_void, clockid_t, dev_t, mode_t, msghdr, off_t,
+    size_t, sockaddr, socklen_t, ssize_t, statvfs, timespec, utsname,
 };
 
 pub trait Syscall {
@@ -154,6 +154,7 @@ pub trait Syscall {
         res: *mut *mut addrinfo,
     ) -> Result<c_int>;
     unsafe fn freeaddrinfo(res: *mut addrinfo) -> Result<()>;
+    unsafe fn ioctl(fd: c_int, request: c_ulong, arg: *mut c_void) -> Result<c_int>;
 }
 
 pub use self::sys::Sys;

@@ -21,8 +21,8 @@ use crate::{
 };
 use blueos_scal::bk_syscall;
 use libc::{
-    c_char, c_int, c_uint, c_void, clockid_t, dev_t, mode_t, msghdr, off_t, size_t, sockaddr,
-    socklen_t, ssize_t, statvfs, timespec, utsname, EINVAL, S_IFIFO,
+    c_char, c_int, c_uint, c_ulong, c_void, clockid_t, dev_t, mode_t, msghdr, off_t, size_t,
+    sockaddr, socklen_t, ssize_t, statvfs, timespec, utsname, EINVAL, S_IFIFO,
 };
 pub mod consts;
 
@@ -429,5 +429,9 @@ impl Syscall for Sys {
 
     unsafe fn freeaddrinfo(res: *mut libc::addrinfo) -> Result<()> {
         to_result(bk_syscall!(SYS_FREEADDRINFO, res))
+    }
+
+    unsafe fn ioctl(fd: c_int, request: c_ulong, arg: *mut c_void) -> Result<c_int> {
+        to_result(bk_syscall!(SYS_IOCTL, fd, request, arg)).map(|r| r as c_int)
     }
 }
