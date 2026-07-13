@@ -92,9 +92,8 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
 #[cfg(use_embedded_hal_v1)]
 impl embedded_hal::spi::Error for crate::error::Error {
     fn kind(&self) -> embedded_hal::spi::ErrorKind {
-        match *self {
-            _ => embedded_hal::spi::ErrorKind::Other,
-        }
+        // FIXME: Map the error code to embedded_hal::spi::ErrorKind
+        embedded_hal::spi::ErrorKind::Other
     }
 }
 

@@ -75,6 +75,6 @@ impl<B: BusInterface> Bus<B> {
             }
         }
 
-        return Err(crate::error::code::ENODEV);
+        Err(crate::error::code::ENODEV)
     }
 }
