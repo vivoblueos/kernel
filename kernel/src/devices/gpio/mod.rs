@@ -48,9 +48,8 @@ impl<T: blueos_hal::gpio::OutputPin> embedded_hal::digital::ErrorType for Genera
 #[cfg(use_embedded_hal_v1)]
 impl embedded_hal::digital::Error for crate::error::Error {
     fn kind(&self) -> embedded_hal::digital::ErrorKind {
-        match *self {
-            _ => embedded_hal::digital::ErrorKind::Other,
-        }
+        // FIXME: Map the error code to embedded_hal::digital::ErrorKind
+        embedded_hal::digital::ErrorKind::Other
     }
 }
 

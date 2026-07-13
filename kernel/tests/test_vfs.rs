@@ -111,7 +111,7 @@ fn test_framebuffer_devfs_ioctls() {
     assert_eq!(
         ioctl(
             fd,
-            libc::FBIOGET_FSCREENINFO.into(),
+            libc::FBIOGET_FSCREENINFO,
             (&mut fixed_info as *mut libc::fb_fix_screeninfo).cast::<c_void>()
         ),
         0
@@ -123,7 +123,7 @@ fn test_framebuffer_devfs_ioctls() {
     assert_eq!(
         ioctl(
             fd,
-            libc::FBIOGET_VSCREENINFO.into(),
+            libc::FBIOGET_VSCREENINFO,
             (&mut variable_info as *mut libc::fb_var_screeninfo).cast::<c_void>()
         ),
         0
@@ -135,7 +135,7 @@ fn test_framebuffer_devfs_ioctls() {
     assert_eq!(
         ioctl(
             fd,
-            libc::FBIOPUT_VSCREENINFO.into(),
+            libc::FBIOPUT_VSCREENINFO,
             (&mut variable_info as *mut libc::fb_var_screeninfo).cast::<c_void>()
         ),
         0
@@ -146,7 +146,7 @@ fn test_framebuffer_devfs_ioctls() {
     assert_eq!(
         ioctl(
             fd,
-            libc::FBIOPUT_VSCREENINFO.into(),
+            libc::FBIOPUT_VSCREENINFO,
             (&mut unsupported_info as *mut libc::fb_var_screeninfo).cast::<c_void>()
         ),
         -libc::EINVAL
