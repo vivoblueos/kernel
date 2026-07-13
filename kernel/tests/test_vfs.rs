@@ -44,8 +44,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use libc::{
-    AF_INET, ENOSYS, O_CREAT, O_DIRECTORY, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY, SEEK_END,
-    SEEK_SET,
+    AF_INET, ENOSYS, O_CREAT, O_DIRECTORY, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY, SEEK_END, SEEK_SET,
 };
 use semihosting::println;
 
