@@ -12,4 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod block_spi;
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+#[cfg(enable_block)]
+pub mod spi_flash;
+#[cfg(enable_block)]
+pub mod spi_flash_cmd;

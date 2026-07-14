@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(virtio)]
+#[cfg(fatfs)]
 use crate::vfs::fatfs::FatFileSystem;
 #[cfg(procfs)]
 use crate::vfs::procfs::ProcFileSystem;
@@ -94,7 +94,7 @@ pub fn get_mount_manager() -> &'static MountManager {
 pub fn get_fs(fs_type: &str, device: &str) -> Option<Arc<dyn FileSystem>> {
     match fs_type {
         "tmpfs" => Some(TmpFileSystem::new()),
-        #[cfg(virtio)]
+        #[cfg(fatfs)]
         "fatfs" => match FatFileSystem::new(device) {
             Ok(fs) => Some(fs),
             Err(error) => {

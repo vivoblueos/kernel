@@ -26,7 +26,8 @@ use core::{
 use embedded_io::ErrorKind;
 use libc::*;
 use spin::{Once, RwLock as SpinRwLock};
-#[cfg(virtio)]
+// Block storage subsystem: virtio backend or flash backend.
+#[cfg(any(virtio, enable_block))]
 pub mod block;
 pub mod bus;
 pub mod clock;
@@ -36,6 +37,7 @@ pub mod i2c_core;
 #[cfg(enable_net)]
 pub(crate) mod net;
 mod null;
+#[cfg(enable_block)]
 pub mod spi_core;
 pub mod tty;
 #[cfg(virtio)]

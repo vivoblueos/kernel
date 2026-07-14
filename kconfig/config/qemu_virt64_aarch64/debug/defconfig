@@ -62,6 +62,9 @@ CONFIG_DNS_MAX_RESULT_COUNT=1
 CONFIG_DNS_MAX_SERVER_COUNT=1
 # end of smoltcp TCP/IP Stack Configuration
 
+CONFIG_ENABLE_BLOCK=y
+CONFIG_FATFS=y
+
 #
 # os adapter configuration
 #

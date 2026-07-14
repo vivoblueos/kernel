@@ -28,7 +28,7 @@ use log::{debug, error, warn};
 mod dcache;
 mod devfs;
 pub mod dirent;
-#[cfg(virtio)]
+#[cfg(fatfs)]
 mod fatfs;
 mod fd_manager;
 mod file;
@@ -52,7 +52,7 @@ pub use file::AccessMode;
 #[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 
-/// Initialize the virtual file system  
+/// Initialize the virtual file system
 pub fn vfs_init() -> Result<(), Error> {
     debug!("Initializing VFS...");
     root::init();
@@ -77,19 +77,18 @@ pub fn vfs_init() -> Result<(), Error> {
     let mut fd_manager = get_fd_manager().lock();
     fd_manager.init_stdio()?;
 
-    #[cfg(virtio)]
+    #[cfg(fatfs)]
     {
         use crate::{
-            devices::block::VIRTUAL_STORAGE_NAME,
+            boards::{BLOCK_STORAGE_DEVICE_NAME, BLOCK_STORAGE_MOUNT_POINT},
             vfs::{fatfs::FatFileSystem, fs::FileSystem},
         };
         use alloc::string::String;
 
         debug!("init fatfs");
-        match FatFileSystem::new(VIRTUAL_STORAGE_NAME) {
+        match FatFileSystem::new(BLOCK_STORAGE_DEVICE_NAME) {
             Ok(fatfs) => {
-                let fat_name = String::from("fat");
-                // create the directory /fat
+                let fat_name = String::from(BLOCK_STORAGE_MOUNT_POINT);
                 let dev_dir = cwd.new_child(
                     fat_name.as_str(),
                     InodeFileType::Directory,
@@ -99,7 +98,7 @@ pub fn vfs_init() -> Result<(), Error> {
                 let fatfs_mount_point =
                     Dcache::new(fatfs.root_inode(), fat_name, cwd.get_weak_ref());
                 fatfs_mount_point.mount(fatfs)?;
-                debug!("Mounted fatfs at '/fat'");
+                debug!("Mounted fatfs at '/{}'", BLOCK_STORAGE_MOUNT_POINT);
             }
             Err(error) => {
                 error!("Fail to init fat file system, {}", error);

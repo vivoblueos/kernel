@@ -1,0 +1,5 @@
+# General Device Configuration
+
+config SPI_CORE
+    default n
+    bool "enable spi core"
