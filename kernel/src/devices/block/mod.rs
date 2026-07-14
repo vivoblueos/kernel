@@ -13,26 +13,37 @@
 // limitations under the License.
 
 use crate::{
-    devices::{virtio::VirtioHal, Device, DeviceClass, DeviceId, DeviceManager},
+    devices::{Device, DeviceClass, DeviceId, DeviceManager},
     sync::SpinLock,
 };
 use alloc::{string::String, sync::Arc, vec};
 use core::cmp::min;
 use embedded_io::{Error as IOError, ErrorKind};
+
+#[cfg(enable_block)]
+use crate::drivers::flash::spi_flash::FlashBlockError;
+#[cfg(enable_block)]
+use crate::drivers::flash::spi_flash_cmd::FlashError;
+
+#[cfg(virtio)]
+use crate::devices::virtio::VirtioHal;
+#[cfg(virtio)]
 use virtio_drivers::{
     device::blk::{VirtIOBlk, SECTOR_SIZE},
     transport::SomeTransport,
     Hal,
 };
 
+#[cfg(virtio)]
 pub const VIRTUAL_STORAGE_NAME: &str = "virt-storage";
 
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum BlockError<T> {
-    #[error("Error from the drviver: {0}")]
+    #[error("Error from the driver: {0}")]
     Driver(#[from] T),
 }
 
+#[cfg(virtio)]
 impl embedded_io::Error for BlockError<virtio_drivers::Error> {
     fn kind(&self) -> ErrorKind {
         match self {
@@ -48,6 +59,25 @@ impl embedded_io::Error for BlockError<virtio_drivers::Error> {
                 virtio_drivers::Error::ConfigSpaceTooSmall => ErrorKind::InvalidInput,
                 virtio_drivers::Error::ConfigSpaceMissing => ErrorKind::InvalidInput,
                 virtio_drivers::Error::SocketDeviceError(_socket_error) => ErrorKind::Other,
+            },
+        }
+    }
+}
+
+#[cfg(enable_block)]
+impl embedded_io::Error for BlockError<FlashBlockError> {
+    fn kind(&self) -> ErrorKind {
+        match self {
+            BlockError::Driver(error) => match error {
+                FlashBlockError::Flash(flash_err) => match flash_err {
+                    FlashError::Spi(_) => ErrorKind::Other,
+                    FlashError::NotReady => ErrorKind::Other,
+                    FlashError::JedecMismatch { .. } => ErrorKind::NotFound,
+                    FlashError::WriteEnableFailed => ErrorKind::Other,
+                    FlashError::Timeout => ErrorKind::TimedOut,
+                    FlashError::AddrOverflow { .. } => ErrorKind::InvalidInput,
+                    FlashError::InvalidParam(_) => ErrorKind::InvalidInput,
+                },
             },
         }
     }
@@ -70,10 +100,12 @@ pub trait BlockDriverOps: Send + Sync + ErrorType {
     fn flush(&mut self) -> Result<(), Self::Error>;
 }
 
+#[cfg(virtio)]
 impl<H: Hal> ErrorType for VirtIOBlk<H, SomeTransport<'static>> {
     type Error = BlockError<virtio_drivers::Error>; // : io::Error
 }
 
+#[cfg(virtio)]
 impl<H: Hal> BlockDriverOps for VirtIOBlk<H, SomeTransport<'static>> {
     fn capacity(&self) -> u64 {
         self.capacity()
@@ -105,10 +137,14 @@ impl<H: Hal> BlockDriverOps for VirtIOBlk<H, SomeTransport<'static>> {
     }
 }
 
+#[cfg(virtio)]
 pub fn init_virtio_block(
     driver: VirtIOBlk<VirtioHal, SomeTransport<'static>>,
 ) -> Result<(), ErrorKind> {
-    let block = Block::new(VIRTUAL_STORAGE_NAME, Arc::new(SpinLock::new(driver)));
+    let block = Block::<BlockError<virtio_drivers::Error>, SECTOR_SIZE>::new(
+        VIRTUAL_STORAGE_NAME,
+        Arc::new(SpinLock::new(driver)),
+    );
     DeviceManager::get().register_device(String::from(VIRTUAL_STORAGE_NAME), Arc::new(block))
 }
 
@@ -118,7 +154,7 @@ pub struct Block<E: embedded_io::Error, const SECTOR_SIZE: usize> {
     total_size: u64, // in bytes
 }
 
-impl<E: embedded_io::Error> Block<E, SECTOR_SIZE> {
+impl<E: embedded_io::Error, const SECTOR_SIZE: usize> Block<E, SECTOR_SIZE> {
     pub fn new(name: &str, driver: Arc<SpinLock<dyn BlockDriverOps<Error = E>>>) -> Self {
         let total_size = {
             let capacity = driver.lock().capacity();
@@ -132,7 +168,7 @@ impl<E: embedded_io::Error> Block<E, SECTOR_SIZE> {
     }
 }
 
-impl<E: embedded_io::Error> Device for Block<E, SECTOR_SIZE> {
+impl<E: embedded_io::Error, const SECTOR_SIZE: usize> Device for Block<E, SECTOR_SIZE> {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -246,6 +282,64 @@ impl<E: embedded_io::Error> Device for Block<E, SECTOR_SIZE> {
     }
 }
 
+#[cfg(enable_block)]
+#[cfg(test)]
+mod flash_tests {
+    use super::*;
+    use crate::drivers::flash::{spi_flash::FlashBlockError, spi_flash_cmd::FlashError};
+    use blueos_test_macro::test;
+    use embedded_hal::spi::ErrorKind as SpiErrorKind;
+    use embedded_io::Error as IOError;
+
+    #[test]
+    fn test_flash_error_spi_maps_to_other() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::Spi(SpiErrorKind::Other)));
+        assert_eq!(IOError::kind(&err), ErrorKind::Other);
+    }
+
+    #[test]
+    fn test_flash_error_not_ready_maps_to_other() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::NotReady));
+        assert_eq!(IOError::kind(&err), ErrorKind::Other);
+    }
+
+    #[test]
+    fn test_flash_error_jedec_mismatch_maps_to_not_found() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::JedecMismatch {
+            expected: 0xEF4018,
+            got: 0x000000,
+        }));
+        assert_eq!(IOError::kind(&err), ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn test_flash_error_write_enable_failed_maps_to_other() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::WriteEnableFailed));
+        assert_eq!(IOError::kind(&err), ErrorKind::Other);
+    }
+
+    #[test]
+    fn test_flash_error_timeout_maps_to_timed_out() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::Timeout));
+        assert_eq!(IOError::kind(&err), ErrorKind::TimedOut);
+    }
+
+    #[test]
+    fn test_flash_error_addr_overflow_maps_to_invalid_input() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::AddrOverflow {
+            addr: 0x01000000,
+        }));
+        assert_eq!(IOError::kind(&err), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_flash_error_invalid_param_maps_to_invalid_input() {
+        let err = BlockError::Driver(FlashBlockError::Flash(FlashError::InvalidParam("test")));
+        assert_eq!(IOError::kind(&err), ErrorKind::InvalidInput);
+    }
+}
+
+#[cfg(virtio)]
 #[cfg(test)]
 mod tests {
     use super::*;

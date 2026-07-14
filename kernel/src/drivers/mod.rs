@@ -16,6 +16,7 @@
 
 use crate::devices::bus::{Bus, BusInterface};
 
+pub(crate) mod flash;
 pub(crate) mod ic;
 pub(crate) mod input;
 #[cfg(lcd)]
