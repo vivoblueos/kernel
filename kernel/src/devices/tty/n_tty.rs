@@ -244,7 +244,7 @@ impl Device for Tty {
                     }
                     return Ok(0);
                 }
-                if erase_char == ch {
+                if erase_char == ch || ch == 0x08 {
                     if cursor > 0 {
                         let backspace_seq = [8u8, b' ', 8u8];
                         self.dev.send_bytes(&backspace_seq, false)?;
