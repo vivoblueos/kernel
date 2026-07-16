@@ -22,7 +22,7 @@ build_rust("blueos_macro") {
   deps = []
   proc_macro_deps = [
     "//external/vendor/proc-macro2-1.0.103:proc_macro2",
-    "//external/vendor/quote-1.0.41:quote",
+    "//external/vendor/quote-1.0.46:quote",
     "//external/vendor/syn-2.0.108:syn",
   ]
   features = []
