@@ -29,6 +29,8 @@ const FB_VISUAL_TRUECOLOR: u32 = 2;
 
 #[cfg(st7789)]
 pub mod st7789;
+#[cfg(st7796)]
+pub mod st7796;
 
 pub struct LcdFramebuffer<T> {
     width: u32,
