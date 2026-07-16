@@ -20,7 +20,7 @@ use bme280::i2c::BME280;
 use crate::{
     devices::{bus::Bus, i2c_core::block_i2c::BlockI2c, DeviceData},
     drivers::{DriverModule, InitDriver},
-    sync::{KernelDelay, SpinLock},
+    sync::KernelDelay,
 };
 
 #[derive(Default)]

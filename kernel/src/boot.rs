@@ -75,9 +75,6 @@ use crate::{
     drivers::InitDriver,
 };
 
-#[cfg(use_bme280)]
-static I2C0_BUS: Once<Arc<Bus<crate::boards::get_bus_ty!(i2c0_bus)>>> = Once::new();
-
 fn init_pin_states<P: blueos_hal::pinctrl::AlterFuncPin>(pin_states: &[&P]) {
     for pin_state in pin_states {
         pin_state.init();
@@ -107,26 +104,6 @@ extern "C" fn init() {
         Err(err) => panic!("Failed to init console: {}", crate::error::Error::from(err)),
     }
 
-    #[cfg(use_bme280)]
-    {
-        if let Ok(block_i2c) = BlockI2c::new(crate::boards::get_device!(i2c0)) {
-            I2C0_BUS.call_once(|| Arc::new(Bus::new(block_i2c)));
-            let i2c0_bus = I2C0_BUS.get().unwrap();
-            for device in crate::boards::get_bus_devices!(i2c0_bus) {
-                i2c0_bus.register_device(device).unwrap();
-            }
-            if let Ok(d) =
-                i2c0_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
-            {
-                if let Err(e) = d.init(&i2c0_bus) {
-                    log::warn!("Failed to init Bme280 driver: {}", e);
-                }
-            }
-        } else {
-            log::warn!("Failed to init BlockI2c");
-        }
-    }
-
     #[cfg(virtio)]
     {
         use crate::devices::virtio;
@@ -149,12 +126,20 @@ extern "C" fn init() {
         net::init();
         net::net_manager::init();
     }
+
+    #[cfg(spi_core)]
+    crate::boards::init_spi_bus();
+    #[cfg(i2c_core)]
+    crate::boards::init_i2c_bus();
+
     #[cfg(enable_vfs)]
     init_vfs();
     // it's an bug in fact, but at now we use a workaround let newlib do the c++ runtime initialization
     #[cfg(not(target_board = "newlib_mps3_an547"))]
     run_init_array();
+
     init_apps();
+
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }

@@ -85,6 +85,11 @@ impl Tick {
         Self::interrupt_at(nth);
     }
 
+    pub fn is_elapsed(&self) -> bool {
+        let now = Self::now();
+        now.0 >= self.0
+    }
+
     pub fn interrupt_at(n: Tick) {
         let _guard = DisableInterruptGuard::new();
         if n == Self::MAX {

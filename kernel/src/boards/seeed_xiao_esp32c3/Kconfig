@@ -19,6 +19,27 @@ choice
           Set irq priority bits to 8.
 endchoice
 
+choice
+    prompt "LCD controller"
+    default ST7789
+
+    config ST7789
+        bool "Enable LCD ST7789"
+        help
+          Enable the ST7789 LCD controller.
+
+    config ST7796
+        bool "Enable LCD ST7796"
+        help
+          Enable the ST7796 LCD controller.
+endchoice
+
+config USE_EMBEDDED_HAL_V1
+    bool "Impl embedded-hal-1.0.0 for driver"
+    default y
+    help
+      Impl embedded-hal-1.0.0 for driver
+
 config SOC_ESP32C3
     bool "Esp32c3"
     default y

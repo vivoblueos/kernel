@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #[cfg(soc_esp32c3)]
-pub mod esp32_spi2;
+pub mod esp32_spi;
 
 /// SPI clock phase (CPHA).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +46,7 @@ pub struct SpiConfig {
 }
 
 impl SpiConfig {
-    /// Mode 0 (CPOL=0, CPHA=0), MSB-first, 20MHz — typical SPI NOR Flash config
+    /// Mode 0 (CPOL=0, CPHA=0), MSB-first, 20MHz — typical SPI NOR Flash config.
     pub fn spi_flash_default() -> Self {
         SpiConfig {
             baudrate: 20_000_000,

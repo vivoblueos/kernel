@@ -67,21 +67,14 @@ impl<B: BusInterface> Bus<B> {
         &self,
         dev: &M,
     ) -> crate::drivers::Result<T> {
-        let mut driver = Default::default();
         let devices = self.devices.read();
         let it = super::DeviceListIterator::new(&devices, None);
-        let mut matched = false;
         for node in it {
-            if let Ok(driv) = M::probe(unsafe { node.as_ref() }.owner().data) {
-                driver = driv;
-                matched = true;
-                break;
+            if let Ok(driver) = M::probe(unsafe { node.as_ref() }.owner().data) {
+                return Ok(driver);
             }
         }
 
-        if !matched {
-            return Err(crate::error::code::ENODEV);
-        }
-        Ok(driver)
+        Err(crate::error::code::ENODEV)
     }
 }
