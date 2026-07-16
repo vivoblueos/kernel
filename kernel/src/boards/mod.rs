@@ -62,11 +62,13 @@ macro_rules! define_pin_states {
 
 #[macro_export]
 macro_rules! define_bus {
-    ($( ($bus_name:ident, $bus_ty:ty, $( ($device_name:ident, $device_ty:ty, $device:expr) ),* $(,)?  ) ),* $(,)?) => {
+    ($( ($bus_name:ident, $bus_ty:ty, $( $(#[$device_meta:meta])* ($device_name:ident, $device_ty:ty, $device:expr) ),* $(,)?  ) ),* $(,)?) => {
         $(
             paste::paste! {
                 $(
+                    $(#[$device_meta])*
                     pub static [<$device_name:upper>]: $device_ty = $device;
+                    $(#[$device_meta])*
                     pub static [<$device_name:upper _DEVICE_DATA>]: crate::devices::DeviceData = crate::devices::new_native_device_data(&[<$device_name:upper>]);
                 )*
             }
@@ -74,6 +76,7 @@ macro_rules! define_bus {
             paste::paste! {
                 pub static [<$bus_name:upper _DATA>]: &[&crate::devices::DeviceData] = &[
                     $(
+                        $(#[$device_meta])*
                         &[<$device_name:upper _DEVICE_DATA>],
                     )*
                 ];

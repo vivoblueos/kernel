@@ -185,10 +185,21 @@ crate::define_bus! {
     (
         spi2_bus,
         crate::devices::spi_core::block_spi::BlockSpi<blueos_driver::spi::esp32_spi::Esp32Spi2<0x6002_4000, 0x600C_0000, 80_000_000>, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin<7>>,
+        #[cfg(st7789)]
         (st7789, crate::drivers::lcd::st7789::St7789Config<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
             crate::drivers::lcd::st7789::St7789Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
                 rst: get_device!(rst_pin),
                 dc: get_device!(dc_pin),
+            }
+        ),
+        #[cfg(st7796)]
+        (st7796, crate::drivers::lcd::st7796::St7796Config<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
+            crate::drivers::lcd::st7796::St7796Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
+                rst: get_device!(rst_pin),
+                dc: get_device!(dc_pin),
+                orientation: mipidsi::options::Orientation::new()
+                    .rotate(mipidsi::options::Rotation::Deg0)
+                    .flip_horizontal(),
             }
         ),
     )
@@ -207,12 +218,28 @@ pub(crate) fn init_spi_bus() {
         for device in crate::boards::get_bus_devices!(spi2_bus) {
             spi2_bus.register_device(device).unwrap();
         }
-        if let Ok(d) = spi2_bus.probe_driver(&crate::drivers::lcd::st7789::St7789DriverModule::<
-            blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
-        >::new())
+        #[cfg(st7789)]
         {
-            if let Err(e) = d.init(&spi2_bus) {
-                log::warn!("Failed to init ST7789 driver: {}", e);
+            if let Ok(d) =
+                spi2_bus.probe_driver(&crate::drivers::lcd::st7789::St7789DriverModule::<
+                    blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+                >::new())
+            {
+                if let Err(e) = d.init(&spi2_bus) {
+                    log::warn!("Failed to init ST7789 driver: {}", e);
+                }
+            }
+        }
+        #[cfg(st7796)]
+        {
+            if let Ok(d) =
+                spi2_bus.probe_driver(&crate::drivers::lcd::st7796::St7796DriverModule::<
+                    blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+                >::new())
+            {
+                if let Err(e) = d.init(&spi2_bus) {
+                    log::warn!("Failed to init ST7796 driver: {}", e);
+                }
             }
         }
     } else {
