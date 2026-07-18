@@ -20,6 +20,10 @@
 // SPDX-License-Identifier: MIT
 
 mod config;
+/// Device tree generated modules (build-time).
+pub mod dts {
+    include!(concat!(env!("DTS_OUT_DIR"), "/mod.rs"));
+}
 use crate::{
     arch,
     arch::riscv::{local_irq_enabled, trap_entry, Context},
