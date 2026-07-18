@@ -201,6 +201,14 @@ extern "C" fn trap_fiq(context: &mut Context) -> usize {
 }
 
 fn show_exception(ec: u64, context: &mut Context) {
+    #[cfg(enable_coredump)]
+    crate::coredump::dump_current(&crate::coredump::elf::CoredumpReason {
+        signo: crate::coredump::signal::aarch64_ec_to_signo(ec),
+        code: ec as i32,
+        fault_addr: ESR_EL1.get() as usize,
+        arch_specific: ec as usize,
+    });
+
     match ec {
         0x00 => panic!("Unknown reason Exceptions\n======== error stack ======== \n{}",context),
         0x01 => panic!("WFI or WFE instruction\n======== error stack ======== \n{}",context),

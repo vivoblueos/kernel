@@ -258,6 +258,14 @@ extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: 
             might_switch_context(ctx, cont)
         }
         _ => {
+            #[cfg(enable_coredump)]
+            crate::coredump::dump_current(&crate::coredump::elf::CoredumpReason {
+                signo: crate::coredump::signal::riscv_mcause_to_signo(mcause),
+                code: mcause as i32,
+                fault_addr: mtval,
+                arch_specific: mcause,
+            });
+
             let t = scheduler::current_thread_ref();
             crate::kearly_println!(
                 "[C#{}:0x{:x}] Unexpected trap: context: {:?}, mcause: 0x{:x}, mtval: 0x{:x}",

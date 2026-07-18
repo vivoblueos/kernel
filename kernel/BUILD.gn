@@ -24,6 +24,7 @@ _kernel_default_cfgs = [
 group("check_kernel") {
   testonly = true
   deps = [
+    ":run_coredump_test",
     ":run_integration_test",
     ":run_unittest",
   ]
@@ -227,6 +228,69 @@ run_qemu_check("run_integration_test") {
     checker = "src/coverage.checker"
   } else {
     checker = "tests/integration.checker"
+  }
+}
+
+build_rust("kernel_coredump_test") {
+  testonly = true
+  crate_type = "bin"
+  sources = [ "tests/coredump_test.rs" ]
+  edition = "2021"
+  deps = [
+           ":blueos",
+           "//external/vendor/semihosting-0.1.20:semihosting",
+           "//kernel/rsrt",
+           "//libc",
+         ] + board_deps
+  if (coverage || profile) {
+    deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
+  }
+  cfgs = _kernel_default_cfgs
+  linker_script = default_linker_script
+  if (defined(chip)) {
+    rustflags += [
+      "--cfg",
+      "target_chip=\"${chip}\"",
+    ]
+  }
+}
+
+if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
+  gen_esp32_qemu_runner("coredump_test_runner") {
+    testonly = true
+    elf = ":kernel_coredump_test"
+    chip = "${chip}"
+    bootloader = qemu_esp32_bootloader_bin
+    partition_table = qemu_esp32_partition_table_bin
+    qemu = qemu_exe
+    machine = qemu_machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_args = qemu_block_args
+    semihosting = true
+  }
+} else {
+  gen_qemu_runner("coredump_test_runner") {
+    testonly = true
+    semihosting = true
+    img = ":kernel_coredump_test"
+    qemu = qemu_exe
+    machine = qemu_machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_img = "coredump_test_block.img"
+    block_args = qemu_block_args
+  }
+}
+
+run_qemu_check("run_coredump_test") {
+  testonly = true
+  runner = ":coredump_test_runner"
+  if (coverage) {
+    img = ":kernel_coredump_test"
+    checker = "src/coverage.checker"
+  } else {
+    checker = "tests/coredump.checker"
   }
 }
 

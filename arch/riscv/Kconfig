@@ -2,6 +2,10 @@
 
 menu "RISCV Configuration"
 
+config 32BIT
+    bool "32-bit RISC-V"
+    default n
+
 config NUM_IRQS
     int
 

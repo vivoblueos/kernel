@@ -143,6 +143,14 @@ SECTIONS {
     . = ALIGN(4);
   } > RWDATA
 
+  .coredump_bss (NOLOAD) : ALIGN(4096)
+  {
+    __coredump_buf_start = ABSOLUTE(.);
+    *(.coredump_bss .coredump_bss.*)
+    . = ALIGN(4096);
+    __coredump_buf_end = ABSOLUTE(.);
+  } > RWDATA
+
   .noinit (NOLOAD) : ALIGN(4)
   {
     . = ALIGN(4);
