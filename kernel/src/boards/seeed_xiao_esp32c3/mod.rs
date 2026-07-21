@@ -239,6 +239,20 @@ crate::define_bus! {
             }
         ),
     ),
+    (
+        i2c_bus,
+        crate::devices::i2c_core::block_i2c::BlockI2c<blueos_driver::i2c::esp32_i2c::Esp32I2c>,
+        #[cfg(ft6336u)]
+        (ft6336u, crate::drivers::input::ft6336u::Ft6336uConfig<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
+            crate::drivers::input::ft6336u::Ft6336uConfig::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
+                rst: get_device!(touch_rst_pin),
+            }
+        ),
+        #[cfg(bme280)]
+        (bme280, crate::drivers::sensor::bme280::Bme280Config,
+            crate::drivers::sensor::bme280::Bme280Config::new(0x76)
+        ),
+    ),
 }
 
 pub(crate) fn init_spi_bus() {
@@ -283,4 +297,41 @@ pub(crate) fn init_spi_bus() {
     }
 }
 
-pub(crate) fn init_i2c_bus() {}
+pub(crate) fn init_i2c_bus() {
+    use crate::{
+        devices::{bus::Bus, i2c_core::block_i2c::BlockI2c},
+        drivers::InitDriver,
+    };
+    use alloc::sync::Arc;
+
+    if let Ok(block_i2c) = BlockI2c::new(get_device!(i2c0)) {
+        let i2c_bus = Arc::new(Bus::new(block_i2c));
+        for device in crate::boards::get_bus_devices!(i2c_bus) {
+            i2c_bus.register_device(device).unwrap();
+        }
+
+        #[cfg(ft6336u)]
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::input::ft6336u::Ft6336uDriverModule::<
+                blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+            >::new())
+        {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize FT6336U driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe FT6336U driver");
+        }
+
+        #[cfg(bme280)]
+        if let Ok(driver) = i2c_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule) {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize BME280 driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe BME280 driver");
+        }
+    } else {
+        log::warn!("Failed to initialize ESP32-C3 I2C0 bus");
+    }
+}
