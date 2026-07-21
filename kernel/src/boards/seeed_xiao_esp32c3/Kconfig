@@ -34,6 +34,12 @@ choice
           Enable the ST7796 LCD controller.
 endchoice
 
+config BME280
+    bool "BME280 Sensor"
+    default n
+    help
+      Enable BME280
+
 config USE_EMBEDDED_HAL_V1
     bool "Impl embedded-hal-1.0.0 for driver"
     default y
@@ -44,6 +50,7 @@ config SOC_ESP32C3
     bool "Esp32c3"
     default y
     select RISCV
+    select I2C_CORE
 
 config NUM_IRQS
     default 31

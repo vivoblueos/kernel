@@ -180,10 +180,14 @@ crate::define_peripheral! {
      blueos_driver::interrupt_controller::esp32_intc::Esp32Intc::new(0x600c_2000)),
     (spi2, blueos_driver::spi::esp32_spi::Esp32Spi2<0x6002_4000, 0x600C_0000, 80_000_000>,
      blueos_driver::spi::esp32_spi::Esp32Spi2::<0x6002_4000, 0x600C_0000, 80_000_000>::new()),
+    (i2c0, blueos_driver::i2c::esp32_i2c::Esp32I2c,
+     blueos_driver::i2c::esp32_i2c::Esp32I2c::new(0x6001_3000, 0x600C_0000, 40_000_000)),
     (dc_pin, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(5)),
     (rst_pin, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(4)),
+    (touch_rst_pin, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(21)),
     (lcd_cs, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(20)),
 }
@@ -203,12 +207,15 @@ static ESP32_USB_SERIAL_ISR: Esp32UsbSerialIsr<0x6004_3000, crate::drivers::seri
 
 crate::define_pin_states!(
     blueos_driver::pinctrl::esp32_pinctrl::Esp32IoMuxPinctrl,
-    (8, 1, false, false, false, 2, Some(63), None, false), // SCK
-    (9, 1, true, false, false, 2, None, Some(64), false),  // MISO
-    (10, 1, false, false, false, 2, Some(65), None, false), // MOSI
-    (20, 1, false, true, false, 2, None, None, true),      // lcd cs
-    (5, 1, false, true, false, 2, None, None, true),       // lcd dc
-    (4, 1, false, true, false, 2, None, None, true),       // lcd rst
+    (6, 1, true, true, false, 2, Some(54), Some(54), false, true), // I2C0 SDA
+    (7, 1, true, true, false, 2, Some(53), Some(53), false, true), // I2C0 SCL
+    (8, 1, false, false, false, 2, Some(63), None, false, false),  // SCK
+    (9, 1, true, false, false, 2, None, Some(64), false, false),   // MISO
+    (10, 1, false, false, false, 2, Some(65), None, false, false), // MOSI
+    (20, 1, false, true, false, 2, None, None, true, false),       // lcd cs
+    (5, 1, false, true, false, 2, None, None, true, false),        // lcd dc
+    (4, 1, false, true, false, 2, None, None, true, false),        // lcd rst
+    (21, 1, false, true, false, 2, None, None, true, false),       // touch rst
 );
 
 crate::define_bus! {
@@ -232,7 +239,19 @@ crate::define_bus! {
                     .flip_horizontal(),
             }
         ),
-    )
+    ),
+    (
+        i2c_bus,
+        crate::devices::i2c_core::block_i2c::BlockI2c<blueos_driver::i2c::esp32_i2c::Esp32I2c>,
+        (ft6336u, crate::drivers::input::ft6336u::Ft6336uConfig<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
+            crate::drivers::input::ft6336u::Ft6336uConfig::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
+                rst: get_device!(touch_rst_pin),
+            }
+        ),
+        (bme280, crate::drivers::sensor::bme280::Bme280Config,
+            crate::drivers::sensor::bme280::Bme280Config::new(0x76)
+        ),
+    ),
 }
 
 pub(crate) fn init_spi_bus() {
@@ -274,5 +293,42 @@ pub(crate) fn init_spi_bus() {
         }
     } else {
         log::warn!("Failed to init BlockSpi");
+    }
+}
+
+pub(crate) fn init_i2c_bus() {
+    use crate::{
+        devices::{bus::Bus, i2c_core::block_i2c::BlockI2c},
+        drivers::InitDriver,
+    };
+    use alloc::sync::Arc;
+
+    if let Ok(block_i2c) = BlockI2c::new(get_device!(i2c0)) {
+        let i2c_bus = Arc::new(Bus::new(block_i2c));
+        for device in crate::boards::get_bus_devices!(i2c_bus) {
+            i2c_bus.register_device(device).unwrap();
+        }
+
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::input::ft6336u::Ft6336uDriverModule::<
+                blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+            >::new())
+        {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize FT6336U driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe FT6336U driver");
+        }
+
+        if let Ok(driver) = i2c_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule) {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize BME280 driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe BME280 driver");
+        }
+    } else {
+        log::warn!("Failed to initialize ESP32-C3 I2C0 bus");
     }
 }

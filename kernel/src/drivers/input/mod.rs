@@ -1,4 +1,4 @@
-// Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod i2c_dw;
-
-#[cfg(soc_esp32c3)]
-pub mod esp32_i2c;
-
-pub struct I2cConfig {
-    pub baudrate: u32,
-}
+pub mod ft6336u;
