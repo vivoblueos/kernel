@@ -163,10 +163,22 @@ macro_rules! aarch64_save_context_prologue {
     };
 }
 
+/// Restore LR from Context, adjust SP, and — if returning to EL0t —
+/// restore SP_EL0 from `Context.padding` first (using x30 as scratch).
+///
+/// Must be called inside a `naked_asm!` that provides the named constants
+/// `{lr}`, `{stack_size}`, and `{sp_el0}` (the offset of `Context.padding`).
+/// The check is a no-op for EL1 returns.
 #[macro_export]
 macro_rules! aarch64_restore_context_epilogue {
     () => {
         "
+        mrs x9, spsr_el1
+        tst x9, #0xF
+        b.ne 1f
+        ldr x30, [sp, #{sp_el0}]
+        msr sp_el0, x30
+        1:
         ldr lr, [sp, #{lr}]
         add sp, sp, #{stack_size}
         "
@@ -345,6 +357,25 @@ impl Context {
     #[inline]
     pub(crate) fn init(&mut self) -> &mut Self {
         self.spsr = 0b0101;
+        self
+    }
+
+    /// Initialize Context for first entry to EL0 (user mode).
+    ///
+    /// Sets SPSR_EL1 to EL0t (0b0000), ELR_EL1 to the entry point,
+    /// and stores the user stack pointer in the padding field (used
+    /// by the `exception_handler_el0!` macro to restore SP_EL0 on
+    /// exception return).
+    ///
+    /// # Safety
+    /// - `entry` must be a valid user-space address in the process's
+    ///   address space.
+    /// - `user_sp` must be a valid user-space stack pointer (aligned).
+    #[inline]
+    pub(crate) fn init_el0(&mut self, entry: usize, user_sp: usize) -> &mut Self {
+        self.spsr = 0b0000; // EL0t
+        self.elr = entry;
+        self.padding = user_sp; // saved SP_EL0 holder
         self
     }
 

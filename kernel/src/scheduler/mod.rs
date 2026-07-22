@@ -35,6 +35,7 @@ use alloc::boxed::Box;
 use core::{
     intrinsics::unlikely,
     mem::MaybeUninit,
+    ptr::NonNull,
     sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
 };
 pub use global_scheduler::*;
@@ -97,6 +98,98 @@ pub(crate) static mut RUNNING_THREADS: [MaybeUninit<ThreadNode>; NUM_CORES] =
     [const { MaybeUninit::zeroed() }; NUM_CORES];
 static mut PER_CPU_TIMER: [MaybeUninit<Timer>; NUM_CORES] =
     [const { MaybeUninit::zeroed() }; NUM_CORES];
+
+// Per-CPU cache of the (PA, ASID, generation) triple currently installed in
+// TTBR0_EL1.  All-zeros means no user process active (kernel thread running).
+// SAFETY: Each CPU core only ever accesses its own slot via
+// `arch::current_cpu_id()`.  No cross-CPU access, so `static mut` is
+// data-race-free — same invariant as `RUNNING_THREADS` / `PER_CPU_TIMER`.
+#[cfg(target_arch = "aarch64")]
+#[derive(Copy, Clone)]
+struct ProcCache {
+    pa: usize,
+    asid: u8,
+    gen: u8,
+}
+
+#[cfg(target_arch = "aarch64")]
+static mut PER_CPU_PROC_CACHE: [ProcCache; NUM_CORES] = [const {
+    ProcCache {
+        pa: 0,
+        asid: 0,
+        gen: 0,
+    }
+}; NUM_CORES];
+
+#[cfg(target_arch = "aarch64")]
+fn get_proc_cache() -> ProcCache {
+    unsafe { PER_CPU_PROC_CACHE[arch::current_cpu_id()] }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn set_proc_cache(c: ProcCache) {
+    unsafe {
+        PER_CPU_PROC_CACHE[arch::current_cpu_id()] = c;
+    }
+}
+
+/// Install the next thread's address space in `TTBR0_EL1`, with a per-CPU
+/// `(PA, ASID, generation)` cache to skip redundant writes and TLB flushes.
+///
+/// Called from `switch_current_thread` on every context switch.  Extracted as
+/// a standalone function so the §7 scheduler tests can exercise the cache
+/// logic + TLBI issuance directly (via the `#[cfg(test)]` spy in
+/// `arch::aarch64::asm`) without driving a full context switch.
+///
+/// - `next_proc == Some(p)`: if `(pa, asid, gen)` differs from the cache,
+///   write `TTBR0_EL1 = (asid << 48) | pa`, issue `TLBI ASIDE1IS` for the old
+///   ASID, DSB+ISB, and update the cache.  Otherwise (full hit) do nothing.
+/// - `next_proc == None` (kernel thread): write `TTBR0_EL1 = 0`, issue
+///   `TLBI VMALLE1IS` (Inner Shareable), DSB+ISB, reset the cache.  See
+///   design D2.
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn switch_address_space(next_proc: Option<NonNull<crate::process::Process>>) {
+    use tock_registers::interfaces::Writeable;
+    if let Some(proc) = next_proc {
+        let proc_ref = unsafe { proc.as_ref() };
+        let pa = proc_ref.address_space.root_pa();
+        let asid = proc_ref.asid;
+        let gen = proc_ref.asid_generation;
+        // Cache hit requires all three keys to match: PA (same page
+        // table), ASID (same TLB tag), and generation (same generation of
+        // that ASID — a recycled ASID with a new generation must NOT hit
+        // against a stale cache entry, design D4).
+        let cache = get_proc_cache();
+        if pa != cache.pa || asid != cache.asid || gen != cache.gen {
+            let old_asid = cache.asid;
+            crate::arch::aarch64::registers::ttbr0_el1::TTBR0_EL1
+                .set((asid as u64) << 48 | pa as u64);
+            // ASID 0 is never assigned to user processes; skip the no-op flush.
+            if old_asid != 0 {
+                crate::arch::aarch64::asm::tlbi_aside1is(old_asid);
+            }
+            crate::arch::aarch64::asm::dsb(crate::arch::aarch64::asm::DsbOptions::InnerShareable);
+            crate::arch::aarch64::asm::isb();
+            set_proc_cache(ProcCache { pa, asid, gen });
+        }
+    } else {
+        // Switching to a kernel thread (next_proc == None): clear
+        // TTBR0_EL1 and broadcast TLBI VMALLE1IS (Inner Shareable) to
+        // purge the retiring user process's ASID+PA from every CPU's TLB.
+        // VMALLE1IS (not ASIDE1IS) because a kernel thread has no ASID to
+        // scope by; the stronger flush is acceptable since kernel-thread
+        // switches are rare relative to same-process switches (design D2).
+        crate::arch::aarch64::registers::ttbr0_el1::TTBR0_EL1.set(0);
+        crate::arch::aarch64::asm::tlbi_vmalle1is();
+        crate::arch::aarch64::asm::dsb(crate::arch::aarch64::asm::DsbOptions::InnerShareable);
+        crate::arch::aarch64::asm::isb();
+        set_proc_cache(ProcCache {
+            pa: 0,
+            asid: 0,
+            gen: 0,
+        });
+    }
+}
 
 pub(crate) fn init() {
     idle::init_idle_threads();
@@ -214,7 +307,15 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     arch::mpu::update_thread_stack_guard(&next);
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
+    #[cfg(target_arch = "aarch64")]
+    let next_proc = next.process();
     let mut old = set_current_thread(next);
+    // Switch TTBR0_EL1 when the next thread's address space differs from
+    // the one currently installed on this CPU.  The PA/ASID/generation cache
+    // avoids redundant TTBR0 writes and full TLB flushes for same-process
+    // switches and kernel→same-user-process re-entries.
+    #[cfg(target_arch = "aarch64")]
+    switch_address_space(next_proc);
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
@@ -517,5 +618,184 @@ pub(crate) fn notify_idle_cores(how_many: usize) {
         if notified == how_many {
             break;
         }
+    }
+}
+
+#[cfg(all(test, target_arch = "aarch64"))]
+mod tests {
+    use super::*;
+    use crate::{process::Process, types::Arc};
+    use blueos_test_macro::test;
+    use core::ptr::NonNull;
+    use tock_registers::interfaces::Readable;
+
+    /// Build an `Option<NonNull<Process>>` (the arg `switch_address_space`
+    /// expects) from an `Arc<Process>`.
+    fn proc_ref(p: &Arc<Process>) -> Option<NonNull<Process>> {
+        NonNull::new(Arc::as_ptr(p) as *mut Process)
+    }
+
+    /// Read the currently-installed TTBR0_EL1 value.
+    fn read_ttbr0() -> u64 {
+        crate::arch::aarch64::registers::ttbr0_el1::TTBR0_EL1.get()
+    }
+
+    // 7.1: Switching to a kernel thread (next_proc == None) clears TTBR0_EL1
+    // to 0 and issues TLBI VMALLE1IS (design D2).  We first install a user
+    // process so TTBR0 is non-zero, then switch to None and assert the
+    // cleanup.
+    #[test]
+    fn test_kernel_thread_switch_clears_ttbr0() {
+        crate::arch::aarch64::asm::reset_tlbi_counters();
+        // Install a user process so TTBR0_EL1 is non-zero and the cache holds
+        // its (pa, asid, gen).
+        let p = Process::try_new().expect("Process::try_new failed");
+        switch_address_space(proc_ref(&p));
+        assert_ne!(
+            read_ttbr0(),
+            0,
+            "user process must install a non-zero TTBR0"
+        );
+
+        // Now switch to a kernel thread (None).
+        let (aside_before, vmall_before) = crate::arch::aarch64::asm::read_tlbi_counters();
+        switch_address_space(None);
+        let (aside_after, vmall_after) = crate::arch::aarch64::asm::read_tlbi_counters();
+
+        assert_eq!(read_ttbr0(), 0, "kernel-thread switch must clear TTBR0_EL1");
+        assert_eq!(
+            vmall_after - vmall_before,
+            1,
+            "kernel-thread switch must issue exactly one TLBI VMALLE1IS"
+        );
+        assert_eq!(
+            aside_after - aside_before,
+            0,
+            "kernel-thread switch must NOT use ASIDE1IS (uses VMALLE1IS)"
+        );
+        // Caches reset to 0 (observable: a subsequent user-thread switch with
+        // a different PA is a cache miss — covered by 7.3).
+    }
+
+    // 7.2: Switching between two threads of the SAME process is a full cache
+    // hit — no TTBR0 write, no TLBI flush.
+    #[test]
+    fn test_same_process_switch_skips_tlb_flush() {
+        let p = Process::try_new().expect("Process::try_new failed");
+        // Prime the cache by installing the process once.
+        switch_address_space(proc_ref(&p));
+        let ttbr0_after_prime = read_ttbr0();
+
+        // "Switch" to another thread of the same process: same (pa, asid, gen).
+        crate::arch::aarch64::asm::reset_tlbi_counters();
+        switch_address_space(proc_ref(&p));
+        let (aside, vmall) = crate::arch::aarch64::asm::read_tlbi_counters();
+
+        assert_eq!(
+            read_ttbr0(),
+            ttbr0_after_prime,
+            "same-process switch must NOT rewrite TTBR0_EL1 (cache hit)"
+        );
+        assert_eq!(aside, 0, "same-process switch must NOT issue ASIDE1IS");
+        assert_eq!(vmall, 0, "same-process switch must NOT issue VMALLE1IS");
+    }
+
+    // 7.3: Switching from process A to process B writes the new
+    // (asid<<48)|pa into TTBR0_EL1 and issues TLBI ASIDE1IS for A's ASID.
+    #[test]
+    fn test_cross_process_switch_updates_ttbr0() {
+        let a = Process::try_new().expect("Process::try_new failed");
+        let b = Process::try_new().expect("Process::try_new failed");
+        assert_ne!(a.asid, b.asid, "test precondition: distinct ASIDs");
+
+        // Install A first.
+        switch_address_space(proc_ref(&a));
+        let ttbr0_a = read_ttbr0();
+        assert_eq!(
+            ttbr0_a,
+            ((a.asid as u64) << 48) | (a.address_space.root_pa() as u64),
+            "A's TTBR0 must encode A's asid+pa"
+        );
+
+        // Switch A → B.
+        crate::arch::aarch64::asm::reset_tlbi_counters();
+        switch_address_space(proc_ref(&b));
+        let (aside, vmall) = crate::arch::aarch64::asm::read_tlbi_counters();
+
+        assert_eq!(
+            read_ttbr0(),
+            ((b.asid as u64) << 48) | (b.address_space.root_pa() as u64),
+            "B's TTBR0 must encode B's asid+pa after the switch"
+        );
+        assert_eq!(
+            aside, 1,
+            "cross-process switch must issue exactly one ASIDE1IS (for A's old ASID)"
+        );
+        assert_eq!(vmall, 0, "cross-process switch must NOT use VMALLE1IS");
+    }
+
+    // 7.4: Generation participates in the cache key.  A recycled ASID (same
+    // asid, new generation) must NOT cache-hit against a stale cache entry.
+    //
+    // We simulate the recycle scenario directly: install process A (priming
+    // the cache with A's PA/ASID/gen), then corrupt the cached generation to
+    // a stale value.  Re-installing A — same PA, same ASID, but the cached
+    // generation no longer matches — must be treated as a cache miss
+    // (ASIDE1IS issued + TTBR0 rewritten).  This is exactly the situation
+    // that arises after an ASID recycle: the new process has the same ASID
+    // as the evicted one but a different generation.
+    #[test]
+    fn test_generation_in_cache_key() {
+        let a = Process::try_new().expect("Process::try_new failed");
+
+        // Prime the cache with A's real (pa, asid, gen).
+        switch_address_space(proc_ref(&a));
+        let cached_gen = get_proc_cache().gen;
+        assert_eq!(
+            cached_gen, a.asid_generation,
+            "cache must hold A's generation after install"
+        );
+
+        // Simulate a stale cache entry: same PA and ASID, but a different
+        // generation (as if the ASID was recycled to a new process with a
+        // bumped generation while the cache still holds the old gen).
+        let stale_gen = cached_gen.wrapping_add(1);
+        assert_ne!(
+            stale_gen, cached_gen,
+            "test precondition: stale gen must differ"
+        );
+        let c = get_proc_cache();
+        set_proc_cache(ProcCache {
+            gen: stale_gen,
+            ..c
+        });
+
+        // Re-install A.  Because the cached generation (stale_gen) != A's
+        // real generation, this must be a cache MISS — TTBR0 rewritten and
+        // ASIDE1IS issued.  If generation were NOT in the cache key, the
+        // matching PA+ASID would falsely hit and skip the TLBI.
+        crate::arch::aarch64::asm::reset_tlbi_counters();
+        switch_address_space(proc_ref(&a));
+        let (aside, vmall) = crate::arch::aarch64::asm::read_tlbi_counters();
+
+        assert_eq!(
+            aside, 1,
+            "same PA+ASID but stale generation must be a cache MISS (ASIDE1IS issued)"
+        );
+        assert_eq!(vmall, 0, "must use ASIDE1IS, not VMALLE1IS");
+        assert_eq!(
+            get_proc_cache().gen,
+            a.asid_generation,
+            "cache must be updated to A's real generation after the miss"
+        );
+
+        // Now A → A with the correct cached generation: must be a hit.
+        crate::arch::aarch64::asm::reset_tlbi_counters();
+        switch_address_space(proc_ref(&a));
+        let (aside_hit, _) = crate::arch::aarch64::asm::read_tlbi_counters();
+        assert_eq!(
+            aside_hit, 0,
+            "A→A with matching generation must be a cache hit"
+        );
     }
 }

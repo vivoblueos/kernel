@@ -26,6 +26,7 @@ use semihosting::println;
 #[cfg(enable_net)]
 mod net;
 mod test_futex;
+mod test_process;
 /// Unstable rust custom test framework test file hierarchy.
 /// Since there is no cargo framework, we manually set it up.
 mod test_semaphore;

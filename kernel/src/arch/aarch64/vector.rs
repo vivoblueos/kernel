@@ -45,13 +45,13 @@ vector_table:
 
     // Lower EL using AArch64
     .align 7
-        b lowerel_not_supported   // Synchronous
+        b el0_sync                // Synchronous (SVC, Data Abort, etc.)
     .align 7
-        b lowerel_not_supported   // IRQ
+        b el0_irq                 // IRQ
     .align 7
-        b lowerel_not_supported   // FIQ
+        b el0_fiq                 // FIQ
     .align 7
-        b lowerel_not_supported   // SError
+        b el0_serror              // SError
 
     // Lower EL using AArch32
     .align 7

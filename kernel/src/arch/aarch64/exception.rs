@@ -24,7 +24,18 @@ use core::{
     mem::offset_of,
     sync::atomic::{compiler_fence, fence, Ordering},
 };
+use log::error;
 use tock_registers::interfaces::Readable;
+
+/// Read the raw value of FAR_EL1 (Fault Address Register) via MRS.
+///
+/// This avoids a dependency on a tock-registers wrapper that does not exist yet.
+#[inline]
+fn read_far_el1() -> u64 {
+    let val: u64;
+    unsafe { core::arch::asm!("mrs {}, far_el1", out(reg) val, options(nomem, nostack)) };
+    val
+}
 
 macro_rules! exception_handler {
     ($name:ident, $cont:path) => {
@@ -51,6 +62,81 @@ macro_rules! exception_handler {
                 ),
                 lr = const offset_of!(self::Context, lr),
                 stack_size = const core::mem::size_of::<self::Context>(),
+                sp_el0 = const offset_of!(self::Context, padding),
+                x0 = const offset_of!(Context, x0),
+                x2 = const offset_of!(Context, x2),
+                x4 = const offset_of!(Context, x4),
+                x6 = const offset_of!(Context, x6),
+                x8 = const offset_of!(Context, x8),
+                x10 = const offset_of!(Context, x10),
+                x12 = const offset_of!(Context, x12),
+                x14 = const offset_of!(Context, x14),
+                x16 = const offset_of!(Context, x16),
+                x18 = const offset_of!(Context, x18),
+                x20 = const offset_of!(Context, x20),
+                x22 = const offset_of!(Context, x22),
+                x24 = const offset_of!(Context, x24),
+                x26 = const offset_of!(Context, x26),
+                x28 = const offset_of!(Context, x28),
+                spsr = const offset_of!(Context, spsr),
+                elr = const offset_of!(Context, elr),
+                v0 = const offset_of!(Context, v0),
+                v2 = const offset_of!(Context, v2),
+                v4 = const offset_of!(Context, v4),
+                v6 = const offset_of!(Context, v6),
+                v8 = const offset_of!(Context, v8),
+                v10 = const offset_of!(Context, v10),
+                v12 = const offset_of!(Context, v12),
+                v14 = const offset_of!(Context, v14),
+                v16 = const offset_of!(Context, v16),
+                v18 = const offset_of!(Context, v18),
+                v20 = const offset_of!(Context, v20),
+                v22 = const offset_of!(Context, v22),
+                v24 = const offset_of!(Context, v24),
+                v26 = const offset_of!(Context, v26),
+                v28 = const offset_of!(Context, v28),
+                v30 = const offset_of!(Context, v30),
+                fpcr = const offset_of!(Context, fpcr),
+                fpsr = const offset_of!(Context, fpsr),
+                cont = sym $cont,
+            );
+        }
+    };
+}
+
+/// Like `exception_handler!` but additionally saves the user's SP_EL0 into
+/// `Context.padding` on entry, so that the shared restore epilogue can
+/// restore it when returning to EL0t (0b0000).
+///
+/// Without this, an EL0 handler that context-switches to another user thread
+/// would lose the thread's SP_EL0 — the epilogue reads it from `Context.padding`
+/// after `aarch64_restore_context!` has written SPSR_EL1.
+macro_rules! exception_handler_el0 {
+    ($name:ident, $cont:path) => {
+        #[no_mangle]
+        #[naked]
+        unsafe extern "C" fn $name() -> ! {
+            naked_asm!(
+                concat!(
+                    "msr DAIFSet, #0x3\n",
+                    crate::aarch64_save_context_prologue!(),
+                    // Save user's SP_EL0 to Context.padding via x28 (not yet
+                    // overwritten by aarch64_save_context!).
+                    "mrs x28, sp_el0\n",
+                    "str x28, [sp, #{sp_el0}]\n",
+                    crate::aarch64_save_context!(),
+                    "mov x0, sp\n",
+                    "bl {cont}\n",
+                    "mov sp, x0\n",
+                    crate::aarch64_restore_context!(),
+                    // The shared restore epilogue checks SPSR and restores
+                    // SP_EL0 from Context.padding when returning to EL0t.
+                    crate::aarch64_restore_context_epilogue!(),
+                    "eret\n",
+                ),
+                lr = const offset_of!(self::Context, lr),
+                stack_size = const core::mem::size_of::<self::Context>(),
+                sp_el0 = const offset_of!(self::Context, padding),
                 x0 = const offset_of!(Context, x0),
                 x2 = const offset_of!(Context, x2),
                 x4 = const offset_of!(Context, x4),
@@ -113,6 +199,113 @@ macro_rules! unsupported_handler {
 unsupported_handler!(el0_not_supported, "el0 is not supported.");
 
 unsupported_handler!(lowerel_not_supported, "lowerel is not supported.");
+
+// EL0 exception handlers — use exception_handler_el0! to save/restore SP_EL0.
+exception_handler_el0!(el0_fiq, trap_fiq);
+
+exception_handler_el0!(el0_irq, trap_irq);
+
+exception_handler_el0!(el0_serror, trap_exception);
+
+// EL0 synchronous exception handler: save context, then dispatch to
+// handle_el0_trap_sync which routes SVC vs fault.
+exception_handler_el0!(el0_sync, handle_el0_trap_sync);
+
+#[naked]
+unsafe extern "C" fn handle_el0_trap_sync() -> ! {
+    naked_asm!(
+        "
+        mov x19, lr
+        mov x20, x0
+        bl {handle_el0_sync}
+        mov sp, x0
+        mov x1, x20
+        mov lr, x19
+        b {might_switch}
+        ",
+        handle_el0_sync = sym handle_el0_sync,
+        might_switch = sym might_switch,
+    );
+}
+
+extern "C" fn handle_el0_sync(context: &mut Context) -> usize {
+    let esr = ESR_EL1.get();
+    let ec = (esr >> 26) & 0x3F;
+    let old_sp = context as *const _ as usize;
+    match ec {
+        // SVC from AArch64 state
+        0x15 => {
+            if context.x8 == NR_SWITCH {
+                return prepare_for_context_switch(context);
+            }
+            compiler_fence(Ordering::SeqCst);
+            let sc = ScContext {
+                nr: context.x8,
+                args: [
+                    context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
+                ],
+            };
+            enable_local_irq();
+            context.x0 = dispatch_syscall(&sc);
+            disable_local_irq();
+            compiler_fence(Ordering::SeqCst);
+            old_sp
+        }
+        // All other ECs: data abort, instruction abort, undefined, etc.
+        _ => handle_el0_fault(ec, context, old_sp),
+    }
+}
+
+/// Handle a non-SVC synchronous exception from EL0 (data abort, instruction
+/// abort, undefined instruction, etc.).
+///
+/// Prints diagnostic information (ESR_EL1, FAR_EL1, ELR_EL1) and terminates the
+/// user thread by retiring it.  The kernel itself does NOT panic — only the
+/// offending user thread is killed.
+///
+/// Phase-1 strategy: kill the thread on any fault.  Subsequent phases should
+/// route faults through the signal subsystem (SIGSEGV / SIGILL / SIGBUS).
+fn handle_el0_fault(ec: u64, context: &mut Context, old_sp: usize) -> usize {
+    // FAR_EL1 is valid for Data Abort (EC 0x24, 0x25), Instruction Abort
+    // (0x20, 0x21), and Watchpoint (0x34, 0x35).  For other ECs it is UNKNOWN
+    // — read it anyway for best-effort diagnostics.
+    let far = read_far_el1();
+    let elr = context.elr;
+    let esr = ESR_EL1.get();
+
+    error!(
+        "EL0 fault: EC=0x{:02x} ESR=0x{:016x} FAR=0x{:016x} ELR=0x{:016x}",
+        ec, esr, far, elr,
+    );
+
+    // EC-to-name mapping for human-readable diagnostics.
+    let ec_name = match ec {
+        0x00 => "Unknown reason",
+        0x03..=0x08 => "CP14/CP15/SIMD access",
+        0x0e => "Illegal Execution State",
+        0x14 => "SVC (AArch32)",
+        0x15 => "SVC (AArch64)",
+        0x18 => "MSR/MRS/System instruction",
+        0x20 => "Instruction Abort (lower EL)",
+        0x21 => "Instruction Abort (same EL)",
+        0x22 => "Misaligned PC",
+        0x24 => "Data Abort (lower EL)",
+        0x25 => "Data Abort (same EL)",
+        0x26 => "Stack Pointer Alignment",
+        0x28 | 0x2C => "Floating-point exception",
+        0x30 => "Breakpoint (lower EL)",
+        0x32 => "Software Step (lower EL)",
+        0x34 => "Watchpoint (lower EL)",
+        0x3C => "BRK instruction",
+        _ => "Unknown",
+    };
+    error!("EL0 fault type: {} (EC=0x{:02x})", ec_name, ec);
+
+    // Retire the current thread — this transitions it to RETIRED and switches
+    // to the next ready thread (or the idle thread).  It never returns.
+    error!("Terminating user thread due to unrecoverable EL0 fault");
+    scheduler::retire_me()
+}
 
 #[naked]
 unsafe extern "C" fn trap_sync() -> ! {

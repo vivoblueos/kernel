@@ -48,7 +48,48 @@ mod vfs_syscalls {
     use super::*;
     pub struct Stat;
     pub struct StatFs;
-    pub fn write(_fd: i32, _buf: *const u8, _size: usize) -> isize {
+    pub fn write(fd: i32, buf: *const u8, size: usize) -> isize {
+        // Route stdout/stderr to semihosting so EL0 programs can print.
+        if fd == 1 || fd == 2 {
+            if buf.is_null() {
+                return -libc::EFAULT as isize;
+            }
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                // Validate user pointer before dereferencing.
+                // User space on AArch64 is 0x0000_0000_0000_0000 to 0x0000_FFFF_FFFF_FFFF.
+                const USER_SPACE_MAX: usize = 0x0000_FFFF_FFFF_FFFF;
+
+                let buf_addr = buf as usize;
+                let end_addr = buf_addr.checked_add(size);
+
+                if end_addr.is_none() || end_addr.unwrap() > USER_SPACE_MAX {
+                    return -libc::EFAULT as isize;
+                }
+
+                // Walk the process page table to verify the buffer is
+                // actually mapped before dereferencing it.
+                let t = scheduler::current_thread();
+                let Some(proc) = t.process() else {
+                    return -libc::EFAULT as isize;
+                };
+                let proc_ref = unsafe { proc.as_ref() };
+                if !crate::process::vm::is_user_range_mapped(
+                    &proc_ref.address_space,
+                    buf_addr,
+                    size,
+                ) {
+                    return -libc::EFAULT as isize;
+                }
+            }
+
+            let slice = unsafe { core::slice::from_raw_parts(buf, size) };
+            if let Ok(s) = core::str::from_utf8(slice) {
+                semihosting::print!("{}", s);
+            }
+            return size as isize;
+        }
         -libc::ENOTSUP as isize
     }
     pub fn read(_fd: i32, _buf: *mut u8, _size: usize) -> isize {
@@ -274,7 +315,7 @@ macro_rules! syscall_table {
             match ctx.nr {
                 $(val if val == NR::$nr as usize =>
                     return $crate::syscalls::$mod::handle_context(ctx) as usize,)*
-                _ => return usize::MAX,
+                _ => return (-libc::ENOSYS) as isize as usize,
             }
         }
 
@@ -525,6 +566,38 @@ define_syscall_handler!(
 define_syscall_handler!(exit_thread() -> c_long {
     scheduler::retire_me();
     -1
+});
+
+define_syscall_handler!(exit(code: i32) -> c_long {
+    // Store the exit code on the owning Process (not the Thread), so it
+    // outlives any single thread and is available to a future `waitpid`
+    // (Phase 5c).  Only AArch64 has a Process concept today; threads with
+    // no process retire without storing (spec scenario "exit on a thread
+    // with no process does not panic").
+    //
+    // Use `current_thread_ref` (not `current_thread`) because `retire_me`
+    // diverges (`-> !`): an `Arc<Thread>` from `current_thread()` would be
+    // leaked on the abandoned stack, pinning the Thread + kernel stack
+    // forever.  `current_thread_ref` returns a `&'static Thread` with no
+    // refcount change.
+    #[cfg(target_arch = "aarch64")]
+    {
+        let t = scheduler::current_thread_ref();
+        if let Some(proc) = t.process() {
+            unsafe { proc.as_ref() }.set_exit_code(code);
+        }
+    }
+    scheduler::retire_me();
+    -1
+});
+
+define_syscall_handler!(getpid() -> c_long {
+    let t = scheduler::current_thread();
+    #[cfg(target_arch = "aarch64")]
+    if let Some(proc) = t.process() {
+        return unsafe { proc.as_ref() }.pid as c_long;
+    }
+    0
 });
 
 define_syscall_handler!(sched_yield() -> c_long {
@@ -846,6 +919,8 @@ syscall_table! {
     (SetSchedParam, set_sched_param),
     (CreateThread, create_thread),
     (ExitThread, exit_thread),
+    (Exit, exit),
+    (GetPid, getpid),
     (AtomicWake, atomic_wake),
     (AtomicWait, atomic_wait),
     // For test only
@@ -921,3 +996,75 @@ pub fn dispatch_syscall(ctx: &Context) -> usize {
 pub mod echo;
 pub mod posix_timers;
 // End syscall modules.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    // W1: getpid handler — kernel thread (no process) returns 0.
+    // The unittest runner is a kernel thread with no associated Process, so
+    // `current_thread().process()` is None and getpid must return 0.
+    #[test]
+    fn test_getpid_kernel_thread_returns_zero() {
+        let result = getpid::handle();
+        assert_eq!(
+            result, 0,
+            "getpid on a kernel thread with no process must return 0"
+        );
+    }
+
+    // W1: getpid is consistent across multiple calls from the same thread.
+    #[test]
+    fn test_getpid_consistent_across_calls() {
+        let a = getpid::handle();
+        let b = getpid::handle();
+        assert_eq!(a, b, "getpid must return the same value on repeated calls");
+    }
+
+    // W2 (Phase 5a §6.4): exit(code) stores the exit code on the owning
+    // Process, not the Thread.  We verify the Process API directly because
+    // exit() also retires the thread (-> !), which cannot be invoked from a
+    // unit test without destroying the test runner itself.  The sentinel
+    // i32::MIN distinguishes "not exited" from any real code (incl. 0).
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn test_exit_code_stored_zero() {
+        let p = crate::process::Process::try_new().expect("Process::try_new failed");
+        assert_eq!(
+            p.exit_code(),
+            i32::MIN,
+            "fresh process must report not-exited sentinel"
+        );
+        p.set_exit_code(0);
+        assert_eq!(
+            p.exit_code(),
+            0,
+            "exit_code must round-trip 0 (distinct from sentinel)"
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn test_exit_code_stored_positive() {
+        let p = crate::process::Process::try_new().expect("Process::try_new failed");
+        p.set_exit_code(42);
+        assert_eq!(
+            p.exit_code(),
+            42,
+            "exit_code must round-trip a positive value"
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn test_exit_code_stored_negative() {
+        let p = crate::process::Process::try_new().expect("Process::try_new failed");
+        p.set_exit_code(-1);
+        assert_eq!(
+            p.exit_code(),
+            -1,
+            "exit_code must round-trip a negative value"
+        );
+    }
+}

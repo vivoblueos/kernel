@@ -234,6 +234,47 @@ impl PageEntry {
         self.set_descriptor(output_addr, attributes, DescriptorKind::Page)
     }
 
+    /// Set a page descriptor with explicit AP (access permissions).
+    ///
+    /// This is the same as `set_page` but allows the caller to override
+    /// the AP field (e.g. `PAGE_DESCRIPTOR::AP::EL0_RW` for user-space
+    /// accessible pages).  The caller provides the AP value to OR into
+    /// the descriptor after the standard attribute setup.
+    fn set_page_with_ap(
+        &mut self,
+        output_addr: u64,
+        attributes: MemAttributes,
+        ap: u64,
+    ) -> Result<(), &'static str> {
+        // Build base descriptor the same way as set_descriptor.
+        if self.is_valid() {
+            return Err("page entry is set");
+        }
+        let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(0);
+        match attributes {
+            MemAttributes::Device => entry.write(
+                PAGE_DESCRIPTOR::VALID::Valid
+                    + PAGE_DESCRIPTOR::AF::True
+                    + PAGE_DESCRIPTOR::ATTRINDX.val(MemAttributes::Device as u64)
+                    + PAGE_DESCRIPTOR::UXN::True,
+            ),
+            MemAttributes::Normal => entry.write(
+                PAGE_DESCRIPTOR::VALID::Valid
+                    + PAGE_DESCRIPTOR::AF::True
+                    + PAGE_DESCRIPTOR::ATTRINDX.val(MemAttributes::Normal as u64)
+                    + PAGE_DESCRIPTOR::SH::InnerShareable
+                    + PAGE_DESCRIPTOR::NG::True,
+            ),
+        }
+        // Apply the caller-supplied AP bits.
+        // ap is already a pre-shifted FieldValue (.value), so no extra shift.
+        let mut value = entry.get() | ap;
+        value |= PAGE_DESCRIPTOR::TYPE::Page.value;
+        value |= output_addr & PAGE_DESCRIPTOR_ADDR_MASK;
+        self.0 = value;
+        Ok(())
+    }
+
     fn set_table(&mut self, table: *mut PageTableManager) -> Result<(), &'static str> {
         if self.is_valid() {
             return Err("page entry is set");
@@ -246,7 +287,7 @@ impl PageEntry {
     }
 
     // Check the entry is valid
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(self.0)
             .is_set(PAGE_DESCRIPTOR::VALID)
     }
@@ -256,7 +297,7 @@ impl PageEntry {
             .is_set(PAGE_DESCRIPTOR::TYPE)
     }
 
-    fn table_ptr(&self) -> Option<*mut PageTableManager> {
+    pub fn table_ptr(&self) -> Option<*mut PageTableManager> {
         if !self.is_valid() || !self.is_table_or_page() {
             return None;
         }
@@ -281,6 +322,12 @@ pub struct PageTableManager([PageEntry; 512]);
 impl PageTableManager {
     const fn new() -> Self {
         PageTableManager([PageEntry::new(); 512])
+    }
+
+    /// Return a reference to the page entry at the given index (0..512).
+    #[inline]
+    pub fn entry(&self, index: usize) -> &PageEntry {
+        &self.0[index]
     }
 
     fn init() {
@@ -385,6 +432,24 @@ fn map_page_in_pgtbl(
     l3_table.0[page_table_index(va, L3_SHIFT)].set_page(pa as u64, flags)
 }
 
+/// Like `map_page_in_pgtbl`, but with EL0-accessible AP bits.
+fn map_user_page_in_pgtbl(
+    pgtbl: &mut PageTableManager,
+    va: usize,
+    pa: usize,
+    flags: MemAttributes,
+) -> Result<(), &'static str> {
+    let l1_table = next_level_table(&mut pgtbl.0[page_table_index(va, L1_SHIFT)])?;
+    let l2_table = unsafe { &mut *l1_table };
+    let l2_table = next_level_table(&mut l2_table.0[page_table_index(va, L2_SHIFT)])?;
+    let l3_table = unsafe { &mut *l2_table };
+    l3_table.0[page_table_index(va, L3_SHIFT)].set_page_with_ap(
+        pa as u64,
+        flags,
+        PAGE_DESCRIPTOR::AP::EL0_RW.value,
+    )
+}
+
 // only supports L3 4KB granularity now
 pub fn map_range_in_pgtbl(
     pgtbl: &mut PageTableManager,
@@ -414,6 +479,46 @@ pub fn map_range_in_pgtbl(
     let mut cur_pa = pa;
     while cur_va < end {
         map_page_in_pgtbl(pgtbl, cur_va, cur_pa, flags)?;
+        cur_va += PAGE_SIZE;
+        cur_pa += PAGE_SIZE;
+    }
+
+    Ok(())
+}
+
+/// Map a contiguous range of pages into the page table with EL0-accessible
+/// permissions (AP=EL0_RW, UXN=clear).
+///
+/// Wrapper around `map_user_page_in_pgtbl`.  Same alignment and overflow
+/// checks as `map_range_in_pgtbl`.
+pub(crate) fn map_user_range_in_pgtbl(
+    pgtbl: &mut PageTableManager,
+    va: usize,
+    pa: usize,
+    len: usize,
+    flags: MemAttributes,
+) -> Result<(), &'static str> {
+    if len == 0 {
+        return Ok(());
+    }
+    if va & PAGE_MASK != 0 || pa & PAGE_MASK != 0 {
+        return Err("virtual and physical addresses must be 4KB aligned");
+    }
+
+    let end = va
+        .checked_add(len)
+        .ok_or("virtual address range overflow")?;
+    let _ = pa
+        .checked_add(len)
+        .ok_or("physical address range overflow")?;
+    if !is_valid_translation_va(va) || !is_valid_translation_va(end - 1) {
+        return Err("virtual address exceeds configured VA bits");
+    }
+
+    let mut cur_va = va;
+    let mut cur_pa = pa;
+    while cur_va < end {
+        map_user_page_in_pgtbl(pgtbl, cur_va, cur_pa, flags)?;
         cur_va += PAGE_SIZE;
         cur_pa += PAGE_SIZE;
     }
