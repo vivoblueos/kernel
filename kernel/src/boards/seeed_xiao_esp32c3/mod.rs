@@ -119,6 +119,9 @@ const RTC_CNTL_WDTCONFIG0_REG: usize = RTC_CNTL_BASE + 0x90;
 
 const USB_SERIAL_JTAG_IRQ: Interrupt = Interrupt::new(26, USB_SERIAL_JTAG_INT_NUM);
 const SYSTIMER_TARGET0_IRQ: Interrupt = Interrupt::new(37, TARGET0_INT_NUM);
+const LED_DEVICE_MAJOR: usize = 242;
+const LED_B_DEVICE_MINOR: usize = 0;
+const LED_R_DEVICE_MINOR: usize = 1;
 
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
@@ -189,6 +192,10 @@ crate::define_peripheral! {
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(21)),
     (lcd_cs, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(20)),
+    (led_b, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(2)),
+    (led_r, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
 }
 
 #[inline(always)]
@@ -215,6 +222,8 @@ crate::define_pin_states!(
     (5, 1, false, true, false, 2, None, None, true, false),        // lcd dc
     (4, 1, false, true, false, 2, None, None, true, false),        // lcd rst
     (21, 1, false, true, false, 2, None, None, true, false),       // touch rst
+    (2, 1, false, true, false, 2, None, None, true, false),        // led blue
+    (3, 1, false, true, false, 2, None, None, true, false),        // led red
 );
 
 crate::define_bus! {
@@ -324,7 +333,9 @@ pub(crate) fn init_i2c_bus() {
         }
 
         #[cfg(bme280)]
-        if let Ok(driver) = i2c_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule) {
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
+        {
             if let Err(error) = driver.init(&i2c_bus) {
                 log::warn!("Failed to initialize BME280 driver: {}", error);
             }
@@ -334,4 +345,25 @@ pub(crate) fn init_i2c_bus() {
     } else {
         log::warn!("Failed to initialize ESP32-C3 I2C0 bus");
     }
+}
+
+pub(crate) fn init_gpio() {
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_b),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_b"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_B_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_b");
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_r),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_r"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_r");
 }

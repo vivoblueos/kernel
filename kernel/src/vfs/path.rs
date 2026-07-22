@@ -122,8 +122,13 @@ pub fn open_path(path: &str, flags: i32, mode: mode_t) -> Result<File, Error> {
             }
         }
     };
-    // resize to 0 if O_TRUNC is set
-    if open_flags.contains(OpenFlags::O_TRUNC) && access_mode.is_writable() {
+    // Linux applies O_TRUNC only to regular files. Device nodes and other
+    // special files ignore it, which allows shell redirection such as
+    // `echo 1 > /dev/led_b` to open a character device successfully.
+    if open_flags.contains(OpenFlags::O_TRUNC)
+        && access_mode.is_writable()
+        && dcache.type_().is_regular_file()
+    {
         dcache.inode().resize(0)?;
     }
 

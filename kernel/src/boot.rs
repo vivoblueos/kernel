@@ -120,6 +120,8 @@ extern "C" fn init() {
     crate::boards::init_spi_bus();
     #[cfg(i2c_core)]
     crate::boards::init_i2c_bus();
+    #[cfg(gpio)]
+    crate::boards::init_gpio();
 
     #[cfg(enable_vfs)]
     init_vfs();
