@@ -33,6 +33,8 @@
 //! - **Any bound**: `LinkLayer: Any + 'static` enables safe downcasting.
 //! - **dyn-compatible**: `LinkLayer` is dyn-compatible.
 
+#[cfg(soc_esp32c3)]
+pub(crate) mod esp32_wlan;
 pub(crate) mod ethernet_ops;
 pub(crate) mod link_kind;
 pub(crate) mod loopback;
@@ -52,6 +54,10 @@ use crate::net::{
     iface::{InterfaceFlags, NetIfaceControl, NetIfaceError, NetIfaceResult},
     link::{ethernet_ops::EthernetOps, wifi_ops::WifiOps},
 };
+
+/// Global cache for the WiFi passphrase, set by SIOCSIWENCODE and consumed by
+/// the subsequent SIOCSIWESSID (WifiConnect) ioctl.
+static WIFI_PASSPHRASE_CACHE: spin::Mutex<Option<String>> = spin::Mutex::new(None);
 
 /// A hardware address (MAC or similar).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,6 +173,7 @@ impl LinkRegistry {
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<Arc<spin::RwLock<dyn LinkLayer>>> {
+        log::info!("Searching for link device by name: {}", name);
         self.devices
             .lock()
             .iter()
@@ -194,6 +201,58 @@ pub(crate) fn handle_control(cmd: NetIfaceControl) -> Result<NetIfaceResult, Net
             running: true,
             promiscuous: false,
         })),
+        // WiFi operations: look up the device by interface name.
+        NetIfaceControl::WifiScan(ref config) => {
+            let ifname = config
+                .ifname
+                .iter()
+                .take_while(|&&b| b != 0)
+                .copied()
+                .collect::<alloc::vec::Vec<u8>>();
+            let ifname = core::str::from_utf8(&ifname).unwrap_or("");
+            let link_arc = LINK_REGISTRY
+                .find_by_name(ifname)
+                .ok_or(NetIfaceError::DeviceNotFound)?;
+            let mut link = link_arc.write();
+            let wifi = link
+                .as_wifi()
+                .ok_or(NetIfaceError::DeviceTraitNotAvailable)?;
+            let results = wifi
+                .scan(config)
+                .map_err(|_| NetIfaceError::DeviceTraitNotAvailable)?;
+
+            Ok(NetIfaceResult::WifiScanResult(results))
+        }
+        NetIfaceControl::WifiPassphrase(ref passphrase) => {
+            *WIFI_PASSPHRASE_CACHE.lock() = Some(passphrase.clone());
+            Ok(NetIfaceResult::Void)
+        }
+        // ── WiFi connect (SIOCSIWESSID) ──
+        NetIfaceControl::WifiConnect {
+            ref ifname,
+            ref ssid,
+        } => {
+            let ifname = ifname
+                .iter()
+                .take_while(|&&b| b != 0)
+                .copied()
+                .collect::<alloc::vec::Vec<u8>>();
+            let ifname = core::str::from_utf8(&ifname).unwrap_or("");
+            let link_arc = LINK_REGISTRY
+                .find_by_name(ifname)
+                .ok_or(NetIfaceError::DeviceNotFound)?;
+            let mut link = link_arc.write();
+            let wifi = link
+                .as_wifi()
+                .ok_or(NetIfaceError::DeviceTraitNotAvailable)?;
+
+            let passphrase = WIFI_PASSPHRASE_CACHE.lock().take().unwrap_or_default();
+
+            wifi.connect(ssid, &passphrase)
+                .map_err(|_| NetIfaceError::DeviceTraitNotAvailable)?;
+
+            Ok(NetIfaceResult::Void)
+        }
         NetIfaceControl::GetMacAddress => {
             let hw = link
                 .hw_addr()

@@ -30,16 +30,10 @@ build_rust("blueos_driver") {
   proc_macro_deps = [ "//kernel/macro:blueos_macro" ]
 
   features = []
-  configs += [ "//kernel/kconfig:kconfigs" ]
   rustflags = [
     "--cfg",
     "target_board=\"${board}\"",
   ]
 
-  if (defined(chip)) {
-    rustflags += [
-      "--cfg",
-      "target_chip=\"${chip}\"",
-    ]
-  }
+  configs += [ "//kernel/kconfig:kconfigs" ]
 }

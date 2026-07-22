@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(any(target_chip = "gd32e5x", target_chip = "gd32vw55x"))]
+#[cfg(any(soc_gd32e507z, soc_gd32vw553))]
 pub mod gd32_clock_control;
 #[cfg(target_board = "raspberry_pico2_cortexm")]
 pub mod rpi_pico;

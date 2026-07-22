@@ -15,11 +15,11 @@
 pub mod arm_pl011;
 pub mod cmsdk;
 pub mod dumb;
-#[cfg(target_chip = "esp32c3")]
+#[cfg(soc_esp32c3)]
 pub mod esp32_usb_serial;
-#[cfg(target_chip = "gd32e5x")]
+#[cfg(soc_gd32e507z)]
 pub mod gd32e5x_uart;
-#[cfg(target_chip = "gd32vw55x")]
+#[cfg(soc_gd32vw553)]
 pub mod gd32vw55x;
 pub mod ns16x50;
 

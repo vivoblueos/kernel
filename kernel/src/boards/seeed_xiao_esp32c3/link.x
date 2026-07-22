@@ -88,6 +88,10 @@ SECTIONS {
     *( .iram1  .iram1.*)
     *( .wifiextrairam.* )
     *( .coexiram.* )
+    /* Precompiled WiFi blob functions that use GP-relative addressing need to run
+       in IRAM, close to __global_pointer$ (in DRAM), because their rodata constants
+       end up in DROM at >4KB distance from GP, causing R_RISCV_GPREL_I overflow. */
+    *libpp.a:pm_beacon_offset.o(.text .text.* .literal .literal.*)
     . = ALIGN(4);
 
     _rwtext_len = . - ORIGIN(RWTEXT);
@@ -96,6 +100,14 @@ SECTIONS {
   .rwdata_dummy (NOLOAD) : ALIGN(4)
   {
     . = . + SIZEOF(.rwtext) + SIZEOF(.rwtext.wifi) + SIZEOF(.trap);
+  } > RWDATA
+
+  .sdata : ALIGN(4)
+  {
+    _sdata_start = ABSOLUTE(.);
+    *(.sdata .sdata.* .sdata2 .sdata2.*);
+    _sdata_end = ABSOLUTE(.);
+    . = ALIGN(4);
   } > RWDATA
 
   .data : ALIGN(4)
@@ -107,8 +119,6 @@ SECTIONS {
     *(.rodata..Lswitch.table.*)
     *(.rodata.cst*)
 
-
-    *(.sdata .sdata.* .sdata2 .sdata2.*);
     *(.data .data.*);
     *(.data1)
     _data_end = ABSOLUTE(.);
@@ -163,7 +173,6 @@ SECTIONS {
   .rodata : ALIGN(0x10)
   {
     . = ALIGN (4);
-    _rodata_start = ABSOLUTE(.);
     *(.rodata .rodata.*)
     *(.srodata .srodata.*)
     . = ALIGN(4);
@@ -179,8 +188,14 @@ SECTIONS {
     KEEP (*(EXCLUDE_FILE (*crtend.* *crtbegin.*) .init_array))
     PROVIDE(__init_array_end = .);
     . = ALIGN(4);
-    _rodata_end = ABSOLUTE(.);
   } > RODATA  
+
+  .rodata.wifi : ALIGN(4)
+  {
+    . = ALIGN(4);
+    *( .rodata_wlog_*.* )
+    . = ALIGN(4);
+  } > RODATA
 }
 
 SECTIONS {
@@ -261,14 +276,14 @@ SECTIONS
   .heap (NOLOAD) : {
     . = ALIGN(8);
     __heap_start = .;
-    . = ORIGIN(DRAM) + LENGTH(DRAM) - 0x1000;
+    . = ORIGIN(DRAM) + LENGTH(DRAM) - 0x6000;
     __heap_end = .;
   } > RWDATA
 
   .stack (NOLOAD) : {
     . = ALIGN(16);
     __sys_stack_start = .;
-    . += 0x1000;
+    . += 0x6000;
     __sys_stack_end = .;
   } > RWDATA
 }
@@ -287,4 +302,20 @@ SECTIONS {
   }
 }
 
-PROVIDE(__global_pointer$ = ALIGN(_data_start, 4) + 0x800);
+EXTERN( __ESP_RADIO_G_WIFI_OSI_FUNCS );
+EXTERN( __ESP_RADIO_G_WIFI_FEATURE_CAPS );
+
+PROVIDE(__global_pointer$ = ALIGN(_sdata_start, 4) + 0x800);
+PROVIDE( g_wifi_osi_funcs = __ESP_RADIO_G_WIFI_OSI_FUNCS );
+PROVIDE( g_wifi_feature_caps = __ESP_RADIO_G_WIFI_FEATURE_CAPS );
+
+EXTERN( __ESP_RADIO_WIFI_EVENT );
+PROVIDE( WIFI_EVENT = __ESP_RADIO_WIFI_EVENT );
+
+EXTERN( __ESP_RADIO_G_MISC_NVS );
+EXTERN( __ESP_RADIO_G_LOG_LEVEL );
+PROVIDE( g_misc_nvs = __ESP_RADIO_G_MISC_NVS );
+PROVIDE( g_log_level = __ESP_RADIO_G_LOG_LEVEL );
+
+EXTERN( g_espnow_user_oui );
+EXTERN( mesh_sta_auth_expire_time );
