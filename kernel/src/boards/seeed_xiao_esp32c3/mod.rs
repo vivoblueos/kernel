@@ -28,8 +28,7 @@ use blueos_hal::{isr::IsrDesc, Has8bitDataReg};
 pub type ClockImpl =
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer<0x6002_3000, 16_000_000>;
 
-pub type Spi2Impl =
-    blueos_driver::spi::esp32_spi::Esp32Spi2<0x6002_4000, 0x600c_0000, 80_000_000>;
+pub type Spi2Impl = blueos_driver::spi::esp32_spi::Esp32Spi2<0x6002_4000, 0x600c_0000, 80_000_000>;
 
 core::arch::global_asm!(
     "
@@ -199,10 +198,11 @@ pub const BLOCK_STORAGE_MOUNT_POINT: &str = "data";
 
 #[cfg(spi_core)]
 pub(crate) fn init_spi_bus() {
+    use crate::{
+        devices::{bus::Bus, spi_core::block_spi::BlockSpi},
+        drivers::InitDriver,
+    };
     use alloc::sync::Arc;
-    use crate::devices::bus::Bus;
-    use crate::devices::spi_core::block_spi::BlockSpi;
-    use crate::drivers::InitDriver;
     use blueos_driver::{pinctrl::esp32_pinctrl::Esp32IoMuxPinctrl, spi::SpiConfig};
     use blueos_hal::pinctrl::AlterFuncPin;
     use spin::Once;
@@ -218,8 +218,9 @@ pub(crate) fn init_spi_bus() {
         pin.init();
     }
 
-    static SPI2_BUS: Once<Arc<Bus<BlockSpi<Spi2Impl, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>>>> =
-        Once::new();
+    static SPI2_BUS: Once<
+        Arc<Bus<BlockSpi<Spi2Impl, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>>>,
+    > = Once::new();
 
     let spi2 = get_device!(spi2);
     let cs = get_device!(flash_cs);

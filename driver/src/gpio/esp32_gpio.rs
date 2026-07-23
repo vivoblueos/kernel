@@ -56,7 +56,10 @@ pub struct Esp32GpioOutputPin {
 impl Esp32GpioOutputPin {
     /// GPIO data register is 26 bits wide; PIN must be < 26.
     pub const fn new(pin: u8) -> Self {
-        assert!(pin < 26, "GPIO data register is 26 bits wide; PIN must be < 26");
+        assert!(
+            pin < 26,
+            "GPIO data register is 26 bits wide; PIN must be < 26"
+        );
         Esp32GpioOutputPin { pin }
     }
 }
