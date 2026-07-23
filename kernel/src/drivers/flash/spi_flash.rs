@@ -148,13 +148,21 @@ impl<SPI: SpiDevice<u8> + Send + Sync> BlockDriverOps for SpiFlashBlockDriver<SP
     }
 
     fn write_blocks(&mut self, block_id: usize, buf: &[u8]) -> Result<(), Self::Error> {
-        self.ensure_erase_block(block_id)
-            .map_err(|e| BlockError::Driver(FlashBlockError::Flash(e)))?;
+        // The cache holds one erase block; chunk across boundaries.
+        let mut cur_block = block_id;
+        let mut buf_off = 0usize;
+        while buf_off < buf.len() {
+            self.ensure_erase_block(cur_block)
+                .map_err(|e| BlockError::Driver(FlashBlockError::Flash(e)))?;
 
-        let offset = self.block_offset_in_erase(block_id);
-        let copy_len = min(buf.len(), FLASH_ERASE_SIZE - offset);
-        self.erase_buf[offset..offset + copy_len].copy_from_slice(&buf[..copy_len]);
-        self.dirty = true;
+            let offset = self.block_offset_in_erase(cur_block);
+            let chunk = min(buf.len() - buf_off, FLASH_ERASE_SIZE - offset);
+            self.erase_buf[offset..offset + chunk]
+                .copy_from_slice(&buf[buf_off..buf_off + chunk]);
+            self.dirty = true;
+            buf_off += chunk;
+            cur_block += chunk / FLASH_SECTOR_SIZE as usize;
+        }
 
         Ok(())
     }
