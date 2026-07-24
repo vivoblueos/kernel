@@ -16,6 +16,7 @@
 
 use crate::devices::bus::{Bus, BusInterface};
 
+pub(crate) mod flash;
 pub(crate) mod ic;
 pub(crate) mod msip;
 pub(crate) mod sensor;

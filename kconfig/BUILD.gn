@@ -23,6 +23,7 @@ _kconfig_files = [
   "//kernel/kernel/src/scheduler/Kconfig",
   "//kernel/kernel/src/vfs/Kconfig",
   "//kernel/kernel/src/net/Kconfig",
+  "//kernel/kernel/src/devices/Kconfig",
   "//kernel/arch/riscv/Kconfig",
   "//kernel/arch/arm/cortex_m/Kconfig",
   "//kernel/arch/arm/arm64/Kconfig",

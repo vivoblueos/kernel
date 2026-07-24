@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #[cfg(soc_esp32c3)]
-pub mod esp32_spi2;
+pub mod esp32_spi;
 
 /// SPI clock phase (CPHA).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

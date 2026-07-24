@@ -94,6 +94,15 @@ pub const DRAM_BASE: usize = mmu::kernel_phys_to_virt(0x4000_0000);
 
 crate::define_pin_states!(None);
 
+#[cfg(fatfs)]
+pub const BLOCK_STORAGE_DEVICE_NAME: &str = "virt-storage";
+#[cfg(fatfs)]
+pub const BLOCK_STORAGE_MOUNT_POINT: &str = "fat";
+
+// virtio block device is registered in virtio::init_virtio(); no extra init.
+#[cfg(enable_block)]
+pub(crate) fn init_block_devices() {}
+
 pub struct TimerIrq;
 impl IsrDesc for TimerIrq {
     fn service_isr(&self) {

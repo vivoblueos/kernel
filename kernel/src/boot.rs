@@ -151,7 +151,10 @@ extern "C" fn init() {
         net::init();
         net::net_manager::init();
     }
-
+    #[cfg(spi_core)]
+    crate::boards::init_spi_bus();
+    #[cfg(enable_vfs)]
+    init_vfs();
     // it's an bug in fact, but at now we use a workaround let newlib do the c++ runtime initialization
     #[cfg(not(target_board = "newlib_mps3_an547"))]
     run_init_array();
