@@ -186,6 +186,7 @@ crate::define_peripheral! {
 
 crate::define_pin_states!(None);
 
+#[cfg(enable_block)]
 crate::define_bus! {
     (spi2_bus, crate::devices::spi_core::block_spi::BlockSpi<Spi2Impl, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
         (flash, crate::drivers::flash::spi_flash::SpiFlashConfig,
