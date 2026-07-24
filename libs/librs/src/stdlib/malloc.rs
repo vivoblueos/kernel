@@ -32,7 +32,7 @@ pub unsafe extern "C" fn posix_memalign(
 
 #[no_mangle]
 pub unsafe extern "C" fn free(ptr: *mut c_void) {
-    debug_assert_eq!(bk_syscall!(FreeMem, ptr), 0);
+    bk_syscall!(FreeMem, ptr);
 }
 
 #[no_mangle]
