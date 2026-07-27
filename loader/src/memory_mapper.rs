@@ -17,12 +17,68 @@ use core::alloc::Layout;
 
 pub type Result<T> = core::result::Result<T, &'static str>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryPermissions(u8);
+
+impl MemoryPermissions {
+    pub const NONE: Self = Self(0);
+    pub const READ: Self = Self(1 << 0);
+    pub const WRITE: Self = Self(1 << 1);
+    pub const EXECUTE: Self = Self(1 << 2);
+
+    pub const fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
+
+    pub(crate) const fn contains(self, requested: Self) -> bool {
+        self.0 & requested.0 == requested.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryRegion {
+    start: usize,
+    end: usize,
+    permissions: MemoryPermissions,
+}
+
+impl MemoryRegion {
+    /// Authorizes a fixed address range for accesses described by `permissions`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `[start, end)` is a valid mapped range for every
+    /// advertised permission and remains so for the lifetime of any mapper that uses
+    /// this region. While a mapper accesses the range, it must not alias Rust references
+    /// or receive conflicting accesses.
+    pub const unsafe fn new(start: usize, end: usize, permissions: MemoryPermissions) -> Self {
+        Self {
+            start,
+            end,
+            permissions,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MappingModeKind {
+    Allocated,
+    Fixed,
+}
+
+#[derive(Debug)]
+enum MappingMode {
+    Allocated,
+    Fixed(&'static [MemoryRegion]),
+}
+
 #[derive(Debug)]
 pub struct MemoryMapper {
     virtual_entry: usize,
     virtual_start: usize,
     virtual_end: usize,
     mem: Storage,
+    mode: MappingMode,
 }
 
 impl MemoryMapper {
@@ -33,6 +89,26 @@ impl MemoryMapper {
             virtual_start: usize::MAX,
             virtual_end: 0,
             mem: Storage::default(),
+            mode: MappingMode::Allocated,
+        }
+    }
+
+    #[inline]
+    pub fn new_fixed(regions: &'static [MemoryRegion]) -> Self {
+        Self {
+            virtual_entry: 0,
+            virtual_start: usize::MAX,
+            virtual_end: 0,
+            mem: Storage::default(),
+            mode: MappingMode::Fixed(regions),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn mode_kind(&self) -> MappingModeKind {
+        match &self.mode {
+            MappingMode::Allocated => MappingModeKind::Allocated,
+            MappingMode::Fixed(_) => MappingModeKind::Fixed,
         }
     }
 
@@ -100,7 +176,35 @@ impl MemoryMapper {
 
     #[inline]
     pub fn real_entry(&self) -> Result<usize> {
-        Ok(self.inner_real_ptr(self.virtual_entry)? as usize)
+        match &self.mode {
+            MappingMode::Allocated => Ok(self.inner_real_ptr(self.virtual_entry)? as usize),
+            MappingMode::Fixed(_) => {
+                self.validate_fixed_span(self.virtual_entry, 1, MemoryPermissions::EXECUTE)?;
+                Ok(self.virtual_entry)
+            }
+        }
+    }
+
+    pub(crate) fn validate_fixed_span(
+        &self,
+        start: usize,
+        size: usize,
+        requested: MemoryPermissions,
+    ) -> Result<()> {
+        let MappingMode::Fixed(regions) = &self.mode else {
+            return Err("Fixed span requires a fixed mapper");
+        };
+        let valid = regions.iter().any(|region| {
+            region.start < region.end
+                && start >= region.start
+                && start + size <= region.end
+                && region.permissions.contains(requested)
+        });
+        if valid {
+            Ok(())
+        } else {
+            Err("Address span is outside authorized regions")
+        }
     }
 
     fn inner_real_offset(&self, vaddr: usize) -> Result<usize> {
@@ -116,24 +220,40 @@ impl MemoryMapper {
     }
 
     fn inner_real_ptr(&self, vaddr: usize) -> Result<*mut u8> {
-        let offset = self.inner_real_offset(vaddr)?;
-        if offset >= self.mem.size() {
-            return Err("The offset is beyond the allocated memory region");
+        match &self.mode {
+            MappingMode::Allocated => {
+                let offset = self.inner_real_offset(vaddr)?;
+                if offset >= self.mem.size() {
+                    return Err("The offset is beyond the allocated memory region");
+                }
+                let base = self.mem.base();
+                if base.is_null() {
+                    return Err("Memory not allocated yet");
+                }
+                Ok(unsafe { base.add(offset) })
+            }
+            MappingMode::Fixed(_) => {
+                self.validate_fixed_span(vaddr, 1, MemoryPermissions::NONE)?;
+                Ok(vaddr as *mut u8)
+            }
         }
-        let base = self.mem.base();
-        if base.is_null() {
-            return Err("Memory not allocated yet");
-        }
-        Ok(unsafe { base.add(offset) })
     }
 
-    fn inner_real_begin(&mut self, vaddr: usize, size: usize) -> Result<*mut u8> {
-        if vaddr < self.virtual_start || vaddr + size > self.virtual_end {
-            return Err("The span of the data is in an illegal memory region");
+    fn inner_real_begin(&self, vaddr: usize, size: usize) -> Result<*mut u8> {
+        match &self.mode {
+            MappingMode::Allocated => {
+                if vaddr < self.virtual_start || vaddr + size > self.virtual_end {
+                    return Err("The span of the data is in an illegal memory region");
+                }
+                let real_begin = self.inner_real_ptr(vaddr)?;
+                let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + size - 1)?);
+                Ok(real_begin)
+            }
+            MappingMode::Fixed(_) => {
+                self.validate_fixed_span(vaddr, size, MemoryPermissions::NONE)?;
+                Ok(vaddr as *mut u8)
+            }
         }
-        let real_begin = self.inner_real_ptr(vaddr)?;
-        let _real_end = core::hint::black_box(self.inner_real_ptr(vaddr + size - 1)?);
-        Ok(real_begin)
     }
 
     pub fn write_slice_at(&mut self, vaddr: usize, data: &[u8]) -> Result<usize> {

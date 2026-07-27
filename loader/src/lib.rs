@@ -16,9 +16,13 @@
 #![feature(c_size_t)]
 
 mod memory_mapper;
-use goblin::elf::{reloc::R_RISCV_RELATIVE, Elf, Reloc};
-use librs::string::memcpy;
-pub use memory_mapper::MemoryMapper;
+use goblin::elf::{
+    header::{ET_DYN, ET_EXEC},
+    reloc::R_RISCV_RELATIVE,
+    Elf, Reloc,
+};
+use memory_mapper::MappingModeKind;
+pub use memory_mapper::{MemoryMapper, MemoryPermissions, MemoryRegion};
 
 pub type Result = core::result::Result<(), &'static str>;
 
@@ -84,15 +88,34 @@ fn relocate(binary: &Elf, mapper: &mut MemoryMapper) -> Result {
     Ok(())
 }
 
-// FIXME: We should use lseek to parse ELF files to achieve low footprint.
-pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
-    let Ok(binary) = goblin::elf::Elf::parse(buffer) else {
-        return Err("Unable to parse the buffer");
-    };
-    build_memory_layout(&binary, mapper)?;
-    allocate_memory_for_segments(&binary, mapper)?;
-    copy_content_to_memory(buffer, &binary, mapper)?;
-    relocate(&binary, mapper)?;
+fn load_dyn_elf(buffer: &[u8], binary: &Elf, mapper: &mut MemoryMapper) -> Result {
+    if mapper.mode_kind() != MappingModeKind::Allocated {
+        return Err("ET_DYN requires Allocated mapping mode");
+    }
+    build_memory_layout(binary, mapper)?;
+    allocate_memory_for_segments(binary, mapper)?;
+    copy_content_to_memory(buffer, binary, mapper)?;
+    relocate(binary, mapper)?;
     mapper.real_entry()?;
     Ok(())
+}
+
+fn load_exec_elf(buffer: &[u8], binary: &Elf, mapper: &mut MemoryMapper) -> Result {
+    if mapper.mode_kind() != MappingModeKind::Fixed {
+        return Err("ET_EXEC requires Fixed mapping mode");
+    }
+    build_memory_layout(binary, mapper)?;
+    copy_content_to_memory(buffer, binary, mapper)?;
+    mapper.real_entry()?;
+    Ok(())
+}
+
+// FIXME: We should use lseek to parse ELF files to achieve low footprint.
+pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
+    let binary = Elf::parse(buffer).map_err(|_| "Unable to parse the buffer")?;
+    match binary.header.e_type {
+        ET_DYN => load_dyn_elf(buffer, &binary, mapper),
+        ET_EXEC => load_exec_elf(buffer, &binary, mapper),
+        _ => Err("Unsupported ELF type"),
+    }
 }

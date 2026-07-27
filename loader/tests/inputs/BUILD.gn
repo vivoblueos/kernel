@@ -14,8 +14,12 @@
 
 group("inputs") {
   testonly = true
-  deps = [
-    "malware:bomb_path",
-    "no_std_app:everything_elf_path",
-  ]
+  if (board == "seeed_xiao_esp32c3") {
+    deps = [ "exec_app:exec_elf_path" ]
+  } else {
+    deps = [
+      "malware:bomb_path",
+      "no_std_app:pic_elf_path",
+    ]
+  }
 }
