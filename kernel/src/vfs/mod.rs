@@ -36,7 +36,7 @@ mod fs;
 mod inode;
 mod inode_mode;
 mod mount;
-mod path;
+pub mod path;
 #[cfg(procfs)]
 mod procfs;
 #[cfg(procfs)]
@@ -48,7 +48,7 @@ pub mod syscalls;
 mod tmpfs;
 mod utils;
 use alloc::string::String;
-pub use file::AccessMode;
+pub use file::{AccessMode, FileOps};
 #[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 

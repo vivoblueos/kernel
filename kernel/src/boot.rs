@@ -142,6 +142,8 @@ extern "C" fn init() {
     init_vfs();
 
     scheduler::init();
+    #[cfg(enable_coredump)]
+    crate::coredump::init();
     logger::logger_init();
     time::timer::init();
     #[cfg(kernel_async)]

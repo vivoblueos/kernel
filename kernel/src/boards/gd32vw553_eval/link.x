@@ -92,6 +92,14 @@ SECTIONS
     __bss_end = .;
   } >RAM
 
+  .coredump_bss (NOLOAD) : {
+    . = ALIGN(4096);
+    __coredump_buf_start = .;
+    *(.coredump_bss .coredump_bss.*)
+    . = ALIGN(4096);
+    __coredump_buf_end = .;
+  } >RAM
+
   .heap : {
     . = ALIGN(16);
     __heap_start = .;

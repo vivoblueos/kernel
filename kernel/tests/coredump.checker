@@ -1,0 +1,3 @@
+// TOTAL-TIMEOUT: 30
+// ASSERT-SUCC: Coredump integration test end.
+// ASSERT-FAIL: Backtrace in Panic.*

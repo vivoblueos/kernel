@@ -19,6 +19,7 @@ _kconfig_files = [
   "//kernel/arch/Kconfig",
   "//kernel/kernel/src/boards/${board}/Kconfig",
   "//kernel/kernel/src/Kconfig",
+  "//kernel/kernel/src/coredump/Kconfig",
   "//kernel/kernel/src/allocator/Kconfig",
   "//kernel/kernel/src/scheduler/Kconfig",
   "//kernel/kernel/src/vfs/Kconfig",

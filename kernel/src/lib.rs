@@ -64,6 +64,8 @@ pub mod boards;
 pub(crate) mod boot;
 pub mod config;
 pub mod console;
+#[cfg(enable_coredump)]
+pub mod coredump;
 #[cfg(coverage)]
 pub mod coverage;
 pub(crate) mod devices;
@@ -241,6 +243,15 @@ mod tests {
     #[panic_handler]
     fn oops(info: &PanicInfo) -> ! {
         let _guard = DisableInterruptGuard::new();
+
+        #[cfg(enable_coredump)]
+        crate::coredump::dump_current(&crate::coredump::elf::CoredumpReason {
+            signo: crate::coredump::signal::panic_signo(),
+            code: 0,
+            fault_addr: 0,
+            arch_specific: 0,
+        });
+
         #[cfg(not(use_defmt))]
         {
             semihosting::println!("{}", info);

@@ -49,6 +49,14 @@ SECTIONS
     __bss_end = .;
   }
 
+  .coredump_bss (NOLOAD) : {
+    . = ALIGN(4096);
+    __coredump_buf_start = .;
+    *(.coredump_bss .coredump_bss.*)
+    . = ALIGN(4096);
+    __coredump_buf_end = .;
+  }
+
   /* Initialize C runtime. */
   /* .ctors and .dtors should not appear since we don't have C++ code at present. */
   .init_array : {

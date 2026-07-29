@@ -65,3 +65,5 @@ menu "os adapter configuration"
 
     endchoice
 endmenu # os adapter configuration
+
+rsource "coredump/Kconfig"

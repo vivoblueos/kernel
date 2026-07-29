@@ -216,6 +216,15 @@ impl fmt::Display for HardFaultRegs {
 pub extern "C" fn panic_on_hardfault(ctx: &IsrContext) {
     super::disable_local_irq();
     let fault_regs: HardFaultRegs = HardFaultRegs::from_scb();
+
+    #[cfg(enable_coredump)]
+    crate::coredump::dump_current(&crate::coredump::elf::CoredumpReason {
+        signo: crate::coredump::signal::arm_cfsr_to_signo(fault_regs.cfsr),
+        code: fault_regs.cfsr as i32,
+        fault_addr: fault_regs.mmfar as usize,
+        arch_specific: fault_regs.cfsr as usize,
+    });
+
     let xpsr = xpsr::read();
     panic!(
         "
