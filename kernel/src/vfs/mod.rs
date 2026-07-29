@@ -23,7 +23,7 @@ use crate::{
         tmpfs::TmpFileSystem,
     },
 };
-use log::{debug, error, warn};
+use log::debug;
 
 mod dcache;
 mod devfs;
@@ -51,6 +51,10 @@ use alloc::string::String;
 pub use file::AccessMode;
 #[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
+
+fn should_skip_fatfs_mount(policy: crate::boards::BlockStoragePolicy, error: Error) -> bool {
+    policy.allows_missing() && error == crate::error::code::ENODEV
+}
 
 /// Initialize the virtual file system
 pub fn vfs_init() -> Result<(), Error> {
@@ -80,7 +84,7 @@ pub fn vfs_init() -> Result<(), Error> {
     #[cfg(fatfs)]
     {
         use crate::{
-            boards::{BLOCK_STORAGE_DEVICE_NAME, BLOCK_STORAGE_MOUNT_POINT},
+            boards::{BLOCK_STORAGE_DEVICE_NAME, BLOCK_STORAGE_MOUNT_POINT, BLOCK_STORAGE_POLICY},
             vfs::{fatfs::FatFileSystem, fs::FileSystem},
         };
         use alloc::string::String;
@@ -100,10 +104,8 @@ pub fn vfs_init() -> Result<(), Error> {
                 fatfs_mount_point.mount(fatfs)?;
                 debug!("Mounted fatfs at '/{}'", BLOCK_STORAGE_MOUNT_POINT);
             }
-            Err(error) => {
-                error!("Fail to init fat file system, {}", error);
-                return Err(error);
-            }
+            Err(error) if should_skip_fatfs_mount(BLOCK_STORAGE_POLICY, error) => {}
+            Err(error) => return Err(error),
         }
     }
 

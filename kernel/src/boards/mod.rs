@@ -15,6 +15,18 @@
 use blueos_macro::current_board_mod;
 current_board_mod!();
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlockStoragePolicy {
+    Required,
+    Optional,
+}
+
+impl BlockStoragePolicy {
+    pub const fn allows_missing(self) -> bool {
+        matches!(self, Self::Optional)
+    }
+}
+
 #[macro_export]
 macro_rules! define_peripheral {
     ($( ($field_name:ident, $device_ty:ty, $v:expr) ),* $(,)?) => {

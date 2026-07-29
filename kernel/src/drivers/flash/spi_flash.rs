@@ -38,6 +38,21 @@ use crate::{
 const FLASH_SECTOR_SIZE: u16 = 512;
 const FLASH_ERASE_SIZE: usize = 4096;
 const PAGES_PER_ERASE_BLOCK: usize = FLASH_ERASE_SIZE / 256;
+const MAX_24BIT_CAPACITY: u64 = 0x0100_0000;
+
+fn capacity_from_jedec_id(jedec_id: u32) -> Result<u64, FlashError> {
+    let density = (jedec_id & 0xFF) as u32;
+    let capacity = 1u64.checked_shl(density).ok_or(FlashError::NotReady)?;
+    if capacity < FLASH_SECTOR_SIZE as u64 {
+        return Err(FlashError::NotReady);
+    }
+    if capacity > MAX_24BIT_CAPACITY {
+        return Err(FlashError::AddrOverflow {
+            addr: MAX_24BIT_CAPACITY as u32,
+        });
+    }
+    Ok(capacity)
+}
 
 /// Flash block driver error.
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
@@ -186,13 +201,11 @@ where
         FlashError::Timeout => ErrorKind::TimedOut,
         _ => ErrorKind::NotFound,
     })?;
-    let density_byte = (jedec_id & 0xFF) as u8;
-
-    let capacity_bytes: u64 = if density_byte < 31 {
-        (1u32 << density_byte) as u64
-    } else {
-        1u64 << density_byte
-    };
+    let capacity_bytes = capacity_from_jedec_id(jedec_id).map_err(|e| match e {
+        FlashError::NotReady | FlashError::JedecMismatch { .. } => ErrorKind::NotFound,
+        FlashError::Timeout => ErrorKind::TimedOut,
+        _ => ErrorKind::InvalidInput,
+    })?;
 
     let block_driver = SpiFlashBlockDriver::new(flash_cmd, capacity_bytes);
 
@@ -234,13 +247,16 @@ where
     fn init(self, bus: &Bus<BlockSpi<T, G>>) -> crate::drivers::Result<Self::Data> {
         let mut flash_cmd = SpiFlashCmd::new(bus.intf.clone());
 
-        let jedec_id = flash_cmd.jedec_id().map_err(|_| crate::error::code::EIO)?;
-        let density_byte = (jedec_id & 0xFF) as u8;
-        let capacity_bytes: u64 = if density_byte < 31 {
-            (1u32 << density_byte) as u64
-        } else {
-            1u64 << density_byte
-        };
+        let jedec_id = flash_cmd.jedec_id().map_err(|error| match error {
+            FlashError::NotReady | FlashError::JedecMismatch { .. } => crate::error::code::ENODEV,
+            FlashError::Timeout => crate::error::code::ETIMEDOUT,
+            _ => crate::error::code::EIO,
+        })?;
+        let capacity_bytes = capacity_from_jedec_id(jedec_id).map_err(|error| match error {
+            FlashError::NotReady | FlashError::JedecMismatch { .. } => crate::error::code::ENODEV,
+            FlashError::Timeout => crate::error::code::ETIMEDOUT,
+            _ => crate::error::code::EIO,
+        })?;
 
         log::info!(
             "SPI flash JEDEC ID: 0x{:06X}, capacity: {} bytes",
@@ -297,6 +313,20 @@ mod tests {
     use blueos_test_macro::test;
     use core::cell::UnsafeCell;
     use embedded_hal::spi::{ErrorKind, Operation, SpiDevice};
+
+    #[test]
+    fn test_capacity_from_jedec_id_rejects_unsupported_density() {
+        assert_eq!(capacity_from_jedec_id(0xEF4008), Err(FlashError::NotReady));
+        assert_eq!(
+            capacity_from_jedec_id(0xEF4019),
+            Err(FlashError::AddrOverflow { addr: 0x0100_0000 })
+        );
+    }
+
+    #[test]
+    fn test_capacity_from_jedec_id_accepts_w25q64() {
+        assert_eq!(capacity_from_jedec_id(0xEF4017), Ok(8 * 1024 * 1024));
+    }
 
     struct MockSpiDevice {
         shared: Arc<UnsafeCell<MockSpiShared>>,

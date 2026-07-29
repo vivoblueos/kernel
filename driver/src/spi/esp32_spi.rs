@@ -27,6 +27,21 @@ const SPI2_DATA_BUF_SIZE: usize = 64;
 // Pad byte for full-duplex reads where read length exceeds write length.
 const EMPTY_WRITE_PAD: u8 = 0x00;
 
+// Command bits are hardware-owned and must clear before the next operation.
+const SPI_CMD_TIMEOUT: usize = 10_000;
+
+fn wait_until_clear(
+    mut is_set: impl FnMut() -> bool,
+    max_polls: usize,
+) -> blueos_hal::err::Result<()> {
+    for _ in 0..max_polls {
+        if !is_set() {
+            return Ok(());
+        }
+    }
+    Err(blueos_hal::err::HalError::Timeout)
+}
+
 register_bitfields! [
     u32,
 
@@ -308,10 +323,10 @@ impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
         }
     }
 
-    fn apply_config(&self) {
+    fn apply_config(&self) -> blueos_hal::err::Result<()> {
         let regs = Self::spi_regs();
         regs.cmd.write(CMD::UPDATE.val(1));
-        while regs.cmd.is_set(CMD::UPDATE) {}
+        wait_until_clear(|| regs.cmd.is_set(CMD::UPDATE), SPI_CMD_TIMEOUT)
     }
 
     // AFIFO reset is a SET-then-CLEAR pulse.
@@ -335,14 +350,14 @@ impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
             .modify(DMA_CONF::BUF_AFIFO_RST::CLEAR + DMA_CONF::RX_AFIFO_RST::CLEAR);
     }
 
-    fn start_transfer(&self) {
+    fn start_transfer(&self) -> blueos_hal::err::Result<()> {
         let regs = Self::spi_regs();
         // Sync shadow registers, clear stale TRANS_DONE, then start (USR self-clears).
         regs.cmd.modify(CMD::UPDATE.val(1));
-        while regs.cmd.is_set(CMD::UPDATE) {}
+        wait_until_clear(|| regs.cmd.is_set(CMD::UPDATE), SPI_CMD_TIMEOUT)?;
         regs.dma_int_clr.write(DMA_INT_CLR::TRANS_DONE::SET);
         regs.cmd.modify(CMD::USR.val(1));
-        while regs.cmd.is_set(CMD::USR) {}
+        wait_until_clear(|| regs.cmd.is_set(CMD::USR), SPI_CMD_TIMEOUT)
     }
 
     fn wait_done(&self) {
@@ -414,7 +429,7 @@ impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
             regs.ms_dlen
                 .write(MS_DLEN::MS_DATA_BITLEN.val((chunk.len() as u32 * 8 - 1)));
             self.write_buf(chunk);
-            self.start_transfer();
+            self.start_transfer()?;
             self.wait_done();
         }
         Ok(())
@@ -443,7 +458,7 @@ impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
                 .write(MS_DLEN::MS_DATA_BITLEN.val((chunk.len() as u32 * 8 - 1)));
             let dummy = [EMPTY_WRITE_PAD; SPI2_DATA_BUF_SIZE];
             self.write_buf(&dummy[..chunk.len()]);
-            self.start_transfer();
+            self.start_transfer()?;
             self.wait_done();
             self.read_buf(chunk);
         }
@@ -493,7 +508,7 @@ impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
                 self.write_buf(&write[write_from..][..write_inc]);
             }
 
-            self.start_transfer();
+            self.start_transfer()?;
             self.wait_done();
 
             if read_inc > 0 {
@@ -612,5 +627,35 @@ impl<const SPI_BASE: usize, const SYS_BASE: usize, const APB_HZ: u32>
 
     fn write(&self, buf: &[u8]) -> blueos_hal::err::Result<()> {
         self.do_half_duplex_write(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn test_wait_until_clear_times_out() {
+        assert_eq!(
+            wait_until_clear(|| true, 3),
+            Err(blueos_hal::err::HalError::Timeout)
+        );
+    }
+
+    #[test]
+    fn test_wait_until_clear_returns_when_ready() {
+        let mut polls = 0;
+        assert_eq!(
+            wait_until_clear(
+                || {
+                    polls += 1;
+                    polls < 3
+                },
+                3
+            ),
+            Ok(())
+        );
+        assert_eq!(polls, 3);
     }
 }

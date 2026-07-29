@@ -57,7 +57,11 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
         self.spi
             .transaction(&mut [Operation::Write(&[0x9F]), Operation::Read(&mut id_buf)])
             .map_err(spi_err_to_flash)?;
-        Ok((id_buf[0] as u32) << 16 | (id_buf[1] as u32) << 8 | (id_buf[2] as u32))
+        let jedec_id = (id_buf[0] as u32) << 16 | (id_buf[1] as u32) << 8 | (id_buf[2] as u32);
+        if jedec_id == 0 || jedec_id == 0x00FF_FFFF {
+            return Err(FlashError::NotReady);
+        }
+        Ok(jedec_id)
     }
 
     /// Normal read, 3-byte address (command 0x03).
@@ -386,6 +390,18 @@ mod tests {
             assert_eq!(&s.writes, &[0x9F]);
             assert_eq!(s.transaction_count, 1);
         });
+    }
+
+    #[test]
+    fn test_jedec_id_rejects_missing_device_responses() {
+        for response in [[0x00, 0x00, 0x00], [0xFF, 0xFF, 0xFF]] {
+            let (mut flash_cmd, shared) = create_flash_cmd();
+            with_shared(&shared, |s| {
+                s.read_queue = alloc::vec![response.to_vec()];
+            });
+
+            assert_eq!(flash_cmd.jedec_id(), Err(FlashError::NotReady));
+        }
     }
 
     #[test]
