@@ -25,7 +25,7 @@ use crate::{
     devices::{
         block::{Block, BlockDriverOps, BlockError, ErrorType},
         bus::{Bus, BusInterface},
-        spi_core::block_spi::BlockSpi,
+        spi_core::block_spi::{BlockSpi, HalOutputPinAdapter, SpinLockDevice},
         DeviceData, DeviceManager,
     },
     drivers::{
@@ -225,27 +225,30 @@ where
 // Device>, so it crosses threads (Send) and is referenced from &self (Sync).
 unsafe impl<SPI: SpiDevice<u8> + Send + Sync> Sync for SpiFlashBlockDriver<SPI> {}
 
-#[derive(Default)]
-pub struct SpiFlashConfig {
+pub struct SpiFlashConfig<G: OutputPin> {
     pub name: &'static str,
+    pub cs: &'static G,
 }
 
-impl SpiFlashConfig {
-    pub const fn new(name: &'static str) -> Self {
-        SpiFlashConfig { name }
+impl<G: OutputPin> SpiFlashConfig<G> {
+    pub const fn new(name: &'static str, cs: &'static G) -> Self {
+        SpiFlashConfig { name, cs }
     }
 }
 
 #[cfg(use_embedded_hal_v1)]
-impl<T, G> InitDriver<BlockSpi<T, G>> for SpiFlashConfig
+impl<T, G> InitDriver<BlockSpi<T>> for SpiFlashConfig<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
     G: PlatPeri + OutputPin,
 {
     type Data = ();
 
-    fn init(self, bus: &Bus<BlockSpi<T, G>>) -> crate::drivers::Result<Self::Data> {
-        let mut flash_cmd = SpiFlashCmd::new(bus.intf.clone());
+    fn init(self, bus: &Bus<BlockSpi<T>>) -> crate::drivers::Result<Self::Data> {
+        let flash_cs = HalOutputPinAdapter::new(self.cs);
+        let spi_device = SpinLockDevice::new(bus.intf.clone(), flash_cs, crate::sync::KernelDelay)
+            .map_err(|_| crate::error::code::EIO)?;
+        let mut flash_cmd = SpiFlashCmd::new(spi_device);
 
         let jedec_id = flash_cmd.jedec_id().map_err(|error| match error {
             FlashError::NotReady | FlashError::JedecMismatch { .. } => crate::error::code::ENODEV,
@@ -278,15 +281,25 @@ where
     }
 }
 
-pub struct SpiFlashDriverModule;
+pub struct SpiFlashDriverModule<G> {
+    _marker: core::marker::PhantomData<G>,
+}
+
+impl<G> SpiFlashDriverModule<G> {
+    pub const fn new() -> Self {
+        SpiFlashDriverModule {
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
 
 #[cfg(use_embedded_hal_v1)]
-impl<T, G> DriverModule<BlockSpi<T, G>> for SpiFlashDriverModule
+impl<T, G> DriverModule<BlockSpi<T>> for SpiFlashDriverModule<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
     G: PlatPeri + OutputPin,
 {
-    type Data = SpiFlashConfig;
+    type Data = SpiFlashConfig<G>;
 
     fn probe(dev: &DeviceData) -> crate::drivers::Result<Self::Data> {
         match dev {
@@ -294,8 +307,11 @@ where
                 if native_dev.is_attached() {
                     return Err(crate::error::code::ENODEV);
                 }
-                if let Some(config) = native_dev.config::<SpiFlashConfig>() {
-                    Ok(SpiFlashConfig { name: config.name })
+                if let Some(config) = native_dev.config::<SpiFlashConfig<G>>() {
+                    Ok(SpiFlashConfig {
+                        name: config.name,
+                        cs: config.cs,
+                    })
                 } else {
                     Err(crate::error::code::ENODEV)
                 }
