@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::cell::Cell;
+
 use crate::{
     devices::{Device, DeviceClass, DeviceId, DeviceManager},
     sync::SpinLock,
@@ -63,27 +65,39 @@ impl<T: blueos_hal::gpio::OutputPin> GeneralGpio<T> {
 struct GeneralGpioDevice<T: blueos_hal::gpio::OutputPin> {
     name: String,
     id: DeviceId,
-    inner: &'static T,
-    level: SpinLock<Option<Level>>,
+    inner: SpinLock<&'static T>,
+    level: Cell<Option<Level>>,
 }
+
+/// Safety: `GeneralGpioDevice` is safe to share between threads 
+/// because it uses a `SpinLock` to protect access to the 
+/// underlying GPIO pin, ensuring that only one thread can modify 
+/// the pin state at a time. The `level` field is a `Cell`, 
+/// which allows for interior mutability, but since it 
+/// is only accessed within the locked context, it does not 
+/// introduce data races. Therefore, it is safe to implement `Sync`
+unsafe impl<T: blueos_hal::gpio::OutputPin> Sync for GeneralGpioDevice<T> {}
+unsafe impl<T: blueos_hal::gpio::OutputPin> Send for GeneralGpioDevice<T> {}
 
 impl<T: blueos_hal::gpio::OutputPin> GeneralGpioDevice<T> {
     fn new(name: String, id: DeviceId, gpio: GeneralGpio<T>) -> Self {
         Self {
             name,
             id,
-            inner: gpio.inner,
-            level: SpinLock::new(gpio.level),
+            inner: SpinLock::new(gpio.inner),
+            level: Cell::new(gpio.level),
         }
     }
 
     fn set_level(&self, level: Level) -> Result<(), ErrorKind> {
-        let mut current_level = self.level.lock();
+        let l = self.inner.lock();
+        let mut current_level = self.level.get();
         match level {
-            Level::Low => self.inner.set_low().map_err(|_| ErrorKind::Other)?,
-            Level::High => self.inner.set_high().map_err(|_| ErrorKind::Other)?,
+            Level::Low => l.set_low().map_err(|_| ErrorKind::Other)?,
+            Level::High => l.set_high().map_err(|_| ErrorKind::Other)?,
         };
-        *current_level = Some(level);
+        self.level.set(Some(level));
+        drop(l);
         Ok(())
     }
 }
@@ -102,7 +116,8 @@ impl<T: blueos_hal::gpio::OutputPin> Device for GeneralGpioDevice<T> {
     }
 
     fn read(&self, pos: u64, buf: &mut [u8], _is_nonblocking: bool) -> Result<usize, ErrorKind> {
-        let level = (*self.level.lock()).ok_or(ErrorKind::Other)?;
+        let l = self.inner.lock();
+        let level = self.level.get().ok_or(ErrorKind::Other)?;
         let value = match level {
             Level::Low => b"0\n",
             Level::High => b"1\n",
@@ -114,6 +129,7 @@ impl<T: blueos_hal::gpio::OutputPin> Device for GeneralGpioDevice<T> {
 
         let len = buf.len().min(value.len() - pos);
         buf[..len].copy_from_slice(&value[pos..pos + len]);
+        drop(l);
         Ok(len)
     }
 

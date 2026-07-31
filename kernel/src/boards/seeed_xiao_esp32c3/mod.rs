@@ -235,6 +235,7 @@ crate::define_bus! {
             crate::drivers::lcd::st7789::St7789Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
                 rst: get_device!(rst_pin),
                 dc: get_device!(dc_pin),
+                cs: Some(get_device!(lcd_cs)),
             }
         ),
         #[cfg(st7796)]
@@ -242,6 +243,7 @@ crate::define_bus! {
             crate::drivers::lcd::st7796::St7796Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
                 rst: get_device!(rst_pin),
                 dc: get_device!(dc_pin),
+                cs: Some(get_device!(lcd_cs)),
                 orientation: mipidsi::options::Orientation::new()
                     .rotate(mipidsi::options::Rotation::Deg0)
                     .flip_horizontal(),

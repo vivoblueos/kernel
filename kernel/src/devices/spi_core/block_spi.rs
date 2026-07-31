@@ -42,88 +42,28 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> Blo
         self.cs.set_high().ok();
     }
 
-    fn read(&mut self, words: &mut [u8]) -> Result<(), crate::error::Error> {
+    pub fn read(&mut self, words: &mut [u8]) -> Result<(), crate::error::Error> {
         self.inner.read(words).map_err(|_| crate::error::code::EIO)
     }
 
-    fn write(&mut self, words: &[u8]) -> Result<(), crate::error::Error> {
+    pub fn write(&mut self, words: &[u8]) -> Result<(), crate::error::Error> {
         self.inner.write(words).map_err(|_| crate::error::code::EIO)
     }
 
-    fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), crate::error::Error> {
+    pub fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), crate::error::Error> {
         self.inner
             .transfer(read, write)
             .map_err(|_| crate::error::code::EIO)
     }
 
-    fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), crate::error::Error> {
+    pub fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), crate::error::Error> {
         self.inner
             .write(words)
             .map_err(|_| crate::error::code::EIO)?;
         self.inner.read(words).map_err(|_| crate::error::code::EIO)
     }
-
-    fn flush(&mut self) -> Result<(), crate::error::Error> {
-        Ok(())
-    }
 }
 
 impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> BusInterface
     for BlockSpi<T, G>
-{
-    type Region = ();
-
-    fn read_region(&self, region: Self::Region, buffer: &mut [u8]) -> crate::drivers::Result<()> {
-        todo!()
-    }
-
-    fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()> {
-        todo!()
-    }
-}
-
-#[cfg(use_embedded_hal_v1)]
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
-    embedded_hal::spi::ErrorType for BusWrapper<BlockSpi<T, G>>
-{
-    type Error = crate::error::Error;
-}
-
-#[cfg(use_embedded_hal_v1)]
-impl embedded_hal::spi::Error for crate::error::Error {
-    fn kind(&self) -> embedded_hal::spi::ErrorKind {
-        // FIXME: Map the error code to embedded_hal::spi::ErrorKind
-        embedded_hal::spi::ErrorKind::Other
-    }
-}
-
-#[cfg(use_embedded_hal_v1)]
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
-    embedded_hal::spi::SpiDevice<u8> for BusWrapper<BlockSpi<T, G>>
-{
-    fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
-        let mut inner = self.0.lock();
-        inner.assert_cs();
-
-        let op_res = operations.iter_mut().try_for_each(|op| match op {
-            Operation::Read(buf) => inner.read(buf),
-            Operation::Write(buf) => inner.write(buf),
-            Operation::Transfer(read, write) => inner.transfer(read, write),
-            Operation::TransferInPlace(buf) => inner.transfer_in_place(buf),
-            Operation::DelayNs(ns) => {
-                use embedded_hal::delay::DelayNs;
-                inner.flush()?;
-                let mut kernel = KernelDelay;
-                kernel.delay_ns(*ns);
-                Ok(())
-            }
-        });
-
-        let flush_res = inner.flush();
-        inner.deassert_cs();
-        op_res?;
-        flush_res?;
-
-        Ok(())
-    }
-}
+{}
