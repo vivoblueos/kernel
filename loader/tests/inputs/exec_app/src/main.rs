@@ -38,7 +38,9 @@ fn uart_putc(c: u8) {
     while (unsafe { status.read_volatile() } >> 16) & 0x3FF >= 128 {
         core::hint::spin_loop();
     }
-    unsafe { fifo.write_volatile(c as u32); }
+    unsafe {
+        fifo.write_volatile(c as u32);
+    }
 }
 
 fn uart_puts(s: &str) {
