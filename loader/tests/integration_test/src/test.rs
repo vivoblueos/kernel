@@ -55,7 +55,7 @@ mod test_pic {
         let res = read_all(unsafe { PIC_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_ok());
         let f = unsafe { core::mem::transmute::<usize, fn() -> ()>(mapper.real_entry().unwrap()) };
@@ -73,7 +73,7 @@ mod test_pic {
         let res = read_all(unsafe { INVALID_ENTRY_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -84,7 +84,7 @@ mod test_pic {
         let res = read_all(unsafe { INVALID_MAGIC_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -95,7 +95,7 @@ mod test_pic {
         let res = read_all(unsafe { INVALID_SEGMENT_SIZE_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -148,7 +148,7 @@ mod test_exec {
     #[test]
     fn test_load_exec_elf_and_run() {
         let buf = read_all(unsafe { EXEC_ELF_PATH }).unwrap();
-        let mut mapper = loader::MemoryMapper::new_fixed(&EXEC_REGIONS);
+        let mut mapper = loader::MemoryMapper::new(Some(&EXEC_REGIONS));
         assert!(loader::load_elf(&buf, &mut mapper).is_ok());
         let entry = mapper.real_entry().unwrap();
         let run = unsafe { core::mem::transmute::<usize, extern "C" fn() -> u32>(entry) };
@@ -158,7 +158,7 @@ mod test_exec {
     #[test]
     fn test_exec_rejects_allocated_mapper() {
         let buf = read_all(unsafe { EXEC_ELF_PATH }).unwrap();
-        let mut mapper = loader::MemoryMapper::new();
+        let mut mapper = loader::MemoryMapper::new(None);
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 
@@ -166,7 +166,7 @@ mod test_exec {
     fn test_exec_rejects_out_of_range_without_writing() {
         let buf = read_all(unsafe { EXEC_ELF_PATH }).unwrap();
         let before = unsafe { (RTC_FAST_START as *const u32).read_volatile() };
-        let mut mapper = loader::MemoryMapper::new_fixed(&SHORT_REGIONS);
+        let mut mapper = loader::MemoryMapper::new(Some(&SHORT_REGIONS));
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
         let after = unsafe { (RTC_FAST_START as *const u32).read_volatile() };
         assert_eq!(after, before);
@@ -175,7 +175,7 @@ mod test_exec {
     #[test]
     fn test_exec_rejects_non_executable_region() {
         let buf = read_all(unsafe { EXEC_ELF_PATH }).unwrap();
-        let mut mapper = loader::MemoryMapper::new_fixed(&NON_EXEC_REGIONS);
+        let mut mapper = loader::MemoryMapper::new(Some(&NON_EXEC_REGIONS));
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 
@@ -183,7 +183,7 @@ mod test_exec {
     fn test_exec_rejects_invalid_entry() {
         let mut buf = read_all(unsafe { EXEC_ELF_PATH }).unwrap();
         buf[24..28].copy_from_slice(&(RTC_FAST_END as u32).to_le_bytes());
-        let mut mapper = loader::MemoryMapper::new_fixed(&EXEC_REGIONS);
+        let mut mapper = loader::MemoryMapper::new(Some(&EXEC_REGIONS));
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 }

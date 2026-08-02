@@ -83,24 +83,16 @@ pub struct MemoryMapper {
 
 impl MemoryMapper {
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(regions: Option<&'static [MemoryRegion]>) -> Self {
         Self {
             virtual_entry: 0,
             virtual_start: usize::MAX,
             virtual_end: 0,
             mem: Storage::default(),
-            mode: MappingMode::Allocated,
-        }
-    }
-
-    #[inline]
-    pub fn new_fixed(regions: &'static [MemoryRegion]) -> Self {
-        Self {
-            virtual_entry: 0,
-            virtual_start: usize::MAX,
-            virtual_end: 0,
-            mem: Storage::default(),
-            mode: MappingMode::Fixed(regions),
+            mode: match regions {
+                Some(regions) => MappingMode::Fixed(regions),
+                None => MappingMode::Allocated,
+            },
         }
     }
 
