@@ -39,6 +39,15 @@ build_rust("loader_integration_test") {
   }
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   rustflags = [ "--test" ]
+
+  if (defined(loader_test_relocation)) {
+    rustenv = [
+      "LOADER_TEST_RELOCATION_ORIGIN=${loader_test_relocation.origin}",
+      "LOADER_TEST_RELOCATION_LENGTH=${loader_test_relocation.length}",
+      "LOADER_TEST_RELOCATION_PERMISSIONS=${loader_test_relocation.permissions}",
+    ]
+    cfgs = [ "loader_test_fixed_mapping" ]
+  }
 }
 
 run_clippy("loader_integration_test_clippy") {

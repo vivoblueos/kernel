@@ -12,15 +12,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/boards/${board}.gni")
 import("//build/templates/rust.gni")
-import("//build/toolchain/blueos.gni")
 
-build_rust("exec_app") {
+assert(defined(loader_test_relocation),
+       "loader_test_relocation must be defined for the EXEC loader test app")
+assert(defined(loader_test_relocation.region),
+       "loader_test_relocation.region must be defined")
+assert(defined(loader_test_relocation.origin),
+       "loader_test_relocation.origin must be defined")
+assert(defined(loader_test_relocation.length),
+       "loader_test_relocation.length must be defined")
+assert(defined(loader_test_relocation.permissions),
+       "loader_test_relocation.permissions must be defined")
+
+_loader_test_linker_script_template = "link.x.template"
+_loader_test_linker_script = "${target_gen_dir}/loader_test_relocation_link.x"
+
+action("gen_loader_test_relocation") {
+  testonly = true
+  script = "//kernel/loader/tests/scripts/gen_loader_test_relocation.py"
+  inputs = [ _loader_test_linker_script_template ]
+  args = [
+    "--region",
+    loader_test_relocation.region,
+    "--origin",
+    loader_test_relocation.origin,
+    "--length",
+    loader_test_relocation.length,
+    "--permissions",
+    loader_test_relocation.permissions,
+    "--linker-script-template",
+    rebase_path(_loader_test_linker_script_template),
+    "--linker-script",
+    rebase_path(_loader_test_linker_script),
+  ]
+  outputs = [ _loader_test_linker_script ]
+}
+
+build_rust("loader_test_app") {
   testonly = true
   crate_type = "bin"
   sources = [ "src/main.rs" ]
+  build_deps = [ ":gen_loader_test_relocation" ]
   configs += [ "//build/boards/${board}:app_config" ]
-  linker_script = "link.x"
+  linker_script = _loader_test_linker_script
   rustflags = [
     "-Cpanic=abort",
     "-Crelocation-model=static",
@@ -28,22 +64,4 @@ build_rust("exec_app") {
     "-Clink-arg=-Wl,--no-pie",
     "-Clink-arg=-nostartfiles",
   ]
-}
-
-postlink_action("gen_exec_elf_path_symbol") {
-  testonly = true
-  exe = ":exec_app"
-  script = "//kernel/loader/tests/scripts/gen_path_symbol.py"
-  outfile = "${target_gen_dir}/${target_name}.c"
-  args = [
-    "EXEC_ELF_PATH",
-    rebase_path(outfile),
-  ]
-  outputs = [ outfile ]
-}
-
-static_library("exec_elf_path") {
-  testonly = true
-  deps = [ ":gen_exec_elf_path_symbol" ]
-  sources = get_target_outputs(":gen_exec_elf_path_symbol")
 }
