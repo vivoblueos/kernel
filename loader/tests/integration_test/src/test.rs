@@ -72,7 +72,7 @@ mod loader_test_config {
     pub const TEST_REGION_START: usize = parse_hex(env!("LOADER_TEST_RELOCATION_ORIGIN"));
     pub const TEST_REGION_END: usize =
         TEST_REGION_START + parse_hex(env!("LOADER_TEST_RELOCATION_LENGTH"));
-    const TEST_REGION_PERMISSIONS: loader::MemoryPermissions =
+    pub const TEST_REGION_PERMISSIONS: loader::MemoryPermissions =
         parse_permissions(env!("LOADER_TEST_RELOCATION_PERMISSIONS"));
 
     pub static TEST_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
@@ -173,7 +173,9 @@ mod test_malformed {
 #[cfg(loader_test_fixed_mapping)]
 mod test_exec {
     use super::{
-        loader_test_config::{TEST_REGIONS, TEST_REGION_END, TEST_REGION_START},
+        loader_test_config::{
+            TEST_REGIONS, TEST_REGION_END, TEST_REGION_PERMISSIONS, TEST_REGION_START,
+        },
         *,
     };
     use blueos_test_macro::test;
@@ -185,9 +187,7 @@ mod test_exec {
         loader::MemoryRegion::new(
             TEST_REGION_START,
             TEST_REGION_START + 16,
-            loader::MemoryPermissions::READ
-                .bitor(loader::MemoryPermissions::WRITE)
-                .bitor(loader::MemoryPermissions::EXECUTE),
+            TEST_REGION_PERMISSIONS,
         )
     }];
 
