@@ -80,16 +80,6 @@ mod loader_test_config {
     }];
 }
 
-#[cfg(loader_test_fixed_mapping)]
-fn new_test_mapper() -> loader::MemoryMapper {
-    loader::MemoryMapper::new(Some(&loader_test_config::TEST_REGIONS))
-}
-
-#[cfg(not(loader_test_fixed_mapping))]
-fn new_test_mapper() -> loader::MemoryMapper {
-    loader::MemoryMapper::new(None)
-}
-
 fn read_all(ptr: *const core::ffi::c_char) -> semihosting::io::Result<Vec<u8>> {
     let path = unsafe { core::ffi::CStr::from_ptr(ptr) };
     let mut file = semihosting::fs::File::open(path)?;
@@ -118,7 +108,7 @@ mod test_pic {
         let res = read_all(unsafe { LOADER_TEST_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = new_test_mapper();
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_ok());
         let f = unsafe { core::mem::transmute::<usize, fn() -> ()>(mapper.real_entry().unwrap()) };
@@ -141,7 +131,10 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_ENTRY_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = new_test_mapper();
+        #[cfg(loader_test_fixed_mapping)]
+        let mut mapper = loader::MemoryMapper::new(Some(&loader_test_config::TEST_REGIONS));
+        #[cfg(not(loader_test_fixed_mapping))]
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -152,7 +145,10 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_MAGIC_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = new_test_mapper();
+        #[cfg(loader_test_fixed_mapping)]
+        let mut mapper = loader::MemoryMapper::new(Some(&loader_test_config::TEST_REGIONS));
+        #[cfg(not(loader_test_fixed_mapping))]
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -163,7 +159,10 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_SEGMENT_SIZE_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        let mut mapper = new_test_mapper();
+        #[cfg(loader_test_fixed_mapping)]
+        let mut mapper = loader::MemoryMapper::new(Some(&loader_test_config::TEST_REGIONS));
+        #[cfg(not(loader_test_fixed_mapping))]
+        let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
