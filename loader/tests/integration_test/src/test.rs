@@ -95,37 +95,75 @@ fn read_all(ptr: *const core::ffi::c_char) -> semihosting::io::Result<Vec<u8>> {
     Ok(buf)
 }
 
-#[cfg(not(loader_test_exec))]
-mod test_pic {
+mod test_elf_loader {
+    #[cfg(loader_test_exec)]
+    use super::loader_test_config::{
+        TEST_REGIONS, TEST_REGION_END, TEST_REGION_PERMISSIONS, TEST_REGION_START,
+    };
     use super::*;
     use blueos_test_macro::test;
 
-    // FIXME: The ELF file is too large in debug mode. We should use
+    #[cfg(loader_test_exec)]
+    const EXPECTED_RESULT: u32 = 0x9afc_e987;
+
+    #[cfg(loader_test_exec)]
+    static SHORT_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
+        // SAFETY: This is a valid subset of the configured loader test range.
+        loader::MemoryRegion::new(
+            TEST_REGION_START,
+            TEST_REGION_START + 16,
+            TEST_REGION_PERMISSIONS,
+        )
+    }];
+
+    #[cfg(loader_test_exec)]
+    static NON_EXEC_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
+        // SAFETY: The configured region supports read and write accesses.
+        loader::MemoryRegion::new(
+            TEST_REGION_START,
+            TEST_REGION_END,
+            loader::MemoryPermissions::READ.bitor(loader::MemoryPermissions::WRITE),
+        )
+    }];
+
+    fn new_mapper() -> loader::MemoryMapper {
+        #[cfg(loader_test_exec)]
+        {
+            loader::MemoryMapper::new(Some(&TEST_REGIONS))
+        }
+        #[cfg(not(loader_test_exec))]
+        {
+            loader::MemoryMapper::new(None)
+        }
+    }
+
+    // FIXME: The PIC ELF file is too large in debug mode. We should use
     // lseek to parse the ELF file.
     #[cfg(not(debug_assertions))]
     #[test]
-    pub fn test_load_elf_and_run() {
-        let res = read_all(unsafe { LOADER_TEST_ELF_PATH });
-        assert!(res.is_ok());
-        let buf = res.unwrap();
-        let mut mapper = loader::MemoryMapper::new(None);
-        let res = loader::load_elf(buf.as_slice(), &mut mapper);
-        assert!(res.is_ok());
-        let f = unsafe { core::mem::transmute::<usize, fn() -> ()>(mapper.real_entry().unwrap()) };
-        f();
+    fn test_load_elf_and_run() {
+        let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
+        let mut mapper = new_mapper();
+        assert!(loader::load_elf(&buf, &mut mapper).is_ok());
+        let entry = mapper.real_entry().unwrap();
+
+        #[cfg(loader_test_exec)]
+        {
+            let run = unsafe { core::mem::transmute::<usize, extern "C" fn() -> u32>(entry) };
+            assert_eq!(run(), EXPECTED_RESULT);
+        }
+        #[cfg(not(loader_test_exec))]
+        {
+            let run = unsafe { core::mem::transmute::<usize, fn()>(entry) };
+            run();
+        }
     }
 
     // FIXME: We should use FS's lseek API to get lower footprint.
     // TODO: Use semihosting's seek API to parse the ELF file.
+    #[cfg(not(loader_test_exec))]
     #[test]
     fn test_seek_and_parse_elf() {}
-}
-
-mod test_malformed {
-    #[cfg(loader_test_exec)]
-    use super::loader_test_config::TEST_REGIONS;
-    use super::*;
-    use blueos_test_macro::test;
 
     #[cfg(not(debug_assertions))]
     #[test]
@@ -133,10 +171,7 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_ENTRY_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        #[cfg(loader_test_exec)]
-        let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        #[cfg(not(loader_test_exec))]
-        let mut mapper = loader::MemoryMapper::new(None);
+        let mut mapper = new_mapper();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -147,10 +182,7 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_MAGIC_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        #[cfg(loader_test_exec)]
-        let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        #[cfg(not(loader_test_exec))]
-        let mut mapper = loader::MemoryMapper::new(None);
+        let mut mapper = new_mapper();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
@@ -161,55 +193,12 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_SEGMENT_SIZE_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        #[cfg(loader_test_exec)]
-        let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        #[cfg(not(loader_test_exec))]
-        let mut mapper = loader::MemoryMapper::new(None);
+        let mut mapper = new_mapper();
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
-}
 
-#[cfg(loader_test_exec)]
-mod test_exec {
-    use super::{
-        loader_test_config::{
-            TEST_REGIONS, TEST_REGION_END, TEST_REGION_PERMISSIONS, TEST_REGION_START,
-        },
-        *,
-    };
-    use blueos_test_macro::test;
-
-    const EXPECTED_RESULT: u32 = 0x9afc_e987;
-
-    static SHORT_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
-        // SAFETY: This is a valid subset of the configured loader test range.
-        loader::MemoryRegion::new(
-            TEST_REGION_START,
-            TEST_REGION_START + 16,
-            TEST_REGION_PERMISSIONS,
-        )
-    }];
-
-    static NON_EXEC_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
-        // SAFETY: The configured region supports read and write accesses.
-        loader::MemoryRegion::new(
-            TEST_REGION_START,
-            TEST_REGION_END,
-            loader::MemoryPermissions::READ.bitor(loader::MemoryPermissions::WRITE),
-        )
-    }];
-
-    #[test]
-    fn test_load_exec_elf_and_run() {
-        let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
-        let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        assert!(loader::load_elf(&buf, &mut mapper).is_ok());
-        let entry = mapper.real_entry().unwrap();
-        let run = unsafe { core::mem::transmute::<usize, extern "C" fn() -> u32>(entry) };
-        assert_eq!(run(), EXPECTED_RESULT);
-    }
-
+    #[cfg(loader_test_exec)]
     #[test]
     fn test_exec_rejects_allocated_mapper() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
@@ -217,6 +206,7 @@ mod test_exec {
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 
+    #[cfg(loader_test_exec)]
     #[test]
     fn test_exec_rejects_out_of_range_without_writing() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
@@ -227,6 +217,7 @@ mod test_exec {
         assert_eq!(after, before);
     }
 
+    #[cfg(loader_test_exec)]
     #[test]
     fn test_exec_rejects_non_executable_region() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
