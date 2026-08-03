@@ -122,10 +122,10 @@ mod test_pic {
 }
 
 mod test_malformed {
-    use super::*;
-    use blueos_test_macro::test;
     #[cfg(loader_test_fixed_mapping)]
     use super::loader_test_config::TEST_REGIONS;
+    use super::*;
+    use blueos_test_macro::test;
 
     #[cfg(not(debug_assertions))]
     #[test]
