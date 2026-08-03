@@ -46,7 +46,7 @@ build_rust("loader_integration_test") {
       "LOADER_TEST_RELOCATION_LENGTH=${loader_test_relocation.length}",
       "LOADER_TEST_RELOCATION_PERMISSIONS=${loader_test_relocation.permissions}",
     ]
-    cfgs = [ "loader_test_fixed_mapping" ]
+    cfgs = [ "loader_test_exec" ]
   }
 }
 

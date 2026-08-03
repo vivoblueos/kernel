@@ -27,7 +27,7 @@ extern "C" {
     static INVALID_SEGMENT_SIZE_ELF_PATH: *const c_char;
 }
 
-#[cfg(loader_test_fixed_mapping)]
+#[cfg(loader_test_exec)]
 mod loader_test_config {
     use blueos_loader as loader;
 
@@ -95,7 +95,7 @@ fn read_all(ptr: *const core::ffi::c_char) -> semihosting::io::Result<Vec<u8>> {
     Ok(buf)
 }
 
-#[cfg(not(loader_test_fixed_mapping))]
+#[cfg(not(loader_test_exec))]
 mod test_pic {
     use super::*;
     use blueos_test_macro::test;
@@ -122,7 +122,7 @@ mod test_pic {
 }
 
 mod test_malformed {
-    #[cfg(loader_test_fixed_mapping)]
+    #[cfg(loader_test_exec)]
     use super::loader_test_config::TEST_REGIONS;
     use super::*;
     use blueos_test_macro::test;
@@ -133,9 +133,9 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_ENTRY_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        #[cfg(loader_test_fixed_mapping)]
+        #[cfg(loader_test_exec)]
         let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        #[cfg(not(loader_test_fixed_mapping))]
+        #[cfg(not(loader_test_exec))]
         let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
@@ -147,9 +147,9 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_MAGIC_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        #[cfg(loader_test_fixed_mapping)]
+        #[cfg(loader_test_exec)]
         let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        #[cfg(not(loader_test_fixed_mapping))]
+        #[cfg(not(loader_test_exec))]
         let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
@@ -161,16 +161,16 @@ mod test_malformed {
         let res = read_all(unsafe { INVALID_SEGMENT_SIZE_ELF_PATH });
         assert!(res.is_ok());
         let buf = res.unwrap();
-        #[cfg(loader_test_fixed_mapping)]
+        #[cfg(loader_test_exec)]
         let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS));
-        #[cfg(not(loader_test_fixed_mapping))]
+        #[cfg(not(loader_test_exec))]
         let mut mapper = loader::MemoryMapper::new(None);
         let res = loader::load_elf(buf.as_slice(), &mut mapper);
         assert!(res.is_err());
     }
 }
 
-#[cfg(loader_test_fixed_mapping)]
+#[cfg(loader_test_exec)]
 mod test_exec {
     use super::{
         loader_test_config::{
