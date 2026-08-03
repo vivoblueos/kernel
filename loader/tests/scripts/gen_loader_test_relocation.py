@@ -91,9 +91,11 @@ def main():
         raise ValueError("length must be greater than 16 bytes")
     if origin + length <= origin:
         raise ValueError("region address overflow")
-    if args.permissions != "rwx":
+    permissions = args.permissions
+    if (not permissions or any(value not in "rwx" for value in permissions)
+            or len(set(permissions)) != len(permissions)):
         raise ValueError(
-            "the EXEC loader test region must have rwx permissions")
+            "permissions must be r, w, x, or a combination of them")
 
     write_linker_script(
         args.linker_script_template,
