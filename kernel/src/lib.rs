@@ -316,7 +316,15 @@ mod tests {
     // In esp32c3, we use usb-serial as the console output,
     // which does not support on qemu yet, so we skip this test on esp32c3 for now.
     // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
+<<<<<<< HEAD
     #[cfg_attr(not(any(soc_esp32c3, soc_esp32c6)), test)]
+=======
+<<<<<<< HEAD
+    #[cfg_attr(not(soc_esp32c3), test)]
+=======
+    #[cfg_attr(not(any(soc_esp32c3, soc_esp32c6)), test)]
+>>>>>>> d0b410f (Merge esp32c3-wifi-pr into wzx/esp32c6)
+>>>>>>> 013e8aec (Merge esp32c3-wifi-pr into wzx/esp32c6)
     fn test_early_printk() {
         kearly_println!("Hello from early_printk!");
     }

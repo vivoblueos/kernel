@@ -77,7 +77,14 @@ impl Drop for Storage {
     #[inline]
     fn drop(&mut self) {
         if let Storage::Alloc(base, layout) = self {
-            unsafe { alloc::alloc::dealloc(*base, *layout) }
+            // `from_layout` stores whatever `alloc` returned, including null on
+            // allocation failure. Passing null to `dealloc` drives the TLSF
+            // `used_block_hdr_for_allocation` to compute `null.wrapping_sub(8)`
+            // = 0xfffffff8 and fault on load, which lands in the trap default
+            // `loop{}` with no diagnostic. Skip dealloc for a null base.
+            if !base.is_null() {
+                unsafe { alloc::alloc::dealloc(*base, *layout) }
+            }
         }
     }
 }
