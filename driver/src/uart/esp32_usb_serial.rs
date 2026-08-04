@@ -140,95 +140,98 @@ register_structs! {
     }
 }
 
-const USB_SERIAL_BASE: StaticRef<Registers> =
-    unsafe { StaticRef::new(0x6004_3000 as *const Registers) };
+pub struct Esp32UsbSerial<const BASE: usize> {}
 
-pub struct Esp32UsbSerial {}
+unsafe impl<const BASE: usize> Send for Esp32UsbSerial<BASE> {}
+unsafe impl<const BASE: usize> Sync for Esp32UsbSerial<BASE> {}
 
-unsafe impl Send for Esp32UsbSerial {}
-unsafe impl Sync for Esp32UsbSerial {}
+impl<const BASE: usize> Esp32UsbSerial<BASE> {
+    /// Returns a `StaticRef` to the register block at `BASE`.
+    #[inline]
+    const fn regs() -> StaticRef<Registers> {
+        unsafe { StaticRef::new(BASE as *const Registers) }
+    }
 
-impl Esp32UsbSerial {
     pub const fn new() -> Self {
         Self {}
     }
 }
 
-impl Configuration<super::UartConfig> for Esp32UsbSerial {
+impl<const BASE: usize> Configuration<super::UartConfig> for Esp32UsbSerial<BASE> {
     type Target = ();
     fn configure(&self, param: &super::UartConfig) -> blueos_hal::err::Result<Self::Target> {
         Ok(())
     }
 }
 
-impl Has8bitDataReg for Esp32UsbSerial {
+impl<const BASE: usize> Has8bitDataReg for Esp32UsbSerial<BASE> {
     fn write_data8(&self, data: u8) {
-        USB_SERIAL_BASE
+        Self::regs()
             .ep1_reg
             .write(EP1_REG::RDWR_BYTE.val(data as u32));
     }
 
     fn is_data_ready(&self) -> bool {
-        USB_SERIAL_BASE
+        Self::regs()
             .ep1_conf_reg
             .is_set(EP1_CONF_REG::OUT_EP_DATA_AVAIL)
     }
 
     fn read_data8(&self) -> blueos_hal::err::Result<u8> {
-        Ok(USB_SERIAL_BASE.ep1_reg.read(EP1_REG::RDWR_BYTE) as u8)
+        Ok(Self::regs().ep1_reg.read(EP1_REG::RDWR_BYTE) as u8)
     }
 }
 
-impl HasLineStatusReg for Esp32UsbSerial {
+impl<const BASE: usize> HasLineStatusReg for Esp32UsbSerial<BASE> {
     fn is_bus_busy(&self) -> bool {
-        USB_SERIAL_BASE
+        Self::regs()
             .ep1_conf_reg
             .is_set(EP1_CONF_REG::IN_EP_DATA_FREE)
             != true
     }
 }
 
-impl HasFifo for Esp32UsbSerial {
+impl<const BASE: usize> HasFifo for Esp32UsbSerial<BASE> {
     fn enable_fifo(&self, num: u8) -> blueos_hal::err::Result<()> {
         Ok(())
     }
 
     fn is_tx_fifo_full(&self) -> bool {
-        // USB_SERIAL_BASE
+        // Self::regs()
         //     .jfifo_st_reg
         //     .is_set(JFIFO_ST_REG::IN_FIFO_FULL)
-        USB_SERIAL_BASE
+        Self::regs()
             .ep1_conf_reg
             .is_set(EP1_CONF_REG::IN_EP_DATA_FREE)
             != true
     }
 
     fn is_rx_fifo_empty(&self) -> bool {
-        USB_SERIAL_BASE
+        Self::regs()
             .ep1_conf_reg
             .is_set(EP1_CONF_REG::OUT_EP_DATA_AVAIL)
             != true
     }
 
     fn flush_tx_fifo(&self) {
-        USB_SERIAL_BASE
+        Self::regs()
             .ep1_conf_reg
             .write(EP1_CONF_REG::WR_DONE.val(1));
     }
 }
 
-impl HasInterruptReg for Esp32UsbSerial {
+impl<const BASE: usize> HasInterruptReg for Esp32UsbSerial<BASE> {
     type InterruptType = super::InterruptType;
 
     fn enable_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Rx => {
-                USB_SERIAL_BASE
+                Self::regs()
                     .int_ena_reg
                     .modify(INT_ENA_REG::SERIAL_OUT_RECV_PKT::SET);
             }
             super::InterruptType::Tx => {
-                USB_SERIAL_BASE
+                Self::regs()
                     .int_ena_reg
                     .modify(INT_ENA_REG::SERIAL_IN_EMPTY::SET);
             }
@@ -239,12 +242,12 @@ impl HasInterruptReg for Esp32UsbSerial {
     fn disable_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Tx => {
-                USB_SERIAL_BASE
+                Self::regs()
                     .int_ena_reg
                     .modify(INT_ENA_REG::SERIAL_IN_EMPTY::CLEAR);
             }
             super::InterruptType::Rx => {
-                USB_SERIAL_BASE
+                Self::regs()
                     .int_ena_reg
                     .modify(INT_ENA_REG::SERIAL_OUT_RECV_PKT::CLEAR);
             }
@@ -255,17 +258,17 @@ impl HasInterruptReg for Esp32UsbSerial {
     fn clear_interrupt(&self, intr: Self::InterruptType) {
         match intr {
             super::InterruptType::Rx => {
-                USB_SERIAL_BASE
+                Self::regs()
                     .int_clr_reg
                     .write(INT_CLR_REG::SERIAL_OUT_RECV_PKT::SET);
             }
             super::InterruptType::Tx => {
-                USB_SERIAL_BASE
+                Self::regs()
                     .int_clr_reg
                     .write(INT_CLR_REG::SERIAL_IN_EMPTY::SET);
             }
             super::InterruptType::All => {
-                USB_SERIAL_BASE.int_clr_reg.write(
+                Self::regs().int_clr_reg.write(
                     INT_CLR_REG::SERIAL_OUT_RECV_PKT::SET + INT_CLR_REG::SERIAL_IN_EMPTY::SET,
                 );
             }
@@ -274,7 +277,7 @@ impl HasInterruptReg for Esp32UsbSerial {
     }
 
     fn get_interrupt(&self) -> Self::InterruptType {
-        let status = &USB_SERIAL_BASE.int_st_reg;
+        let status = &Self::regs().int_st_reg;
         let rx = status.is_set(INT_ST_REG::SERIAL_OUT_RECV_PKT);
         let tx = status.is_set(INT_ST_REG::SERIAL_IN_EMPTY);
 
@@ -291,9 +294,12 @@ impl HasInterruptReg for Esp32UsbSerial {
     }
 }
 
-impl PlatPeri for Esp32UsbSerial {}
+impl<const BASE: usize> PlatPeri for Esp32UsbSerial<BASE> {}
 
-impl Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus> for Esp32UsbSerial {}
+impl<const BASE: usize> Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus>
+    for Esp32UsbSerial<BASE>
+{
+}
 
 pub struct Esp32UsbSerialIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
     pub data: &'static T,
@@ -313,7 +319,7 @@ impl<const DEVICE_ADDRESS: usize, T: Sync> Esp32UsbSerialIsr<DEVICE_ADDRESS, T> 
 
 impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
     fn service_isr(&self) {
-        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial) };
+        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial<DEVICE_ADDRESS>) };
         let intr = uart.get_interrupt();
         match intr {
             super::InterruptType::Rx => {

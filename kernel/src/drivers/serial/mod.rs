@@ -157,36 +157,41 @@ impl Serial {
 
     pub fn read_bytes(&self, bytes: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         let mut nbytes = 0;
-        for byte in bytes {
-            loop {
-                if let Some(c) = self.get_char() {
-                    *byte = c;
-                    nbytes += 1;
-                    break;
-                }
-                if is_nonblocking {
-                    return Ok(nbytes);
-                }
-
-                if !is_schedule_ready() {
-                    continue;
-                }
-
-                // `rx_futex` is used as a sequence counter. Waiting on a captured sequence
-                // value avoids lost wakeups between empty-check and wait enqueue.
-                let rx_seq = self.rx_futex.load(Ordering::Acquire);
-
-                if let Some(c) = self.get_char() {
-                    *byte = c;
-                    nbytes += 1;
-                    break;
-                }
-
-                match atomic_wait(&self.rx_futex, rx_seq, Tick::MAX) {
-                    Ok(()) | Err(code::EAGAIN) => {}
-                    Err(code::ETIMEDOUT) => return Err(ErrorKind::TimedOut),
-                    Err(_) => return Err(ErrorKind::Other),
-                }
+        // POSIX read 语义:读到至少 1 字节即返回,不必填满整个 buf。
+        // 历史根因:f25145f 重构曾把这里写成 `for byte in bytes { 每槽阻塞取满 }`,
+        // 导致阻塞模式下必须凑满 bytes.len()(n_tty 传 512)才返回,shell 输入永远不回显。
+        // 现恢复为等价于重构前 fifo_rx 的语义:第一字节没来时阻塞等,取到第一字节后
+        // 非阻塞 drain FIFO 直到空即返回 nbytes>=1。
+        while nbytes < bytes.len() {
+            // 1) 非阻塞试取:drain 当前 RX 环形缓冲里已有的字节。
+            if let Some(c) = self.get_char() {
+                bytes[nbytes] = c;
+                nbytes += 1;
+                continue;
+            }
+            // 2) FIFO 空:
+            //    - 非阻塞模式:立即返回(已取到的可能为 0,符合非阻塞语义)。
+            //    - 阻塞模式:若已取到≥1 字节,按 POSIX 立即返回;否则阻塞等第一个字节。
+            if is_nonblocking {
+                return Ok(nbytes);
+            }
+            if nbytes > 0 {
+                return Ok(nbytes);
+            }
+            // 阻塞且尚未取到任何字节:`rx_futex` 作为序列号,捕获当前值后等待,
+            // 避免"空检查"与"入队唤醒"之间的丢失唤醒。
+            let rx_seq = self.rx_futex.load(Ordering::Acquire);
+            // wake 后二次检查:get_char 可能已在 capture 与 wait 之间被 ISR 入队,
+            // 命中则直接取走,避免一次多余的 wait。
+            if let Some(c) = self.get_char() {
+                bytes[nbytes] = c;
+                nbytes += 1;
+                continue;
+            }
+            match atomic_wait(&self.rx_futex, rx_seq, Tick::MAX) {
+                Ok(()) | Err(code::EAGAIN) => {}
+                Err(code::ETIMEDOUT) => return Err(ErrorKind::TimedOut),
+                Err(_) => return Err(ErrorKind::Other),
             }
         }
         Ok(nbytes)

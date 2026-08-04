@@ -69,9 +69,12 @@ impl Tty {
         self.history.lock().get(index).cloned()
     }
 
-    fn clear_line(&self, pos: u64, is_blocking: bool) -> Result<(), ErrorKind> {
-        self.dev.send_bytes(b"\r", !is_blocking)?;
-        self.dev.send_bytes(b"\x1b[2K", !is_blocking)?;
+    // 形参 is_nonblocking 与 Device trait(devices/mod.rs)语义对齐。
+    // 原误作 is_blocking 且内部 !is_blocking 取反,导致阻塞请求被反转成非阻塞。
+    // clear_line 仅用于回显,调用处恒传 false(阻塞写),改名后语义不变。
+    fn clear_line(&self, pos: u64, is_nonblocking: bool) -> Result<(), ErrorKind> {
+        self.dev.send_bytes(b"\r", is_nonblocking)?;
+        self.dev.send_bytes(b"\x1b[2K", is_nonblocking)?;
         Ok(())
     }
 
@@ -173,7 +176,8 @@ impl Device for Tty {
         self.dev.close()
     }
 
-    fn read(&self, _pos: u64, buf: &mut [u8], is_blocking: bool) -> Result<usize, ErrorKind> {
+    // 形参 is_nonblocking 与 Device trait 一致;原 is_blocking + 内部 !is_blocking 取反已修正。
+    fn read(&self, _pos: u64, buf: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         if buf.is_empty() {
             return Ok(0);
         }
@@ -226,7 +230,7 @@ impl Device for Tty {
         // normal character
         loop {
             let mut temp_buf = [0u8; 512];
-            let nbytes = self.dev.read_bytes(&mut temp_buf, !is_blocking)?;
+            let nbytes = self.dev.read_bytes(&mut temp_buf, is_nonblocking)?;
             let mut i = 0;
             while i < nbytes {
                 let ch = temp_buf[i];
@@ -297,7 +301,8 @@ impl Device for Tty {
         }
     }
 
-    fn write(&self, _pos: u64, buf: &[u8], is_blocking: bool) -> Result<usize, ErrorKind> {
+    // 形参 is_nonblocking 与 Device trait 一致;原 is_blocking + 内部 !is_blocking 取反已修正。
+    fn write(&self, _pos: u64, buf: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         let termios = *self.termios.lock();
         if termios.oflag.contains(Oflags::OPOST) {
             let mut processed_buf = Vec::new();
@@ -315,10 +320,10 @@ impl Device for Tty {
                 }
             }
 
-            self.dev.send_bytes(&processed_buf, !is_blocking)?;
+            self.dev.send_bytes(&processed_buf, is_nonblocking)?;
             Ok(buf.len())
         } else {
-            self.dev.send_bytes(buf, !is_blocking)
+            self.dev.send_bytes(buf, is_nonblocking)
         }
     }
 
