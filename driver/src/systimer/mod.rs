@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(soc_esp32c3)]
+#[cfg(any(soc_esp32c3, soc_esp32c6))]
 pub mod esp32_sys_timer;

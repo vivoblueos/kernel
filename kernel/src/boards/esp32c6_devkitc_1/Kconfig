@@ -1,0 +1,27 @@
+# Soc specific configuration
+choice
+    prompt "The irq priority bits"
+    default IRQ_PRIORITY_BITS_2
+    help
+      Choose between 2, 3 or 8 for the irq priority bits.
+    config IRQ_PRIORITY_BITS_2
+        bool "2"
+        help
+          Set irq priority bits to 2.
+    config IRQ_PRIORITY_BITS_3
+        bool "3"
+        help
+          Set irq priority bits to 3.
+    config IRQ_PRIORITY_BITS_8
+        bool "8"
+        help
+          Set irq priority bits to 8.
+endchoice
+
+config SOC_ESP32C6
+    bool "Esp32c6"
+    default y
+    select RISCV
+
+config NUM_IRQS
+    default 31

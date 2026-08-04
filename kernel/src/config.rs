@@ -27,9 +27,11 @@ pub const SYSTEM_THREAD_STACK_SIZE: usize = 8 << 10;
 pub const SYSTEM_THREAD_STACK_SIZE: usize = 4 << 10;
 
 #[cfg(all(debug_assertions, target_pointer_width = "32"))]
-pub const DEFAULT_STACK_SIZE: usize = 8 << 10;
+//pub const DEFAULT_STACK_SIZE: usize = 8 << 10;
+pub const DEFAULT_STACK_SIZE: usize = 32 << 10;
 #[cfg(all(not(debug_assertions), target_pointer_width = "32"))]
-pub const DEFAULT_STACK_SIZE: usize = 4 << 10;
+//pub const DEFAULT_STACK_SIZE: usize = 4 << 10;
+pub const DEFAULT_STACK_SIZE: usize = 32 << 10;
 
 #[cfg(all(debug_assertions, target_pointer_width = "64"))]
 pub const SYSTEM_THREAD_STACK_SIZE: usize = 32 << 10;

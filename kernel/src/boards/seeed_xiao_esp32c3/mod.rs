@@ -173,8 +173,8 @@ pub(crate) fn init() {
 }
 
 crate::define_peripheral! {
-    (console_uart, blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial,
-     blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial::new()),
+    (console_uart, blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial<0x6004_3000>,
+     blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial::<0x6004_3000>::new()),
     (intc, blueos_driver::interrupt_controller::esp32_intc::Esp32Intc,
      blueos_driver::interrupt_controller::esp32_intc::Esp32Intc::new(0x600c_2000)),
 }
