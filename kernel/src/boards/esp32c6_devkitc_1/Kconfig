@@ -22,6 +22,7 @@ config SOC_ESP32C6
     bool "Esp32c6"
     default y
     select RISCV
+    select HAS_MIE
 
 config NUM_IRQS
     default 31

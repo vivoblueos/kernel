@@ -13,14 +13,18 @@
 // limitations under the License.
 
 mod config;
-use crate::arch::riscv::{local_irq_enabled, trap_entry, Context, MIE_MEIE};
+use crate::arch::riscv::{local_irq_enabled, trap_entry, Context};
 use blueos_driver::uart::esp32_usb_serial::Esp32UsbSerialIsr;
 use blueos_hal::{isr::IsrDesc, Has8bitDataReg};
 
-// ESP32-C6 systimer. C6 runs the systimer off the 40MHz XTAL divided down to
-// 16MHz (same as C3); the period math in the driver is driven by HZ, so we keep
-// 16MHz here. Base 0x6000_A000 per the C6 TRM.
-// FIXME: Only support unit0 for now
+// 调度时钟源:systimer(同 C3,driver 见 blueos_driver::systimer::esp32_sys_timer)。
+// C6 systimer base = 0x6000_A000(TRM 第 11 章 System Timer,C3 是 0x6002_3000),
+// 计数频率 = 16 MHz(systimer 固定 16MHz 计数,UNI_EN 使能后计数器自增)。
+// 16_000_000 % TICKS_PER_SECOND(100) = 0,满足 time.rs 的整除断言。
+// target0 比较 match 后置 INT_RAW.bit0 → 经 INTMTX 路由到 CPU 线 16 →
+// PLIC_MX 使能/优先级仲裁 → mip.MEIP → trap 兜底分支 → handle_intc_irq。
+// driver impl Clock trait 的 4 方法(hz/estimate_current_cycles/interrupt_at/stop),
+// 另有 inherent 方法 clear_interrupt() 供 handle_intc_irq 清 INT_RAW.bit0。
 pub type ClockImpl =
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer<0x6000_A000, 16_000_000>;
 
@@ -87,42 +91,65 @@ fn init_vector_table() {
     }
 }
 
-/// PLIC_MX base for ESP32-C6 (`DR_REG_PLIC_MX_BASE` @ 0x2000_1000)。C6 的
-/// HP-CPU 外部中断控制器是 per-CPU-line PLIC_MX(不是 SiFive PLIC,也不是 C3
-/// 的 INTPRI 风格 INTMUX)。实测已确认:INTMTX 路由的 USB/systimer 中断源
-/// pending 出现在 PLIC_MX 的 EIP_STATUS(+0xC),而非遗留 INTPRI 块(0x600C_5000,
-/// 其 EIP 恒 0)——故 esp-idf 用 PLIC_MX 是对的,BlueOS 也配 PLIC_MX。
-/// 布局(esp-idf soc/esp32c6/register/soc/plic_reg.h):
-///   ENABLE      @ +0x0  (bit per CPU line)
-///   TYPE        @ +0x4  (0=level/1=edge, 默认 0=level)
-///   CLEAR       @ +0x8  (write-1-to-clear per line)
-///   EMIP_STATUS @ +0xC  (RO,bit[n]=line n 有 pending)
-///   PRI[n]      @ +0x10 + n*4 (4-bit [3:0])
-///   THRESH      @ +0x90 ([7:0])
-/// dispatch 模型同 C3:mcause 低字节=CPU 线号,ISR 清各自外设源,
-/// level 型线在源清除后自动去断言。
+/// PLIC_MX:C6 真正的 M 模式中断控制器(base 0x2000_1000,esp-idf DR_REG_PLIC_MX_BASE)。
+/// 外部中断(USB/systimer)经此递交到 CPU:外设源 → INTMTX MAP 路由 →
+/// PLIC_MX 使能/优先级/阈值仲裁 → mip.MEIP → trap(mcause 低字节=CPU 线号)。
+///
+/// **C6 真正的 M 模式中断仲裁器是 PLIC_MX @ 0x2000_1000**(esp-idf
+/// DR_REG_PLIC_MX_BASE,esp-idf interrupt.c 实际配的就是它)。
+/// 注意:esp-idf 还有个 `DR_REG_INTPRI_BASE=0x600C_5000`——实测那块地址接受
+/// 写入/能读回(所以早期 dump 里 ENABLE/THRESH/PRI "看起来全对"),但它**不
+/// 控制 mip.MEIP**,是个影子寄存器块。早期板级误用 0x600C_5000,导致 INT_ST=1
+/// 却 EIP=0、meip=0、中断永不进 trap。实测坐实后改回 PLIC_MX。
+///
+/// 寄存器布局(esp-idf plic_reg.h 核实):
+///   ENABLE      @ +0x0        (PLIC_MXINT_ENABLE_REG, bit[n]=line n 使能)
+///   TYPE        @ +0x4        (PLIC_MXINT_TYPE_REG, bit[n]=0 level/1 edge)
+///   CLEAR       @ +0x8        (PLIC_MXINT_CLEAR_REG, write-1-to-clear per line)
+///   EIP_STATUS  @ +0xC        (PLIC_EMIP_STATUS_REG, RO, bit[n]=line n pending)
+///   PRI[n]      @ +0x10 + n*4 (PLIC_MXINTn_PRI_REG, 4-bit 优先级字段 [3:0])
+///   THRESH      @ +0x90       (PLIC_MXINT_THRESH_REG, [7:0] 阈值,优先级>阈值才递交)
+///   CLAIM       @ +0x94       (PLIC_MXINT_CLAIM_REG, esp-idf 运行时不读,硬件自动清 pending)
 const PLIC_MX_BASE: usize = 0x2000_1000;
 const PLIC_MX_ENABLE: usize = PLIC_MX_BASE + 0x0;
-const PLIC_MX_PRI: usize = PLIC_MX_BASE + 0x10; // PRI[line] @ PRI + line*4
+const PLIC_MX_TYPE: usize = PLIC_MX_BASE + 0x4;
+const PLIC_MX_CLEAR: usize = PLIC_MX_BASE + 0x8;
+const PLIC_MX_EIP_STATUS: usize = PLIC_MX_BASE + 0xC;
+const PLIC_MX_PRI: usize = PLIC_MX_BASE + 0x10; // PRI[line] @ PLIC_MX_PRI + line*4
 const PLIC_MX_THRESH: usize = PLIC_MX_BASE + 0x90;
-// EMIP_STATUS:外部中断 pending 位图,RO。bit[n]=line n 有 pending。
-const PLIC_MX_EMIP_STATUS: usize = PLIC_MX_BASE + 0xC;
 
-/// INTERRUPT_MATRIX base (`DR_REG_INTERRUPT_MATRIX_BASE`). This is the
-/// source→CPU-line router. Each peripheral source has a dedicated `_MAP` register
-/// whose 5-bit field [4:0] selects which CPU line (0..31) the source is routed
-/// to. The register offsets are NOT contiguous (there are gaps), so each map is
-/// programmed by its absolute offset. Source IDs (from esp-idf
-/// `soc/esp32c6/include/soc/interrupts.h`) only matter for reading the
-/// `INT_STATUS` bitmap to identify a source; routing itself uses the MAP
-/// register address. C3 does this routing inside `Esp32Intc::allocate_irq` via
-/// its INTPRI layout; C6 cannot reuse `Esp32Intc` (different layout), so we do
-/// it with raw register writes here.
+/// mideleg CSR(0x303)的外部中断委托位——C6 中断不进 trap 的真根因之一。
+/// TRM PDF p42 Register 1.7:mideleg 复位 0x00000111 = bit0(U software)
+/// |bit4(U timer)|bit8(U external)。TRM 1.6.2 属性:mideleg bit **置位→委托
+/// U 模式**(pending 走 uip);**清零→M 模式捕获**(pending 走 mip)。BlueOS 是
+/// M 模式单体内核([arch/riscv/mod.rs:41]),只开 mie 从不开 uie,委托位=1 时
+/// pending 卡在 uip 既不被 M 也不被 U 服务,M 模式 trap 永不触发。
+///
+/// **bit8(外部委托)是关键**:systimer timer 和 USB RX 都走外部中断,bit8=1 时
+/// 外部中断 pending 走 uip.UXIP 不进 mip.MEIP(bit11)——必须清零归 M 模式,
+/// bootstrap 开的 mie.MEIE(bit11)才对 M 模式 pending 有效。bit4(timer 委托)、
+/// bit0(software 委托)无副作用,一并清零。mideleg 是 R/W,csrc 合法。
+/// 一次性 csrc 0x111 清三委托位,所有中断统一归 M 模式。
+const MIDELEG_UEXT_BIT: usize = 1 << 8;
+const MIDELEG_UTIMER_BIT: usize = 1 << 4;
+const MIDELEG_USOFT_BIT: usize = 1 << 0;
+/// 一次性清零 mideleg 复位值 0x111 的三个委托位(bit0|bit4|bit8)。
+const MIDELEG_DELEG_MASK: usize = MIDELEG_USOFT_BIT | MIDELEG_UTIMER_BIT | MIDELEG_UEXT_BIT;
+
+/// INTERRUPT_MATRIX(INTMTX,TRM 1.6,base 0x6001_0000):源→CPU 线路由器。
+/// 每个外设源有一个专用 MAP 寄存器,5-bit 字段 [4:0] 选目标 CPU 线(0..31)。
+/// MAP 偏移不连续(有空洞),故按绝对偏移编程。C3 把路由做在 Esp32Intc 里
+/// (走 C3 的 INTPRI 布局),C6 的 PLIC_MX 布局不同不能复用,故这里用裸写。
 const INTMTX_BASE: usize = 0x6001_0000;
-// USB_SERIAL_JTAG source → CPU line (esp-idf INTMTX_CORE0_USB_INTR_MAP_REG @ +0xc0)
-const INTMTX_USB_SERIAL_JTAG_MAP: usize = INTMTX_BASE + 0xc0;
-// SYSTIMER_TARGET0 source → CPU line (esp-idf INTMTX_CORE0_SYSTIMER_TARGET0_INTR_MAP_REG @ +0xe4)
-const INTMTX_SYSTIMER_TARGET0_MAP: usize = INTMTX_BASE + 0xe4;
+/// USB_SERIAL_JTAG 源 → CPU 线(MAP 寄存器 @ INTMTX_BASE + 0xC0)。
+const INTMTX_USB_SERIAL_JTAG_MAP: usize = INTMTX_BASE + 0xC0;
+/// SYSTIMER_TARGET0 源(源号 57)→ CPU 线 16(MAP 寄存器 @ INTMTX_BASE + 0xE4)。
+const INTMTX_SYSTIMER_TARGET0_MAP: usize = INTMTX_BASE + 0xE4;
+
+/// systimer target0 路由到的 CPU 线号(同 C3 约定)。
+/// handle_intc_irq 用 `mcause & 0xff` 匹配此线号,调 ClockImpl::clear_interrupt +
+/// handle_clock_interrupt。systimer target0 中断走外部中断路径,不占 mcause=7。
+const TARGET0_INT_NUM: usize = 16;
 
 /* Watchdog timers enabled by the bootloader in flash-boot mode. Unlike C3
    (whose RTC WDT lives in RTC_CNTL at 0x6000_8000), C6 splits its watchdogs:
@@ -149,15 +176,16 @@ const TIMG0_WDT_CONFIG0: usize = TIMG0_BASE + 0x48;
 const TIMG0_WDT_WPROTECT: usize = TIMG0_BASE + 0x64;
 const WDT_WKEY: u32 = 0x50D8_3AA1;
 const WDT_EN_BIT: u32 = 1 << 31; // bit 31 in both WDTCONFIG0 registers
+// flash-boot 模式位(PDF 13.2.2.4):flash boot 后 MWDT0/RWDT 自动使能,
+// 必须清这两个位才能停 flash-boot 保护流程。MWDT0 在 TIMG_WDTCONFIG0、
+// RWDT 在 LP_WDT_RWDT_CONFIG0。位号经 PDF Register 12.10/13.1 bitfield 核实。
+const WDT_FLASHBOOT_MOD_EN_BIT: u32 = 1 << 12; // bit 12
 
-/// CPU interrupt line numbers. ESP32-C6 puts the CPU line number (NOT RISC-V
-/// cause 11) into `mcause` for external interrupts, so trap.rs's
-/// `#[cfg(not(has_plic))]` branch hands `mcause` to `handle_intc_irq` and we
-/// match on `mcause & 0xff`. We reuse C3's line assignment (USB→15,
-/// systimer→16) purely for familiarity; any free lines would work. Lines 0/1 are
-/// reserved for WiFi on C3 and unused here (CONFIG_ENABLE_NET=n).
+/// CPU 中断线号。C6 把 CPU 线号(不是 RISC-V cause 11)塞进外部中断的 mcause,
+/// 故 trap.rs 的 `#[cfg(not(has_plic))]` 分支把 mcause 交给 handle_intc_irq,
+/// 这里用 `mcause & 0xff` 匹配。沿用 C3 的线号约定(USB→15、systimer→16)方便对照。
+/// 时钟中断走 systimer target0(线 16),也占外部线——与 C3 同构。
 const USB_SERIAL_JTAG_INT_NUM: usize = 15;
-const SYSTIMER_TARGET0_INT_NUM: usize = 16;
 
 #[inline]
 unsafe fn write32(addr: usize, val: u32) {
@@ -169,18 +197,61 @@ unsafe fn read32(addr: usize) -> u32 {
     unsafe { core::ptr::read_volatile(addr as *const u32) }
 }
 
-/// Route a peripheral source to a CPU line in the INTERRUPT_MATRIX, then enable
-/// that line in PLIC_MX at the given priority. `map_reg` is the source's MAP
-/// register offset (NOT source_id*4).
+/// 按 TRM 1.6.3.2 "配置一个外部中断"步骤,把外设源路由到 CPU 线并配置 PLIC_MX:
+///   1.save MIE / clear MIE      ——避免配置中途触发中断
+///   2.TYPE bit n                ——0=level(USB RX 是 level 型)/1=edge
+///   3.PRI_n = 1~15              ——4 位优先级字段
+///   4.ENABLE bit n              ——使能该线(PLIC_MX 内部使能)
+///   4.5.mie bit n               ——per-line mie 使能(C6 PLIC 变体特有,见下方)
+///   5.FENCE                     ——确保写序对中断控制器可见
+///   6.restore MIE
+/// `map_reg` 是源的 INTMTX MAP 寄存器地址(不是 source_id*4)。
+///
+/// step 4.5 是 C6 PLIC 变体与标准 RISC-V PLIC 的关键差异:标准 PLIC 所有外部中断
+/// 共享一个 mie.MEIE(bit11)总开关;而 Espressif C6 每条外部中断线在 mie CSR 里有
+/// 独立的 per-line 使能位(位号 = 线号,如 USB 线15 → mie.bit15)。
+/// 只开 PLIC_MX 内部 ENABLE 而不置 mie 对应位,则 PLIC EIP 升起却传不到 mip.MEIP,
+/// CPU 永不进 trap(实测 mie=0x888,bit15/16=0,USB/systimer 全哑)。
+/// 依据:ROM esprv_intc_int_enable @0x4002914c 反汇编——末尾 `csrrs mie,a0` 即此操作。
 unsafe fn route_source(map_reg: usize, line: usize, prio: u32) {
     unsafe {
-        // [4:0] = target CPU line
+        // (1) save/clear MIE——TRM 1.6.3.2 step1。init 起始已断言 mie=0,
+        //     save/clear 是保留 TRM 流程语义的安全冗余。
+        // mie 标 mut:step 4.5 要把 per-line 位或进此变量,再由 step 6 restore 写回 CSR。
+        let mut mie: usize;
+        core::arch::asm!(
+            "csrr {mie}, mie",
+            "csrw mie, zero",
+            mie = out(reg) mie,
+            options(nostack, preserves_flags),
+        );
+        // INTMTX MAP:[4:0]=目标 CPU 线。
         write32(map_reg, line as u32);
-        // PLIC_MX priority for this line (4-bit field, 0xF max)
+        // (2) TYPE bit n:显式写 0=level(USB_SERIAL_JTAG RX 是 level 型中断)。
+        let t = read32(PLIC_MX_TYPE);
+        write32(PLIC_MX_TYPE, t & !(1u32 << line));
+        // (3) PRI_n:4 位优先级字段 [3:0],取值 1~15。
         write32(PLIC_MX_PRI + line * 4, prio & 0xF);
-        // enable the line (set its bit in the 32-line ENABLE bitmap)
+        // (4) ENABLE bit n:在 32 线使能位图里置该线位。
         let en = read32(PLIC_MX_ENABLE);
         write32(PLIC_MX_ENABLE, en | (1u32 << line));
+        // (4.5) per-line mie 使能——Espressif C6 PLIC 变体特有(见函数头注释):
+        //   置 mie.bit_n(n=line),否则 PLIC EIP 传不到 mip.MEIP、CPU 不进 trap。
+        //   注意:此处只改保存的 `mie` 变量、不碰 mie CSR。因为 route_source 采用
+        //   save/clear/restore 模型:step 1 清零 CSR、step 6 用保存值覆盖回 CSR——
+        //   若在此刻直接 csrrs 写 CSR,step 6 会把新位覆盖丢失(实测 mie 仍=0x888)。
+        //   改变量后,step 6 把"含新位的旧值"写回,时机也正确(route_source 在 init
+        //   阶段调用,全局 mstatus.MIE=0,真正使能是 init 末尾开 mstatus.MIE 时)。
+        //   多次调用(USB 线15、systimer 线16)能累积:下次 save 读到本次写回的值。
+        mie |= 1usize << line;
+        // (5) FENCE——TRM 1.6.3.2 step5,确保上述写序对中断控制器可见。
+        core::arch::asm!("fence io, io", options(nostack, preserves_flags));
+        // (6) restore MIE。
+        core::arch::asm!(
+            "csrw mie, {mie}",
+            mie = in(reg) mie,
+            options(nostack, preserves_flags),
+        );
     }
 }
 
@@ -197,15 +268,14 @@ unsafe fn disable_wdt(wprotect: usize, config0: usize, flashboot_mask: u32) {
     }
 }
 
-/// External interrupt handler — routed here via trap.rs `#[cfg(not(has_plic))]`.
-/// Dispatches on the CPU line number carried in `mcause` (same model as C3).
+/// 外部中断处理——trap.rs `#[cfg(not(has_plic))]` 分派到此。
+/// 按 mcause 低字节(CPU 线号)分派(同 C3 模型)。systimer target0(线 16)和
+/// USB_SERIAL_JTAG(线 15)都走外部中断,在此统一分派。
 pub(crate) fn handle_intc_irq(ctx: &Context, mcause: usize, mtval: usize) {
     let _ = (ctx, mtval);
-    // [DIAG] confirm dispatch match. Remove after.
-    let low = mcause & 0xff;
-    crate::kearly_println!("[DIAG] handle_intc_irq low={} (usb=15 sys=16)", low);
-    match low {
-        SYSTIMER_TARGET0_INT_NUM => {
+    match mcause & 0xff {
+        // systimer target0:先清 INT_RAW.bit0(driver 内部写 INT_CLR),再走统一时钟中断入口。
+        TARGET0_INT_NUM => {
             ClockImpl::clear_interrupt();
             crate::time::handle_clock_interrupt();
         }
@@ -216,164 +286,6 @@ pub(crate) fn handle_intc_irq(ctx: &Context, mcause: usize, mtval: usize) {
     }
 }
 
-/// 外设 INT_RAW/INT_ST/INT_ENA 基址（USB-Serial-JTAG @ 0x6000_F000）。
-/// 用于 dump：判断 USB RX 中断源是否已 arm、是否有 pending 未清。
-const USB_SERIAL_JTAG_BASE: usize = 0x6000_F000;
-const USB_INT_RAW: usize = USB_SERIAL_JTAG_BASE + 0x08;
-const USB_INT_ST: usize = USB_SERIAL_JTAG_BASE + 0x0c;
-const USB_INT_ENA: usize = USB_SERIAL_JTAG_BASE + 0x10;
-/// USB_SERIAL_JTAG_INT_ENA 位定义：bit2=SERIAL_OUT_RECV_PKT(RX), bit3=SERIAL_IN_EMPTY(TX)
-const USB_RX_INT_BIT: u32 = 1 << 2;
-
-/// systimer 寄存器（@ 0x6000_A000），用于 dump。
-const SYSTIMER_BASE: usize = 0x6000_A000;
-const SYSTIMER_CONF: usize = SYSTIMER_BASE + 0x00; // bit31=CLK_EN,bit24=TARGET0_WORK_EN
-const SYSTIMER_INT_ENA: usize = SYSTIMER_BASE + 0x64; // bit0=TARGET0
-const SYSTIMER_INT_RAW: usize = SYSTIMER_BASE + 0x68;
-const SYSTIMER_TARGET0_CONF: usize = SYSTIMER_BASE + 0x34;
-
-/// INTMTX 时钟门控寄存器。bit0=REG_CLK_EN，默认 1；若被关则所有 MAP 写失效。
-const INTMTX_CLOCK_GATE: usize = INTMTX_BASE + 0x140;
-
-/// 运行时 dump：打印中断 delivery 链上每一个 gate 的实测值。
-/// 在 board init() 末尾、shell 阻塞前调用，定位"静态配置全开但无中断 trap"的根因。
-#[allow(dead_code)]
-unsafe fn dump_intc_state() {
-    unsafe {
-        // ---- CSR 级（CPU 侧门控）----
-        let mie: usize;
-        let mstatus: usize;
-        let mtvec: usize;
-        core::arch::asm!(
-            "csrr {mie}, mie",
-            "csrr {mstatus}, mstatus",
-            "csrr {mtvec}, mtvec",
-            mie = out(reg) mie,
-            mstatus = out(reg) mstatus,
-            mtvec = out(reg) mtvec,
-            options(nostack, preserves_flags),
-        );
-        crate::kearly_println!("[DIAG] === C6 INTC dump ===");
-        crate::kearly_println!("[DIAG] mie      =0x{:08x} (bit11=MEIE expect 1)", mie);
-        crate::kearly_println!("[DIAG] mstatus  =0x{:08x} (bit3=MIE; 0 here=ok, set by schedule)", mstatus);
-        crate::kearly_println!("[DIAG] mtvec    =0x{:08x} (bit0=1 vectored, base=_vector_table)", mtvec);
-
-        // ---- PLIC_MX（CPU line 侧 enable/prio/thresh/pending）----
-        let en = read32(PLIC_MX_ENABLE);
-        // TYPE @ +0x4:bit15=USB line,0=level(默认)/1=edge。从未实测过,加进 dump
-        // 排除 edge/level 嫌疑(C3 也不写 TYPE 且工作,默认 level 应正确)。
-        let ptype = read32(PLIC_MX_BASE + 0x4);
-        let pri15 = read32(PLIC_MX_PRI + 15 * 4);
-        let pri16 = read32(PLIC_MX_PRI + 16 * 4);
-        let thresh = read32(PLIC_MX_THRESH);
-        let emip = read32(PLIC_MX_EMIP_STATUS);
-        crate::kearly_println!("[DIAG] PLIC ENABLE =0x{:08x} (bit15/16 expect set)", en);
-        crate::kearly_println!("[DIAG] PLIC TYPE   =0x{:08x} (bit15=usb 0=level)", ptype);
-        crate::kearly_println!("[DIAG] PLIC PRI15  =0x{:x} PRI16=0x{:x} (expect 1)", pri15 & 0xF, pri16 & 0xF);
-        crate::kearly_println!("[DIAG] PLIC THRESH =0x{:x} (expect 0)", thresh & 0xFF);
-        crate::kearly_println!("[DIAG] PLIC EMIP    =0x{:08x} (bit15=usb pend, bit16=sys pend)", emip);
-
-        // ---- INTMTX（源→line 路由 + 时钟门控）----
-        let usb_map = read32(INTMTX_USB_SERIAL_JTAG_MAP) & 0x1F;
-        let sys_map = read32(INTMTX_SYSTIMER_TARGET0_MAP) & 0x1F;
-        let clk_gate = read32(INTMTX_CLOCK_GATE) & 0x1;
-        crate::kearly_println!("[DIAG] INTMTX usb_map  ={} (expect 15)", usb_map);
-        crate::kearly_println!("[DIAG] INTMTX sys_map  ={} (expect 16)", sys_map);
-        crate::kearly_println!("[DIAG] INTMTX clk_gate ={} (expect 1)", clk_gate);
-
-        // ---- USB-Serial-JTAG 源侧 ----
-        let u_raw = read32(USB_INT_RAW);
-        let u_st = read32(USB_INT_ST);
-        let u_ena = read32(USB_INT_ENA);
-        crate::kearly_println!("[DIAG] USB INT_ENA =0x{:08x} (bit2=RX expect 1)", u_ena);
-        crate::kearly_println!("[DIAG] USB INT_RAW =0x{:08x} (bit2=RX pending)", u_raw);
-        crate::kearly_println!("[DIAG] USB INT_ST  =0x{:08x}", u_st);
-
-        // ---- systimer 源侧 ----
-        let s_conf = read32(SYSTIMER_CONF);
-        let s_ena = read32(SYSTIMER_INT_ENA);
-        let s_raw = read32(SYSTIMER_INT_RAW);
-        let s_tconf = read32(SYSTIMER_TARGET0_CONF);
-        crate::kearly_println!("[DIAG] SYS CONF    =0x{:08x} (bit31=clk,bit24=tgt0_en)", s_conf);
-        crate::kearly_println!("[DIAG] SYS INT_ENA =0x{:x} (bit0=tgt0 expect 1)", s_ena & 0x7);
-        crate::kearly_println!("[DIAG] SYS INT_RAW =0x{:x} (bit0=tgt0 pending)", s_raw & 0x7);
-        crate::kearly_println!("[DIAG] SYS TGT0CONF=0x{:08x}", s_tconf);
-        crate::kearly_println!("[DIAG] === end dump ===");
-    }
-}
-
-/// EP1_CONF 寄存器(@ +0x04),bit2=OUT_EP_DATA_AVAIL(主机有数据可读)。
-/// 用于 idle hook 诊断:主动 poll RX 数据是否到达外设。
-const USB_EP1_CONF: usize = USB_SERIAL_JTAG_BASE + 0x04;
-/// EP1 数据寄存器(@ +0x00),读它取出一个 RX 字节。
-const USB_EP1_REG: usize = USB_SERIAL_JTAG_BASE + 0x00;
-
-/// [DIAG] 诊断 idle hook:shell 阻塞期间被反复调用。每次读 USB RX 中断源
-/// (INT_RAW bit2)、PLIC pending(EMIP bit15)、并主动 poll RX FIFO。目的:
-/// 定位按键瞬间中断到底卡在哪一级。只在状态变化时打印,避免刷屏。
-/// 确认后随 set_idle_hook 调用一起移除。
-static DIAG_LAST_RX: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(usize::MAX);
-static DIAG_IDLE_TICK: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
-
-extern "C" fn diag_idle_poll() {
-    let n = DIAG_IDLE_TICK.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    unsafe {
-        // [DIAG] 心跳:每 100000 次无条件打印一次,证明 idle hook 确实在跑。
-        // 若这行永远不出现,说明 idle 线程根本没执行(schedule 没到 idle loop,
-        // 或 shell 没真正阻塞让出 CPU)。确认后移除。
-        if n % 100000 == 0 {
-            let mie: usize;
-            let mstatus: usize;
-            let mip: usize;
-            core::arch::asm!(
-                "csrr {mie}, mie",
-                "csrr {mstatus}, mstatus",
-                "csrr {mip}, mip",
-                mie = out(reg) mie,
-                mstatus = out(reg) mstatus,
-                mip = out(reg) mip,
-                options(nostack, preserves_flags),
-            );
-            // mip bit11=MEIP(外部中断 pending 到 CPU 的真实电平)。
-            // 若 emip(PLIC 内部)=1 但 mip.MEIP=0,说明 PLIC pending 没变成 meip。
-            crate::kearly_println!(
-                "[DIAG] idle heartbeat #{} mie=0x{:x} mstatus=0x{:x} mip=0x{:x}(meip={})",
-                n,
-                mie,
-                mstatus,
-                mip,
-                (mip >> 11) & 1
-            );
-        }
-        let u_raw = read32(USB_INT_RAW);
-        let u_st = read32(USB_INT_ST);
-        let emip = read32(PLIC_MX_EMIP_STATUS);
-        let rx_pend = ((u_raw >> 2) & 1) as usize;
-        let emip_usb = ((emip >> 15) & 1) as usize;
-        // 主动 poll:OUT_EP_DATA_AVAIL(bit2 of EP1_CONF)表示主机 OUT 包有数据。
-        let avail = ((read32(USB_EP1_CONF) >> 2) & 1) as usize;
-        // 状态三元组打包成一个 usize:rx | emip<<1 | avail<<2
-        let snap = rx_pend | (emip_usb << 1) | (avail << 2);
-        let prev = DIAG_LAST_RX.swap(snap, core::sync::atomic::Ordering::Relaxed);
-        // 仅在状态变化时打印,避免刷屏。
-        if prev != snap {
-            crate::kearly_println!(
-                "[DIAG] idle#{} CHG rx_raw={} int_st={} emip_usb={} fifo_avail={}",
-                n,
-                rx_pend,
-                u_st & 0x4,
-                emip_usb,
-                avail
-            );
-        }
-        // 若 FIFO 有数据但中断没触发,主动读出来看是不是有效字符。
-        if avail == 1 {
-            let b = read32(USB_EP1_REG) & 0xff;
-            crate::kearly_println!("[DIAG] idle polled byte=0x{:02x}", b);
-        }
-    }
-}
-
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
 
@@ -381,58 +293,60 @@ pub(crate) fn init() {
     crate::boot::init_heap();
     init_vector_table();
 
+    // systimer 起振(同 C3):driver 内部使能 UNI_EN 让计数器自增、配 target0 比较。
+    // 调度时钟中断路径:systimer target0 match → INT_RAW.bit0 → INTMTX 路由(下方)
+    // → PLIC_MX 仲裁 → mip.MEIP(bit11)→ trap 兜底分支 → handle_intc_irq(线16)。
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer::<0x6000_A000, 16_000_000>::init();
 
-    // Configure the two interrupts we use. C6 has neither C3's INTMUX nor a
-    // SiFive PLIC: routing is done in the INTERRUPT_MATRIX (source→CPU line) and
-    // enable/priority/threshold in PLIC_MX. `route_source` does both. There is
-    // no claim/complete pair to drive — ISRs clear their own peripheral
-    // interrupt and the level-typed PLIC_MX line auto-deasserts.
+    // 外部中断路由 + PLIC_MX 六步配置(TRM 1.6.3.2)。阈值=1、优先级=15(照搬 C3):
+    //   USB_SERIAL_JTAG(线15) —— host 输入经此进 handle_intc_irq
+    //   SYSTIMER_TARGET0(线16) —— 调度时钟经此进 handle_intc_irq
+    // 两者都走外部中断(mcause 高位=1),trap.rs `#[cfg(not(has_plic))]` 兜底分派。
     unsafe {
-        // 完全照搬 C3 数值(seeed_xiao_esp32c3 set_threshold(1)+set_priority(15)):
-        // threshold=1、priority=15。priority 4 位字段存得下 0xF,1>0/15>1 都满足
-        // 递交条件。这是与 C3 通路的逐行对照基准,排除数值差异干扰。
         write32(PLIC_MX_THRESH, 1);
         route_source(INTMTX_USB_SERIAL_JTAG_MAP, USB_SERIAL_JTAG_INT_NUM, 15);
-        route_source(INTMTX_SYSTIMER_TARGET0_MAP, SYSTIMER_TARGET0_INT_NUM, 15);
+        route_source(INTMTX_SYSTIMER_TARGET0_MAP, TARGET0_INT_NUM, 15);
+    }
 
-        // PLIC_MX's external-interrupt output is standard RISC-V `meip`, gated by
-        // `mie.MEIE` (bit 11). bootstrap() does write `csrs mie, MEIE|MSIE|MTIE`,
-        // but that statement is gated behind `#[cfg(has_mie)]` and `has_mie` is
-        // never defined anywhere in the repo, so it is dead code — the OS never
-        // touches `mie`. C6 ROM resets `mie` to 0 (per RISC-V spec), so without
-        // an explicit set here NO external interrupt (USB RX on line 15, systimer
-        // on line 16) can reach the trap handler. C3's custom INTC (INTPRI/INTMUX)
-        // bypasses the `mie.MEIE` gate, which is why C3 works without this — C6's
-        // PLIC_MX does not. Safe here: `mstatus.MIE` is still clear (asserted
-        // above), so writing `mie` now can't take interrupts until we later flip
-        // `mstatus.MIE`.
+    // mideleg 归 M 模式——外部中断进 trap 的前提。mideleg 复位 0x111 = bit0|bit4|bit8:
+    //   bit8 = U external  → 置位时外部中断 pending 走 uip.UXIP,不进 mip.MEIP(bit11)
+    //   bit4 = U timer     → 置位时 timer pending 走 uip.UTIP
+    //   bit0 = U software  → 置位时软件中断 pending 走 uip.USIP
+    // systimer timer 和 USB RX 都走外部中断,bit8 若不清,pending 卡在 uip 既不被 M
+    // 也不被 U 服务(BlueOS 是 M 模式单体内核、只开 mie 从不开 uie),trap 永不触发。
+    // bit4/bit0 一并清零无害。一次性 csrc 0x111 三委托位全归 M 模式,mie 才能解屏蔽。
+    // 时序安全:mstatus.MIE 此刻仍为 0(上方断言),改委托位不触发中断。
+    unsafe {
         core::arch::asm!(
-            "csrs mie, {mie}",
-            mie = in(reg) MIE_MEIE,
+            "csrc mideleg, {mask}",
+            mask = in(reg) MIDELEG_DELEG_MASK,
             options(nostack, preserves_flags),
         );
     }
 
-    // Disable both flash-boot watchdogs the bootloader left running (LP_WDT
-    // RTC watchdog + TIMG0 MWDT). Without this the chip resets a few hundred
-    // ms after the app starts, killing the host serial monitor with a
-    // `Broken pipe`. See the LP_WDT/TIMG0 constants above for addresses.
-    // NOTE: WiFi/power-domain init is intentionally omitted — CONFIG_ENABLE_NET=n
-    // for this board, so there is no radio to bring up.
+    // mie 放行外部中断:bootstrap 的 #[cfg(has_mie)] 已 `csrs mie, MTIE|MSIE|MEIE`
+    // ([arch/riscv/mod.rs:480]),其中 MEIE=bit11 即机器外部中断聚合使能——systimer
+    // timer 和 USB RX 都经 mip.MEIP(bit11)递交,必须 mie.MEIE 放行。bootstrap 已开对,
+    // 板级无需再补。前置条件:mideleg bit8 已上方清零,外部中断归 M 模式后 mie.MEIE
+    // 才对 M 模式 pending 有效。
+
+    // 设第一个 systimer target0 deadline——打破首次 trap 死锁。
+    // driver 起振后计数器自增,但首个比较 deadline 仍需有人设:否则 target0 永不 match,
+    // INT_RAW.bit0 不置位,首个时钟 trap 不进,handle_clock_interrupt 不被调,后续
+    // deadline 也永无人设——死锁。init 主动设第一个近期 deadline(now+1 tick=10ms),
+    // 首个 trap 触发后由 handle_clock_interrupt([time.rs:99])接管设后续。
+    // 时序安全:mstatus.MIE 此刻仍为 0(上方断言),设 deadline 不会立即触发中断,
+    // 待 schedule() 开 mstatus.MIE 后 10ms 内首个 trap 触发。
+    crate::time::Tick::interrupt_after(crate::time::Tick(1));
+
+    // 禁用 bootloader 留下的两个看门狗(LP_WDT + TIMG0),否则启动后几百 ms 复位,
+    // 把主机串口监视器杀成 `Broken pipe`。NOTE: 本板 CONFIG_ENABLE_NET=n,
+    // 没有 radio 要拉起,故省略 WiFi/电源域初始化。
     unsafe {
-        // LP_WDT: also clear wdt_flashboot_mod_en (bit 12).
+        // LP_WDT:同时清 wdt_flashboot_mod_en(bit 12)。
         disable_wdt(LP_WDT_WPROTECT, LP_WDT_CONFIG0, 1 << 12);
-        // TIMG0 MWDT: no flash-boot bit, just wdt_en (bit 31).
+        // TIMG0 MWDT:无 flash-boot 位,只清 wdt_en(bit 31)。
         disable_wdt(TIMG0_WDT_WPROTECT, TIMG0_WDT_CONFIG0, 0);
-
-        // [DIAG] dump 中断 delivery 链上每个 gate 的运行时实测值,
-        // 定位“静态配置全开但无外部中断 trap”的根因。确认后移除。
-        dump_intc_state();
-
-        // [DIAG] 注入诊断 idle hook:shell 阻塞期间轮询 USB RX/PLIC pending,
-        // 抓按键瞬间的中断状态。确认后移除(改回默认 wfi)。
-        crate::scheduler::set_idle_hook(diag_idle_poll);
     }
 }
 

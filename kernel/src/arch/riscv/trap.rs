@@ -231,14 +231,6 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
 
 extern "C" fn handle_trap(ctx: &mut Context, mcause: usize, mtval: usize, cont: usize) -> usize {
     debug_assert!(!super::local_irq_enabled());
-    // [DIAG] 统计进 trap 的总次数(含 systimer/ipi/ecall),前 8 次无条件全打。
-    // 目的:区分"CPU 一个中断都没收到"还是"收到了但被吞掉"。
-    // 若这个计数恒为 0,说明中断根本没到 CPU(mip.MEIP 没拉高)。
-    static TRAP_CNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
-    let n = TRAP_CNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    if n < 8 {
-        crate::kearly_println!("[DIAG] TRAP#{} mcause=0x{:x} low8={}", n, mcause, mcause & 0xff);
-    }
     let sp = ctx as *const _ as usize;
     match mcause & (INTERRUPT_MASK | 0x3f) {
         #[cfg(has_plic)]

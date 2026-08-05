@@ -157,99 +157,41 @@ impl Serial {
 
     pub fn read_bytes(&self, bytes: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         let mut nbytes = 0;
-        for byte in bytes {
-            loop {
-                if let Some(c) = self.get_char() {
-                    *byte = c;
-                    nbytes += 1;
-                    break;
-                }
-                if is_nonblocking {
-                    // [DIAG] 决定性探针:shell 非阻塞自旋在此。每次都读 USB-Serial-JTAG
-                    // 外设原始寄存器,抓按键瞬间硬件到底有没有收到主机数据。
-                    //   EP1_CONF[2]=OUT_EP_DATA_AVAIL  主机 OUT 包有数据可读(最上游)
-                    //   INT_RAW[2]=SERIAL_OUT_RECV_PKT RX 中断源 pending
-                    //   PLIC EMIP[15]                 USB line 在 PLIC 侧 pending
-                    // 三级任一非 0 立即打印(不去重,确保按键瞬间不漏)。
-                    // 每 100000 次打一次心跳,证明自旋在跑 + 给出基线全 0 状态。
-                    // 定位完根因后整块移除。
-                    #[cfg(target_board = "esp32c6_devkitc_1")]
-                    {
-                        const USB_BASE: usize = 0x6000_F000;
-                        const USB_EP1_CONF: usize = USB_BASE + 0x04; // bit2=OUT_EP_DATA_AVAIL
-                        const USB_INT_RAW: usize = USB_BASE + 0x08; // bit2=SERIAL_OUT_RECV_PKT
-                        const USB_INT_ST: usize = USB_BASE + 0x0c; // bit2=RX masked status
-                        const PLIC_EMIP: usize = 0x2000_1000 + 0xC; // bit15=USB line pending
-                        static N: core::sync::atomic::AtomicUsize =
-                            core::sync::atomic::AtomicUsize::new(0);
-                        let n = N.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        unsafe {
-                            let avail = (core::ptr::read_volatile(USB_EP1_CONF as *const u32) >> 2) & 1;
-                            let rx_raw = (core::ptr::read_volatile(USB_INT_RAW as *const u32) >> 2) & 1;
-                            let rx_st = (core::ptr::read_volatile(USB_INT_ST as *const u32) >> 2) & 1;
-                            let emip_raw = core::ptr::read_volatile(PLIC_EMIP as *const u32);
-                            let emip_usb = (emip_raw >> 15) & 1;
-                            let emip_sys = (emip_raw >> 16) & 1; // systimer line16 是否在 PLIC pending
-                            // 心跳里额外读 mstatus + mie + mip。
-                            //   mstatus[3]=MIE   全局机器中断使能
-                            //   mie[11]=MEIE     机器外部中断使能(PLIC meip 的 CSR 门控)
-                            //   mip[11]=MEIP     机器外部中断 pending——【决定性二分】
-                            //     若发按键时 mip.MEIP=1 → 中断已送到 CPU 但没进 trap → 问题在 trap 路径(mtvec/vectored)
-                            //     若发按键时 mip.MEIP=0 → PLIC 没把 pending 升级为 meip → 问题在 PLIC 门控(enable/type/claim)
-                            let mut mstatus_val: u32 = 0;
-                            let mut mie_val: u32 = 0;
-                            let mut mip_val: u32 = 0;
-                            core::arch::asm!(
-                                "csrr {0}, mstatus",
-                                "csrr {1}, mie",
-                                "csrr {2}, mip",
-                                out(reg) mstatus_val,
-                                out(reg) mie_val,
-                                out(reg) mip_val,
-                                options(nostack, preserves_flags),
-                            );
-                            let mie_bit = (mstatus_val >> 3) & 1;
-                            let mip_meip = (mip_val >> 11) & 1; // 【关键】外部中断是否真到 CPU
-                            // 按键瞬间:RX 中断源或 PLIC pending 或 mip.MEIP 变非 0 才打印
-                            // (avail=1 是 boot 残留 FIFO 数据,持续不变,不刷屏)。
-                            if rx_raw != 0 || emip_usb != 0 || emip_sys != 0 || mip_meip != 0 {
-                                crate::kearly_println!(
-                                    "[DIAG] HIT#{} avail={} rx_raw={} rx_st={} emip=0x{:x}(usb={} sys={}) mip=0x{:x}(meip={}) mstatus=0x{:x} mie_reg=0x{:x}",
-                                    n, avail, rx_raw, rx_st, emip_raw, emip_usb, emip_sys, mip_val, mip_meip, mstatus_val, mie_val
-                                );
-                            }
-                            // 心跳:每 100000 次打印当前完整状态,证明自旋在跑。
-                            if n % 100000 == 0 {
-                                crate::kearly_println!(
-                                    "[DIAG] beat#{} avail={} rx_raw={} emip=0x{:x}(usb={} sys={}) mip=0x{:x}(meip={}) mstatus=0x{:x}(mie={}) mie_reg=0x{:x}",
-                                    n, avail, rx_raw, emip_raw, emip_usb, emip_sys, mip_val, mip_meip, mstatus_val, mie_bit, mie_val
-                                );
-                            }
-                        }
-                    }
-                    return Ok(nbytes);
-                }
-
-                // `rx_futex` is used as a sequence counter. Waiting on a captured sequence
-                // value avoids lost wakeups between empty-check and wait enqueue.
-                let rx_seq = self.rx_futex.load(Ordering::Acquire);
-
-                if let Some(c) = self.get_char() {
-                    *byte = c;
-                    nbytes += 1;
-                    break;
-                }
-
-                #[cfg(target_board = "esp32c6_devkitc_1")]
-                crate::kearly_println!("[DIAG] read_bytes: about to atomic_wait (blocking)");
-                match atomic_wait(&self.rx_futex, rx_seq, Tick::MAX) {
-                    Ok(()) | Err(code::EAGAIN) => {
-                        #[cfg(target_board = "esp32c6_devkitc_1")]
-                        crate::kearly_println!("[DIAG] read_bytes: atomic_wait returned ok/eagain");
-                    }
-                    Err(code::ETIMEDOUT) => return Err(ErrorKind::TimedOut),
-                    Err(_) => return Err(ErrorKind::Other),
-                }
+        // POSIX read 语义:读到至少 1 字节即返回,不必填满整个 buf。
+        // 历史根因:f25145f 重构曾把这里写成 `for byte in bytes { 每槽阻塞取满 }`,
+        // 导致阻塞模式下必须凑满 bytes.len()(n_tty 传 512)才返回,shell 输入永远不回显。
+        // 现恢复为等价于重构前 fifo_rx 的语义:第一字节没来时阻塞等,取到第一字节后
+        // 非阻塞 drain FIFO 直到空即返回 nbytes>=1。
+        while nbytes < bytes.len() {
+            // 1) 非阻塞试取:drain 当前 RX 环形缓冲里已有的字节。
+            if let Some(c) = self.get_char() {
+                bytes[nbytes] = c;
+                nbytes += 1;
+                continue;
+            }
+            // 2) FIFO 空:
+            //    - 非阻塞模式:立即返回(已取到的可能为 0,符合非阻塞语义)。
+            //    - 阻塞模式:若已取到≥1 字节,按 POSIX 立即返回;否则阻塞等第一个字节。
+            if is_nonblocking {
+                return Ok(nbytes);
+            }
+            if nbytes > 0 {
+                return Ok(nbytes);
+            }
+            // 阻塞且尚未取到任何字节:`rx_futex` 作为序列号,捕获当前值后等待,
+            // 避免"空检查"与"入队唤醒"之间的丢失唤醒。
+            let rx_seq = self.rx_futex.load(Ordering::Acquire);
+            // wake 后二次检查:get_char 可能已在 capture 与 wait 之间被 ISR 入队,
+            // 命中则直接取走,避免一次多余的 wait。
+            if let Some(c) = self.get_char() {
+                bytes[nbytes] = c;
+                nbytes += 1;
+                continue;
+            }
+            match atomic_wait(&self.rx_futex, rx_seq, Tick::MAX) {
+                Ok(()) | Err(code::EAGAIN) => {}
+                Err(code::ETIMEDOUT) => return Err(ErrorKind::TimedOut),
+                Err(_) => return Err(ErrorKind::Other),
             }
         }
         Ok(nbytes)
