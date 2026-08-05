@@ -16,7 +16,11 @@ use crate::{scheduler, time::Tick};
 use embedded_hal::delay::DelayNs;
 
 /// ESP32-C3/C6 CPU clock. The systimer (`ClockImpl::hz()` = 16MHz) is not the CPU clock.
-#[cfg(any(target_board = "seeed_xiao_esp32c3", target_board = "esp32c6_devkitc_1"))]
+#[cfg(any(
+    target_board = "seeed_xiao_esp32c3",
+    target_board = "esp32c6_devkitc_1"
+))]
+
 const CPU_HZ: u32 = 160_000_000;
 
 /// Kernel delay adapter — implements `embedded_hal::delay::DelayNs`

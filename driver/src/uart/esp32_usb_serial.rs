@@ -297,7 +297,9 @@ impl<const BASE: usize> HasInterruptReg for Esp32UsbSerial<BASE> {
 impl<const BASE: usize> PlatPeri for Esp32UsbSerial<BASE> {}
 
 impl<const BASE: usize> Uart<super::UartConfig, (), super::InterruptType, super::UartCtrlStatus>
-    for Esp32UsbSerial<BASE> {}
+    for Esp32UsbSerial<BASE>
+{
+}
 
 pub struct Esp32UsbSerialIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
     pub data: &'static T,
