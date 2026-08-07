@@ -47,3 +47,9 @@ config SPI_FLASH_MAX_CAPACITY
     default 16777216
     range 1 16777216
     depends on ENABLE_BLOCK
+
+config SPI_FLASH_ERASE_CACHE_SLOTS
+    int "SPI flash erase cache slots"
+    default 2
+    range 1 4
+    depends on ENABLE_BLOCK

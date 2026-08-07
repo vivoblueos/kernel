@@ -25,7 +25,7 @@ use crate::{
     devices::{
         block::{Block, BlockDriverOps, BlockError, ErrorType},
         bus::{Bus, BusInterface},
-        spi_core::block_spi::{BlockSpi, HalOutputPinAdapter, SpinLockDevice},
+        spi_core::{block_spi::BlockSpi, ExclusiveSpiWithCs},
         DeviceData, DeviceManager,
     },
     drivers::{
@@ -40,7 +40,7 @@ const FLASH_PAGE_SIZE: usize = blueos_kconfig::CONFIG_SPI_FLASH_PAGE_SIZE as usi
 const FLASH_ERASE_SIZE: usize = blueos_kconfig::CONFIG_SPI_FLASH_ERASE_SIZE as usize;
 const PAGES_PER_ERASE_BLOCK: usize = FLASH_ERASE_SIZE / FLASH_PAGE_SIZE;
 const MAX_24BIT_CAPACITY: u64 = blueos_kconfig::CONFIG_SPI_FLASH_MAX_CAPACITY as u64;
-const ERASE_CACHE_SLOTS: usize = 2;
+const ERASE_CACHE_SLOTS: usize = blueos_kconfig::CONFIG_SPI_FLASH_ERASE_CACHE_SLOTS as usize;
 const SECTOR_ERASE_SIZE: usize = 4096;
 const BLOCK_ERASE_32K_SIZE: usize = 32768;
 const BLOCK_ERASE_64K_SIZE: usize = 65536;
@@ -107,7 +107,7 @@ impl<SPI: SpiDevice<u8> + Send> SpiFlashBlockDriver<SPI> {
         SpiFlashBlockDriver {
             flash_cmd,
             capacity_bytes,
-            cache: [EraseCacheSlot::new(), EraseCacheSlot::new()],
+            cache: core::array::from_fn(|_| EraseCacheSlot::new()),
             use_counter: 0,
         }
     }
@@ -308,17 +308,15 @@ impl<G: OutputPin> SpiFlashConfig<G> {
 }
 
 #[cfg(use_embedded_hal_v1)]
-impl<T, G> InitDriver<BlockSpi<T>> for SpiFlashConfig<G>
+impl<T, G> InitDriver<BlockSpi<T, G>> for SpiFlashConfig<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
     G: PlatPeri + OutputPin,
 {
     type Data = ();
 
-    fn init(self, bus: &Bus<BlockSpi<T>>) -> crate::drivers::Result<Self::Data> {
-        let flash_cs = HalOutputPinAdapter::new(self.cs);
-        let spi_device = SpinLockDevice::new(bus.intf.clone(), flash_cs, crate::sync::KernelDelay)
-            .map_err(|_| crate::error::code::EIO)?;
+    fn init(self, bus: &Bus<BlockSpi<T, G>>) -> crate::drivers::Result<Self::Data> {
+        let spi_device = ExclusiveSpiWithCs::new(bus.intf.clone(), self.cs);
         let mut flash_cmd = SpiFlashCmd::new(spi_device);
 
         let jedec_id = flash_cmd.jedec_id().map_err(|error| match error {
@@ -366,7 +364,7 @@ impl<G> SpiFlashDriverModule<G> {
 }
 
 #[cfg(use_embedded_hal_v1)]
-impl<T, G> DriverModule<BlockSpi<T>> for SpiFlashDriverModule<G>
+impl<T, G> DriverModule<BlockSpi<T, G>> for SpiFlashDriverModule<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
     G: PlatPeri + OutputPin,

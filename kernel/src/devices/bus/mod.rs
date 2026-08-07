@@ -12,49 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    scheduler,
-    sync::{Mutex, SpinLock},
-    time::Tick,
-};
+use crate::sync::SpinLock;
 use alloc::boxed::Box;
 use blueos_infra::tinyarc::TinyArc;
 
-pub struct BusWrapper<B: BusInterface>(pub(crate) TinyArc<SpinLock<B>>, pub(crate) TinyArc<Mutex>);
-
-pub(crate) struct BusTransactionGuard<'a> {
-    mutex: &'a Mutex,
-    acquired: bool,
-}
-
-impl !Send for BusTransactionGuard<'_> {}
-
-impl Drop for BusTransactionGuard<'_> {
-    fn drop(&mut self) {
-        if self.acquired {
-            self.mutex.post();
-        }
-    }
-}
-
-impl<B: BusInterface> BusWrapper<B> {
-    pub(crate) fn lock_transaction(&self) -> BusTransactionGuard<'_> {
-        let acquired = scheduler::is_schedule_ready();
-        if acquired {
-            while !self.1.pend_for(Tick::MAX) {
-                core::hint::spin_loop();
-            }
-        }
-        BusTransactionGuard {
-            mutex: &self.1,
-            acquired,
-        }
-    }
-}
+pub struct BusWrapper<B: BusInterface>(pub(crate) TinyArc<SpinLock<B>>);
 
 impl<B: BusInterface> Clone for BusWrapper<B> {
     fn clone(&self) -> Self {
-        BusWrapper(self.0.clone(), self.1.clone())
+        BusWrapper(self.0.clone())
     }
 }
 
@@ -73,7 +39,7 @@ impl<B: BusInterface> Bus<B> {
     pub fn new(intf: B) -> Self {
         Self {
             devices: SpinLock::new(super::DeviceList::new()),
-            intf: BusWrapper(TinyArc::new(SpinLock::new(intf)), Mutex::create()),
+            intf: BusWrapper(TinyArc::new(SpinLock::new(intf))),
         }
     }
 
