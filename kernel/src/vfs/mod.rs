@@ -52,6 +52,7 @@ pub use file::AccessMode;
 #[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 
+#[cfg(fatfs)]
 fn should_skip_fatfs_mount(policy: crate::boards::BlockStoragePolicy, error: Error) -> bool {
     policy.allows_missing() && error == crate::error::code::ENODEV
 }

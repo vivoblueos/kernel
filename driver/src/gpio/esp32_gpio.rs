@@ -54,13 +54,17 @@ pub struct Esp32GpioOutputPin {
 }
 
 impl Esp32GpioOutputPin {
-    /// GPIO data register is 26 bits wide; PIN must be < 26.
-    pub const fn new(pin: u8) -> Self {
-        assert!(
-            pin < 26,
-            "GPIO data register is 26 bits wide; PIN must be < 26"
-        );
-        Esp32GpioOutputPin { pin }
+    pub fn new(pin: u8) -> blueos_hal::err::Result<Self> {
+        if pin >= 26 {
+            return Err(blueos_hal::err::HalError::InvalidParam);
+        }
+        Ok(Self { pin })
+    }
+
+    /// # Safety
+    /// The pin must be less than 26.
+    pub const unsafe fn new_unchecked(pin: u8) -> Self {
+        Self { pin }
     }
 }
 
@@ -77,5 +81,20 @@ impl blueos_hal::gpio::OutputPin for Esp32GpioOutputPin {
         let gpio_regs = &*GPIO_BASE;
         gpio_regs.out_w1ts.write(GpioOut::DATA.val(1 << self.pin));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn test_new_rejects_out_of_range_pin() {
+        assert!(Esp32GpioOutputPin::new(25).is_ok());
+        assert_eq!(
+            Esp32GpioOutputPin::new(26).err(),
+            Some(blueos_hal::err::HalError::InvalidParam)
+        );
     }
 }

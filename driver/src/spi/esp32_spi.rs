@@ -38,6 +38,7 @@ fn wait_until_clear(
         if !is_set() {
             return Ok(());
         }
+        core::hint::spin_loop();
     }
     Err(blueos_hal::err::HalError::Timeout)
 }

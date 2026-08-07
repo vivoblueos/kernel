@@ -144,7 +144,7 @@ pub fn init_virtio_block(
     let block = Block::<BlockError<virtio_drivers::Error>, SECTOR_SIZE>::new(
         VIRTUAL_STORAGE_NAME,
         Arc::new(SpinLock::new(driver)),
-    );
+    )?;
     DeviceManager::get().register_device(String::from(VIRTUAL_STORAGE_NAME), Arc::new(block))
 }
 
@@ -155,16 +155,20 @@ pub struct Block<E: embedded_io::Error, const SECTOR_SIZE: usize> {
 }
 
 impl<E: embedded_io::Error, const SECTOR_SIZE: usize> Block<E, SECTOR_SIZE> {
-    pub fn new(name: &str, driver: Arc<SpinLock<dyn BlockDriverOps<Error = E>>>) -> Self {
-        let total_size = {
-            let capacity = driver.lock().capacity();
-            capacity * SECTOR_SIZE as u64
-        };
-        Block {
+    pub fn new(
+        name: &str,
+        driver: Arc<SpinLock<dyn BlockDriverOps<Error = E>>>,
+    ) -> Result<Self, ErrorKind> {
+        let total_size = driver
+            .lock()
+            .capacity()
+            .checked_mul(SECTOR_SIZE as u64)
+            .ok_or(ErrorKind::InvalidInput)?;
+        Ok(Block {
             driver,
             name: String::from(name),
             total_size,
-        }
+        })
     }
 }
 
@@ -279,6 +283,56 @@ impl<E: embedded_io::Error, const SECTOR_SIZE: usize> Device for Block<E, SECTOR
             Ok(_) => Ok(()),
             Err(error) => Err(embedded_io::Error::kind(&error)),
         }
+    }
+}
+
+#[cfg(test)]
+mod block_tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[derive(Debug)]
+    struct TestError;
+
+    impl embedded_io::Error for TestError {
+        fn kind(&self) -> ErrorKind {
+            ErrorKind::Other
+        }
+    }
+
+    struct CapacityDriver(u64);
+
+    impl ErrorType for CapacityDriver {
+        type Error = TestError;
+    }
+
+    impl BlockDriverOps for CapacityDriver {
+        fn capacity(&self) -> u64 {
+            self.0
+        }
+
+        fn sector_size(&self) -> u16 {
+            2
+        }
+
+        fn read_blocks(&mut self, _block_id: usize, _buf: &mut [u8]) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn write_blocks(&mut self, _block_id: usize, _buf: &[u8]) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn flush(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_block_new_rejects_total_size_overflow() {
+        let driver = Arc::new(SpinLock::new(CapacityDriver(u64::MAX)));
+        let result = Block::<TestError, 2>::new("overflow", driver);
+        assert_eq!(result.err(), Some(ErrorKind::InvalidInput));
     }
 }
 

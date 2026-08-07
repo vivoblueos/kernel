@@ -14,7 +14,15 @@
 
 //! JEDEC 25-series SPI NOR Flash command layer.
 
-use embedded_hal::spi::{ErrorKind, Operation, SpiDevice};
+use embedded_hal::{
+    delay::DelayNs,
+    spi::{ErrorKind, Operation, SpiDevice},
+};
+
+const FLASH_PAGE_SIZE: usize = blueos_kconfig::CONFIG_SPI_FLASH_PAGE_SIZE as usize;
+const INVALID_JEDEC_ID_ZERO: u32 = 0x0000_0000;
+const INVALID_JEDEC_ID_ALL_ONES: u32 = 0x00FF_FFFF;
+const MAX_3BYTE_ADDRESS_EXCLUSIVE: u32 = 0x0100_0000;
 
 /// SPI NOR Flash command layer error.
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
@@ -58,7 +66,7 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
             .transaction(&mut [Operation::Write(&[0x9F]), Operation::Read(&mut id_buf)])
             .map_err(spi_err_to_flash)?;
         let jedec_id = (id_buf[0] as u32) << 16 | (id_buf[1] as u32) << 8 | (id_buf[2] as u32);
-        if jedec_id == 0 || jedec_id == 0x00FF_FFFF {
+        if jedec_id == INVALID_JEDEC_ID_ZERO || jedec_id == INVALID_JEDEC_ID_ALL_ONES {
             return Err(FlashError::NotReady);
         }
         Ok(jedec_id)
@@ -79,26 +87,27 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
     /// Fast read, 3-byte address + dummy cycles (command 0x0B).
     pub fn fast_read(&mut self, addr: u32, buf: &mut [u8]) -> Result<(), FlashError> {
         let addr_bytes = addr_bytes(addr)?;
+        let mut dummy = [0u8; 1];
         self.spi
             .transaction(&mut [
                 Operation::Write(&[0x0B, addr_bytes[0], addr_bytes[1], addr_bytes[2]]),
-                Operation::DelayNs(1_000_000),
+                Operation::Read(&mut dummy),
                 Operation::Read(buf),
             ])
             .map_err(spi_err_to_flash)?;
         Ok(())
     }
 
-    /// Page program: write-enable, then program up to 256 bytes (command 0x02).
+    /// Page program: write-enable, then program up to one configured page (command 0x02).
     pub fn page_program(&mut self, addr: u32, data: &[u8]) -> Result<(), FlashError> {
-        if addr % 256 != 0 {
+        if data.len() > FLASH_PAGE_SIZE {
             return Err(FlashError::InvalidParam(
-                "page_program address not 256-byte aligned",
+                "page_program data exceeds configured page size",
             ));
         }
-        if data.len() > 256 {
+        if addr as usize % FLASH_PAGE_SIZE + data.len() > FLASH_PAGE_SIZE {
             return Err(FlashError::InvalidParam(
-                "page_program data exceeds 256 bytes",
+                "page_program data crosses page boundary",
             ));
         }
         self.write_enable()?;
@@ -207,17 +216,21 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
     }
 
     /// Release from deep power-down (command 0xAB).
-    pub fn release_from_deep_power_down(&mut self) -> Result<(), FlashError> {
+    pub fn release_from_deep_power_down(
+        &mut self,
+        delay: &mut impl DelayNs,
+    ) -> Result<(), FlashError> {
         self.spi
             .transaction(&mut [Operation::Write(&[0xAB])])
             .map_err(spi_err_to_flash)?;
+        delay.delay_ns(3_000);
         Ok(())
     }
 }
 
 /// Split a 24-bit address into 3 MSB-first bytes, rejecting >= 16MB.
 fn addr_bytes(addr: u32) -> Result<[u8; 3], FlashError> {
-    if addr >= 0x0100_0000 {
+    if addr >= MAX_3BYTE_ADDRESS_EXCLUSIVE {
         return Err(FlashError::AddrOverflow { addr });
     }
     Ok([
@@ -244,6 +257,17 @@ mod tests {
         read_queue: alloc::vec::Vec<alloc::vec::Vec<u8>>,
         should_fail: bool,
         transaction_count: usize,
+    }
+
+    #[derive(Default)]
+    struct TestDelay {
+        elapsed_ns: u32,
+    }
+
+    impl DelayNs for TestDelay {
+        fn delay_ns(&mut self, ns: u32) {
+            self.elapsed_ns += ns;
+        }
     }
 
     // MockSpiDevice is accessed exclusively under SpinLock in tests, so sharing
@@ -437,7 +461,7 @@ mod tests {
         let (mut flash_cmd, shared) = create_flash_cmd();
         let mut buf = [0u8; 4];
         with_shared(&shared, |s| {
-            s.read_queue = alloc::vec![alloc::vec![0x11, 0x22, 0x33, 0x44]];
+            s.read_queue = alloc::vec![alloc::vec![0x00], alloc::vec![0x11, 0x22, 0x33, 0x44]];
         });
 
         flash_cmd.fast_read(0x000100, &mut buf).unwrap();
@@ -445,28 +469,30 @@ mod tests {
 
         with_shared(&shared, |s| {
             assert_eq!(&s.writes[..4], &[0x0B, 0x00, 0x01, 0x00]);
-            assert!(s.delays > 0);
+            assert_eq!(s.delays, 0);
+            assert!(s.read_queue.is_empty());
         });
     }
 
     #[test]
     fn test_page_program_param_validation() {
         let (mut flash_cmd, _shared) = create_flash_cmd();
-        let data = [0u8; 128];
+        if FLASH_PAGE_SIZE > 1 {
+            let crossing_page = [0u8; 2];
+            assert_eq!(
+                flash_cmd.page_program((FLASH_PAGE_SIZE - 1) as u32, &crossing_page),
+                Err(FlashError::InvalidParam(
+                    "page_program data crosses page boundary"
+                ))
+            );
+        }
 
-        let result = flash_cmd.page_program(0x001001, &data);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            FlashError::InvalidParam("page_program address not 256-byte aligned")
-        );
-
-        let big_data = alloc::vec![0u8; 300];
+        let big_data = alloc::vec![0u8; FLASH_PAGE_SIZE + 1];
         let result = flash_cmd.page_program(0x000000, &big_data);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            FlashError::InvalidParam("page_program data exceeds 256 bytes")
+            FlashError::InvalidParam("page_program data exceeds configured page size")
         );
     }
 
@@ -477,16 +503,16 @@ mod tests {
             s.read_queue = alloc::vec![alloc::vec![0x02], alloc::vec![0x00]];
         });
 
-        let data = [0xAA, 0xBB, 0xCC, 0xDD];
-        flash_cmd.page_program(0x000000, &data).unwrap();
+        let address = u32::from(FLASH_PAGE_SIZE > 1);
+        flash_cmd.page_program(address, &[0xAA]).unwrap();
 
         with_shared(&shared, |s| {
             let writes = &s.writes;
             assert_eq!(writes[0], 0x06);
             assert_eq!(writes[1], 0x05);
-            assert_eq!(&writes[2..6], &[0x02, 0x00, 0x00, 0x00]);
-            assert_eq!(&writes[6..10], &[0xAA, 0xBB, 0xCC, 0xDD]);
-            assert_eq!(writes[10], 0x05);
+            assert_eq!(&writes[2..6], &[0x02, 0x00, 0x00, address as u8]);
+            assert_eq!(writes[6], 0xAA);
+            assert_eq!(writes[7], 0x05);
         });
     }
 
@@ -571,11 +597,14 @@ mod tests {
     #[test]
     fn test_release_from_deep_power_down() {
         let (mut flash_cmd, shared) = create_flash_cmd();
-        flash_cmd.release_from_deep_power_down().unwrap();
+        let mut delay = TestDelay::default();
+        flash_cmd.release_from_deep_power_down(&mut delay).unwrap();
 
         with_shared(&shared, |s| {
             assert_eq!(&s.writes, &[0xAB]);
+            assert_eq!(s.delays, 0);
         });
+        assert_eq!(delay.elapsed_ns, 3_000);
     }
 
     #[test]

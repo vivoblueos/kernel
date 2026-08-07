@@ -35,21 +35,36 @@ use crate::{
     sync::SpinLock,
 };
 
-const FLASH_SECTOR_SIZE: u16 = 512;
-const FLASH_ERASE_SIZE: usize = 4096;
-const PAGES_PER_ERASE_BLOCK: usize = FLASH_ERASE_SIZE / 256;
-const MAX_24BIT_CAPACITY: u64 = 0x0100_0000;
+const FLASH_SECTOR_SIZE: u16 = blueos_kconfig::CONFIG_SPI_FLASH_SECTOR_SIZE as u16;
+const FLASH_PAGE_SIZE: usize = blueos_kconfig::CONFIG_SPI_FLASH_PAGE_SIZE as usize;
+const FLASH_ERASE_SIZE: usize = blueos_kconfig::CONFIG_SPI_FLASH_ERASE_SIZE as usize;
+const PAGES_PER_ERASE_BLOCK: usize = FLASH_ERASE_SIZE / FLASH_PAGE_SIZE;
+const MAX_24BIT_CAPACITY: u64 = blueos_kconfig::CONFIG_SPI_FLASH_MAX_CAPACITY as u64;
+const ERASE_CACHE_SLOTS: usize = 2;
+const SECTOR_ERASE_SIZE: usize = 4096;
+const BLOCK_ERASE_32K_SIZE: usize = 32768;
+const BLOCK_ERASE_64K_SIZE: usize = 65536;
+
+const _: () = {
+    assert!(FLASH_ERASE_SIZE % FLASH_PAGE_SIZE == 0);
+    assert!(FLASH_ERASE_SIZE % FLASH_SECTOR_SIZE as usize == 0);
+    assert!(matches!(
+        FLASH_ERASE_SIZE,
+        SECTOR_ERASE_SIZE | BLOCK_ERASE_32K_SIZE | BLOCK_ERASE_64K_SIZE
+    ));
+    assert!(MAX_24BIT_CAPACITY >= FLASH_ERASE_SIZE as u64);
+};
 
 fn capacity_from_jedec_id(jedec_id: u32) -> Result<u64, FlashError> {
     let density = (jedec_id & 0xFF) as u32;
     let capacity = 1u64.checked_shl(density).ok_or(FlashError::NotReady)?;
-    if capacity < FLASH_SECTOR_SIZE as u64 {
+    if capacity < FLASH_ERASE_SIZE as u64 || capacity % FLASH_ERASE_SIZE as u64 != 0 {
         return Err(FlashError::NotReady);
     }
     if capacity > MAX_24BIT_CAPACITY {
-        return Err(FlashError::AddrOverflow {
-            addr: MAX_24BIT_CAPACITY as u32,
-        });
+        return Err(FlashError::InvalidParam(
+            "capacity exceeds configured maximum",
+        ));
     }
     Ok(capacity)
 }
@@ -61,14 +76,30 @@ pub enum FlashBlockError {
     Flash(#[from] FlashError),
 }
 
-/// SPI NOR Flash FTL block driver, caching one erase block at a time.
+struct EraseCacheSlot {
+    erase_block_id: Option<usize>,
+    data: Vec<u8>,
+    dirty: bool,
+    last_used: u64,
+}
+
+impl EraseCacheSlot {
+    fn new() -> Self {
+        Self {
+            erase_block_id: None,
+            data: vec![0u8; FLASH_ERASE_SIZE],
+            dirty: false,
+            last_used: 0,
+        }
+    }
+}
+
+/// SPI NOR Flash block driver with two write-back cache slots.
 pub struct SpiFlashBlockDriver<SPI: SpiDevice<u8>> {
     flash_cmd: SpiFlashCmd<SPI>,
     capacity_bytes: u64,
-    erase_size: usize,
-    erase_buf: Vec<u8>,
-    dirty: bool,
-    current_erase_block: Option<usize>,
+    cache: [EraseCacheSlot; ERASE_CACHE_SLOTS],
+    use_counter: u64,
 }
 
 impl<SPI: SpiDevice<u8> + Send> SpiFlashBlockDriver<SPI> {
@@ -76,48 +107,86 @@ impl<SPI: SpiDevice<u8> + Send> SpiFlashBlockDriver<SPI> {
         SpiFlashBlockDriver {
             flash_cmd,
             capacity_bytes,
-            erase_size: FLASH_ERASE_SIZE,
-            erase_buf: vec![0u8; FLASH_ERASE_SIZE],
-            dirty: false,
-            current_erase_block: None,
+            cache: [EraseCacheSlot::new(), EraseCacheSlot::new()],
+            use_counter: 0,
         }
     }
 
-    fn read_erase_block(&mut self, erase_block_id: usize) -> Result<(), FlashError> {
+    fn cached_slot(&self, erase_block_id: usize) -> Option<usize> {
+        self.cache
+            .iter()
+            .position(|slot| slot.erase_block_id == Some(erase_block_id))
+    }
+
+    fn touch_slot(&mut self, slot: usize) {
+        self.use_counter = self.use_counter.saturating_add(1);
+        self.cache[slot].last_used = self.use_counter;
+    }
+
+    fn load_slot(&mut self, slot: usize, erase_block_id: usize) -> Result<(), FlashError> {
         let addr = erase_block_id * FLASH_ERASE_SIZE;
-        self.flash_cmd.read(addr as u32, &mut self.erase_buf)?;
-        self.current_erase_block = Some(erase_block_id);
-        self.dirty = false;
+        self.cache[slot].erase_block_id = None;
+        self.cache[slot].dirty = false;
+        self.flash_cmd
+            .read(addr as u32, &mut self.cache[slot].data)?;
+        self.cache[slot].erase_block_id = Some(erase_block_id);
+        self.cache[slot].dirty = false;
         Ok(())
     }
 
-    fn flush_erase_block(&mut self) -> Result<(), FlashError> {
-        if !self.dirty || self.current_erase_block.is_none() {
+    fn flush_slot(&mut self, slot: usize) -> Result<(), FlashError> {
+        if !self.cache[slot].dirty {
             return Ok(());
         }
-        let erase_block_id = self.current_erase_block.unwrap();
+        let erase_block_id = self.cache[slot]
+            .erase_block_id
+            .ok_or(FlashError::NotReady)?;
         let addr = (erase_block_id * FLASH_ERASE_SIZE) as u32;
 
-        self.flash_cmd.sector_erase(addr)?;
+        match FLASH_ERASE_SIZE {
+            SECTOR_ERASE_SIZE => self.flash_cmd.sector_erase(addr)?,
+            BLOCK_ERASE_32K_SIZE => self.flash_cmd.block_erase_32k(addr)?,
+            BLOCK_ERASE_64K_SIZE => self.flash_cmd.block_erase_64k(addr)?,
+            _ => return Err(FlashError::InvalidParam("unsupported erase size")),
+        }
 
         for page_idx in 0..PAGES_PER_ERASE_BLOCK {
-            let page_offset = page_idx * 256;
-            let page_data = &self.erase_buf[page_offset..page_offset + 256];
+            let page_offset = page_idx * FLASH_PAGE_SIZE;
+            let page_data = &self.cache[slot].data[page_offset..page_offset + FLASH_PAGE_SIZE];
             self.flash_cmd
                 .page_program(addr + page_offset as u32, page_data)?;
         }
 
-        self.dirty = false;
+        self.cache[slot].dirty = false;
         Ok(())
     }
 
-    fn ensure_erase_block(&mut self, block_id: usize) -> Result<(), FlashError> {
+    fn ensure_erase_block(&mut self, block_id: usize) -> Result<usize, FlashError> {
         let erase_block_id = block_id / (FLASH_ERASE_SIZE / FLASH_SECTOR_SIZE as usize);
-        if self.current_erase_block != Some(erase_block_id) {
-            self.flush_erase_block()?;
-            self.read_erase_block(erase_block_id)?;
+        if let Some(slot) = self.cached_slot(erase_block_id) {
+            self.touch_slot(slot);
+            return Ok(slot);
         }
-        Ok(())
+
+        let slot = if let Some(slot) = self
+            .cache
+            .iter()
+            .position(|entry| entry.erase_block_id.is_none())
+        {
+            slot
+        } else {
+            self.cache
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(index, _)| index)
+                .ok_or(FlashError::NotReady)?
+        };
+
+        self.flush_slot(slot)?;
+        self.load_slot(slot, erase_block_id)?;
+        self.touch_slot(slot);
+        Ok(slot)
     }
 
     fn block_offset_in_erase(&self, block_id: usize) -> usize {
@@ -139,7 +208,7 @@ impl<SPI: SpiDevice<u8> + Send + Sync> BlockDriverOps for SpiFlashBlockDriver<SP
     }
 
     fn read_blocks(&mut self, block_id: usize, buf: &mut [u8]) -> Result<(), Self::Error> {
-        // The cache holds one erase block; chunk across boundaries.
+        // Process requests across erase-block boundaries.
         let mut cur_block = block_id;
         let mut buf_off = 0usize;
         while buf_off < buf.len() {
@@ -147,9 +216,10 @@ impl<SPI: SpiDevice<u8> + Send + Sync> BlockDriverOps for SpiFlashBlockDriver<SP
             let offset = self.block_offset_in_erase(cur_block);
             let chunk = min(buf.len() - buf_off, FLASH_ERASE_SIZE - offset);
 
-            if self.dirty && self.current_erase_block == Some(erase_block_id) {
+            if let Some(slot) = self.cached_slot(erase_block_id) {
                 buf[buf_off..buf_off + chunk]
-                    .copy_from_slice(&self.erase_buf[offset..offset + chunk]);
+                    .copy_from_slice(&self.cache[slot].data[offset..offset + chunk]);
+                self.touch_slot(slot);
             } else {
                 let addr = (cur_block * FLASH_SECTOR_SIZE as usize) as u32;
                 self.flash_cmd
@@ -164,27 +234,32 @@ impl<SPI: SpiDevice<u8> + Send + Sync> BlockDriverOps for SpiFlashBlockDriver<SP
     }
 
     fn write_blocks(&mut self, block_id: usize, buf: &[u8]) -> Result<(), Self::Error> {
-        // The cache holds one erase block; chunk across boundaries.
+        // Process requests across erase-block boundaries.
         let mut cur_block = block_id;
         let mut buf_off = 0usize;
         while buf_off < buf.len() {
-            self.ensure_erase_block(cur_block)
+            let slot = self
+                .ensure_erase_block(cur_block)
                 .map_err(|e| BlockError::Driver(FlashBlockError::Flash(e)))?;
-
             let offset = self.block_offset_in_erase(cur_block);
             let chunk = min(buf.len() - buf_off, FLASH_ERASE_SIZE - offset);
-            self.erase_buf[offset..offset + chunk].copy_from_slice(&buf[buf_off..buf_off + chunk]);
-            self.dirty = true;
+            let source = &buf[buf_off..buf_off + chunk];
+            let target = &mut self.cache[slot].data[offset..offset + chunk];
+            if target != source {
+                target.copy_from_slice(source);
+                self.cache[slot].dirty = true;
+            }
             buf_off += chunk;
             cur_block += chunk / FLASH_SECTOR_SIZE as usize;
         }
-
         Ok(())
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        self.flush_erase_block()
-            .map_err(|e| BlockError::Driver(FlashBlockError::Flash(e)))?;
+        for slot in 0..ERASE_CACHE_SLOTS {
+            self.flush_slot(slot)
+                .map_err(|e| BlockError::Driver(FlashBlockError::Flash(e)))?;
+        }
         Ok(())
     }
 }
@@ -212,7 +287,7 @@ where
     let block = Block::<BlockError<FlashBlockError>, { FLASH_SECTOR_SIZE as usize }>::new(
         name,
         Arc::new(SpinLock::new(block_driver)),
-    );
+    )?;
 
     DeviceManager::get()
         .register_device(String::from(name), Arc::new(block))
@@ -220,10 +295,6 @@ where
 
     Ok(())
 }
-
-// SPI must be Send + Sync: the driver is shared via SpinLock behind an Arc<dyn
-// Device>, so it crosses threads (Send) and is referenced from &self (Sync).
-unsafe impl<SPI: SpiDevice<u8> + Send + Sync> Sync for SpiFlashBlockDriver<SPI> {}
 
 pub struct SpiFlashConfig<G: OutputPin> {
     pub name: &'static str,
@@ -271,7 +342,8 @@ where
         let block = Block::<BlockError<FlashBlockError>, { FLASH_SECTOR_SIZE as usize }>::new(
             self.name,
             Arc::new(SpinLock::new(block_driver)),
-        );
+        )
+        .map_err(|_| crate::error::code::EOVERFLOW)?;
 
         DeviceManager::get()
             .register_device(String::from(self.name), Arc::new(block))
@@ -330,12 +402,17 @@ mod tests {
     use core::cell::UnsafeCell;
     use embedded_hal::spi::{ErrorKind, Operation, SpiDevice};
 
+    const TEST_SECTOR_SIZE: usize = FLASH_SECTOR_SIZE as usize;
+    const BLOCKS_PER_ERASE: usize = FLASH_ERASE_SIZE / TEST_SECTOR_SIZE;
+
     #[test]
     fn test_capacity_from_jedec_id_rejects_unsupported_density() {
         assert_eq!(capacity_from_jedec_id(0xEF4008), Err(FlashError::NotReady));
         assert_eq!(
             capacity_from_jedec_id(0xEF4019),
-            Err(FlashError::AddrOverflow { addr: 0x0100_0000 })
+            Err(FlashError::InvalidParam(
+                "capacity exceeds configured maximum"
+            ))
         );
     }
 
@@ -460,17 +537,17 @@ mod tests {
     #[test]
     fn test_block_driver_capacity() {
         let (driver, _shared) = create_block_driver(1024 * 1024);
-        assert_eq!(driver.capacity(), 1024 * 1024 / 512);
-        assert_eq!(driver.sector_size(), 512);
+        assert_eq!(driver.capacity(), 1024 * 1024 / FLASH_SECTOR_SIZE as u64);
+        assert_eq!(driver.sector_size(), FLASH_SECTOR_SIZE);
     }
 
     #[test]
     fn test_read_blocks_from_flash() {
         let (mut driver, shared) = create_block_driver(1024 * 1024);
-        let mut buf = [0u8; 512];
+        let mut buf = [0u8; TEST_SECTOR_SIZE];
 
         with_shared(&shared, |s| {
-            s.read_queue.push(alloc::vec![0xAA; 512]);
+            s.read_queue.push(alloc::vec![0xAA; TEST_SECTOR_SIZE]);
         });
 
         driver.read_blocks(0, &mut buf).unwrap();
@@ -484,14 +561,14 @@ mod tests {
     #[test]
     fn test_read_blocks_from_dirty_cache() {
         let (mut driver, shared) = create_block_driver(1024 * 1024);
-        let mut write_buf = [0xBB; 512];
+        let mut write_buf = [0xBB; TEST_SECTOR_SIZE];
 
         with_shared(&shared, |s| {
             s.read_queue.push(alloc::vec![0u8; FLASH_ERASE_SIZE]);
         });
         driver.write_blocks(0, &write_buf).unwrap();
 
-        let mut read_buf = [0u8; 512];
+        let mut read_buf = [0u8; TEST_SECTOR_SIZE];
         with_shared(&shared, |s| {
             s.writes.clear();
             s.transaction_count = 0;
@@ -507,7 +584,7 @@ mod tests {
     #[test]
     fn test_write_marks_dirty() {
         let (mut driver, shared) = create_block_driver(1024 * 1024);
-        let write_data = [0xCC; 512];
+        let write_data = [0xCC; TEST_SECTOR_SIZE];
 
         with_shared(&shared, |s| {
             s.read_queue.push(alloc::vec![0u8; FLASH_ERASE_SIZE]);
@@ -515,14 +592,14 @@ mod tests {
 
         driver.write_blocks(0, &write_data).unwrap();
 
-        assert!(driver.dirty);
-        assert_eq!(driver.current_erase_block, Some(0));
+        let slot = driver.cached_slot(0).unwrap();
+        assert!(driver.cache[slot].dirty);
     }
 
     #[test]
     fn test_flush_erase_block() {
         let (mut driver, shared) = create_block_driver(1024 * 1024);
-        let write_data = [0xDD; 512];
+        let write_data = [0xDD; TEST_SECTOR_SIZE];
 
         with_shared(&shared, |s| {
             s.read_queue.push(alloc::vec![0u8; FLASH_ERASE_SIZE]);
@@ -535,9 +612,17 @@ mod tests {
         });
 
         driver.write_blocks(0, &write_data).unwrap();
+        with_shared(&shared, |s| s.writes.clear());
         driver.flush().unwrap();
 
-        assert!(!driver.dirty);
+        let erase_opcode = match FLASH_ERASE_SIZE {
+            SECTOR_ERASE_SIZE => 0x20,
+            BLOCK_ERASE_32K_SIZE => 0x52,
+            BLOCK_ERASE_64K_SIZE => 0xD8,
+            _ => unreachable!(),
+        };
+        with_shared(&shared, |s| assert_eq!(s.writes[2], erase_opcode));
+        assert!(driver.cache.iter().all(|slot| !slot.dirty));
     }
 
     #[test]
@@ -546,29 +631,56 @@ mod tests {
 
         with_shared(&shared, |s| {
             s.read_queue.push(alloc::vec![0u8; FLASH_ERASE_SIZE]);
-            s.read_queue.push(alloc::vec![0x02]);
-            s.read_queue.push(alloc::vec![0x00]);
-            for _ in 0..PAGES_PER_ERASE_BLOCK {
-                s.read_queue.push(alloc::vec![0x02]);
-                s.read_queue.push(alloc::vec![0x00]);
-            }
             s.read_queue.push(alloc::vec![0xFF; FLASH_ERASE_SIZE]);
         });
 
-        driver.write_blocks(0, &[0xAA; 512]).unwrap();
-        assert_eq!(driver.current_erase_block, Some(0));
+        driver.write_blocks(0, &[0xAA; TEST_SECTOR_SIZE]).unwrap();
+        driver
+            .write_blocks(BLOCKS_PER_ERASE, &[0xBB; TEST_SECTOR_SIZE])
+            .unwrap();
 
-        driver.write_blocks(8, &[0xBB; 512]).unwrap();
-        assert_eq!(driver.current_erase_block, Some(1));
+        assert!(driver.cached_slot(0).is_some());
+        assert!(driver.cached_slot(1).is_some());
+        assert!(driver.cache.iter().all(|slot| slot.dirty));
+    }
+
+    #[test]
+    fn test_metadata_data_ping_pong_uses_two_cache_slots() {
+        let (mut driver, shared) = create_block_driver(1024 * 1024);
+
+        with_shared(&shared, |s| {
+            s.read_queue.push(alloc::vec![0u8; FLASH_ERASE_SIZE]);
+            s.read_queue.push(alloc::vec![0u8; FLASH_ERASE_SIZE]);
+        });
+
+        driver.write_blocks(0, &[0x11; TEST_SECTOR_SIZE]).unwrap();
+        driver
+            .write_blocks(BLOCKS_PER_ERASE, &[0x22; TEST_SECTOR_SIZE])
+            .unwrap();
+        driver.write_blocks(0, &[0x33; TEST_SECTOR_SIZE]).unwrap();
+
+        with_shared(&shared, |s| {
+            assert_eq!(s.read_queue.len(), 0);
+            assert_eq!(s.transaction_count, 2);
+        });
+        assert!(driver.cached_slot(0).is_some());
+        assert!(driver.cached_slot(1).is_some());
+        assert!(driver.cache.iter().all(|slot| slot.dirty));
     }
 
     #[test]
     fn test_block_offset_in_erase() {
         let (driver, _shared) = create_block_driver(1024 * 1024);
         assert_eq!(driver.block_offset_in_erase(0), 0);
-        assert_eq!(driver.block_offset_in_erase(7), 3584);
-        assert_eq!(driver.block_offset_in_erase(8), 0);
-        assert_eq!(driver.block_offset_in_erase(9), 512);
+        assert_eq!(
+            driver.block_offset_in_erase(BLOCKS_PER_ERASE - 1),
+            FLASH_ERASE_SIZE - TEST_SECTOR_SIZE
+        );
+        assert_eq!(driver.block_offset_in_erase(BLOCKS_PER_ERASE), 0);
+        assert_eq!(
+            driver.block_offset_in_erase(BLOCKS_PER_ERASE + 1),
+            TEST_SECTOR_SIZE
+        );
     }
 
     #[test]
@@ -584,7 +696,7 @@ mod tests {
     #[test]
     fn test_spi_error_on_read() {
         let (mut driver, shared) = create_block_driver(1024 * 1024);
-        let mut buf = [0u8; 512];
+        let mut buf = [0u8; TEST_SECTOR_SIZE];
 
         with_shared(&shared, |s| {
             s.should_fail = true;
