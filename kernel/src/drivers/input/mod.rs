@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(touch_screen)]
+#[cfg(ft6336u)]
 pub mod ft6336u;
