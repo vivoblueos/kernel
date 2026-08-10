@@ -69,6 +69,9 @@ mod vfs_syscalls {
     pub fn link(_oldpath: *const c_char, _newpath: *const c_char) -> i32 {
         -libc::ENOTSUP
     }
+    pub fn rename(_oldpath: *const c_char, _newpath: *const c_char) -> i32 {
+        -libc::ENOTSUP
+    }
     pub fn unlink(_path: *const c_char) -> i32 {
         -libc::ENOTSUP
     }
@@ -542,6 +545,11 @@ define_syscall_handler!(
     }
 );
 define_syscall_handler!(
+    rename(oldpath: *const c_char, newpath: *const c_char) -> c_int {
+        vfs_syscalls::rename(oldpath, newpath)
+    }
+);
+define_syscall_handler!(
     unlink(path: *const c_char) -> c_int {
         vfs_syscalls::unlink(path)
     }
@@ -868,6 +876,7 @@ syscall_table! {
     (Rmdir, rmdir),
     (Link, link),
     (Unlink, unlink),
+    (Rename, rename),
     (Fcntl, fcntl),
     (Stat, stat),
     (FStat, fstat),

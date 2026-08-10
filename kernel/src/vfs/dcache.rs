@@ -368,6 +368,10 @@ impl Dcache {
             return Err(code::EBUSY);
         }
 
+        if ptr::addr_eq(self, Arc::as_ptr(new_dir)) && old_name == new_name {
+            return Ok(());
+        }
+
         // rename in the same directory
         if ptr::addr_eq(self, Arc::as_ptr(new_dir)) && old_name != new_name {
             if children.contains_key(new_name) {
@@ -376,6 +380,7 @@ impl Dcache {
             }
             self.inode.rename(old_name, &self.inode, new_name)?;
             children.remove(old_name);
+            child.set_name_and_parent(new_name, self.this.clone());
             if child.is_dcacheable() {
                 children.insert(String::from(new_name), child);
             }
