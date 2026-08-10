@@ -14,6 +14,9 @@
 
 pub mod i2c_dw;
 
+#[cfg(soc_esp32c3)]
+pub mod esp32_i2c;
+
 pub struct I2cConfig {
     pub baudrate: u32,
 }

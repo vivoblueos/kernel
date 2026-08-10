@@ -18,7 +18,7 @@ use crate::{
     arch::{self, irq::IrqNumber},
     boot,
     boot::INIT_BSS_DONE,
-    devices::clock::systick,
+    devices::{clock::systick, i2c_core::block_i2c::BlockI2c},
     irq::IrqTrace,
     time,
 };
@@ -136,6 +136,7 @@ crate::define_bus! {
     (
         i2c0_bus,
         crate::devices::i2c_core::block_i2c::BlockI2c<blueos_driver::i2c::i2c_dw::I2cDw>,
+        #[cfg(bme280)]
         (bme280, crate::drivers::sensor::bme280::Bme280Config,
             crate::drivers::sensor::bme280::Bme280Config::new(0x76)
         ),
@@ -149,3 +150,23 @@ static ARM_PL011_ISR: ArmPl011Isr<0x40070000, crate::drivers::serial::Serial> =
         tx_isr: Some(crate::drivers::serial::Serial::xmitchars),
         rx_isr: Some(crate::drivers::serial::Serial::recvchars),
     };
+
+pub(crate) fn init_i2c_bus() {
+    use crate::{devices::bus::Bus, drivers::InitDriver};
+    use alloc::sync::Arc;
+
+    if let Ok(block_i2c) = BlockI2c::new(get_device!(i2c0)) {
+        let i2c0_bus = Arc::new(Bus::new(block_i2c));
+        for device in crate::boards::get_bus_devices!(i2c0_bus) {
+            i2c0_bus.register_device(device).unwrap();
+        }
+        #[cfg(bme280)]
+        if let Ok(d) = i2c0_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule) {
+            if let Err(e) = d.init(&i2c0_bus) {
+                log::warn!("Failed to init Bme280 driver: {}", e);
+            }
+        } else {
+            log::warn!("Failed to probe Bme280 driver");
+        }
+    }
+}

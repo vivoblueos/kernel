@@ -49,26 +49,28 @@ register_structs! {
 }
 
 /// GPIO output pin for ESP32-C3, e.g. SPI CS via `embedded_hal_bus::spi::ExclusiveDevice`.
-pub struct Esp32GpioOutputPin<const PIN: u8>;
+pub struct Esp32GpioOutputPin {
+    pin: u8,
+}
 
-impl<const PIN: u8> Esp32GpioOutputPin<PIN> {
-    pub const fn new() -> Self {
-        Esp32GpioOutputPin
+impl Esp32GpioOutputPin {
+    pub const fn new(pin: u8) -> Self {
+        Esp32GpioOutputPin { pin }
     }
 }
 
-impl<const PIN: u8> blueos_hal::PlatPeri for Esp32GpioOutputPin<PIN> {}
+impl blueos_hal::PlatPeri for Esp32GpioOutputPin {}
 
-impl<const PIN: u8> blueos_hal::gpio::OutputPin for Esp32GpioOutputPin<PIN> {
+impl blueos_hal::gpio::OutputPin for Esp32GpioOutputPin {
     fn set_low(&self) -> blueos_hal::err::Result<()> {
         let gpio_regs = &*GPIO_BASE;
-        gpio_regs.out_w1tc.write(GpioOut::DATA.val(1 << PIN));
+        gpio_regs.out_w1tc.write(GpioOut::DATA.val(1 << self.pin));
         Ok(())
     }
 
     fn set_high(&self) -> blueos_hal::err::Result<()> {
         let gpio_regs = &*GPIO_BASE;
-        gpio_regs.out_w1ts.write(GpioOut::DATA.val(1 << PIN));
+        gpio_regs.out_w1ts.write(GpioOut::DATA.val(1 << self.pin));
         Ok(())
     }
 }
