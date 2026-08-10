@@ -17,7 +17,6 @@
 use crate::devices::bus::{Bus, BusInterface};
 
 pub(crate) mod ic;
-pub(crate) mod input;
 pub(crate) mod lcd;
 pub(crate) mod msip;
 pub(crate) mod sensor;
