@@ -20,8 +20,7 @@ use crate::{
 };
 use blueos_driver::{
     interrupt_controller::Interrupt, power::esp32c3_power_domain::PowerDomain,
-    spi::esp32_spi::Esp32Spi2,
-    uart::esp32_usb_serial::Esp32UsbSerialIsr,
+    spi::esp32_spi::Esp32Spi2, uart::esp32_usb_serial::Esp32UsbSerialIsr,
 };
 use blueos_hal::{isr::IsrDesc, Has8bitDataReg};
 
