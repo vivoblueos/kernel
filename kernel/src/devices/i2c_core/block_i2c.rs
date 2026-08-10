@@ -160,7 +160,7 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         address: u8,
         operations: &mut [embedded_hal::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
-        let mut operations = operations.into_iter().peekable();
+        let mut operations = operations.iter_mut().peekable();
         // FIXME: More efficient implementation
         let inner = self.0.lock();
 
