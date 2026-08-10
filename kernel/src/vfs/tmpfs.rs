@@ -588,7 +588,7 @@ impl InodeOps for TmpInode {
 
         if core::ptr::eq(self, target) {
             let mut inner = self.inner.write();
-            let dir = inner.as_dir_mut().unwrap();
+            let dir = inner.as_dir_mut().ok_or(code::ENOTDIR)?;
             let child = dir.find(old_name).ok_or(code::ENOENT)?;
             if old_name == new_name {
                 return Ok(());
@@ -603,8 +603,8 @@ impl InodeOps for TmpInode {
 
         let mut source_inner = self.inner.write();
         let mut target_inner = target.inner.write();
-        let source_dir = source_inner.as_dir_mut().unwrap();
-        let target_dir = target_inner.as_dir_mut().unwrap();
+        let source_dir = source_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+        let target_dir = target_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
         let child = source_dir.find(old_name).ok_or(code::ENOENT)?;
         if target_dir.find(new_name).is_some() {
             return Err(code::EEXIST);
@@ -617,7 +617,7 @@ impl InodeOps for TmpInode {
 
         let mut child_inner = child.inner.write();
         if child_inner.attr.type_() == InodeFileType::Directory {
-            child_inner.as_dir_mut().unwrap().parent = target.this.clone();
+            child_inner.as_dir_mut().ok_or(code::EIO)?.parent = target.this.clone();
             source_inner.dec_nlinks();
             target_inner.inc_nlinks();
         }
