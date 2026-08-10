@@ -12,4 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod spi_bus_adapter;
+pub mod block_spi;

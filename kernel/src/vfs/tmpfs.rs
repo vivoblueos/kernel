@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::{
-    devices::Device,
+    devices::{Device, DeviceClass},
     error::{code, Error},
     vfs::{
         dcache::Dcache,
@@ -251,6 +251,21 @@ struct InnerNode {
 }
 
 impl InnerNode {
+    fn reported_size(&self) -> usize {
+        let Some(device) = self.as_device() else {
+            return self.attr.size;
+        };
+        if device.class() != DeviceClass::Char {
+            return self.attr.size;
+        }
+
+        device
+            .capacity()
+            .ok()
+            .and_then(|capacity| usize::try_from(capacity).ok())
+            .unwrap_or(self.attr.size)
+    }
+
     fn as_dir(&self) -> Option<&TmpDir> {
         match &self.data {
             TmpFileData::Directory(dir) => Some(dir),
@@ -630,18 +645,21 @@ impl InodeOps for TmpInode {
     }
 
     fn file_attr(&self) -> FileAttr {
+        let inner = self.inner.read();
+        let mut attr = inner.attr.clone();
+        attr.size = inner.reported_size();
+
         match self.fs() {
             Some(fs) => {
-                let inner = self.inner.read();
                 let dev = fs.fs_info().dev;
                 let rdev: usize = if let Some(device) = inner.as_device() {
                     device.id().into()
                 } else {
                     0
                 };
-                FileAttr::new(dev, rdev, &inner.attr)
+                FileAttr::new(dev, rdev, &attr)
             }
-            None => FileAttr::new(0, 0, &self.inner.read().attr),
+            None => FileAttr::new(0, 0, &attr),
         }
     }
 
@@ -662,12 +680,15 @@ impl InodeOps for TmpInode {
         }
     }
 
+    fn size(&self) -> usize {
+        self.inner.read().reported_size()
+    }
+
     delegate! {
         to self.inner.read().attr {
             fn ino(&self) -> InodeNo;
             fn type_(&self) -> InodeFileType;
             fn mode(&self) -> InodeMode;
-            fn size(&self) -> usize;
             fn atime(&self) -> Duration;
             fn mtime(&self) -> Duration;
         }

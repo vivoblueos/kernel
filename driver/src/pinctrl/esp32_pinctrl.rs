@@ -19,7 +19,11 @@ use crate::{
     static_ref::StaticRef,
 };
 use blueos_hal::pinctrl::AlterFuncPin;
-use tock_registers::{interfaces::Writeable, register_bitfields, registers::ReadWrite};
+use tock_registers::{
+    interfaces::{ReadWriteable, Writeable},
+    register_bitfields,
+    registers::ReadWrite,
+};
 
 // SPI2/FSPI signal indices routed through the GPIO Matrix (gpio_sig_map.h).
 const FSPICLK_OUT_IDX: u32 = 63;
@@ -79,6 +83,10 @@ register_bitfields! [
 register_bitfields! [
     u32,
 
+    pub GpioPinFields [
+        PAD_DRIVER OFFSET(2) NUMBITS(1) [], // 0 = push-pull, 1 = open-drain
+    ],
+
     // GPIO_FUNCx_OUT_SEL_CFG_REG: route a peripheral output signal to GPIO x.
     pub FuncOutSelCfg [
         OUT_SEL     OFFSET(0)  NUMBITS(8) [],
@@ -90,6 +98,12 @@ register_bitfields! [
         OEN_INV_SEL OFFSET(10) NUMBITS(1) [],
     ],
 ];
+
+fn configure_open_drain(pin: u8, open_drain: bool) {
+    let addr = 0x60004000 + 0x74 + 4 * pin as usize;
+    let reg = unsafe { &*(addr as *const ReadWrite<u32, GpioPinFields::Register>) };
+    reg.modify(GpioPinFields::PAD_DRIVER.val(open_drain as u32));
+}
 
 register_bitfields! [
     u32,
@@ -144,6 +158,7 @@ pub struct Esp32IoMuxPinctrl {
     out_signal: Option<u32>,
     in_signal: Option<u32>,
     gpio_output: bool,
+    open_drain: bool,
 }
 
 impl Esp32IoMuxPinctrl {
@@ -157,6 +172,7 @@ impl Esp32IoMuxPinctrl {
         out_signal: Option<u32>,
         in_signal: Option<u32>,
         gpio_output: bool,
+        open_drain: bool,
     ) -> Self {
         Esp32IoMuxPinctrl {
             pin,
@@ -168,6 +184,7 @@ impl Esp32IoMuxPinctrl {
             out_signal,
             in_signal,
             gpio_output,
+            open_drain,
         }
     }
 }
@@ -175,6 +192,7 @@ impl Esp32IoMuxPinctrl {
 impl AlterFuncPin for Esp32IoMuxPinctrl {
     fn init(&self) {
         write_io_mux(self.pin, self.mcu_sel, self.ie, self.pu, self.pd, self.drv);
+        configure_open_drain(self.pin, self.open_drain);
 
         if let Some(signal_idx) = self.out_signal {
             // Software-controlled pins (CS) use OEN_SEL=1; peripheral pins use OEN_SEL=0.
