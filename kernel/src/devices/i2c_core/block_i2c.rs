@@ -118,23 +118,7 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BlockI2c<T> {
     }
 }
 
-impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BusInterface for BlockI2c<T> {
-    type Region = (bool, u8, bool);
-
-    fn read_region(&self, region: Self::Region, buffer: &mut [u8]) -> crate::drivers::Result<()> {
-        let (first, address, last) = region;
-        self.read_bytes(address, buffer, first, last)
-            .map_err(|error| self.report_error("read", error))?;
-        Ok(())
-    }
-
-    fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()> {
-        let (first, address, last) = region;
-        self.write_bytes(address, data, first, last)
-            .map_err(|error| self.report_error("write", error))?;
-        Ok(())
-    }
-}
+impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> BusInterface for BlockI2c<T> {}
 
 #[cfg(use_embedded_hal_v1)]
 impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::ErrorType
@@ -175,12 +159,12 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         while let Some(operation) = operations.next() {
             let last = operations.peek().is_none();
             match operation {
-                embedded_hal::i2c::Operation::Read(buf) => {
-                    inner.read_region((first, address, last), buf)?
-                }
-                embedded_hal::i2c::Operation::Write(buf) => {
-                    inner.write_region((first, address, last), buf)?
-                }
+                embedded_hal::i2c::Operation::Read(buf) => inner
+                    .read_bytes(address, buf, first, last)
+                    .map_err(|error| inner.report_error("read", error))?,
+                embedded_hal::i2c::Operation::Write(buf) => inner
+                    .write_bytes(address, buf, first, last)
+                    .map_err(|error| inner.report_error("write", error))?,
             };
             first = false;
         }

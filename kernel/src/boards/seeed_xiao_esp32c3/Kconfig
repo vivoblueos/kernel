@@ -19,7 +19,27 @@ choice
           Set irq priority bits to 8.
 endchoice
 
-choice
+config LCD
+    bool "Enable LCD device"
+    default n
+    help
+      Enable LCD module
+
+config FT6336U
+    bool "Enable touch screen device"
+    default n
+    help
+      Enable touch screen
+
+config GPIO
+    bool "Enable gpio device"
+    default n
+    help
+      Enable gpio device
+
+if LCD
+
+  choice
     prompt "LCD controller"
     default ST7789
 
@@ -32,7 +52,9 @@ choice
         bool "Enable LCD ST7796"
         help
           Enable the ST7796 LCD controller.
-endchoice
+  endchoice
+
+endif
 
 config BME280
     bool "BME280 Sensor"

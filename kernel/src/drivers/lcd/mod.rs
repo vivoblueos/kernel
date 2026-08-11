@@ -19,7 +19,7 @@ use crate::devices::framebuffer::{
     FramebufferVariableInfo,
 };
 use alloc::sync::Arc;
-use spin::Mutex;
+use blueos_infra::tinyrwlock::RwLock;
 
 // FIXME: Only support 16-bit RGB565 format for now, need to support more formats in the future.
 const LCD_BITS_PER_PIXEL: u32 = 16;
@@ -35,7 +35,7 @@ pub mod st7796;
 pub struct LcdFramebuffer<T> {
     width: u32,
     height: u32,
-    display: Mutex<T>,
+    display: T,
 }
 
 impl<T: Lcd> LcdFramebuffer<T> {
@@ -46,14 +46,16 @@ impl<T: Lcd> LcdFramebuffer<T> {
     fn byte_len(&self) -> u32 {
         self.line_length() * self.height
     }
+}
 
+impl<T: Lcd + 'static> LcdFramebuffer<T> {
     fn register_lcd(lcd: T, width: u32, height: u32) -> Result<(), embedded_io::ErrorKind> {
         static INDEX: AtomicUsize = AtomicUsize::new(0);
-        let fb = Arc::new(LcdFramebuffer::<T> {
+        let fb = Arc::new(RwLock::new(LcdFramebuffer::<T> {
             width,
             height,
-            display: Mutex::new(lcd),
-        });
+            display: lcd,
+        }));
         FramebufferDevice::register(INDEX.load(core::sync::atomic::Ordering::Relaxed), fb)?;
         INDEX.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
         Ok(())
@@ -105,17 +107,17 @@ impl<T: Lcd> FramebufferOps for LcdFramebuffer<T> {
     }
 
     fn set_variable_info(
-        &self,
+        &mut self,
         variable_info: &crate::devices::framebuffer::FramebufferVariableInfo,
     ) -> Result<crate::devices::framebuffer::FramebufferVariableInfo, embedded_io::ErrorKind> {
         todo!()
     }
 
-    fn read_bytes(&self, offset: u64, buf: &mut [u8]) -> Result<usize, embedded_io::ErrorKind> {
+    fn read_bytes(&mut self, offset: u64, buf: &mut [u8]) -> Result<usize, embedded_io::ErrorKind> {
         todo!()
     }
 
-    fn write_bytes(&self, offset: u64, buf: &[u8]) -> Result<usize, embedded_io::ErrorKind> {
+    fn write_bytes(&mut self, offset: u64, buf: &[u8]) -> Result<usize, embedded_io::ErrorKind> {
         if offset % u64::from(LCD_BYTES_PER_PIXEL) != 0
             || buf.len() % LCD_BYTES_PER_PIXEL as usize != 0
         {
@@ -125,7 +127,7 @@ impl<T: Lcd> FramebufferOps for LcdFramebuffer<T> {
         let mut pixel_index = u32::try_from(offset / u64::from(LCD_BYTES_PER_PIXEL))
             .map_err(|_| embedded_io::ErrorKind::InvalidInput)?;
         let mut written = 0;
-        let mut display = self.display.lock();
+        let mut display = &mut self.display;
 
         while written < buf.len() {
             let row = pixel_index / self.width;
@@ -178,6 +180,6 @@ fn lcd_error_to_io_error(error: LcdError) -> embedded_io::ErrorKind {
     }
 }
 
-pub trait Lcd: Send + 'static {
+pub trait Lcd {
     fn draw_area(&mut self, area: DrawArea, color: &[u8]) -> Result<(), LcdError>;
 }

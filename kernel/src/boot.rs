@@ -115,6 +115,12 @@ extern "C" fn init() {
         // initialize virtio
         virtio::init_virtio(&fdt);
     }
+    #[cfg(spi_core)]
+    crate::boards::init_spi_bus();
+    #[cfg(i2c_core)]
+    crate::boards::init_i2c_bus();
+    #[cfg(gpio)]
+    crate::boards::init_gpio();
     #[cfg(enable_vfs)]
     init_vfs();
 
@@ -128,11 +134,6 @@ extern "C" fn init() {
         net::init();
         net::net_manager::init();
     }
-
-    #[cfg(spi_core)]
-    crate::boards::init_spi_bus();
-    #[cfg(i2c_core)]
-    crate::boards::init_i2c_bus();
 
     // it's an bug in fact, but at now we use a workaround let newlib do the c++ runtime initialization
     #[cfg(not(target_board = "newlib_mps3_an547"))]
@@ -197,7 +198,12 @@ fn init_apps() {
     unsafe {
         let mut app = addr_of!(__bk_app_array_start);
         while app < addr_of!(__bk_app_array_end) {
-            thread::Builder::new(thread::Entry::C(*app)).start();
+            let stack =
+                thread::Stack::from_size(blueos_kconfig::CONFIG_MAIN_THREAD_STACK_SIZE as usize)
+                    .expect("Invalid main thread stack size");
+            thread::Builder::new(thread::Entry::C(*app))
+                .set_stack(stack)
+                .start();
             app = app.offset(1);
         }
     }

@@ -14,9 +14,9 @@
 
 use crate::devices::{Device, DeviceClass, DeviceId, DeviceManager};
 use alloc::{format, string::String, sync::Arc, vec, vec::Vec};
+use blueos_infra::tinyrwlock::RwLock;
 use embedded_io::ErrorKind;
 use libc::{FBIOGET_FSCREENINFO, FBIOGET_VSCREENINFO, FBIOPUT_VSCREENINFO};
-use spin::Mutex;
 
 /// Linux framebuffer character-device major number.
 pub const FRAMEBUFFER_MAJOR: usize = 29;
@@ -171,7 +171,7 @@ unsafe fn store_user_variable_info(
 }
 
 /// Driver-facing framebuffer operations.
-pub trait FramebufferOps: Send + Sync {
+pub trait FramebufferOps {
     /// Return fixed framebuffer metadata.
     fn fixed_info(&self) -> Result<FramebufferFixedInfo, ErrorKind>;
 
@@ -180,31 +180,34 @@ pub trait FramebufferOps: Send + Sync {
 
     /// Validate and apply a variable-info update, returning the effective state.
     fn set_variable_info(
-        &self,
+        &mut self,
         variable_info: &FramebufferVariableInfo,
     ) -> Result<FramebufferVariableInfo, ErrorKind>;
 
     /// Read framebuffer bytes starting at `offset`.
-    fn read_bytes(&self, offset: u64, buf: &mut [u8]) -> Result<usize, ErrorKind>;
+    fn read_bytes(&mut self, offset: u64, buf: &mut [u8]) -> Result<usize, ErrorKind>;
 
     /// Write framebuffer bytes starting at `offset`.
-    fn write_bytes(&self, offset: u64, buf: &[u8]) -> Result<usize, ErrorKind>;
+    fn write_bytes(&mut self, offset: u64, buf: &[u8]) -> Result<usize, ErrorKind>;
 
     /// Return the framebuffer byte length.
     fn byte_len(&self) -> Result<u64, ErrorKind>;
 }
 
 /// Character-device wrapper for a framebuffer implementation.
-pub struct FramebufferDevice {
+pub struct FramebufferDevice<T: FramebufferOps> {
     name: String,
     id: DeviceId,
-    ops: Arc<dyn FramebufferOps>,
+    ops: Arc<RwLock<T>>,
 }
 
-impl FramebufferDevice {
+unsafe impl<T: FramebufferOps> Send for FramebufferDevice<T> {}
+unsafe impl<T: FramebufferOps> Sync for FramebufferDevice<T> {}
+
+impl<T: FramebufferOps + 'static> FramebufferDevice<T> {
     /// Create a framebuffer device named `fb{index}` with Linux framebuffer major `29`.
     #[must_use]
-    pub fn new(index: usize, ops: Arc<dyn FramebufferOps>) -> Self {
+    pub fn new(index: usize, ops: Arc<RwLock<T>>) -> Self {
         Self::with_id(
             format!("fb{index}"),
             DeviceId::new(FRAMEBUFFER_MAJOR, index),
@@ -214,12 +217,12 @@ impl FramebufferDevice {
 
     /// Create a framebuffer device with an explicit name and device id.
     #[must_use]
-    pub fn with_id(name: String, id: DeviceId, ops: Arc<dyn FramebufferOps>) -> Self {
+    pub fn with_id(name: String, id: DeviceId, ops: Arc<RwLock<T>>) -> Self {
         Self { name, id, ops }
     }
 
     /// Register a framebuffer device named `fb{index}`.
-    pub fn register(index: usize, ops: Arc<dyn FramebufferOps>) -> Result<(), ErrorKind> {
+    pub fn register(index: usize, ops: Arc<RwLock<T>>) -> Result<(), ErrorKind> {
         Self::register_device(Arc::new(Self::new(index, ops)))
     }
 
@@ -244,12 +247,12 @@ impl FramebufferDevice {
 
     /// Return fixed framebuffer metadata.
     pub fn fixed_info(&self) -> Result<FramebufferFixedInfo, ErrorKind> {
-        self.ops.fixed_info()
+        self.ops.read().fixed_info()
     }
 
     /// Return variable framebuffer metadata.
     pub fn variable_info(&self) -> Result<FramebufferVariableInfo, ErrorKind> {
-        self.ops.variable_info()
+        self.ops.read().variable_info()
     }
 
     /// Validate and apply a variable-info update, returning the effective state.
@@ -257,11 +260,11 @@ impl FramebufferDevice {
         &self,
         variable_info: &FramebufferVariableInfo,
     ) -> Result<FramebufferVariableInfo, ErrorKind> {
-        self.ops.set_variable_info(variable_info)
+        self.ops.write().set_variable_info(variable_info)
     }
 }
 
-impl Device for FramebufferDevice {
+impl<T: FramebufferOps + 'static> Device for FramebufferDevice<T> {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -279,7 +282,7 @@ impl Device for FramebufferDevice {
             return Ok(0);
         }
 
-        let byte_len = self.ops.byte_len()?;
+        let byte_len = self.ops.read().byte_len()?;
         if pos >= byte_len {
             return Ok(0);
         }
@@ -287,7 +290,7 @@ impl Device for FramebufferDevice {
         let remaining = byte_len - pos;
         let read_len =
             usize::try_from(remaining).map_or(buf.len(), |remaining| remaining.min(buf.len()));
-        self.ops.read_bytes(pos, &mut buf[..read_len])
+        self.ops.write().read_bytes(pos, &mut buf[..read_len])
     }
 
     fn write(&self, pos: u64, buf: &[u8], _is_nonblocking: bool) -> Result<usize, ErrorKind> {
@@ -295,7 +298,7 @@ impl Device for FramebufferDevice {
             return Ok(0);
         }
 
-        let byte_len = self.ops.byte_len()?;
+        let byte_len = self.ops.read().byte_len()?;
         if pos >= byte_len {
             return Ok(0);
         }
@@ -303,17 +306,17 @@ impl Device for FramebufferDevice {
         let remaining = byte_len - pos;
         let write_len =
             usize::try_from(remaining).map_or(buf.len(), |remaining| remaining.min(buf.len()));
-        self.ops.write_bytes(pos, &buf[..write_len])
+        self.ops.write().write_bytes(pos, &buf[..write_len])
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
         match request {
             req if req == FBIOGET_FSCREENINFO => {
-                let fixed_info = self.ops.fixed_info()?;
+                let fixed_info = self.ops.read().fixed_info()?;
                 unsafe { store_user_fixed_info(arg as *mut FramebufferFixedInfo, &fixed_info) }
             }
             req if req == FBIOGET_VSCREENINFO => {
-                let variable_info = self.ops.variable_info()?;
+                let variable_info = self.ops.read().variable_info()?;
                 unsafe {
                     store_user_variable_info(arg as *mut FramebufferVariableInfo, &variable_info)
                 }
@@ -321,7 +324,7 @@ impl Device for FramebufferDevice {
             req if req == FBIOPUT_VSCREENINFO => {
                 let requested_info =
                     unsafe { load_user_variable_info(arg as *const FramebufferVariableInfo)? };
-                let effective_info = self.ops.set_variable_info(&requested_info)?;
+                let effective_info = self.ops.write().set_variable_info(&requested_info)?;
                 unsafe {
                     store_user_variable_info(arg as *mut FramebufferVariableInfo, &effective_info)
                 }
@@ -331,6 +334,6 @@ impl Device for FramebufferDevice {
     }
 
     fn capacity(&self) -> Result<u64, ErrorKind> {
-        self.ops.byte_len()
+        self.ops.read().byte_len()
     }
 }

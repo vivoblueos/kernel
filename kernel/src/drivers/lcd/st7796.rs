@@ -16,7 +16,7 @@ use crate::{
     devices::{
         bus::{Bus, BusWrapper},
         gpio::{GeneralGpio, Level},
-        spi_core::block_spi::BlockSpi,
+        spi_core::{block_spi::BlockSpi, ExclusiveSpiWithCs},
         DeviceData,
     },
     drivers::{DriverModule, InitDriver},
@@ -34,6 +34,7 @@ use mipidsi::{
 pub struct St7796Config<G: blueos_hal::gpio::OutputPin> {
     pub rst: &'static G,
     pub dc: &'static G,
+    pub cs: Option<&'static G>,
     pub orientation: Orientation,
 }
 
@@ -54,6 +55,7 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
 
         let orientation = self.orientation;
         let spi_device = bus.intf.clone();
+        let spi_device = ExclusiveSpiWithCs::new(spi_device, self.cs.unwrap());
         let di = SpiInterface::new(spi_device, dc, unsafe { &mut BUFFER });
         let display = Builder::new(ST7796, di)
             .reset_pin(rst)
@@ -98,6 +100,7 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
                     Ok(St7796Config::<G> {
                         rst: config.rst,
                         dc: config.dc,
+                        cs: config.cs,
                         orientation: config.orientation,
                     })
                 } else {
@@ -111,10 +114,10 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
 
 impl<
         G1: blueos_hal::gpio::OutputPin,
-        G2: embedded_hal::digital::OutputPin + Send + 'static,
+        G2: embedded_hal::digital::OutputPin + 'static,
         T: blueos_hal::spi::Spi<SpiConfig, ()>,
     > super::Lcd
-    for Display<SpiInterface<'static, BusWrapper<BlockSpi<T, G1>>, G2>, ST7796, GeneralGpio<G1>>
+    for Display<SpiInterface<'static, ExclusiveSpiWithCs<T, G1>, G2>, ST7796, GeneralGpio<G1>>
 {
     fn draw_area(&mut self, area: super::DrawArea, color: &[u8]) -> Result<(), super::LcdError> {
         let area_width = area

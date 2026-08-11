@@ -53,23 +53,9 @@ pub trait Configuration<P> {
 
 /// Platform peripheral base trait
 ///
-/// Defines the fundamental operations that all platform peripherals must implement.
-/// This trait provides a unified interface for enabling and disabling peripheral devices
-/// across different hardware platforms.
-///
-/// All peripheral drivers should implement this trait to ensure consistent power
-/// management and resource control capabilities.
-///
-/// # Trait Bounds
-///
-/// This trait requires implementations to be:
-/// - `Sync` - Safe to share references between threads, Peripherals are often accessed from multiple contexts.
-/// - `Send` - Safe to transfer ownership between threads, Peripherals always exists in system memory.
-/// - `'static` - Lives for the entire duration of the program
-///
-/// These bounds ensure that peripheral instances can be safely used in multi-threaded
-/// environments and stored in static variables, which is common in embedded systems.
-pub trait PlatPeri: Sync + Send + 'static {
+/// Peripherals would be a global singleton,
+/// and the HAL layer would provide a static reference to the peripheral.
+pub trait PlatPeri: 'static {
     fn enable(&self) {}
     fn disable(&self) {}
 }
