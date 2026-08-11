@@ -124,6 +124,7 @@ impl Mutex {
     pub fn pend_for(&self, mut ticks: Tick) -> bool {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
+        let lock_id = self as *const _ as usize;
         let this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
         #[cfg(debugging_scheduler)]
         crate::trace!(
@@ -144,6 +145,10 @@ impl Mutex {
                 self.increment_nesting_count();
                 let old = self.replace_owner(Some(this_thread.clone()));
                 debug_assert!(old.is_none());
+                crate::trace_event!(record_lock_hold_begin(
+                    lock_id,
+                    Thread::id(&this_thread) as u32
+                ));
                 let mut guard = this_thread.lock();
                 let ok = guard.add_acquired_mutex(this_mutex.clone());
                 debug_assert!(ok);
@@ -182,12 +187,15 @@ impl Mutex {
             );
 
             let timeout;
+            crate::trace_event!(record_lock_wait_begin(lock_id, 0));
             (timeout, w) = Self::inner_pend_for(ticks, &this_mutex, w, &this_thread, &owner);
             if timeout {
+                crate::trace_event!(record_lock_wait_end(lock_id, false));
                 this_thread.replace_pending_on_mutex(None);
                 Self::recover_priority(&this_thread, &this_mutex);
                 return false;
             }
+            crate::trace_event!(record_lock_wait_end(lock_id, true));
             if ticks != Tick::MAX {
                 let now = Tick::now();
                 ticks = ticks.since(now.since(start));
@@ -313,6 +321,7 @@ impl Mutex {
     pub fn post(&self) {
         debug_assert!(!irq::is_in_irq());
         let this_thread = scheduler::current_thread();
+        let lock_id = self as *const _ as usize;
         {
             #[cfg(debugging_scheduler)]
             crate::trace!(
@@ -336,6 +345,7 @@ impl Mutex {
             if self.decrement_nesting_count() > 1 {
                 return;
             }
+            crate::trace_event!(record_lock_hold_end(lock_id));
             let mut this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
             for we in this_lock.iter() {
                 let t = we.thread.clone();

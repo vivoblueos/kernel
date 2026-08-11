@@ -45,6 +45,15 @@ config THREAD_STATS
     default n
     bool "Enable statistics of thread"
 
+config TRACING
+    default n
+    bool "Enable kernel tracing subsystem"
+
+config TRACING_BUFFER_KB
+    depends on TRACING
+    default 64
+    int "Tracing ring buffer size in KB"
+
 # os adapter configuration
 menu "os adapter configuration"
     choice

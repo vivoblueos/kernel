@@ -167,9 +167,11 @@ extern "C" fn handle_svc(context: &mut Context) -> usize {
             context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
         ],
     };
+    crate::trace_event!(record_sys_enter(sc.nr, sc.args[0], sc.args[1], sc.args[2]));
     enable_local_irq();
     context.x0 = dispatch_syscall(&sc);
     disable_local_irq();
+    crate::trace_event!(record_sys_exit(sc.nr, context.x0 as isize, 0));
     compiler_fence(Ordering::SeqCst);
     old_sp
 }
