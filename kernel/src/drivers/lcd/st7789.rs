@@ -33,6 +33,7 @@ use mipidsi::{
 pub struct St7789Config<G: blueos_hal::gpio::OutputPin> {
     pub rst: &'static G,
     pub dc: &'static G,
+    pub cs: Option<&'static G>,
 }
 
 static mut BUFFER: [u8; 512] = [0; 512];
@@ -91,6 +92,7 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
                     Ok(St7789Config::<G> {
                         rst: config.rst,
                         dc: config.dc,
+                        cs: config.cs,
                     })
                 } else {
                     Err(crate::error::code::ENODEV)

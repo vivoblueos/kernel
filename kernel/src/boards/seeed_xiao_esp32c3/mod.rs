@@ -119,6 +119,9 @@ const RTC_CNTL_WDTCONFIG0_REG: usize = RTC_CNTL_BASE + 0x90;
 
 const USB_SERIAL_JTAG_IRQ: Interrupt = Interrupt::new(26, USB_SERIAL_JTAG_INT_NUM);
 const SYSTIMER_TARGET0_IRQ: Interrupt = Interrupt::new(37, TARGET0_INT_NUM);
+const LED_DEVICE_MAJOR: usize = 242;
+const LED_B_DEVICE_MINOR: usize = 0;
+const LED_R_DEVICE_MINOR: usize = 1;
 
 pub(crate) fn init() {
     assert!(!local_irq_enabled());
@@ -189,6 +192,10 @@ crate::define_peripheral! {
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(21)),
     (lcd_cs, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(20)),
+    (led_b, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(2)),
+    (led_r, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
 }
 
 #[inline(always)]
@@ -215,6 +222,8 @@ crate::define_pin_states!(
     (5, 1, false, true, false, 2, None, None, true, false),        // lcd dc
     (4, 1, false, true, false, 2, None, None, true, false),        // lcd rst
     (21, 1, false, true, false, 2, None, None, true, false),       // touch rst
+    (2, 1, false, true, false, 2, None, None, true, false),        // led blue
+    (3, 1, false, true, false, 2, None, None, true, false),        // led red
 );
 
 crate::define_bus! {
@@ -226,6 +235,7 @@ crate::define_bus! {
             crate::drivers::lcd::st7789::St7789Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
                 rst: get_device!(rst_pin),
                 dc: get_device!(dc_pin),
+                cs: Some(get_device!(lcd_cs)),
             }
         ),
         #[cfg(st7796)]
@@ -233,10 +243,25 @@ crate::define_bus! {
             crate::drivers::lcd::st7796::St7796Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
                 rst: get_device!(rst_pin),
                 dc: get_device!(dc_pin),
+                cs: Some(get_device!(lcd_cs)),
                 orientation: mipidsi::options::Orientation::new()
                     .rotate(mipidsi::options::Rotation::Deg0)
                     .flip_horizontal(),
             }
+        ),
+    ),
+    (
+        i2c_bus,
+        crate::devices::i2c_core::block_i2c::BlockI2c<blueos_driver::i2c::esp32_i2c::Esp32I2c>,
+        #[cfg(ft6336u)]
+        (ft6336u, crate::drivers::input::ft6336u::Ft6336uConfig<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
+            crate::drivers::input::ft6336u::Ft6336uConfig::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
+                rst: get_device!(touch_rst_pin),
+            }
+        ),
+        #[cfg(bme280)]
+        (bme280, crate::drivers::sensor::bme280::Bme280Config,
+            crate::drivers::sensor::bme280::Bme280Config::new(0x76)
         ),
     ),
 }
@@ -283,4 +308,64 @@ pub(crate) fn init_spi_bus() {
     }
 }
 
-pub(crate) fn init_i2c_bus() {}
+pub(crate) fn init_i2c_bus() {
+    use crate::{
+        devices::{bus::Bus, i2c_core::block_i2c::BlockI2c},
+        drivers::InitDriver,
+    };
+    use alloc::sync::Arc;
+
+    if let Ok(block_i2c) = BlockI2c::new(get_device!(i2c0)) {
+        let i2c_bus = Arc::new(Bus::new(block_i2c));
+        for device in crate::boards::get_bus_devices!(i2c_bus) {
+            i2c_bus.register_device(device).unwrap();
+        }
+
+        #[cfg(ft6336u)]
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::input::ft6336u::Ft6336uDriverModule::<
+                blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+            >::new())
+        {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize FT6336U driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe FT6336U driver");
+        }
+
+        #[cfg(bme280)]
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
+        {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize BME280 driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe BME280 driver");
+        }
+    } else {
+        log::warn!("Failed to initialize ESP32-C3 I2C0 bus");
+    }
+}
+
+pub(crate) fn init_gpio() {
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_b),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_b"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_B_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_b");
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_r),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_r"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_r");
+}

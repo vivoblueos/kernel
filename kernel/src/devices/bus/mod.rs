@@ -33,12 +33,7 @@ pub struct Bus<B: BusInterface> {
 unsafe impl<B: BusInterface> Send for Bus<B> {}
 unsafe impl<B: BusInterface> Sync for Bus<B> {}
 
-pub trait BusInterface: Sync + Send + Sized {
-    type Region;
-    fn read_region(&self, region: Self::Region, buffer: &mut [u8]) -> crate::drivers::Result<()>;
-
-    fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()>;
-}
+pub trait BusInterface: Sized {}
 
 impl<B: BusInterface> Bus<B> {
     pub fn new(intf: B) -> Self {

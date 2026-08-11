@@ -423,20 +423,7 @@ mod tests {
     }
 
     struct DummyBus;
-    impl BusInterface for DummyBus {
-        type Region = u8;
-        fn read_region(
-            &self,
-            region: Self::Region,
-            buffer: &mut [u8],
-        ) -> crate::drivers::Result<()> {
-            Ok(())
-        }
-
-        fn write_region(&self, region: Self::Region, data: &[u8]) -> crate::drivers::Result<()> {
-            Ok(())
-        }
-    }
+    impl BusInterface for DummyBus {}
 
     #[test]
     fn test_device_match() {
