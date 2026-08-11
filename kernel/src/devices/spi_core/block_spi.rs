@@ -66,4 +66,5 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> Blo
 
 impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> BusInterface
     for BlockSpi<T, G>
-{}
+{
+}

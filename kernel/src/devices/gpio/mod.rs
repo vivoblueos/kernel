@@ -69,12 +69,12 @@ struct GeneralGpioDevice<T: blueos_hal::gpio::OutputPin> {
     level: Cell<Option<Level>>,
 }
 
-/// Safety: `GeneralGpioDevice` is safe to share between threads 
-/// because it uses a `SpinLock` to protect access to the 
-/// underlying GPIO pin, ensuring that only one thread can modify 
-/// the pin state at a time. The `level` field is a `Cell`, 
-/// which allows for interior mutability, but since it 
-/// is only accessed within the locked context, it does not 
+/// Safety: `GeneralGpioDevice` is safe to share between threads
+/// because it uses a `SpinLock` to protect access to the
+/// underlying GPIO pin, ensuring that only one thread can modify
+/// the pin state at a time. The `level` field is a `Cell`,
+/// which allows for interior mutability, but since it
+/// is only accessed within the locked context, it does not
 /// introduce data races. Therefore, it is safe to implement `Sync`
 unsafe impl<T: blueos_hal::gpio::OutputPin> Sync for GeneralGpioDevice<T> {}
 unsafe impl<T: blueos_hal::gpio::OutputPin> Send for GeneralGpioDevice<T> {}

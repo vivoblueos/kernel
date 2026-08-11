@@ -53,7 +53,7 @@ pub trait Configuration<P> {
 
 /// Platform peripheral base trait
 ///
-/// Peripherals would be a global singleton, 
+/// Peripherals would be a global singleton,
 /// and the HAL layer would provide a static reference to the peripheral.
 pub trait PlatPeri: 'static {
     fn enable(&self) {}

@@ -159,14 +159,12 @@ impl<T: blueos_hal::i2c::I2c<I2cConfig, ()>> embedded_hal::i2c::I2c for BusWrapp
         while let Some(operation) = operations.next() {
             let last = operations.peek().is_none();
             match operation {
-                embedded_hal::i2c::Operation::Read(buf) => {
-                    inner.read_bytes(address, buf, first, last)
-                        .map_err(|error| inner.report_error("read", error))?
-                }
-                embedded_hal::i2c::Operation::Write(buf) => {
-                    inner.write_bytes(address, buf, first, last)
-                        .map_err(|error| inner.report_error("write", error))?
-                }
+                embedded_hal::i2c::Operation::Read(buf) => inner
+                    .read_bytes(address, buf, first, last)
+                    .map_err(|error| inner.report_error("read", error))?,
+                embedded_hal::i2c::Operation::Write(buf) => inner
+                    .write_bytes(address, buf, first, last)
+                    .map_err(|error| inner.report_error("write", error))?,
             };
             first = false;
         }

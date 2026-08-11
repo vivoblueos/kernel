@@ -12,18 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::{
+    devices::{bus::BusWrapper, spi_core::block_spi::BlockSpi},
+    sync::KernelDelay,
+};
 use blueos_driver::spi::SpiConfig;
-use crate::devices::{bus::BusWrapper, spi_core::block_spi::BlockSpi};
 use embedded_hal::spi::Operation;
-use crate::sync::KernelDelay;
 pub mod block_spi;
 
-pub struct ExclusiveSpiWithCs<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> {
+pub struct ExclusiveSpiWithCs<
+    T: blueos_hal::spi::Spi<SpiConfig, ()>,
+    G: blueos_hal::gpio::OutputPin,
+> {
     spi: BusWrapper<BlockSpi<T, G>>,
     cs: &'static G,
 }
 
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> ExclusiveSpiWithCs<T, G> {
+impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
+    ExclusiveSpiWithCs<T, G>
+{
     pub fn new(spi: BusWrapper<BlockSpi<T, G>>, cs: &'static G) -> Self {
         ExclusiveSpiWithCs { spi, cs }
     }
@@ -46,17 +53,20 @@ impl embedded_hal::spi::Error for crate::error::Error {
 }
 
 #[cfg(use_embedded_hal_v1)]
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> 
-    embedded_hal::spi::ErrorType for ExclusiveSpiWithCs<T, G> 
+impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
+    embedded_hal::spi::ErrorType for ExclusiveSpiWithCs<T, G>
 {
     type Error = crate::error::Error;
 }
 
 #[cfg(use_embedded_hal_v1)]
-impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin> 
-    embedded_hal::spi::SpiDevice<u8> for ExclusiveSpiWithCs<T, G> 
+impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
+    embedded_hal::spi::SpiDevice<u8> for ExclusiveSpiWithCs<T, G>
 {
-    fn transaction(&mut self, operations: &mut [embedded_hal::spi::Operation<'_, u8>]) -> Result<(), Self::Error> {
+    fn transaction(
+        &mut self,
+        operations: &mut [embedded_hal::spi::Operation<'_, u8>],
+    ) -> Result<(), Self::Error> {
         let mut inner = self.spi.0.lock();
         self.assert_cs();
 
