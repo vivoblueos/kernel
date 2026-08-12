@@ -14,7 +14,7 @@
 
 use crate::{
     devices::{
-        bus::{Bus, BusWrapper},
+        bus::Bus,
         gpio::{GeneralGpio, Level},
         spi_core::{block_spi::BlockSpi, ExclusiveSpiWithCs},
         DeviceData,
