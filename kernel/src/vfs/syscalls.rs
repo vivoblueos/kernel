@@ -979,6 +979,33 @@ mod tests {
     }
 
     #[test]
+    fn test_rename_existing_target() {
+        let old_path = c"/rename-old".as_ptr() as *const c_char;
+        let new_path = c"/rename-new".as_ptr() as *const c_char;
+        let old_fd = open(old_path, libc::O_CREAT | libc::O_WRONLY, 0o644);
+        let new_fd = open(new_path, libc::O_CREAT | libc::O_WRONLY, 0o644);
+        assert!(old_fd > 0);
+        assert!(new_fd > 0);
+        assert_eq!(close(old_fd), code::EOK.to_errno());
+        assert_eq!(close(new_fd), code::EOK.to_errno());
+        assert_eq!(rename(old_path, new_path), code::EEXIST.to_errno());
+        assert_eq!(unlink(old_path), code::EOK.to_errno());
+        assert_eq!(unlink(new_path), code::EOK.to_errno());
+    }
+
+    #[test]
+    fn test_rename_rejects_descendant_target() {
+        let source = c"/rename-dir".as_ptr() as *const c_char;
+        let child = c"/rename-dir/child".as_ptr() as *const c_char;
+        let target = c"/rename-dir/child/moved".as_ptr() as *const c_char;
+        assert_eq!(mkdir(source, 0o755), code::EOK.to_errno());
+        assert_eq!(mkdir(child, 0o755), code::EOK.to_errno());
+        assert_eq!(rename(source, target), code::EINVAL.to_errno());
+        assert_eq!(rmdir(child), code::EOK.to_errno());
+        assert_eq!(rmdir(source), code::EOK.to_errno());
+    }
+
+    #[test]
     fn test_dir() {
         let result = open(TEST_DIR, libc::O_RDONLY, 0o755);
         assert_eq!(result, code::ENOENT.to_errno());
