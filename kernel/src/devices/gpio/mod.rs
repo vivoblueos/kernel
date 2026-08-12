@@ -29,7 +29,7 @@ pub struct GeneralGpio<T: blueos_hal::gpio::OutputPin> {
 impl<T: blueos_hal::gpio::OutputPin> !Sync for GeneralGpio<T> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Level {
+pub enum Level {
     Low,
     High,
 }
