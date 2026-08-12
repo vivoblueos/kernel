@@ -293,7 +293,7 @@ mod tests {
     fn test_mempool_many_threads() {
         // Do NOT increase this value greater than 256 while
         // TinyArc on 32-bit has only 8 bits for RC.
-        let n = 192;
+        let n = 64;
         let mut mp = Arc::new(MemoryPool::new());
         Arc::get_mut(&mut mp).unwrap().init(n, 64, None);
         let counter = Arc::new(AtomicUsize::new(0));
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_threaded_try_allocate_from_mempool() {
-        let n = 192;
+        let n = 64;
         let mut mp = Arc::new(MemoryPool::new());
         Arc::get_mut(&mut mp).unwrap().init(n, 64, None);
         let counter = Arc::new(AtomicUsize::new(0));

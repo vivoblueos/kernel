@@ -275,3 +275,35 @@ SECTIONS {
 }
 
 PROVIDE(__global_pointer$ = ALIGN(_sdata_start, 4) + 0x800);
+
+/* ---- libnet80211 / libwpa_supplicant 闭源 .a 引用的符号别名 ----
+ * C3 的 link.x(seeed_xiao_esp32c3/link.x:305-321)把 .a 要的 g_* / WIFI_EVENT
+ * 别名到 BlueOS 自实现的 __ESP_RADIO_* 符号,并 EXTERN 强制保留两个 mesh 符号。
+ * C6 的 ROM .ld 不提供这些符号(与 C3 不同:C3 的 esp32c3.rom.ld 直接强定义了
+ * g_misc_nvs/g_osi_funcs_p 等 ROM 地址,C6 ROM 只有 g_osi_funcs_p),故 C6 必须由
+ * 本 link.x 自行 PROVIDE,否则链接报 undefined reference to `g_misc_nvs` / `WIFI_EVENT`
+ * / `g_wifi_osi_funcs` / `g_log_level` 等。
+ *   __ESP_RADIO_G_WIFI_OSI_FUNCS   -> kernel/src/net/link/esp32_wlan/mod.rs
+ *   __ESP_RADIO_G_WIFI_FEATURE_CAPS-> kernel/src/net/link/esp32_wlan/mod.rs
+ *   __ESP_RADIO_WIFI_EVENT         -> kernel/src/net/link/esp32_wlan/api.rs:42
+ *   __ESP_RADIO_G_LOG_LEVEL        -> kernel/src/net/link/esp32_wlan/mod.rs (BlueOS 自补)
+ *   __ESP_RADIO_G_MISC_NVS         -> kernel/src/net/link/esp32_wlan/mod.rs (BlueOS 自补)
+ * g_espnow_user_oui / mesh_sta_auth_expire_time 无 Rust 定义,EXTERN 仅防止被
+ * --gc-sections 丢弃(保留给未来 mesh/espnow 实现占位,弱引用不报错)。
+ */
+EXTERN( __ESP_RADIO_G_WIFI_OSI_FUNCS );
+EXTERN( __ESP_RADIO_G_WIFI_FEATURE_CAPS );
+
+PROVIDE( g_wifi_osi_funcs = __ESP_RADIO_G_WIFI_OSI_FUNCS );
+PROVIDE( g_wifi_feature_caps = __ESP_RADIO_G_WIFI_FEATURE_CAPS );
+
+EXTERN( __ESP_RADIO_WIFI_EVENT );
+PROVIDE( WIFI_EVENT = __ESP_RADIO_WIFI_EVENT );
+
+EXTERN( __ESP_RADIO_G_MISC_NVS );
+EXTERN( __ESP_RADIO_G_LOG_LEVEL );
+PROVIDE( g_misc_nvs = __ESP_RADIO_G_MISC_NVS );
+PROVIDE( g_log_level = __ESP_RADIO_G_LOG_LEVEL );
+
+EXTERN( g_espnow_user_oui );
+EXTERN( mesh_sta_auth_expire_time );

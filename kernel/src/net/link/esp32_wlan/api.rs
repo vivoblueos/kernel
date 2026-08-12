@@ -26,7 +26,13 @@ use esp_radio_rtos_driver::{
     semaphore::{SemaphoreHandle, SemaphoreKind, SemaphorePtr},
     timer::{TimerHandle, TimerPtr},
 };
-use esp_wifi_sys_esp32c3::{
+// 按 SoC 选择 esp-wifi-sys crate:C3/C6 是同源 bindgen,API 名称完全一致,
+// 仅预编译 .a 不同(分别链 libnet80211_c3 / libnet80211_c6)。统一别名 esp_wifi_sys。
+#[cfg(soc_esp32c3)]
+use esp_wifi_sys_esp32c3 as esp_wifi_sys;
+#[cfg(soc_esp32c6)]
+use esp_wifi_sys_esp32c6 as esp_wifi_sys;
+use esp_wifi_sys::{
     c_types::{c_char, c_uint, c_void},
     include::{esp_event_base_t, ets_timer, timeval, OSI_FUNCS_TIME_BLOCKING},
 };
@@ -89,8 +95,12 @@ pub(super) fn random_u32() -> u32 {
 }
 
 pub(super) fn random_internal(data: &mut [u8]) {
-    use blueos_driver::rng::esp32c3_rng::Esp32c3Rng;
-    static RNG: SpinLock<Esp32c3Rng> = SpinLock::new(Esp32c3Rng::new());
+    // 按 SoC 选硬件 RNG:C3/C6 基址不同但 read_one()->u32 接口一致。
+    #[cfg(soc_esp32c3)]
+    use blueos_driver::rng::esp32c3_rng::Esp32c3Rng as Esp32Rng;
+    #[cfg(soc_esp32c6)]
+    use blueos_driver::rng::esp32c6_rng::Esp32c6Rng as Esp32Rng;
+    static RNG: SpinLock<Esp32Rng> = SpinLock::new(Esp32Rng::new());
 
     let wait_timer_cycles = 16_000_000 * 32 / 80_000_000;
     let until_tick = time::Tick::after(time::Tick(wait_timer_cycles));
@@ -144,7 +154,12 @@ impl Handler {
 
 pub static ISR_INTERRUPT_1: Handler = Handler::new();
 
+// WiFi 两个外设源(WIFI_PWR source=2、WIFI_MAC source=0)的 Interrupt 描述,
+// 均聚合到 CPU intr 1。C3 下 set_isr 通过 intc 设备 enable_irq 使能这两个源;
+// C6 走裸寄存器(见 set_isr 的 cfg(soc_esp32c6) 分支),不引用这两个常量,故仅 C3 保留。
+#[cfg(soc_esp32c3)]
 static WIFI_PWR_INTERRUPT: Interrupt = Interrupt::new(2, 1);
+#[cfg(soc_esp32c3)]
 static WIFI_MAC_INTERRUPT: Interrupt = Interrupt::new(0, 1);
 
 pub unsafe extern "C" fn env_is_chip() -> bool {
@@ -152,32 +167,146 @@ pub unsafe extern "C" fn env_is_chip() -> bool {
 }
 
 pub unsafe extern "C" fn set_intr(cpu_no: i32, intr_source: u32, intr_num: u32, intr_prio: i32) {
-    let intr = Interrupt::new(intr_source as _, intr_num as _);
-    get_device!(intc).allocate_irq(intr);
-    get_device!(intc).set_priority(intr, intr_prio as _);
+    #[cfg(soc_esp32c3)]
+    {
+        // C3:走 INTC core0 设备抽象(0x600C_2000),allocate_irq 把外设 source 映射到
+        // CPU intr,再设优先级。Interrupt 字段语义:source_no=外设源号,irq_no=CPU 中断号。
+        let intr = Interrupt::new(intr_source as _, intr_num as _);
+        get_device!(intc).allocate_irq(intr);
+        get_device!(intc).set_priority(intr, intr_prio as _);
+    }
+    #[cfg(soc_esp32c6)]
+    {
+        // C6:无 intc 设备抽象,走裸寄存器(INTMTX + PLIC_MX),与板级 route_source 等价。
+        // libnet80211 调用本回调传入的 (intr_source, intr_num, intr_prio) 与 C3 同语义:
+        //   intr_source = 外设源号(WIFI_MAC=0 / WIFI_PWR=2,见 esp-idf interrupts.h)
+        //   intr_num    = 目标 CPU 中断号(libnet80211 聚合到单一 line)
+        //   intr_prio   = 优先级(0=禁用,1..15 有效)
+        let _ = cpu_no;
+        // INTMTX 映射寄存器布局 = INTMTX_BASE + source*4(与 C3 INTC 同规律,
+        // 已用 USB_SERIAL_JTAG source48→+0xC0、SYSTIMER_TARGET0 source57→+0xE4 双例核实)。
+        const INTMTX_BASE: usize = 0x6001_0000;
+        // PLIC_MX(机器外部中断)寄存器布局(见 C6 板级 mod.rs:87-93):
+        //   ENABLE @ +0x00,位语义 = 1 << line
+        //   TYPE   @ +0x04,清对应 bit 设为 level 触发
+        //   PRI    @ +0x10,PRI[line] @ PRI + line*4(注意从 line 0 起,非 C3 的 line-1)
+        const PLIC_MX_BASE: usize = 0x2000_1000;
+        const PLIC_MX_TYPE: usize = PLIC_MX_BASE + 0x04;
+        const PLIC_MX_PRI: usize = PLIC_MX_BASE + 0x10;
+        const PLIC_MX_ENABLE: usize = PLIC_MX_BASE + 0x00;
+
+        let map_reg = INTMTX_BASE + (intr_source as usize) * 4;
+        let line = intr_num as usize;
+        // 临时关 mie 防路由过程中误触(与板级 route_source 同步风格)。
+        let mut mie: usize;
+        core::arch::asm!(
+            "csrr {mie}, mie",
+            "csrw mie, zero",
+            mie = out(reg) mie,
+            options(nostack, preserves_flags),
+        );
+        // 1) INTMTX:把外设 source 映射到 CPU intr line(写目标 line 号)。
+        core::ptr::write_volatile(map_reg as *mut u32, line as u32);
+        // 2) PLIC_MX_TYPE:清对应 bit → level 触发(C6 WiFi 中断为 level)。
+        let t = core::ptr::read_volatile(PLIC_MX_TYPE as *const u32);
+        core::ptr::write_volatile(PLIC_MX_TYPE as *mut u32, t & !(1u32 << line));
+        // 3) PLIC_MX_PRI[line]:设优先级(低 4 位有效)。
+        core::ptr::write_volatile((PLIC_MX_PRI + line * 4) as *mut u32, (intr_prio as u32) & 0xF);
+        // 4) PLIC_MX_ENABLE:使能该 line。
+        let en = core::ptr::read_volatile(PLIC_MX_ENABLE as *const u32);
+        core::ptr::write_volatile(PLIC_MX_ENABLE as *mut u32, en | (1u32 << line));
+        // 恢复 mie 并置上本次 line 的使能位。
+        mie |= 1usize << line;
+        core::arch::asm!("fence io, io", options(nostack, preserves_flags));
+        core::arch::asm!(
+            "csrw mie, {mie}",
+            mie = in(reg) mie,
+            options(nostack, preserves_flags),
+        );
+        // [diag] 路由后 mie 实际值——确认 line={line} 位(1<<{line})是否被置上。
+        let mie_after: usize;
+        core::arch::asm!(
+            "csrr {mie}, mie",
+            mie = out(reg) mie_after,
+            options(nostack, preserves_flags),
+        );
+        log::info!(
+            "[diag] set_intr(src={intr_source}, line={intr_num}, prio={intr_prio}) mie_after=0x{mie_after:x}"
+        );
+    }
 }
 
 /// Don't support
 pub unsafe extern "C" fn clear_intr(intr_source: u32, intr_num: u32) {}
 
 pub unsafe extern "C" fn set_isr(n: i32, f: *mut c_void, arg: *mut c_void) {
+    // [diag] 确认 libnet80211 是否调本回调 + 调用时的 mie 值(看 WiFi line1 使能位是否已置)。
+    let mie_before: usize;
+    core::arch::asm!(
+        "csrr {mie}, mie",
+        mie = out(reg) mie_before,
+        options(nostack, preserves_flags),
+    );
+    log::info!(
+        "[diag] set_isr(n={n}, f={f:p}, arg={arg:p}) mie_before=0x{mie_before:x}"
+    );
     match n {
         0 | 1 => ISR_INTERRUPT_1.set(f, arg),
         _ => panic!("set_isr - unsupported interrupt number {}", n),
     }
 
-    get_device!(intc).enable_irq(WIFI_PWR_INTERRUPT);
-    get_device!(intc).enable_irq(WIFI_MAC_INTERRUPT);
+    // 注册 ISR 后使能 WiFi 两个中断源(WIFI_PWR source=2、WIFI_MAC source=0,
+    // 均聚合到 CPU intr 1,见上方 WIFI_PWR/MAC_INTERRUPT 常量定义)。
+    #[cfg(soc_esp32c3)]
+    {
+        get_device!(intc).enable_irq(WIFI_PWR_INTERRUPT);
+        get_device!(intc).enable_irq(WIFI_MAC_INTERRUPT);
+    }
+    #[cfg(soc_esp32c6)]
+    {
+        // C6 无 intc 设备;WiFi 源路由由 libnet80211 先调 set_intr 完成(见上),
+        // 这里只补 CPU intr line 的使能(1<<1),与 ints_on 语义一致但避免依赖 libnet80211
+        // 后续 ints_on 时序——set_isr 时立即就绪。
+        // 注:WIFI_PWR/MAC_INTERRUPT 常量(source=2/0, irq=1)在 C6 下仍用于记录映射关系,
+        // 其 irq_no=1 即 ISR_INTERRUPT_1 对应的 line。
+        const PLIC_MX_ENABLE: usize = 0x2000_1000;
+        let en = core::ptr::read_volatile(PLIC_MX_ENABLE as *const u32);
+        core::ptr::write_volatile(PLIC_MX_ENABLE as *mut u32, en | (1u32 << 1));
+    }
 }
 
+// libnet80211 通过 ints_on/ints_off 使能/屏蔽 WiFi 用到的 CPU 外部中断位。
+// mask 语义两芯片一致:mask = 1 << cpu_intr_num,或上使能、与反屏蔽。
+// 仅 CPU 中断使能寄存器地址不同:
+//   C3 = INTERRUPT_CORE0_CPU_INT_ENABLE_REG @ 0x600C2104(INTC core0 域)
+//   C6 = PLIC_MXINT_ENABLE_REG            @ 0x20001000(PLIC_MX 域,RISC-V PLIC)
+// 来源 esp-idf: components/soc/esp32c6/register/soc/reg_base.h:7 + plic_reg.h:20。
 pub unsafe extern "C" fn ints_on(mask: u32) {
-    let tmp = core::ptr::read_volatile(0x600C2104 as *const u32);
-    core::ptr::write_volatile(0x600C2104 as *mut u32, tmp | mask);
+    #[cfg(soc_esp32c3)]
+    const INT_ENABLE_REG: usize = 0x600C2104;
+    #[cfg(soc_esp32c6)]
+    const INT_ENABLE_REG: usize = 0x20001000;
+    // [diag] 确认 driver 使能的 CPU 中断位 mask + 调用前的 mie。
+    // mask = 1 << cpu_intr_num,WiFi 期望 mask=0x2(line1);若非 0x2 说明 driver 把 WiFi
+    // 路由到的不是 line1,与 set_isr 的 ISR_INTERRUPT_1(line1)对不上 → 永不进 trap。
+    let mie_before: usize;
+    core::arch::asm!(
+        "csrr {mie}, mie",
+        mie = out(reg) mie_before,
+        options(nostack, preserves_flags),
+    );
+    log::info!("[diag] ints_on(mask=0x{mask:x}) mie_before=0x{mie_before:x}");
+    let tmp = core::ptr::read_volatile(INT_ENABLE_REG as *const u32);
+    core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, tmp | mask);
 }
 
 pub unsafe extern "C" fn ints_off(mask: u32) {
-    let tmp = core::ptr::read_volatile(0x600C2104 as *const u32);
-    core::ptr::write_volatile(0x600C2104 as *mut u32, tmp & !mask);
+    #[cfg(soc_esp32c3)]
+    const INT_ENABLE_REG: usize = 0x600C2104;
+    #[cfg(soc_esp32c6)]
+    const INT_ENABLE_REG: usize = 0x20001000;
+    let tmp = core::ptr::read_volatile(INT_ENABLE_REG as *const u32);
+    core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, tmp & !mask);
 }
 
 pub unsafe extern "C" fn is_from_isr() -> bool {
@@ -656,9 +785,15 @@ pub unsafe extern "C" fn wifi_apb80m_request() {}
 /// no-op
 pub unsafe extern "C" fn wifi_apb80m_release() {}
 
+// 以下 C3 SYSTEM 域时钟常量/static 为历史遗留死代码(无引用,现行走 esp_phy 模块)。
+// C6 的 WiFi 时钟在 MODEM_SYSCON 域(0x600A_9800),无单寄存器等价,故仅 C3 保留。
+#[cfg(soc_esp32c3)]
 const SYSTEM_WIFI_CLK_WIFI_BT_COMMON_M: u32 = 0x78078F;
+#[cfg(soc_esp32c3)]
 static PHY_CLK_REF: AtomicU32 = AtomicU32::new(0);
+#[cfg(soc_esp32c3)]
 static PHY_CLK_LOCK: SpinLock<()> = SpinLock::new(());
+#[cfg(soc_esp32c3)]
 const WIFI_CLK_EN_REG_ADDRESS: usize = 0x60026014;
 
 pub unsafe extern "C" fn phy_disable() {
@@ -666,7 +801,20 @@ pub unsafe extern "C" fn phy_disable() {
 }
 
 pub unsafe extern "C" fn phy_enable() {
+    // [诊断] 确认 libnet80211 是否调本回调 + PHY 校准结果。
+    // 注意:DataCheckFailed 是首次启动的正常现象,非根因——BlueOS 从不持久化校准数据
+    // (libphy.a 无 store/load_cal_data_to_nvs 符号,也不调 set_phy_calibration_data),
+    // 故每次启动校准 buffer 全零,checksum 必然失败。register_chipv7_phy 仍会执行 RF
+    // 校准并配置 PHY(返回码只表示"传入的旧数据无效"),calibrated 仍被置 true。
+    // 交叉验证:C3 走完全相同路径却能 scan,反证 DataCheckFailed 不致命。
+    // 真正待查的是 set_isr/set_intr/ints_on 是否被 driver 调到、mie line1 是否置上。
+    log::info!("[diag] phy_enable callback invoked");
     core::mem::forget(esp_phy::enable_phy());
+    if let Some(result) = esp_phy::last_calibration_result() {
+        log::info!("[diag] phy calibration result: {:?}", result);
+    } else {
+        log::warn!("[diag] phy not calibrated (last_calibration_result=None)");
+    }
 }
 
 // no-support
@@ -675,7 +823,11 @@ pub unsafe extern "C" fn phy_update_country_info(_country: *const core::ffi::c_c
 }
 
 pub unsafe extern "C" fn read_mac(mac_out: *mut u8, type_: u32) -> i32 {
+    // 按 SoC 选 eFuse MAC 读取器:C3/C6 EFUSE 基址不同,字段布局相同。
+    #[cfg(soc_esp32c3)]
     let mac = blueos_driver::hwinfo::esp32c3::mac();
+    #[cfg(soc_esp32c6)]
+    let mac = blueos_driver::hwinfo::esp32c6::mac();
     match type_ {
         0 => {
             // Station
@@ -774,18 +926,30 @@ pub unsafe extern "C" fn ets_timer_arm_us(ptimer: *mut c_void, us: u32, repeat: 
     timer.arm(us as u64, repeat);
 }
 
+// WiFi MAC 复位:写复位位置 1 再清 0(pulse),两芯片协议相同,仅寄存器地址/位号不同。
+//   C3: APB_CTRL_WIFI_RST_EN_REG @ 0x60026018,位 SYSTEM_WIFIMAC_RST = BIT(2)
+//       (SYSTEM 域,esp-idf syscon_reg.h:201)
+//   C6: MODEM_SYSCON_MODEM_RST_CONF_REG @ 0x600A9810,位 RST_WIFIMAC = BIT(10)
+//       (MODEM_SYSCON 域,esp-idf modem_syscon_reg.h:190,199-202;C6 无 SYSTEM 域 WiFi 复位)
 pub unsafe extern "C" fn wifi_reset_mac() {
-    const APB_CTRL_BASE: usize = 0x6002_6000;
-    const WIFI_RST_EN: *mut u32 = (APB_CTRL_BASE + 0x18) as *mut u32;
-    const MAC_RST: u32 = 1 << 2;
-
-    // set_bit()
-    let value = core::ptr::read_volatile(WIFI_RST_EN);
-    core::ptr::write_volatile(WIFI_RST_EN, value | MAC_RST);
-
-    // clear_bit()
-    let value = core::ptr::read_volatile(WIFI_RST_EN);
-    core::ptr::write_volatile(WIFI_RST_EN, value & !MAC_RST);
+    #[cfg(soc_esp32c3)]
+    {
+        const WIFI_RST_EN: *mut u32 = 0x6002_6018 as *mut u32;
+        const MAC_RST: u32 = 1 << 2;
+        let value = core::ptr::read_volatile(WIFI_RST_EN);
+        core::ptr::write_volatile(WIFI_RST_EN, value | MAC_RST);
+        let value = core::ptr::read_volatile(WIFI_RST_EN);
+        core::ptr::write_volatile(WIFI_RST_EN, value & !MAC_RST);
+    }
+    #[cfg(soc_esp32c6)]
+    {
+        const MODEM_RST_CONF: *mut u32 = 0x600A_9810 as *mut u32;
+        const RST_WIFIMAC: u32 = 1 << 10;
+        let value = core::ptr::read_volatile(MODEM_RST_CONF);
+        core::ptr::write_volatile(MODEM_RST_CONF, value | RST_WIFIMAC);
+        let value = core::ptr::read_volatile(MODEM_RST_CONF);
+        core::ptr::write_volatile(MODEM_RST_CONF, value & !RST_WIFIMAC);
+    }
 }
 
 /// no-op

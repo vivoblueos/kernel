@@ -56,7 +56,10 @@ build_rust("esp_radio_sys_unittest") {
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
   ]
-  rustflags = [ "--test" ]
+  rustflags = [
+    "--test",
+    "-Zpanic-abort-tests",
+  ]
 }
 
 run_clippy("esp_radio_sys_unittest_clippy") {

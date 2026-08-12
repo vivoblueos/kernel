@@ -14,7 +14,12 @@
 
 use crate::net::link::wifi_ops::Ssid;
 use enumset::{EnumSet, EnumSetType};
-use esp_wifi_sys_esp32c3::{c_types, include};
+// 按 SoC 选 esp-wifi-sys crate:C3/C6 同源 bindgen,API 名称一致,统一别名 esp_wifi_sys。
+#[cfg(soc_esp32c3)]
+use esp_wifi_sys_esp32c3 as esp_wifi_sys;
+#[cfg(soc_esp32c6)]
+use esp_wifi_sys_esp32c6 as esp_wifi_sys;
+use esp_wifi_sys::{c_types, include};
 use num_derive::FromPrimitive;
 
 // This code is modified from [esp-radio] https://github.com/esp-rs/esp-hal/blob/main/esp-radio/src/wifi/event.rs

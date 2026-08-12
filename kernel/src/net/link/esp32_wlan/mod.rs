@@ -41,7 +41,20 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use esp_hal::ram;
-use esp_wifi_sys_esp32c3::{
+// wifi-sys crate 按 SoC 切换:c3/c6 两个 crate 是同源 bindgen 产物,API 完全同名
+// (都含 pub mod c_types / pub mod include,符号集一致,已逐一核对 include.rs)。
+// 这里统一起别名 esp_wifi_sys,使下方 use 与调用点无需关心是 c3 还是 c6。
+#[cfg(soc_esp32c3)]
+use esp_wifi_sys_esp32c3 as esp_wifi_sys;
+#[cfg(soc_esp32c6)]
+use esp_wifi_sys_esp32c6 as esp_wifi_sys;
+// 出厂 MAC 读取按 SoC 选不同 hwinfo 子模块(C3/C6 的 eFuse 基址不同,但 mac()
+// 签名一致):统一别名为 hwinfo_mac,下方直接调用 hwinfo_mac()。
+#[cfg(soc_esp32c3)]
+use blueos_driver::hwinfo::esp32c3::mac as hwinfo_mac;
+#[cfg(soc_esp32c6)]
+use blueos_driver::hwinfo::esp32c6::mac as hwinfo_mac;
+use esp_wifi_sys::{
     c_types,
     include::{
         esp_err_t, esp_interface_t_ESP_IF_WIFI_STA, esp_supplicant_init, esp_wifi_connect_internal,
@@ -128,6 +141,17 @@ pub(crate) unsafe extern "C" fn recv_cb_sta(
     len: u16,
     eb: *mut c_types::c_void,
 ) -> esp_err_t {
+    // [诊断] 确认 L2 RX 链路是否收到任何帧(scan 期间应能看到 beacon/probe-response)。
+    // 节流:前 8 帧逐条打印,之后每 100 帧汇总一次,避免 beacon 风暴刷爆日志。
+    // 若 scan 期间此计数始终为 0 → RX 链路没收到帧,问题在 RF RX/L1 MAC;
+    // 若有计数但 scan 仍 0 AP → 问题在 driver 上层(scan 配置/结果过滤)。
+    let prev = RX_FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
+    if prev < 8 {
+        log::info!("[diag] recv_cb_sta: len={} (RX 帧到达 L2, count={})", len, prev + 1);
+    } else if prev % 100 == 0 {
+        log::info!("[diag] recv_cb_sta: 累计收到 {} 帧(节流中,每 100 帧汇总)", prev);
+    }
+
     let packet = PacketBuffer { buffer, len, eb };
     let queued = {
         let mut queue = get_wlan_singleton().rx_queue.lock();
@@ -145,6 +169,9 @@ pub(crate) unsafe extern "C" fn recv_cb_sta(
         ESP_ERR_NO_MEM as esp_err_t
     }
 }
+
+// [诊断] RX 帧到达计数器,配合 recv_cb_sta 节流打印。
+static RX_FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 struct WifiController {
     init_done: AtomicBool,
@@ -316,7 +343,7 @@ impl Esp32WlanLink {
     }
 
     pub fn mac_address(&self) -> [u8; 6] {
-        blueos_driver::hwinfo::esp32c3::mac()
+        hwinfo_mac()
     }
 }
 
@@ -334,7 +361,7 @@ impl LinkLayer for Esp32WlanLink {
     }
 
     fn hw_addr(&self) -> Option<super::HwAddr> {
-        Some(HwAddr::from_ethernet(blueos_driver::hwinfo::esp32c3::mac()))
+        Some(HwAddr::from_ethernet(hwinfo_mac()))
     }
 
     fn can_send(&self) -> bool {
@@ -649,9 +676,9 @@ impl WifiOps for Esp32WlanLink {
             cfg.sta.sort_method = wifi_sort_method_t_WIFI_CONNECT_AP_BY_SIGNAL;
             cfg.sta.threshold.rssi = -99;
             cfg.sta.threshold.authmode = if passphrase.is_empty() {
-                esp_wifi_sys_esp32c3::include::wifi_auth_mode_t_WIFI_AUTH_OPEN
+                esp_wifi_sys::include::wifi_auth_mode_t_WIFI_AUTH_OPEN
             } else {
-                esp_wifi_sys_esp32c3::include::wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK
+                esp_wifi_sys::include::wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK
             };
             cfg.sta.threshold.rssi_5g_adjustment = 0;
             cfg.sta.pmf_cfg.capable = true;
@@ -790,7 +817,19 @@ fn esp_api_adapter_init() -> Result<(), NetError> {
         }
     });
 
+    // [第三阶段诊断] init_internal 前先 dump PMU RF 寄存器,看复位/default 值
+    // 是否被板级 init() 改过。此时 RF 尚未 on(init_internal 内部才 phy_enable)。
+    #[cfg(soc_esp32c6)]
+    dump_pmu_rf_regs("before-init_internal");
+
     esp_wifi_init()?;
+
+    // [第三阶段诊断] init_internal 后再 dump 一次,对比 driver/libnet80211 是否
+    // 自己补了 BBPLL/RFRX 上电位。若 before/after 两份完全相同 → driver 没补,
+    // 确认根因在 BlueOS 漏调 pmu_init();若 after 把这些位置 1 了 → 根因不在此,
+    // 需另查。
+    #[cfg(soc_esp32c6)]
+    dump_pmu_rf_regs("after-init_internal");
 
     let ret = unsafe { esp_wifi_set_mode(wifi_mode_t_WIFI_MODE_NULL) };
     if ret != (ESP_OK as i32) {
@@ -926,11 +965,103 @@ pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_func
     _coex_schm_flexible_period_get: Some(coex_schm_flexible_period_get),
     _coex_schm_get_phase_by_idx: Some(coex_schm_get_phase_by_idx),
 
+    // C6 的 wifi_osi_funcs_t 比 C3 多这两个 sleep retention 字段(见
+    // esp-wifi-sys-esp32c6 include.rs:11401-11406);C3 crate 无此字段,故 cfg 门控。
+    // BlueOS 暂不实现 sleep retention,填 None(libnet80211 检测到 None 即跳过该路径)。
+    #[cfg(soc_esp32c6)]
+    _regdma_link_set_write_wait_content: None,
+    #[cfg(soc_esp32c6)]
+    _sleep_retention_find_link_by_id: None,
+
     _magic: ESP_WIFI_OS_ADAPTER_MAGIC as i32,
 };
 
 #[no_mangle]
 pub(crate) static mut G_WIFI_CONFIG: MaybeUninit<wifi_init_config_t> = MaybeUninit::zeroed();
+
+/* ---- [第三阶段诊断] PMU 关键寄存器只读 dump ----
+ * 背景:第二阶段补完 esp-radio init_clocks() 后 scan 仍 0 AP,且 trace 坐实中断链路
+ * 全通(分支 C),根因回到 RF/PHY 物理层。三层交叉验证(IDF pmu_init.c / esp-hal
+ * rtc/esp32c6.rs / BlueOS 绕过事实)指向:BlueOS 绕过了 IDF `pmu_init()`(由
+ * esp_clk_init 调用,是 app 运行时初始化非 bootloader),导致 active 态 RF 上电
+ * 配置未执行——尤其 PMU_HP_ACTIVE_HP_CK_POWER 的 XPD_BBPLL/XPD_BBPLL_I2C/XPD_BB_I2C
+ * (复位 default 全 0)和 PMU_RF_PWC 的 XPD_RFRX_PBUS/XPD_TXRF_I2C/XPD_CKGEN_I2C/
+ * XPD_PLL_I2C/PERIF_I2C_RSTB(default 全 0),esp-hal HpSystemInit::active() 把它们
+ * 置 1,BlueOS 没跑 pmu_init → 运行时仍为 0 → BBPLL/RF RX 没上电 → RX 收不到任何帧。
+ *
+ * 此处只读打印,不改任何寄存器,用于实测确认上述位在运行时确实未初始化。
+ * 在 esp_wifi_init_internal 前后各 dump 一次,对比 driver 是否自己补了这些位。
+ *
+ * 寄存器偏移/位号/default 全部取自 IDF 头文件
+ * components/soc/esp32c6/register/soc/pmu_reg.h(DR_REG_PMU_BASE = 0x600B_0000)。
+ * 位号同时与 esp-hal 1.1.1 src/rtc_cntl/rtc/esp32c6.rs 的 FieldWriter 起始位交叉核对。
+ */
+#[cfg(soc_esp32c6)]
+#[inline]
+fn dump_pmu_rf_regs(tag: &str) {
+    unsafe {
+        // 裸地址只读:PMU 基址 0x600B_0000,偏移取自 IDF pmu_reg.h。
+        const PMU_BASE: usize = 0x600B_0000;
+        let read32 = |off: usize| -> u32 {
+            core::ptr::read_volatile((PMU_BASE + off) as *const u32)
+        };
+
+        // PMU_HP_ACTIVE_DIG_POWER @ +0x0:
+        //   bit27 PD_HP_WIFI_PD_EN  default=0(active 态应为 0,不下电 WiFi)
+        let dig_power = read32(0x0);
+        // PMU_HP_ACTIVE_ICG_HP_FUNC @ +0x4:active 态应=0xffffffff(全开)
+        let icg_func = read32(0x4);
+        // PMU_HP_ACTIVE_ICG_HP_APB @ +0x8:active 态应=0xffffffff(全开)
+        let icg_apb = read32(0x8);
+        // PMU_HP_ACTIVE_ICG_MODEM @ +0xc:bits[31:30] 应=2(ICG_MODEM_CODE_ACTIVE)
+        let icg_modem = read32(0xc);
+        // PMU_HP_ACTIVE_HP_CK_POWER @ +0x14:
+        //   bit26 I2C_ISO_EN       default=0(应置 0)
+        //   bit28 XPD_BB_I2C       default=0(应置 1,BB i2c 上电)
+        //   bit29 XPD_BBPLL_I2C    default=0(应置 1,BBPLL i2c 上电)
+        //   bit30 XPD_BBPLL        default=0(应置 1,BBPLL 本振上电)★主嫌疑
+        let ck_power = read32(0x14);
+        // PMU_HP_ACTIVE_XTAL @ +0x30:bit31 XPD_XTAL default=1(非嫌疑,作对照)
+        let xtal = read32(0x30);
+        // PMU_POWER_PD_HPWIFI_CNTL @ +0x104:
+        //   bit2 PU / bit3 NO_RESET / bit4 NO_ISO  default 全 1(复位值 0x1c,已上电)
+        let wifi_pd = read32(0x104);
+        // PMU_RF_PWC @ +0x154:
+        //   bit26 PERIF_I2C_RSTB   default=0(应置 1)
+        //   bit27 XPD_PERIF_I2C    default=1(已是 1)
+        //   bit28 XPD_TXRF_I2C     default=0(应置 1,TX RF i2c 上电)
+        //   bit29 XPD_RFRX_PBUS    default=0(应置 1,RX pbus 上电)★主嫌疑
+        //   bit30 XPD_CKGEN_I2C    default=0(应置 1,clock gen i2c 上电)
+        //   bit31 XPD_PLL_I2C      default=0(应置 1,PLL i2c 上电)
+        let rf_pwc = read32(0x154);
+
+        log::info!(
+            "[pmu-dump {tag}] dig_power=0x{dig_power:x}(wifi_pd_en=b{f27}) \
+             icg_func=0x{icg_func:x} icg_apb=0x{icg_apb:x} \
+             icg_modem=0x{icg_modem:x}(code[31:30]={code}) \
+             ck_power=0x{ck_power:x}(bbpll=b{bbpll},bbpll_i2c=b{bi},bb_i2c=b{bbi},i2c_iso=b{iso}) \
+             xtal=0x{xtal:x}(xpd_xtal=b{xx}) \
+             wifi_pd=0x{wifi_pd:x}(pu=b{pu},no_rst=b{nr},no_iso=b{ni}) \
+             rf_pwc=0x{rf_pwc:x}(perif_rstb=b{pir},xpd_perif=b{xpi},txrf_i2c=b{ti},rfrx=b{rx},ckgen=b{cg},pll_i2c=b{pl})",
+            f27 = (dig_power >> 27) & 1,
+            code = (icg_modem >> 30) & 0b11,
+            bbpll = (ck_power >> 30) & 1,
+            bi = (ck_power >> 29) & 1,
+            bbi = (ck_power >> 28) & 1,
+            iso = (ck_power >> 26) & 1,
+            xx = (xtal >> 31) & 1,
+            pu = (wifi_pd >> 2) & 1,
+            nr = (wifi_pd >> 3) & 1,
+            ni = (wifi_pd >> 4) & 1,
+            pir = (rf_pwc >> 26) & 1,
+            xpi = (rf_pwc >> 27) & 1,
+            ti = (rf_pwc >> 28) & 1,
+            rx = (rf_pwc >> 29) & 1,
+            cg = (rf_pwc >> 30) & 1,
+            pl = (rf_pwc >> 31) & 1,
+        );
+    }
+}
 
 fn esp_wifi_init() -> Result<(), NetError> {
     unsafe {
@@ -941,14 +1072,14 @@ fn esp_wifi_init() -> Result<(), NetError> {
             wpa_crypto_funcs: g_wifi_default_wpa_crypto_funcs,
             static_rx_buf_num: 10,
             dynamic_rx_buf_num: 32,
-            tx_buf_type: esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_TX_BUFFER_TYPE as i32,
+            tx_buf_type: esp_wifi_sys::include::CONFIG_ESP_WIFI_TX_BUFFER_TYPE as i32,
             static_tx_buf_num: 0,
             dynamic_tx_buf_num: 32,
-            rx_mgmt_buf_type: esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF
+            rx_mgmt_buf_type: esp_wifi_sys::include::CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF
                 as i32,
-            rx_mgmt_buf_num: esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF
+            rx_mgmt_buf_num: esp_wifi_sys::include::CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF
                 as i32,
-            cache_tx_buf_num: esp_wifi_sys_esp32c3::include::WIFI_CACHE_TX_BUFFER_NUM as i32,
+            cache_tx_buf_num: esp_wifi_sys::include::WIFI_CACHE_TX_BUFFER_NUM as i32,
             csi_enable: true as i32,
             ampdu_rx_enable: true as i32,
             ampdu_tx_enable: true as i32,
@@ -957,12 +1088,12 @@ fn esp_wifi_init() -> Result<(), NetError> {
             nano_enable: 0,
             rx_ba_win: 6,
             wifi_task_core_id: 0,
-            beacon_max_len: esp_wifi_sys_esp32c3::include::WIFI_SOFTAP_BEACON_MAX_LEN as i32,
-            mgmt_sbuf_num: esp_wifi_sys_esp32c3::include::WIFI_MGMT_SBUF_NUM as i32,
+            beacon_max_len: esp_wifi_sys::include::WIFI_SOFTAP_BEACON_MAX_LEN as i32,
+            mgmt_sbuf_num: esp_wifi_sys::include::WIFI_MGMT_SBUF_NUM as i32,
             feature_caps: __ESP_RADIO_G_WIFI_FEATURE_CAPS,
             sta_disconnected_pm: false,
             espnow_max_encrypt_num:
-                esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM as i32,
+                esp_wifi_sys::include::CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM as i32,
 
             tx_hetb_queue_num: 3,
             dump_hesigb_enable: false,
@@ -993,3 +1124,30 @@ const WIFI_FEATURE_CAPS: u64 = WIFI_ENABLE_WPA3_SAE | WIFI_ENABLE_ENTERPRISE;
 
 #[unsafe(no_mangle)]
 pub(super) static mut __ESP_RADIO_G_WIFI_FEATURE_CAPS: u64 = WIFI_FEATURE_CAPS;
+
+/* ---- libnet80211 闭源 .a 需要的 NVS / log_level 符号 ----
+ * 背景:C3 的 link.x 把 .a 要的 g_misc_nvs / g_log_level 别名到 esp-radio-0.18.0
+ * 提供的 __ESP_RADIO_G_MISC_NVS / __ESP_RADIO_G_LOG_LEVEL(见 esp-radio-0.18.0
+ * common_adapter.rs:276-281)。但 C6 构建链的是 esp-phy-0.2.0 + esp-radio-rtos-driver
+ * -0.3.0,根本不编译 esp-radio-0.18.0(build.ninja 0 处引用),这两个符号在 C6 路径下
+ * 没有定义源。
+ *   libnet80211.a 同时 引用(U) 和 自带定义(B) g_misc_nvs / g_log_level:
+ * 只要 misc_nvs.o 被 --gc-sections 保留,B 定义就够用;一旦 misc_nvs.o 被丢弃,
+ * g_misc_nvs 退化成纯未定义引用,link.x 的 PROVIDE(g_misc_nvs = __ESP_RADIO_G_MISC_NVS)
+ * 被激活,此时 __ESP_RADIO_G_MISC_NVS 必须有定义,否则报
+ * "undefined symbol __ESP_RADIO_G_MISC_NVS referenced in expression"。
+ *   解法:在 BlueOS 自实现 OSI 的本模块补上这两个符号(语义照搬 esp-radio-0.18.0),
+ * 与 __ESP_RADIO_G_WIFI_OSI_FUNCS 同 crate 同 .o,必随 esp32_wlan 编译保留。
+ * NVS 用 15×u32 数组(esp-idf misc_nvs.c 的默认槽位),log_level=0(无日志)。
+ */
+/// libnet80211 `g_misc_nvs` 指向的 NVS 存储(15 个 u32 槽,esp-idf 默认大小)。
+#[used]
+static mut NVS: [u32; 15] = [0u32; 15];
+
+/// libnet80211 `g_misc_nvs` 的真实定义,link.x 别名 g_misc_nvs -> 本符号。
+#[unsafe(no_mangle)]
+pub(super) static mut __ESP_RADIO_G_MISC_NVS: *mut u32 = unsafe { &raw mut NVS } as *mut u32;
+
+/// libnet80211 `g_log_level` 的真实定义(0 = 关闭日志),link.x 别名 g_log_level -> 本符号。
+#[unsafe(no_mangle)]
+pub(super) static mut __ESP_RADIO_G_LOG_LEVEL: i32 = 0;

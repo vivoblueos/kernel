@@ -64,7 +64,9 @@ pub(crate) fn init() {
         ));
     }
 
-    #[cfg(soc_esp32c3)]
+    // esp32_wlan 注册条件同 net/link/mod.rs:必须 any(c3,c6),否则 C6 固件
+    // 不含 WiFi 链路设备,LINK_REGISTRY 里没有 wlan0,scan/connect 全无响应。
+    #[cfg(any(soc_esp32c3, soc_esp32c6))]
     {
         let device = Arc::new(spin::RwLock::new(
             crate::net::link::esp32_wlan::Esp32WlanLink::new(),
