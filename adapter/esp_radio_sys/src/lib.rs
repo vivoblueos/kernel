@@ -23,6 +23,7 @@ use arch_crate as arch;
 use blueos::{
     scheduler,
     scheduler::{wait_queue, wait_queue::WaitEntry, InsertToEnd},
+    sync::SpinLock,
     thread::{Entry, Stack, ThreadNode, SUSPENDED},
     time::Tick,
     types::{Arc, ThreadPriority},
@@ -174,14 +175,14 @@ impl SchedulerImplementation for BkScheduler {
 /// Wrapper around a kernel WaitQueue for use with the esp-radio driver.
 ///
 /// The kernel's `WaitQueue` (`Ilist<WaitEntry, OffsetOfWait>`) is an intrusive linked list.
-/// The FFI caller is responsible for serializing access to this opaque object; we heap-allocate
-/// it and expose it as a `WaitQueuePtr` to the esp-radio layer.
-struct EspWaitQueue(wait_queue::WaitQueue);
+/// The queue is shared by task and ISR wake paths, so all intrusive-list access
+/// must use the same IRQ-safe lock.
+struct EspWaitQueue(SpinLock<wait_queue::WaitQueue>);
 
 impl WaitQueueImplementation for EspWaitQueue {
     fn create() -> WaitQueuePtr {
-        let mut wq = Box::new(EspWaitQueue(wait_queue::WaitQueue::new()));
-        wq.0.init();
+        let wq = Box::new(EspWaitQueue(SpinLock::new(wait_queue::WaitQueue::new())));
+        wq.0.irqsave_lock().init();
         let ptr = Box::into_raw(wq);
         NonNull::new(ptr as *mut ()).unwrap()
     }
@@ -193,22 +194,23 @@ impl WaitQueueImplementation for EspWaitQueue {
 
     #[allow(clippy::drop_non_drop)]
     unsafe fn wait_until(queue: WaitQueuePtr, deadline_instant: Option<u64>) {
-        let this = &mut *(queue.as_ptr() as *mut EspWaitQueue);
+        let this = &*(queue.as_ptr() as *const EspWaitQueue);
         let this_thread = scheduler::current_thread();
         let deadline = deadline_instant.map(Tick::from_micros).unwrap_or(Tick::MAX);
-        let w = &mut this.0;
+        let mut w = this.0.irqsave_lock();
         with_iou!(|borrowed_wait_entry| {
             let mut wait_entry = WaitEntry::new(this_thread.clone());
             borrowed_wait_entry =
-                wait_queue::insert(w, &mut wait_entry, InsertToEnd::MODE).unwrap();
-            let _ = scheduler::suspend_me_until::<()>(deadline, None);
+                wait_queue::insert(&mut w, &mut wait_entry, InsertToEnd::MODE).unwrap();
+            let _ = scheduler::suspend_me_until(deadline, Some(w));
+            w = this.0.irqsave_lock();
             borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
         });
     }
 
     unsafe fn notify(queue: WaitQueuePtr) {
         let this = &*(queue.as_ptr() as *const EspWaitQueue);
-        let w = &this.0;
+        let w = this.0.irqsave_lock();
         let mut woke = false;
         for entry in w.iter() {
             let t = entry.thread.clone();
@@ -217,6 +219,7 @@ impl WaitQueueImplementation for EspWaitQueue {
                 break;
             }
         }
+        drop(w);
         if woke {
             scheduler::yield_me_now_or_later();
         }
@@ -224,15 +227,21 @@ impl WaitQueueImplementation for EspWaitQueue {
 
     unsafe fn notify_from_isr(queue: WaitQueuePtr, mut higher_prio_task_waken: Option<&mut bool>) {
         let this = &*(queue.as_ptr() as *const EspWaitQueue);
-        let w = &this.0;
+        let w = this.0.irqsave_lock();
+        let mut woke = false;
         for entry in w.iter() {
             let t = entry.thread.clone();
             if scheduler::queue_ready_thread(SUSPENDED, t).is_ok() {
+                woke = true;
                 if let Some(hptw) = higher_prio_task_waken.as_mut() {
                     **hptw = true;
                 }
                 break;
             }
+        }
+        drop(w);
+        if woke {
+            scheduler::yield_me_now_or_later();
         }
     }
 }
