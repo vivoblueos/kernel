@@ -37,9 +37,7 @@ use core::{
 };
 use delegate::delegate;
 use log::{debug, error, trace};
-use spin::{Mutex, RwLock};
-
-static RENAME_LOCK: Mutex<()> = Mutex::new(());
+use spin::RwLock;
 
 /// File system lookup cache
 pub struct Dcache {
@@ -238,7 +236,6 @@ impl Dcache {
     }
 
     pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<(), Error> {
-        let _rename_guard = RENAME_LOCK.lock();
         if self.inode.type_() != InodeFileType::Directory {
             return Err(code::ENOTDIR);
         }
@@ -266,7 +263,6 @@ impl Dcache {
     }
 
     pub fn unmount(&self) -> Result<(), Error> {
-        let _rename_guard = RENAME_LOCK.lock();
         if !self.is_mount_point() {
             error!("Directory is not a mount point");
             return Err(code::EINVAL);
@@ -291,7 +287,6 @@ impl Dcache {
     }
 
     pub fn link(&self, old: &Arc<Dcache>, new_name: &str) -> Result<(), Error> {
-        let _rename_guard = RENAME_LOCK.lock();
         if self.inode.type_() != InodeFileType::Directory {
             return Err(code::ENOTDIR);
         }
@@ -349,7 +344,6 @@ impl Dcache {
         new_dir: &Arc<Dcache>,
         new_name: &str,
     ) -> Result<(), Error> {
-        let _rename_guard = RENAME_LOCK.lock();
         if self.inode.type_() != InodeFileType::Directory
             || new_dir.inode.type_() != InodeFileType::Directory
         {
