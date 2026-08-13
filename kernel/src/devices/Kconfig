@@ -8,3 +8,48 @@ config I2C_CORE
     default n
     bool "enable i2c core"
 
+config SPI_FLASH_SECTOR_SIZE
+    int "SPI flash logical sector size"
+    default 512
+    range 1 65535
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_PAGE_SIZE
+    int "SPI flash page size"
+    default 256
+    range 1 65536
+    depends on ENABLE_BLOCK
+
+choice
+    prompt "SPI flash erase size"
+    default SPI_FLASH_ERASE_SIZE_4K
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_ERASE_SIZE_4K
+    bool "4 KiB"
+
+config SPI_FLASH_ERASE_SIZE_32K
+    bool "32 KiB"
+
+config SPI_FLASH_ERASE_SIZE_64K
+    bool "64 KiB"
+
+endchoice
+
+config SPI_FLASH_ERASE_SIZE
+    int
+    default 4096 if SPI_FLASH_ERASE_SIZE_4K
+    default 32768 if SPI_FLASH_ERASE_SIZE_32K
+    default 65536 if SPI_FLASH_ERASE_SIZE_64K
+
+config SPI_FLASH_MAX_CAPACITY
+    int "Maximum SPI flash capacity using 3-byte addresses"
+    default 16777216
+    range 1 16777216
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_ERASE_CACHE_SLOTS
+    int "SPI flash erase cache slots"
+    default 2
+    range 1 4
+    depends on ENABLE_BLOCK
