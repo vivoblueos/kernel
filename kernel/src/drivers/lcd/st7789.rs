@@ -14,9 +14,9 @@
 
 use crate::{
     devices::{
-        bus::{Bus, BusWrapper},
+        bus::Bus,
         gpio::{GeneralGpio, Level},
-        spi_core::block_spi::BlockSpi,
+        spi_core::{block_spi::BlockSpi, ExclusiveSpiWithCs},
         DeviceData,
     },
     drivers::{DriverModule, InitDriver},
@@ -50,6 +50,7 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
         rst.set_high();
 
         let spi_device = bus.intf.clone();
+        let spi_device = ExclusiveSpiWithCs::new(spi_device, self.cs.unwrap());
         use mipidsi::options::ColorInversion;
         let di = SpiInterface::new(spi_device, dc, unsafe { &mut BUFFER });
         let mut display = Builder::new(ST7789, di)
@@ -108,7 +109,7 @@ impl<
         G2: embedded_hal::digital::OutputPin + Send + 'static,
         T: blueos_hal::spi::Spi<SpiConfig, ()>,
     > super::Lcd
-    for Display<SpiInterface<'static, BusWrapper<BlockSpi<T, G1>>, G2>, ST7789, GeneralGpio<G1>>
+    for Display<SpiInterface<'static, ExclusiveSpiWithCs<T, G1>, G2>, ST7789, GeneralGpio<G1>>
 {
     fn draw_area(&mut self, area: super::DrawArea, color: &[u8]) -> Result<(), super::LcdError> {
         let area_width = area

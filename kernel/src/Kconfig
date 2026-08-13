@@ -45,6 +45,15 @@ config THREAD_STATS
     default n
     bool "Enable statistics of thread"
 
+config ENABLE_BLOCK
+    default n
+    bool "Enable block device support"
+
+config FATFS
+    default n
+    bool "Enable FAT filesystem"
+    depends on ENABLE_BLOCK
+
 # os adapter configuration
 menu "os adapter configuration"
     choice

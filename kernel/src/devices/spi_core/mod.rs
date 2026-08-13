@@ -84,6 +84,6 @@ impl<T: blueos_hal::spi::Spi<SpiConfig, ()>, G: blueos_hal::gpio::OutputPin>
         });
 
         self.deassert_cs();
-        Ok(())
+        op_res
     }
 }

@@ -53,9 +53,11 @@ pub struct Esp32GpioOutputPin {
     pin: u8,
 }
 
+// FIXME: need a platform config exposing the GPIO count so the pin range can
+// be validated at construction; there is no runtime check today.
 impl Esp32GpioOutputPin {
     pub const fn new(pin: u8) -> Self {
-        Esp32GpioOutputPin { pin }
+        Self { pin }
     }
 }
 

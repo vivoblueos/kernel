@@ -99,6 +99,9 @@ impl FatFileSystem {
                     );
                     fatfs::format_volume(&mut storage, format_opts)
                         .expect("[FatFileSystem] Format volume fail.");
+                    storage
+                        .flush()
+                        .expect("[FatFileSystem] Flush after format fail.");
                     fatfs::FileSystem::new(storage, fatfs::FsOptions::new())
                         .expect("[FatFileSystem] Failed to construct internal fs again")
                 }
@@ -550,7 +553,11 @@ impl InodeOps for FatInode {
     }
 
     fn close(&self) -> Result<(), Error> {
-        Ok(())
+        // Persist file contents on close; non-regular inodes have nothing to flush.
+        if self.type_() != InodeFileType::Regular {
+            return Ok(());
+        }
+        self.fsync()
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8], _nonblock: bool) -> Result<usize, Error> {
