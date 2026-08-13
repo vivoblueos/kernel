@@ -311,7 +311,7 @@ impl<G: OutputPin> SpiFlashConfig<G> {
 impl<T, G> InitDriver<BlockSpi<T, G>> for SpiFlashConfig<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
-    G: PlatPeri + OutputPin,
+    G: PlatPeri + OutputPin + Sync,
 {
     type Data = ();
 
@@ -367,7 +367,7 @@ impl<G> SpiFlashDriverModule<G> {
 impl<T, G> DriverModule<BlockSpi<T, G>> for SpiFlashDriverModule<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
-    G: PlatPeri + OutputPin,
+    G: PlatPeri + OutputPin + Sync,
 {
     type Data = SpiFlashConfig<G>;
 
