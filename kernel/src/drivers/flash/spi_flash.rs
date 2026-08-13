@@ -15,7 +15,9 @@
 //! SPI NOR Flash FTL block driver adapter.
 
 use alloc::{string::String, sync::Arc, vec, vec::Vec};
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 use blueos_driver::spi::SpiConfig;
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 use blueos_hal::{gpio::OutputPin, spi::Spi, PlatPeri};
 use core::cmp::min;
 use embedded_hal::spi::SpiDevice;
@@ -24,15 +26,19 @@ use embedded_io::ErrorKind;
 use crate::{
     devices::{
         block::{Block, BlockDriverOps, BlockError, ErrorType},
-        bus::{Bus, BusInterface},
-        spi_core::{block_spi::BlockSpi, ExclusiveSpiWithCs},
-        DeviceData, DeviceManager,
+        DeviceManager,
     },
-    drivers::{
-        flash::spi_flash_cmd::{FlashError, SpiFlashCmd},
-        DriverModule, InitDriver,
-    },
+    drivers::flash::spi_flash_cmd::{FlashError, SpiFlashCmd},
     sync::SpinLock,
+};
+#[cfg(all(use_embedded_hal_v1, spi_core))]
+use crate::{
+    devices::{
+        bus::Bus,
+        spi_core::{block_spi::BlockSpi, ExclusiveSpiWithCs},
+        DeviceData,
+    },
+    drivers::{DriverModule, InitDriver},
 };
 
 const FLASH_SECTOR_SIZE: u16 = blueos_kconfig::CONFIG_SPI_FLASH_SECTOR_SIZE as u16;
@@ -296,18 +302,20 @@ where
     Ok(())
 }
 
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 pub struct SpiFlashConfig<G: OutputPin> {
     pub name: &'static str,
     pub cs: &'static G,
 }
 
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 impl<G: OutputPin> SpiFlashConfig<G> {
     pub const fn new(name: &'static str, cs: &'static G) -> Self {
         SpiFlashConfig { name, cs }
     }
 }
 
-#[cfg(use_embedded_hal_v1)]
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 impl<T, G> InitDriver<BlockSpi<T, G>> for SpiFlashConfig<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
@@ -351,10 +359,12 @@ where
     }
 }
 
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 pub struct SpiFlashDriverModule<G> {
     _marker: core::marker::PhantomData<G>,
 }
 
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 impl<G> SpiFlashDriverModule<G> {
     pub const fn new() -> Self {
         SpiFlashDriverModule {
@@ -363,7 +373,7 @@ impl<G> SpiFlashDriverModule<G> {
     }
 }
 
-#[cfg(use_embedded_hal_v1)]
+#[cfg(all(use_embedded_hal_v1, spi_core))]
 impl<T, G> DriverModule<BlockSpi<T, G>> for SpiFlashDriverModule<G>
 where
     T: PlatPeri + Spi<SpiConfig, ()>,
