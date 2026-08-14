@@ -17,6 +17,8 @@ use core::alloc::Layout;
 
 pub type Result<T> = core::result::Result<T, &'static str>;
 
+pub type MemoryWriter = fn(&mut MemoryMapper, usize, &[u8]) -> Result<()>;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MemoryPermissions(u8);
 
@@ -79,11 +81,12 @@ pub struct MemoryMapper {
     virtual_end: usize,
     mem: Storage,
     mode: MappingMode,
+    writer: Option<MemoryWriter>,
 }
 
 impl MemoryMapper {
     #[inline]
-    pub fn new(regions: Option<&'static [MemoryRegion]>) -> Self {
+    pub fn new(regions: Option<&'static [MemoryRegion]>, writer: Option<MemoryWriter>) -> Self {
         Self {
             virtual_entry: 0,
             virtual_start: usize::MAX,
@@ -93,6 +96,7 @@ impl MemoryMapper {
                 Some(regions) => MappingMode::Fixed(regions),
                 None => MappingMode::Allocated,
             },
+            writer,
         }
     }
 
@@ -250,6 +254,12 @@ impl MemoryMapper {
 
     pub fn write_slice_at(&mut self, vaddr: usize, data: &[u8]) -> Result<usize> {
         let size = data.len();
+        if let Some(writer) = self.writer.take() {
+            let result = writer(self, vaddr, data);
+            self.writer = Some(writer);
+            result?;
+            return Ok(size);
+        }
         if size == 0 {
             return Ok(size);
         }

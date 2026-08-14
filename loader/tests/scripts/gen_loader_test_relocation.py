@@ -23,10 +23,20 @@ LINKER_SCRIPT_PLACEHOLDER_PATTERN = re.compile(r"@[A-Z][A-Z0-9_]*@")
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--region", required=True)
-    parser.add_argument("--origin", required=True)
-    parser.add_argument("--length", required=True)
-    parser.add_argument("--permissions", required=True)
+    parser.add_argument("--region")
+    parser.add_argument("--origin")
+    parser.add_argument("--length")
+    parser.add_argument("--permissions")
+    parser.add_argument("--irom-origin")
+    parser.add_argument("--irom-length")
+    parser.add_argument("--irom-permissions")
+    parser.add_argument("--rodata-origin")
+    parser.add_argument("--rodata-length")
+    parser.add_argument("--rodata-permissions")
+    parser.add_argument("--rwdata-origin")
+    parser.add_argument("--rwdata-length")
+    parser.add_argument("--rwdata-permissions")
+    parser.add_argument("--flash-mmu-page-size")
     parser.add_argument("--linker-script-template", required=True)
     parser.add_argument("--linker-script", required=True)
     return parser.parse_args()
@@ -35,6 +45,7 @@ def parse_args():
 def validate_identifier(value, description):
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
         raise ValueError(f"invalid {description}: {value}")
+    return value
 
 
 def parse_number(value, description):
@@ -47,14 +58,15 @@ def parse_number(value, description):
     return result
 
 
-def write_linker_script(template_path, path, region, origin, length,
-                        permissions):
-    replacements = {
-        "@REGION@": region,
-        "@ORIGIN@": f"0x{origin:x}",
-        "@LENGTH@": f"0x{length:x}",
-        "@PERMISSIONS@": permissions,
-    }
+def validate_permissions(value, description):
+    if (not value or any(permission not in "rwx" for permission in value)
+            or len(set(value)) != len(value)):
+        raise ValueError(
+            f"{description} must contain unique r, w, or x permissions")
+    return value
+
+
+def write_linker_script(template_path, path, replacements):
     template = pathlib.Path(template_path).read_text(encoding="utf-8")
     placeholders = set(LINKER_SCRIPT_PLACEHOLDER_PATTERN.findall(template))
     expected_placeholders = set(replacements)
@@ -84,26 +96,72 @@ def write_linker_script(template_path, path, region, origin, length,
 
 def main():
     args = parse_args()
-    validate_identifier(args.region, "region name")
-    origin = parse_number(args.origin, "origin")
-    length = parse_number(args.length, "length")
-    if length <= 16:
-        raise ValueError("length must be greater than 16 bytes")
-    if origin + length <= origin:
-        raise ValueError("region address overflow")
-    permissions = args.permissions
-    if (not permissions or any(value not in "rwx" for value in permissions)
-            or len(set(permissions)) != len(permissions)):
-        raise ValueError(
-            "permissions must be r, w, x, or a combination of them")
+    values = {
+        "origin": args.origin,
+        "length": args.length,
+        "irom_origin": args.irom_origin,
+        "irom_length": args.irom_length,
+        "rodata_origin": args.rodata_origin,
+        "rodata_length": args.rodata_length,
+        "rwdata_origin": args.rwdata_origin,
+        "rwdata_length": args.rwdata_length,
+        "flash_mmu_page_size": args.flash_mmu_page_size,
+    }
+    values = {name: value for name, value in values.items()
+              if value is not None}
+    parsed = {
+        name: parse_number(value, name.replace("_", " "))
+        for name, value in values.items()
+    }
+    generic_region = [args.region, args.origin, args.length, args.permissions]
+    if any(value is not None for value in generic_region) and any(
+            value is None for value in generic_region):
+        raise ValueError("incomplete generic region")
+    if args.region is not None:
+        origin = parsed["origin"]
+        length = parsed["length"]
+        if origin + length <= origin:
+            raise ValueError("generic region address overflow")
+
+    for region in ("irom", "rodata", "rwdata"):
+        provided = [
+            getattr(args, f"{region}_origin"),
+            getattr(args, f"{region}_length"),
+            getattr(args, f"{region}_permissions"),
+        ]
+        if any(value is not None for value in provided) and any(
+                value is None for value in provided):
+            raise ValueError(f"incomplete {region.replace('_', ' ')} region")
+        if provided[0] is None:
+            continue
+        origin = parsed[f"{region}_origin"]
+        length = parsed[f"{region}_length"]
+        if origin + length <= origin:
+            raise ValueError(f"{region} address overflow")
+
+    replacements = {
+        f"@{name.upper()}@": f"0x{value:x}"
+        for name, value in parsed.items()
+    }
+    if args.region is not None:
+        replacements["@REGION@"] = validate_identifier(
+            args.region, "region name")
+        replacements["@PERMISSIONS@"] = validate_permissions(
+            args.permissions, "generic region permissions")
+
+    for region in ("irom", "rodata", "rwdata"):
+        if getattr(args, f"{region}_permissions") is None:
+            continue
+        permissions = validate_permissions(
+            getattr(args, f"{region}_permissions"),
+            f"{region.replace('_', ' ')} permissions",
+        )
+        replacements[f"@{region.upper()}_PERMISSIONS@"] = permissions
 
     write_linker_script(
         args.linker_script_template,
         args.linker_script,
-        args.region,
-        origin,
-        length,
-        args.permissions,
+        replacements,
     )
 
 
