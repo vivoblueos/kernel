@@ -30,6 +30,13 @@ pub type ClockImpl =
 
 pub type Spi2Impl = blueos_driver::spi::esp32_spi::Esp32Spi2<0x6002_4000, 0x600c_0000, 80_000_000>;
 
+// ESP32-C3 on-chip flash and MMU layout.
+pub const LOADABLE_REGION_BASE: u32 = blueos_kconfig::CONFIG_ESP32_LOADABLE_REGION_BASE;
+pub const LOADABLE_REGION_SIZE: u32 = blueos_kconfig::CONFIG_ESP32_LOADABLE_REGION_SIZE;
+pub const LOADABLE_REGION_END: u32 = LOADABLE_REGION_BASE + LOADABLE_REGION_SIZE;
+pub const IROM_VADDR_BASE: u32 = 0x4200_0000;
+pub const DROM_VADDR_BASE: u32 = 0x3C00_0000;
+pub const FLASH_MMU_PAGE_SIZE: u32 = 0x0001_0000;
 core::arch::global_asm!(
     "
 .section .trap
