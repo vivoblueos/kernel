@@ -251,6 +251,7 @@ impl ExecMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     fn base() -> u32 {
         LOADABLE_REGION_BASE
@@ -307,20 +308,20 @@ mod tests {
     #[test]
     fn map_exec_rejects_zero_size() {
         clear_state();
-        assert_eq!(map_exec(base(), 0), Err(MapError::ZeroSize));
+        assert!(matches!(map_exec(base(), 0), Err(MapError::ZeroSize)));
     }
 
     #[test]
     fn map_exec_rejects_below_region() {
         clear_state();
-        assert_eq!(map_exec(base() - 1, 1), Err(MapError::OutOfRange));
+        assert!(matches!(map_exec(base() - 1, 1), Err(MapError::OutOfRange)));
     }
 
     #[test]
     fn map_exec_rejects_past_end() {
         clear_state();
-        assert_eq!(map_exec(end(), 1), Err(MapError::OutOfRange));
-        assert_eq!(map_exec(end() - 1, 2), Err(MapError::OutOfRange));
+        assert!(matches!(map_exec(end(), 1), Err(MapError::OutOfRange)));
+        assert!(matches!(map_exec(end() - 1, 2), Err(MapError::OutOfRange)));
     }
 
     #[test]
@@ -388,7 +389,7 @@ mod tests {
     fn map_exec_rejects_double_map() {
         clear_state();
         let _m = map_exec(base(), 4).unwrap();
-        assert_eq!(map_exec(base(), 4), Err(MapError::AlreadyMapped));
+        assert!(matches!(map_exec(base(), 4), Err(MapError::AlreadyMapped)));
     }
 
     #[test]
