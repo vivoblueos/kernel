@@ -51,7 +51,7 @@ use semihosting::println;
 // In esp32c3/esp32c6, we use usb-serial as the console output,
 // which does not support on qemu yet, so we skip this test on them for now.
 // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
-#[cfg_attr(not(any(soc_esp32c3, soc_esp32c6)), test)]
+#[cfg_attr(not(soc_esp32c3), test)]
 fn test_uart() {
     // Test UART device path
     let uart_path = c"/dev/ttyS0";

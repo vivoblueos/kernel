@@ -41,7 +41,22 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use esp_hal::ram;
-use esp_wifi_sys_esp32c3::{
+// The wifi-sys crate is selected per SoC: the c3/c6 crates are same-source bindgen
+// artifacts with identical API names (both expose pub mod c_types / pub mod include,
+// same symbol set, verified field-by-field against include.rs). Here we alias both
+// to esp_wifi_sys so the use statements and call sites below need not care c3 vs c6.
+#[cfg(soc_esp32c3)]
+use esp_wifi_sys_esp32c3 as esp_wifi_sys;
+#[cfg(soc_esp32c6)]
+use esp_wifi_sys_esp32c6 as esp_wifi_sys;
+// Factory MAC read selects a different hwinfo submodule per SoC (C3/C6 have
+// different eFuse base addresses, but the mac() signature is identical): alias
+// uniformly to hwinfo_mac, called below as hwinfo_mac().
+#[cfg(soc_esp32c3)]
+use blueos_driver::hwinfo::esp32c3::mac as hwinfo_mac;
+#[cfg(soc_esp32c6)]
+use blueos_driver::hwinfo::esp32c6::mac as hwinfo_mac;
+use esp_wifi_sys::{
     c_types,
     include::{
         esp_err_t, esp_interface_t_ESP_IF_WIFI_STA, esp_supplicant_init, esp_wifi_connect_internal,
@@ -145,7 +160,6 @@ pub(crate) unsafe extern "C" fn recv_cb_sta(
         ESP_ERR_NO_MEM as esp_err_t
     }
 }
-
 struct WifiController {
     init_done: AtomicBool,
     started: AtomicBool,
@@ -316,7 +330,7 @@ impl Esp32WlanLink {
     }
 
     pub fn mac_address(&self) -> [u8; 6] {
-        blueos_driver::hwinfo::esp32c3::mac()
+        hwinfo_mac()
     }
 }
 
@@ -334,7 +348,7 @@ impl LinkLayer for Esp32WlanLink {
     }
 
     fn hw_addr(&self) -> Option<super::HwAddr> {
-        Some(HwAddr::from_ethernet(blueos_driver::hwinfo::esp32c3::mac()))
+        Some(HwAddr::from_ethernet(hwinfo_mac()))
     }
 
     fn can_send(&self) -> bool {
@@ -649,9 +663,9 @@ impl WifiOps for Esp32WlanLink {
             cfg.sta.sort_method = wifi_sort_method_t_WIFI_CONNECT_AP_BY_SIGNAL;
             cfg.sta.threshold.rssi = -99;
             cfg.sta.threshold.authmode = if passphrase.is_empty() {
-                esp_wifi_sys_esp32c3::include::wifi_auth_mode_t_WIFI_AUTH_OPEN
+                esp_wifi_sys::include::wifi_auth_mode_t_WIFI_AUTH_OPEN
             } else {
-                esp_wifi_sys_esp32c3::include::wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK
+                esp_wifi_sys::include::wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK
             };
             cfg.sta.threshold.rssi_5g_adjustment = 0;
             cfg.sta.pmf_cfg.capable = true;
@@ -926,6 +940,15 @@ pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_func
     _coex_schm_flexible_period_get: Some(coex_schm_flexible_period_get),
     _coex_schm_get_phase_by_idx: Some(coex_schm_get_phase_by_idx),
 
+    // C6's wifi_osi_funcs_t has two extra sleep retention fields vs C3 (see
+    // esp-wifi-sys-esp32c6 include.rs:11401-11406); the C3 crate lacks them, hence
+    // cfg-gated. BlueOS does not implement sleep retention yet, so fill None
+    // (libnet80211 detects None and skips that path).
+    #[cfg(soc_esp32c6)]
+    _regdma_link_set_write_wait_content: None,
+    #[cfg(soc_esp32c6)]
+    _sleep_retention_find_link_by_id: None,
+
     _magic: ESP_WIFI_OS_ADAPTER_MAGIC as i32,
 };
 
@@ -941,14 +964,12 @@ fn esp_wifi_init() -> Result<(), NetError> {
             wpa_crypto_funcs: g_wifi_default_wpa_crypto_funcs,
             static_rx_buf_num: 10,
             dynamic_rx_buf_num: 32,
-            tx_buf_type: esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_TX_BUFFER_TYPE as i32,
+            tx_buf_type: esp_wifi_sys::include::CONFIG_ESP_WIFI_TX_BUFFER_TYPE as i32,
             static_tx_buf_num: 0,
             dynamic_tx_buf_num: 32,
-            rx_mgmt_buf_type: esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF
-                as i32,
-            rx_mgmt_buf_num: esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF
-                as i32,
-            cache_tx_buf_num: esp_wifi_sys_esp32c3::include::WIFI_CACHE_TX_BUFFER_NUM as i32,
+            rx_mgmt_buf_type: esp_wifi_sys::include::CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF as i32,
+            rx_mgmt_buf_num: esp_wifi_sys::include::CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF as i32,
+            cache_tx_buf_num: esp_wifi_sys::include::WIFI_CACHE_TX_BUFFER_NUM as i32,
             csi_enable: true as i32,
             ampdu_rx_enable: true as i32,
             ampdu_tx_enable: true as i32,
@@ -957,12 +978,12 @@ fn esp_wifi_init() -> Result<(), NetError> {
             nano_enable: 0,
             rx_ba_win: 6,
             wifi_task_core_id: 0,
-            beacon_max_len: esp_wifi_sys_esp32c3::include::WIFI_SOFTAP_BEACON_MAX_LEN as i32,
-            mgmt_sbuf_num: esp_wifi_sys_esp32c3::include::WIFI_MGMT_SBUF_NUM as i32,
+            beacon_max_len: esp_wifi_sys::include::WIFI_SOFTAP_BEACON_MAX_LEN as i32,
+            mgmt_sbuf_num: esp_wifi_sys::include::WIFI_MGMT_SBUF_NUM as i32,
             feature_caps: __ESP_RADIO_G_WIFI_FEATURE_CAPS,
             sta_disconnected_pm: false,
-            espnow_max_encrypt_num:
-                esp_wifi_sys_esp32c3::include::CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM as i32,
+            espnow_max_encrypt_num: esp_wifi_sys::include::CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM
+                as i32,
 
             tx_hetb_queue_num: 3,
             dump_hesigb_enable: false,
@@ -993,3 +1014,34 @@ const WIFI_FEATURE_CAPS: u64 = WIFI_ENABLE_WPA3_SAE | WIFI_ENABLE_ENTERPRISE;
 
 #[unsafe(no_mangle)]
 pub(super) static mut __ESP_RADIO_G_WIFI_FEATURE_CAPS: u64 = WIFI_FEATURE_CAPS;
+
+/* ---- NVS / log_level symbols required by the closed-source libnet80211 .a ----
+ * Background: the C3 link.x aliases g_misc_nvs / g_log_level (needed by the .a)
+ * to __ESP_RADIO_G_MISC_NVS / __ESP_RADIO_G_LOG_LEVEL provided by esp-radio-0.18.0
+ * (see esp-radio-0.18.0 common_adapter.rs:276-281). But the C6 build links
+ * esp-phy-0.2.0 + esp-radio-rtos-driver-0.3.0 and never compiles esp-radio-0.18.0
+ * (0 references in build.ninja), so these two symbols have no definition source on
+ * the C6 path.
+ *   libnet80211.a both references (U) and self-defines (B) g_misc_nvs / g_log_level:
+ * as long as misc_nvs.o is kept by --gc-sections, the B definition suffices; once
+ * misc_nvs.o is dropped, g_misc_nvs degenerates into a pure undefined reference,
+ * link.x's PROVIDE(g_misc_nvs = __ESP_RADIO_G_MISC_NVS) activates, and at that point
+ * __ESP_RADIO_G_MISC_NVS must have a definition, otherwise the link errors with
+ * "undefined symbol __ESP_RADIO_G_MISC_NVS referenced in expression".
+ *   Fix: provide both symbols here in BlueOS's self-implemented OSI module (semantics
+ * copied verbatim from esp-radio-0.18.0); same crate / same .o as
+ * __ESP_RADIO_G_WIFI_OSI_FUNCS, so it is always kept along with esp32_wlan.
+ * NVS is a 15×u32 array (the default slot count in esp-idf misc_nvs.c),
+ * log_level=0 (no logging).
+ */
+/// The NVS storage pointed to by libnet80211 `g_misc_nvs` (15 u32 slots, esp-idf default size).
+#[used]
+static mut NVS: [u32; 15] = [0u32; 15];
+
+/// The real definition of libnet80211 `g_misc_nvs`; link.x aliases g_misc_nvs -> this symbol.
+#[unsafe(no_mangle)]
+pub(super) static mut __ESP_RADIO_G_MISC_NVS: *mut u32 = unsafe { &raw mut NVS } as *mut u32;
+
+/// The real definition of libnet80211 `g_log_level` (0 = logging off); link.x aliases g_log_level -> this symbol.
+#[unsafe(no_mangle)]
+pub(super) static mut __ESP_RADIO_G_LOG_LEVEL: i32 = 0;

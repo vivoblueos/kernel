@@ -44,7 +44,6 @@ mod global_scheduler;
 mod idle;
 pub use idle::{
     current_idle_thread, current_idle_thread_ref, get_idle_thread, get_idle_thread_ref,
-    set_idle_hook,
 };
 pub mod wait_queue;
 

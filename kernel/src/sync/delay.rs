@@ -20,7 +20,6 @@ use embedded_hal::delay::DelayNs;
     target_board = "seeed_xiao_esp32c3",
     target_board = "esp32c6_devkitc_1"
 ))]
-
 const CPU_HZ: u32 = 160_000_000;
 
 /// Kernel delay adapter — implements `embedded_hal::delay::DelayNs`

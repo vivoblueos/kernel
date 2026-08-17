@@ -275,3 +275,37 @@ SECTIONS {
 }
 
 PROVIDE(__global_pointer$ = ALIGN(_sdata_start, 4) + 0x800);
+
+/* ---- Symbol aliases referenced by the closed-source libnet80211 / libwpa_supplicant .a ----
+ * C3's link.x (seeed_xiao_esp32c3/link.x:305-321) aliases the g_* / WIFI_EVENT symbols
+ * the .a files need onto BlueOS's own __ESP_RADIO_* symbols, and EXTERN-forces two mesh
+ * symbols to be kept.
+ * C6's ROM .ld does not provide these symbols (unlike C3, whose esp32c3.rom.ld strongly
+ * defines ROM addresses such as g_misc_nvs/g_osi_funcs_p; C6 ROM only has g_osi_funcs_p),
+ * so C6 must PROVIDE them in this link.x itself, otherwise the link errors with
+ * undefined reference to `g_misc_nvs` / `WIFI_EVENT` / `g_wifi_osi_funcs` / `g_log_level`, etc.
+ *   __ESP_RADIO_G_WIFI_OSI_FUNCS   -> kernel/src/net/link/esp32_wlan/mod.rs
+ *   __ESP_RADIO_G_WIFI_FEATURE_CAPS-> kernel/src/net/link/esp32_wlan/mod.rs
+ *   __ESP_RADIO_WIFI_EVENT         -> kernel/src/net/link/esp32_wlan/api.rs:42
+ *   __ESP_RADIO_G_LOG_LEVEL        -> kernel/src/net/link/esp32_wlan/mod.rs (added by BlueOS)
+ *   __ESP_RADIO_G_MISC_NVS         -> kernel/src/net/link/esp32_wlan/mod.rs (added by BlueOS)
+ * g_espnow_user_oui / mesh_sta_auth_expire_time have no Rust definition; EXTERN only
+ * prevents them from being dropped by --gc-sections (kept as placeholders for future
+ * mesh/espnow implementations, weak references do not error).
+ */
+EXTERN( __ESP_RADIO_G_WIFI_OSI_FUNCS );
+EXTERN( __ESP_RADIO_G_WIFI_FEATURE_CAPS );
+
+PROVIDE( g_wifi_osi_funcs = __ESP_RADIO_G_WIFI_OSI_FUNCS );
+PROVIDE( g_wifi_feature_caps = __ESP_RADIO_G_WIFI_FEATURE_CAPS );
+
+EXTERN( __ESP_RADIO_WIFI_EVENT );
+PROVIDE( WIFI_EVENT = __ESP_RADIO_WIFI_EVENT );
+
+EXTERN( __ESP_RADIO_G_MISC_NVS );
+EXTERN( __ESP_RADIO_G_LOG_LEVEL );
+PROVIDE( g_misc_nvs = __ESP_RADIO_G_MISC_NVS );
+PROVIDE( g_log_level = __ESP_RADIO_G_LOG_LEVEL );
+
+EXTERN( g_espnow_user_oui );
+EXTERN( mesh_sta_auth_expire_time );
