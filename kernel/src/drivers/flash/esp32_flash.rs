@@ -403,6 +403,7 @@ pub fn init_esp32_flash_device() -> Result<(), ErrorKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     fn region() -> InternalFlashRegion {
         InternalFlashRegion::new(LOADABLE_REGION_BASE, LOADABLE_REGION_SIZE)
