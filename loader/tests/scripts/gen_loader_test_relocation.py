@@ -59,10 +59,12 @@ def parse_number(value, description):
 
 
 def validate_permissions(value, description):
-    if (not value or any(permission not in "rwx" for permission in value)
-            or len(set(value)) != len(value)):
-        raise ValueError(
-            f"{description} must contain unique r, w, or x permissions")
+    if (
+        not value
+        or any(permission not in "rwx" for permission in value)
+        or len(set(value)) != len(value)
+    ):
+        raise ValueError(f"{description} must contain unique r, w, or x permissions")
     return value
 
 
@@ -85,8 +87,7 @@ def write_linker_script(template_path, path, replacements):
     for placeholder, value in replacements.items():
         content = content.replace(placeholder, value)
 
-    unresolved_placeholders = LINKER_SCRIPT_PLACEHOLDER_PATTERN.findall(
-        content)
+    unresolved_placeholders = LINKER_SCRIPT_PLACEHOLDER_PATTERN.findall(content)
     if unresolved_placeholders:
         values = ", ".join(sorted(set(unresolved_placeholders)))
         raise ValueError(f"unresolved linker script placeholders: {values}")
@@ -107,15 +108,15 @@ def main():
         "rwdata_length": args.rwdata_length,
         "flash_mmu_page_size": args.flash_mmu_page_size,
     }
-    values = {name: value for name, value in values.items()
-              if value is not None}
+    values = {name: value for name, value in values.items() if value is not None}
     parsed = {
         name: parse_number(value, name.replace("_", " "))
         for name, value in values.items()
     }
     generic_region = [args.region, args.origin, args.length, args.permissions]
     if any(value is not None for value in generic_region) and any(
-            value is None for value in generic_region):
+        value is None for value in generic_region
+    ):
         raise ValueError("incomplete generic region")
     if args.region is not None:
         origin = parsed["origin"]
@@ -130,7 +131,8 @@ def main():
             getattr(args, f"{region}_permissions"),
         ]
         if any(value is not None for value in provided) and any(
-                value is None for value in provided):
+            value is None for value in provided
+        ):
             raise ValueError(f"incomplete {region.replace('_', ' ')} region")
         if provided[0] is None:
             continue
@@ -140,14 +142,13 @@ def main():
             raise ValueError(f"{region} address overflow")
 
     replacements = {
-        f"@{name.upper()}@": f"0x{value:x}"
-        for name, value in parsed.items()
+        f"@{name.upper()}@": f"0x{value:x}" for name, value in parsed.items()
     }
     if args.region is not None:
-        replacements["@REGION@"] = validate_identifier(
-            args.region, "region name")
+        replacements["@REGION@"] = validate_identifier(args.region, "region name")
         replacements["@PERMISSIONS@"] = validate_permissions(
-            args.permissions, "generic region permissions")
+            args.permissions, "generic region permissions"
+        )
 
     for region in ("irom", "rodata", "rwdata"):
         if getattr(args, f"{region}_permissions") is None:
