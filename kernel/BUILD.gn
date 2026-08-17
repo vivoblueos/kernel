@@ -70,6 +70,7 @@ _shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
   "//libc",
+  "//librs:librs_esp32_flash_shared",
 ]
 
 # GCC provides __atomic builtins natively; skip the clang-derived libatomic for GCC toolchains.

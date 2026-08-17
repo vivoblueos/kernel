@@ -18,8 +18,8 @@
 use super::esp32_rom;
 use crate::{scheduler, sync::Mutex, time::Tick};
 use core::sync::atomic::{AtomicU32, Ordering};
+use librs_esp32_flash_shared::{EspFlashError, ESP_FLASH_SECTOR_SIZE};
 
-pub const ESP_FLASH_SECTOR_SIZE: usize = 4096;
 pub const ESP_FLASH_WORD_SIZE: usize = 4;
 const ROM_PAGE_SIZE: usize = 256;
 const ESP_FLASH_READ_CHUNK_SIZE: usize =
@@ -90,19 +90,6 @@ pub fn with_internal_flash<R>(
         };
         operation(&mut flash)
     })?
-}
-
-/// Raw API error type.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum EspFlashError {
-    OutOfBounds,
-    ProtectedRange,
-    InvalidLength,
-    UnalignedErase,
-    UnalignedWrite,
-    Busy,
-    RomError(i32), // ROM spiflash non-OK result (1=ERR, 2=TIMEOUT)
-    VerifyFailed,
 }
 
 fn rom_result(r: i32) -> Result<(), EspFlashError> {

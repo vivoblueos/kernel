@@ -302,7 +302,10 @@ mod tests {
 
     #[test]
     fn physical_flash_offset_maps_to_expected_irom_address() {
-        assert_eq!(physical_to_irom_vaddr(0x0020_0000), Ok(0x4220_0000));
+        assert_eq!(
+            physical_to_irom_vaddr(LOADABLE_REGION_BASE),
+            Ok(IROM_VADDR_BASE + LOADABLE_REGION_BASE)
+        );
     }
 
     #[test]

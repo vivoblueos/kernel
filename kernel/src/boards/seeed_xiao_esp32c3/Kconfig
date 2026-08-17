@@ -76,13 +76,13 @@ config SOC_ESP32C3
 
 config ESP32_LOADABLE_REGION_BASE
     hex "ESP32-C3 loadable flash region base"
-    default 0x00200000
+    default 0x00100000
     help
       Physical flash offset reserved for loadable images.
 
 config ESP32_LOADABLE_REGION_SIZE
     hex "ESP32-C3 loadable flash region size"
-    default 0x00100000
+    default 0x00300000
     help
       Size in bytes reserved for loadable images.
 

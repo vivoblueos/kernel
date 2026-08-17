@@ -22,48 +22,21 @@ use crate::{
     devices::{Device, DeviceClass, DeviceId, DeviceManager},
     drivers::flash::{
         flash_mmap::{self, ExecMapping, MapError},
-        internal_flash::{
-            with_internal_flash, with_internal_flash_exclusive, EspFlashError,
-            ESP_FLASH_SECTOR_SIZE,
-        },
+        internal_flash::{with_internal_flash, with_internal_flash_exclusive},
     },
     sync::SpinLock,
 };
 use alloc::{string::String, sync::Arc};
 use embedded_io::ErrorKind;
+pub use librs_esp32_flash_shared::{
+    EraseRangeRequest, EspFlashError, InternalFlashRegion, MapExecRequest, ESP32_FLASH_DEVICE_NAME,
+    ESP32_FLASH_ERASE_RANGE, ESP32_FLASH_MAP_EXEC, ESP32_FLASH_QUERY_DRAM_SAFE, ESP32_FLASH_UNMAP,
+    ESP_FLASH_SECTOR_SIZE, FLASH_IOCTL_ABI_VERSION,
+};
 
-pub const ESP32_FLASH_DEVICE_NAME: &str = "esp32-flash0";
 const ESP32_FLASH_DEVICE_MAJOR: usize = 1;
 const ESP32_FLASH_DEVICE_MINOR: usize = 0x35;
-
-// device-specific ioctl commands.
-pub const ESP32_FLASH_ERASE_RANGE: u32 = 0x40;
-pub const ESP32_FLASH_MAP_EXEC: u32 = 0x44;
-pub const ESP32_FLASH_UNMAP: u32 = 0x45;
-pub const FLASH_IOCTL_ABI_VERSION: u32 = 1;
-// Returns __sys_stack_end: the safe SRAM base above kernel heap/stack, below
-// which the loader may copy out-of-window RW segments. Bounds copy_rw_segments.
-pub const ESP32_FLASH_QUERY_DRAM_SAFE: u32 = 0x46;
 pub use crate::boards::{LOADABLE_REGION_BASE, LOADABLE_REGION_END, LOADABLE_REGION_SIZE};
-
-#[repr(C)]
-struct MapExecRequest {
-    version: u32,
-    size: u32,
-    flags: u32,
-    region_offset: u32,
-    image_size: u32,
-    mapped_address: u32,
-}
-
-#[repr(C)]
-struct EraseRangeRequest {
-    version: u32,
-    size: u32,
-    flags: u32,
-    region_offset: u32,
-    length: u32,
-}
 
 fn validate_request_header(
     version: u32,
@@ -75,58 +48,6 @@ fn validate_request_header(
         return Err(ErrorKind::InvalidInput);
     }
     Ok(())
-}
-
-/// Fixed on-chip flash region; callers use relative offsets.
-#[derive(Debug, Clone, Copy)]
-pub struct InternalFlashRegion {
-    base: u32,
-    size: u32,
-}
-
-impl InternalFlashRegion {
-    pub const fn new(base: u32, size: u32) -> Self {
-        Self { base, size }
-    }
-
-    pub const fn size(&self) -> u32 {
-        self.size
-    }
-
-    pub const fn base(&self) -> u32 {
-        self.base
-    }
-
-    pub fn absolute_offset(&self, relative_offset: u32, len: usize) -> Result<u32, EspFlashError> {
-        let len = u32::try_from(len).map_err(|_| EspFlashError::OutOfBounds)?;
-        let relative_end = relative_offset
-            .checked_add(len)
-            .ok_or(EspFlashError::OutOfBounds)?;
-        if relative_end > self.size {
-            return Err(EspFlashError::OutOfBounds);
-        }
-        self.base
-            .checked_add(relative_offset)
-            .ok_or(EspFlashError::OutOfBounds)
-    }
-
-    /// Check alignment + fit.
-    pub fn validate(&self, flash_capacity: u32) -> Result<(), EspFlashError> {
-        if self.base % ESP_FLASH_SECTOR_SIZE as u32 != 0 {
-            return Err(EspFlashError::UnalignedErase);
-        }
-        if self.size % ESP_FLASH_SECTOR_SIZE as u32 != 0 {
-            return Err(EspFlashError::UnalignedErase);
-        }
-        let end = self
-            .base
-            .checked_add(self.size)
-            .ok_or(EspFlashError::OutOfBounds)?;
-        if end > flash_capacity {
-            return Err(EspFlashError::OutOfBounds);
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug)]
@@ -410,10 +331,10 @@ mod tests {
     }
 
     #[test]
-    fn loadable_region_reserves_one_mib() {
-        assert_eq!(LOADABLE_REGION_BASE, 0x0020_0000);
-        assert_eq!(LOADABLE_REGION_SIZE, 0x0010_0000);
-        assert_eq!(LOADABLE_REGION_END, 0x0030_0000);
+    fn loadable_region_matches_board_config() {
+        assert_eq!(LOADABLE_REGION_BASE, 0x0010_0000);
+        assert_eq!(LOADABLE_REGION_SIZE, 0x0030_0000);
+        assert_eq!(LOADABLE_REGION_END, 0x0040_0000);
     }
 
     fn map_request(region_offset: u32, image_size: u32) -> MapExecRequest {
