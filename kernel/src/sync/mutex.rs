@@ -203,7 +203,6 @@ impl Mutex {
         this_thread: &'a ThreadNode,
         owner_thread: &ThreadNode,
     ) -> (bool, SpinLockGuard<'a, WaitQueue>) {
-        let this_priority = this_thread.priority();
         // We walk along the blocking chain to scan no more than
         // CHAIN_LENGTH_LIMIT threads.
         let mut current_len = 0;
@@ -224,17 +223,27 @@ impl Mutex {
         let mut other_lock = None;
         while current_len < CHAIN_LENGTH_LIMIT {
             current_len += 1;
+            // Acquire lock on this_thread first, then scanning_thread.
+            // This prevents race conditions in SMP environments.
+            let this_guard = this_thread.lock();
+            let mut scanning_guard = scanning_thread.lock();
+            let scanning_prio = scanning_guard.priority();
+
+            // Re-read current_priority after acquiring scanning_thread's lock
+            // to get the most up-to-date value. Another thread might have
+            // already promoted this_thread's priority.
+            let current_priority = this_thread.priority();
+
             // We are holding the mutex's spinlock and the scanning thread is
             // its owner. It's safe to promote scanning thread's priority.
-            let ok = scanning_thread.lock().promote_priority_to(this_priority);
-            #[cfg(debugging_scheduler)]
-            crate::trace!(
-                "TH:0x{:x} is promoting TH:0x{:x} to {}, succ? {}",
-                Thread::id(this_thread),
-                Thread::id(&scanning_thread),
-                this_priority,
-                ok,
-            );
+            // Skip if the target thread already has a higher priority (lower number)
+            // than what we're trying to promote to. This handles the case where
+            // another thread in the PI chain has already promoted the target.
+            if current_priority < scanning_guard.priority() {
+                scanning_guard.promote_priority_to(current_priority);
+            }
+            drop(scanning_guard);
+            drop(this_guard);
             // FIXME: Adjust priority in RQ for the scanning_thread.
             other_lock = None;
             other_mutex = scanning_thread.pending_on_mutex();
@@ -249,14 +258,15 @@ impl Mutex {
                 break;
             };
             // Adjust the position of the scanning thread in the WaitQueue.
-            if !Self::adjust_wait_queue_position_by(
-                this_priority,
+            // Note: Even if adjust fails (e.g., thread already acquired the mutex),
+            // we should continue to traverse the lock chain because the thread
+            // may still need priority inheritance from other waiting threads.
+            let _ = Self::adjust_wait_queue_position_by(
+                current_priority,
                 &scanning_thread,
                 &other_mutex_ref.clone(),
                 other_lock_ref,
-            ) {
-                break;
-            }
+            );
             let Some(other_thread) = other_mutex_ref.owner() else {
                 break;
             };
