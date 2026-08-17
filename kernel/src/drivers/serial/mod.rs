@@ -157,32 +157,37 @@ impl Serial {
 
     pub fn read_bytes(&self, bytes: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         let mut nbytes = 0;
-        // POSIX read 语义:读到至少 1 字节即返回,不必填满整个 buf。
-        // 历史根因:f25145f 重构曾把这里写成 `for byte in bytes { 每槽阻塞取满 }`,
-        // 导致阻塞模式下必须凑满 bytes.len()(n_tty 传 512)才返回,shell 输入永远不回显。
-        // 现恢复为等价于重构前 fifo_rx 的语义:第一字节没来时阻塞等,取到第一字节后
-        // 非阻塞 drain FIFO 直到空即返回 nbytes>=1。
+        // POSIX read semantics: return as soon as at least 1 byte is read; the
+        // whole buf need not be filled.
+        // Historical root cause: the f25145f refactor once rewrote this as
+        // `for byte in bytes { block to fill each slot }`, so blocking mode had to
+        // fill bytes.len() (n_tty passes 512) before returning — shell input was
+        // never echoed. Now restored to the pre-refactor fifo_rx semantics: block
+        // while the first byte has not arrived, then non-blockingly drain the FIFO
+        // until empty and return nbytes>=1.
         while nbytes < bytes.len() {
-            // 1) 非阻塞试取:drain 当前 RX 环形缓冲里已有的字节。
+            // 1) Non-blocking attempt: drain bytes already present in the RX ring.
             if let Some(c) = self.get_char() {
                 bytes[nbytes] = c;
                 nbytes += 1;
                 continue;
             }
-            // 2) FIFO 空:
-            //    - 非阻塞模式:立即返回(已取到的可能为 0,符合非阻塞语义)。
-            //    - 阻塞模式:若已取到≥1 字节,按 POSIX 立即返回;否则阻塞等第一个字节。
+            // 2) FIFO empty:
+            //    - non-blocking mode: return immediately (may be 0 bytes, valid).
+            //    - blocking mode: if >=1 byte already taken, return per POSIX;
+            //      otherwise block waiting for the first byte.
             if is_nonblocking {
                 return Ok(nbytes);
             }
             if nbytes > 0 {
                 return Ok(nbytes);
             }
-            // 阻塞且尚未取到任何字节:`rx_futex` 作为序列号,捕获当前值后等待,
-            // 避免"空检查"与"入队唤醒"之间的丢失唤醒。
+            // Blocking and no byte taken yet: use `rx_futex` as a sequence number,
+            // capture its current value then wait, to avoid a lost wakeup between
+            // the "empty check" and the "enqueue wakeup".
             let rx_seq = self.rx_futex.load(Ordering::Acquire);
-            // wake 后二次检查:get_char 可能已在 capture 与 wait 之间被 ISR 入队,
-            // 命中则直接取走,避免一次多余的 wait。
+            // Re-check after wake: get_char may have already been enqueued by the
+            // ISR between capture and wait; if so, take it to skip a redundant wait.
             if let Some(c) = self.get_char() {
                 bytes[nbytes] = c;
                 nbytes += 1;

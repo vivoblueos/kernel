@@ -10,16 +10,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ESP32-C6 硬件随机数读取。
+//! ESP32-C6 hardware random number readout.
 //!
-//! 与 C3 对比:
-//! - RNG 基址:C6 = 0x600B_2800(C3 在 SYSTEM 域 0x6002_60B0)。
-//!   来源 esp32c6-0.23.0 pac crate lib.rs: `RNG = Periph<rng::RegisterBlock, 0x600b_2800>`。
-//! - data 寄存器偏移:C6 = 0x08(pac crate rng.rs 注释 `0x08 - Random number data`)。
-//!   C3 是裸地址直接读 0x6002_60B0(等价于 base+0x00 的 DATA 寄存器)。
-//!   因此 C6 读 (0x600B_2800 + 0x08)。
+//! Comparison with C3:
+//! - RNG base: C6 = 0x600B_2800 (C3 is in the SYSTEM domain at 0x6002_60B0).
+//!   Source: esp32c6-0.23.0 pac crate lib.rs: `RNG = Periph<rng::RegisterBlock, 0x600b_2800>`.
+//! - data register offset: C6 = 0x08 (pac crate rng.rs comment `0x08 - Random number data`).
+//!   C3 reads the raw address 0x6002_60B0 directly (equivalent to base+0x00, the DATA register).
+//!   Hence C6 reads (0x600B_2800 + 0x08).
 
-/// C6 RNG 数据寄存器地址 = 基址 0x600B_2800 + data 偏移 0x08。
+/// C6 RNG data register address = base 0x600B_2800 + data offset 0x08.
 const RNG_DATA_REG: usize = 0x600B_2800 + 0x08;
 
 pub struct Esp32c6Rng;
@@ -29,7 +29,7 @@ impl Esp32c6Rng {
         Self
     }
 
-    /// 读一个 32 位随机数。读 RNG data 寄存器每次返回一个新随机值。
+    /// Read one 32-bit random number. Each read of the RNG data register returns a fresh random value.
     pub fn read_one(&self) -> u32 {
         unsafe { core::ptr::read_volatile(RNG_DATA_REG as *const u32) }
     }

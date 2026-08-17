@@ -15,11 +15,7 @@
 pub mod arm_pl011;
 pub mod cmsdk;
 pub mod dumb;
-<<<<<<< HEAD
-#[cfg(soc_esp32c3)]
-=======
 #[cfg(any(soc_esp32c3, soc_esp32c6))]
->>>>>>> d0b410f (Merge esp32c3-wifi-pr into wzx/esp32c6)
 pub mod esp32_usb_serial;
 #[cfg(soc_gd32e507z)]
 pub mod gd32e5x_uart;

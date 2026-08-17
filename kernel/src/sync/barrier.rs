@@ -86,6 +86,41 @@ mod tests {
 
     #[test]
     fn join_thread() {
+        // Probe phase: exhaust heap with raw blocks (TLSF returns null, proven),
+        // then WITHOUT freeing, call Stack::from_size to see if it returns None
+        // (null-check works) or returns Some-with-null-stack (null-check missing)
+        // or hangs.
+        semihosting::println!("[JT] enter n={}", UNITTEST_THREAD_NUM);
+        {
+            let mut held_raw: alloc::vec::Vec<(*mut u8, core::alloc::Layout)> = alloc::vec::Vec::new();
+            let mut k = 0usize;
+            loop {
+                let layout = core::alloc::Layout::from_size_align(32 * 1024, 8).unwrap();
+                let p = unsafe { alloc::alloc::alloc(layout) };
+                if p.is_null() {
+                    break;
+                }
+                held_raw.push((p, layout));
+                k += 1;
+                if k > 64 {
+                    break;
+                }
+            }
+            let mi = crate::allocator::memory_info();
+            semihosting::println!("[PSE] exhausted k={} used={} total={}", k, mi.used, mi.total);
+            // Now heap has ~31KB free. Call Stack::from_size(32768) which needs 32KB.
+            semihosting::println!("[PSE] before Stack::from_size");
+            let r = crate::thread::Stack::from_size(32 * 1024);
+            semihosting::println!("[PSE] after Stack::from_size");
+            match r {
+                Some(s) => semihosting::println!("[PSE] from_size Some base={:p}", s.base()),
+                None => semihosting::println!("[PSE] from_size None"),
+            }
+            for (p, layout) in held_raw.drain(..) {
+                unsafe { alloc::alloc::dealloc(p, layout) };
+            }
+        }
+        // Real test
         let n = UNITTEST_THREAD_NUM;
         let mut vt = Vec::new();
         let counter = Arc::new(AtomicUsize::new(n));
@@ -93,15 +128,22 @@ mod tests {
             let b = Arc::new(ConstBarrier::<{ 2 }>::new());
             vt.push(b.clone());
             let counter = counter.clone();
+            let mi = crate::allocator::memory_info();
+            semihosting::println!("[JT] pre-spawn i={} used={}", i, mi.used);
             crate::thread::spawn(move || {
                 counter.fetch_sub(1, Ordering::Relaxed);
                 b.wait();
             });
+            semihosting::println!("[JT] spawned i={}", i);
         }
+        semihosting::println!("[JT] spawn-done vt.len()={}", vt.len());
         assert_eq!(vt.len(), n);
+        let mut idx = 0;
         for b in vt {
+            idx += 1;
             b.wait();
         }
+        semihosting::println!("[JT] counter={}", counter.load(Ordering::SeqCst));
         assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 }

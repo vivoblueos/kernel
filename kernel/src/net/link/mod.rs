@@ -33,12 +33,14 @@
 //! - **Any bound**: `LinkLayer: Any + 'static` enables safe downcasting.
 //! - **dyn-compatible**: `LinkLayer` is dyn-compatible.
 
-// 门控说明:esp32_wlan 是 ESP32 WiFi 驱动的 Rust 适配层(OSI 回调表 +
-// scan/connect/收发包),C3/C6 共用同一套代码骨架,仅底层 wifi-sys crate 与
-// 少数寄存器地址/外设基址按 cfg 切换(见 esp32_wlan/mod.rs、api.rs)。
-// 必须用 any(c3,c6):若只写 soc_esp32c3,则 C6(soc_esp32c6)不满足条件,
-// 整个 WiFi 驱动 Rust 层不会编译进 C6 固件 —— 闭源 libnet80211.a 找不到
-// phy_enable/ints_on/read_mac 等 OSI 回调,WiFi 栈不完整,scan 0 AP。
+// Gating note: esp32_wlan is the Rust adaptation layer for the ESP32 WiFi driver
+// (OSI callback table + scan/connect/tx-rx), shared by C3/C6 from the same code
+// skeleton; only the low-level wifi-sys crate and a few register/peripheral base
+// addresses switch by cfg (see esp32_wlan/mod.rs, api.rs).
+// Must use any(c3,c6): if only soc_esp32c3 is written, then C6 (soc_esp32c6) fails
+// the condition and the whole WiFi driver Rust layer is not compiled into the C6
+// firmware — the closed-source libnet80211.a cannot find the phy_enable/ints_on/
+// read_mac OSI callbacks, the WiFi stack is incomplete, and scan returns 0 APs.
 #[cfg(any(soc_esp32c3, soc_esp32c6))]
 pub(crate) mod esp32_wlan;
 pub(crate) mod ethernet_ops;

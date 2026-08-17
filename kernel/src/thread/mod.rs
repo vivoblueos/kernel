@@ -88,7 +88,15 @@ impl Stack {
     #[inline]
     pub fn from_size(size: usize) -> Option<Self> {
         let layout = Layout::from_size_align(size, core::mem::align_of::<Context>()).ok()?;
-        Some(Self(Storage::from_layout(layout)))
+        let storage = Storage::from_layout(layout);
+        // Storage::from_layout does not check for allocation failure (it returns
+        // a Storage holding a null base). Detect that here so callers can fail
+        // gracefully via Option instead of silently creating a thread with a
+        // null stack, which would crash/hang the scheduler with no diagnostics.
+        if storage.base().is_null() {
+            return None;
+        }
+        Some(Self(storage))
     }
 
     pub const fn new() -> Self {

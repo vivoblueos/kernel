@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// 按 SoC 门控各自的硬件 RNG 实现(C3/C6 基址不同,见各子模块)。
+// Per-SoC gating of the hardware RNG implementation (C3/C6 bases differ; see each submodule).
 #[cfg(soc_esp32c3)]
 pub mod esp32c3_rng;
 #[cfg(soc_esp32c6)]

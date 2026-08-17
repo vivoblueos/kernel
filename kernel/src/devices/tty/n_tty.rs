@@ -69,9 +69,11 @@ impl Tty {
         self.history.lock().get(index).cloned()
     }
 
-    // 形参 is_nonblocking 与 Device trait(devices/mod.rs)语义对齐。
-    // 原误作 is_blocking 且内部 !is_blocking 取反,导致阻塞请求被反转成非阻塞。
-    // clear_line 仅用于回显,调用处恒传 false(阻塞写),改名后语义不变。
+    // The is_nonblocking parameter aligns with the Device trait semantics
+    // (devices/mod.rs). It was mistakenly named is_blocking with an internal
+    // !is_blocking negation, which flipped blocking requests into non-blocking.
+    // clear_line is only used for echo and is always called with false (blocking
+    // write); renaming keeps the behavior unchanged.
     fn clear_line(&self, pos: u64, is_nonblocking: bool) -> Result<(), ErrorKind> {
         self.dev.send_bytes(b"\r", is_nonblocking)?;
         self.dev.send_bytes(b"\x1b[2K", is_nonblocking)?;
@@ -176,7 +178,8 @@ impl Device for Tty {
         self.dev.close()
     }
 
-    // 形参 is_nonblocking 与 Device trait 一致;原 is_blocking + 内部 !is_blocking 取反已修正。
+    // The is_nonblocking parameter aligns with the Device trait; the previous
+    // is_blocking with internal !is_blocking negation has been fixed.
     fn read(&self, _pos: u64, buf: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         if buf.is_empty() {
             return Ok(0);
@@ -301,7 +304,8 @@ impl Device for Tty {
         }
     }
 
-    // 形参 is_nonblocking 与 Device trait 一致;原 is_blocking + 内部 !is_blocking 取反已修正。
+    // The is_nonblocking parameter aligns with the Device trait; the previous
+    // is_blocking with internal !is_blocking negation has been fixed.
     fn write(&self, _pos: u64, buf: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         let termios = *self.termios.lock();
         if termios.oflag.contains(Oflags::OPOST) {
