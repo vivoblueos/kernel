@@ -703,7 +703,8 @@ pub(crate) fn init() {
         //   bit0-10: wifibb_22m/40m/44m/80m/40x/80x/40x1/80x1/160x1 + wifimac + wifi_apb
         //   bit13-16: fe_80m / fe_160m / fe_cal_160m / fe_apb
         // bit11 (fe_20m) and bit12 (fe_40m) are not in the enable_wifi set range, keep original value.
-        const CLK_CONF1_WIFI_FE_MASK: u32 = 0x0001_F7FF; // bit0-10 | bit13-16
+        // Mask = bit0-10 | bit13-16 = 0x07FF | 0x1E000 = 0x1E7FF (bit11/12 MUST stay 0).
+        const CLK_CONF1_WIFI_FE_MASK: u32 = 0x0001_E7FF; // bit0-10 | bit13-16
         let v = read32(MODEM_SYSCON_CLK_CONF1);
         write32(MODEM_SYSCON_CLK_CONF1, v | CLK_CONF1_WIFI_FE_MASK);
 
