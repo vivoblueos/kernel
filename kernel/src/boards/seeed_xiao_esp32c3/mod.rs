@@ -24,6 +24,10 @@ use blueos_driver::{
 };
 use blueos_hal::{isr::IsrDesc, Has8bitDataReg};
 
+const LED_DEVICE_MAJOR: usize = 242;
+const LED_B_DEVICE_MINOR: usize = 0;
+const LED_R_DEVICE_MINOR: usize = 1;
+
 // FIXME: Only support unit0 for now
 pub type ClockImpl =
     blueos_driver::systimer::esp32_sys_timer::Esp32SysTimer<0x6002_3000, 16_000_000>;
@@ -355,3 +359,24 @@ pub(crate) fn init_spi_bus() {
 }
 
 pub(crate) fn init_i2c_bus() {}
+
+pub(crate) fn init_gpio() {
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_b),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_b"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_B_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_b");
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_r),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_r"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_r");
+}
