@@ -43,14 +43,33 @@ use spin::Mutex;
 // For posix syscalls
 pub type ConnectionResult = Result<usize, ConnectionError>;
 
+struct PortLease {
+    socket_type: SocketType,
+    port: u16,
+}
+
+impl PortLease {
+    fn new(socket_type: SocketType, port: u16) -> Arc<Self> {
+        Arc::new(Self { socket_type, port })
+    }
+}
+
+impl Drop for PortLease {
+    fn drop(&mut self) {
+        let _ = PORT_GENERATOR.release_port(self.socket_type, self.port);
+    }
+}
+
 pub struct Connection {
     socket_fd: SocketFd,
     socket_domain: SocketDomain,
     socket_type: SocketType,
     socket_protocol: SocketProtocol,
     local_endpoint: Mutex<Option<IpListenEndpoint>>,
+    local_port_lease: Mutex<Option<Arc<PortLease>>>,
     remote_endpoint: Mutex<Option<IpEndpoint>>,
     is_nonblocking: AtomicBool, // default io mode is blocking, use O_NONBLOCK to set non-blocking
+    is_listening: AtomicBool,
     recv_timeout: Mutex<Option<Duration>>, // block indefinitely as default
     send_timeout: Mutex<Option<Duration>>, // block indefinitely as default
     ipc_reply: Arc<OperationIPCReply>,
@@ -69,8 +88,10 @@ impl Connection {
             socket_type,
             socket_protocol,
             local_endpoint: Mutex::new(None),
+            local_port_lease: Mutex::new(None),
             remote_endpoint: Mutex::new(None),
             is_nonblocking: AtomicBool::new(false),
+            is_listening: AtomicBool::new(false),
             recv_timeout: Mutex::new(None),
             send_timeout: Mutex::new(None),
             ipc_reply: Arc::new(OperationIPCReply::new()),
@@ -114,7 +135,12 @@ impl Connection {
                     self.socket_type,
                     SocketType::SockStream | SocketType::SockDgram
                 ) {
-                    PORT_GENERATOR.acquire_port(self.socket_type, local_endpoint.port)?
+                    let port =
+                        PORT_GENERATOR.acquire_port(self.socket_type, local_endpoint.port)?;
+                    self.local_port_lease
+                        .lock()
+                        .replace(PortLease::new(self.socket_type, port));
+                    port
                 } else {
                     local_endpoint.port
                 };
@@ -154,7 +180,56 @@ impl Connection {
         log::debug!("[Socket {}] Listen request queued", self.socket_fd);
 
         // Wait for network stack response and return directly
-        self.ipc_reply.queue_and_wait(listen_task)
+        let result = self.ipc_reply.queue_and_wait(listen_task);
+        if result.is_ok() {
+            self.is_listening.store(true, Ordering::Release);
+        }
+        result
+    }
+
+    pub fn new_accepted(socket_fd: SocketFd, listener: &Connection) -> Self {
+        let accepted = Self::new(
+            socket_fd,
+            listener.socket_domain,
+            listener.socket_type,
+            listener.socket_protocol,
+        );
+        *accepted.local_endpoint.lock() = *listener.local_endpoint.lock();
+        *accepted.local_port_lease.lock() = listener.local_port_lease.lock().clone();
+        accepted
+    }
+
+    pub fn set_remote_endpoint(&self, endpoint: IpEndpoint) {
+        self.remote_endpoint.lock().replace(endpoint);
+    }
+
+    pub fn remote_endpoint(&self) -> Option<IpEndpoint> {
+        *self.remote_endpoint.lock()
+    }
+
+    pub fn is_listening(&self) -> bool {
+        self.is_listening.load(Ordering::Acquire)
+    }
+
+    pub fn accept(
+        &self,
+        accepted_fd: SocketFd,
+        accepted_connection: Arc<Connection>,
+    ) -> ConnectionResult {
+        let local_endpoint = match *self.local_endpoint.lock() {
+            Some(endpoint) => endpoint,
+            None => return Err(ConnectionError::LockFail("local endpoint".into())),
+        };
+        let accept_task = Operation::Accept {
+            socket_fd: self.socket_fd,
+            accepted_fd,
+            local_endpoint,
+            accepted_connection,
+            is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
+            ipc_reply: self.ipc_reply.clone(),
+        };
+
+        self.ipc_reply.queue_and_wait(accept_task)
     }
 
     pub fn connect(&self, remote_endpoint: IpEndpoint) -> ConnectionResult {
@@ -165,6 +240,9 @@ impl Connection {
                 Some(endpoint) => endpoint.port,
                 None => {
                     let port = PORT_GENERATOR.acquire_port(SocketType::SockStream, 0)?;
+                    self.local_port_lease
+                        .lock()
+                        .replace(PortLease::new(self.socket_type, port));
                     local_endpoint.replace(port.into());
                     port
                 }
@@ -187,6 +265,7 @@ impl Connection {
     }
 
     pub fn shutdown(&self) -> ConnectionResult {
+        self.is_listening.store(false, Ordering::Release);
         // Construct shutdown request with cloned response channel
         let shutdown_task = Operation::Shutdown {
             socket_fd: self.socket_fd,
@@ -384,8 +463,7 @@ impl Connection {
     }
 
     pub fn is_connected(&self) -> bool {
-        // Client connect or Server bound
-        self.remote_endpoint.lock().is_some() || self.local_endpoint.lock().is_some()
+        self.remote_endpoint.lock().is_some()
     }
 
     fn with_posix_socket<F: FnOnce(Rc<RefCell<dyn PosixSocket>>) -> Option<OperationResult>>(
@@ -398,6 +476,13 @@ impl Connection {
         if let Some(posix_socket) = posix_socket {
             if posix_socket.borrow().is_shutdown() {
                 log::debug!("Socket {} already shutdown", socket_fd);
+                ipc_reply.wakeup_client(
+                    Err(SocketError::PosixError(
+                        -libc::ECONNABORTED,
+                        "socket is shut down".into(),
+                    )),
+                    socket_fd,
+                );
                 return;
             }
 
@@ -447,6 +532,48 @@ impl Connection {
                         |posix_socket| {
                             let mut posix_socket = posix_socket.borrow_mut();
                             Some(posix_socket.listen(local_endpoint))
+                        },
+                    )
+                }
+                Operation::Accept {
+                    socket_fd,
+                    accepted_fd,
+                    local_endpoint,
+                    accepted_connection,
+                    is_nonblocking,
+                    ipc_reply,
+                } => {
+                    log::debug!(
+                        "[Connection] handle Accept socket_fd={} accepted_fd={}",
+                        socket_fd,
+                        accepted_fd
+                    );
+
+                    Connection::with_posix_socket(
+                        network_manager.clone(),
+                        socket_fd,
+                        ipc_reply.clone(),
+                        |posix_socket| {
+                            let result = posix_socket.borrow_mut().accept(
+                                accepted_fd,
+                                local_endpoint,
+                                accepted_connection.clone(),
+                                is_nonblocking,
+                                ipc_reply.clone(),
+                            );
+
+                            match result {
+                                Ok(accepted) => {
+                                    accepted_connection
+                                        .set_remote_endpoint(accepted.remote_endpoint);
+                                    network_manager
+                                        .borrow_mut()
+                                        .insert_posix_socket(accepted_fd, accepted.socket);
+                                    Some(Ok(accepted_fd as usize))
+                                }
+                                Err(SocketError::WouldBlock) => None,
+                                Err(error) => Some(Err(error)),
+                            }
                         },
                     )
                 }
@@ -754,15 +881,6 @@ impl Connection {
     }
 }
 
-impl Drop for Connection {
-    fn drop(&mut self) {
-        // Release local port
-        if let Some(local_port) = *self.local_endpoint.lock() {
-            let _ = PORT_GENERATOR.release_port(self.socket_type, local_port.port);
-        }
-    }
-}
-
 // MPSC Queue from heapless requires CAS atomic instructions which are not available on all architectures
 pub static NETSTACK_QUEUE: heapless::mpmc::MpMcQueue<Operation, 32> =
     heapless::mpmc::MpMcQueue::<Operation, 32>::new();
@@ -898,6 +1016,15 @@ pub enum Operation {
     Listen {
         socket_fd: SocketFd,
         local_endpoint: IpListenEndpoint,
+        ipc_reply: Arc<OperationIPCReply>,
+    },
+
+    Accept {
+        socket_fd: SocketFd,
+        accepted_fd: SocketFd,
+        local_endpoint: IpListenEndpoint,
+        accepted_connection: Arc<Connection>,
+        is_nonblocking: bool,
         ipc_reply: Arc<OperationIPCReply>,
     },
 

@@ -364,7 +364,7 @@ pub fn recvfrom(
         log::debug!("Received packet from {:?}", endpoint);
 
         if let Some((mut address_ref, mut address_len_ref)) = recv_addr {
-            net::write_to_sockaddr(
+            let _ = net::write_to_sockaddr(
                 endpoint,
                 address_ref as *mut libc::sockaddr,
                 address_len_ref as *mut libc::socklen_t,
@@ -563,18 +563,62 @@ pub fn getsockopt(
 
 pub fn accept(
     socket: c_int,
-    _address: *mut libc::sockaddr,
-    _address_len: *mut libc::socklen_t,
+    address: *mut libc::sockaddr,
+    address_len: *mut libc::socklen_t,
 ) -> c_int {
     log::debug!("fd={}: Accepting connection", socket);
 
-    if let Err(e) = get_sock_by_fd(socket) {
+    let Ok(connection) = get_sock_by_fd(socket) else {
         log::warn!("fd={}: not a valid file descriptor", socket);
-        -libc::EBADF
-    } else {
-        // return socket fd when exit, do not support backlog
-        socket
+        return -libc::EBADF;
+    };
+
+    if connection.socket_type() != SocketType::SockStream {
+        log::warn!("fd={}: socket protocol does not support accept()", socket);
+        return -libc::EOPNOTSUPP;
     }
+
+    if !connection.is_listening() {
+        log::warn!("fd={}: socket is not listening", socket);
+        return -libc::EINVAL;
+    }
+
+    if address.is_null() != address_len.is_null() {
+        return -libc::EINVAL;
+    }
+
+    let accepted_fd = alloc_sock_fd(0);
+    if accepted_fd < 0 {
+        return -libc::EMFILE;
+    }
+
+    let accepted_connection = Arc::new(Connection::new_accepted(accepted_fd, &connection));
+    if sock_attach_to_fd(accepted_fd, accepted_connection.clone()).is_err() {
+        let _ = free_sock_fd(accepted_fd);
+        return -libc::EMFILE;
+    }
+
+    let result = connection.accept(accepted_fd, accepted_connection.clone());
+    if let Err(error) = result {
+        let _ = free_sock_fd(accepted_fd);
+        return error.to_errno();
+    }
+
+    if !address.is_null() {
+        let Some(remote_endpoint) = accepted_connection.remote_endpoint() else {
+            let _ = accepted_connection.shutdown();
+            let _ = free_sock_fd(accepted_fd);
+            return -libc::EIO;
+        };
+
+        if let Err(errno) = net::write_to_sockaddr(remote_endpoint, address, address_len) {
+            let _ = accepted_connection.shutdown();
+            let _ = free_sock_fd(accepted_fd);
+            return errno;
+        }
+    }
+
+    accepted_fd
 }
 
 pub fn shutdown(socket: c_int, how: c_int) -> c_int {
