@@ -491,9 +491,11 @@ impl Connection {
                         socket_fd,
                         ipc_reply.clone(),
                         |posix_socket| {
-                            let mut posix_socket = posix_socket.borrow_mut();
-
-                            Some(posix_socket.shutdown())
+                            let result = posix_socket.borrow().shutdown();
+                            if result.is_ok() {
+                                network_manager.borrow_mut().remove_posix_socket(socket_fd);
+                            }
+                            Some(result)
                         },
                     );
                 }
