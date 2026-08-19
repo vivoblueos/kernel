@@ -563,8 +563,8 @@ pub fn getsockopt(
 
 pub fn accept(
     socket: c_int,
-    _address: *const libc::sockaddr,
-    _address_len: libc::socklen_t,
+    _address: *mut libc::sockaddr,
+    _address_len: *mut libc::socklen_t,
 ) -> c_int {
     log::debug!("fd={}: Accepting connection", socket);
 
