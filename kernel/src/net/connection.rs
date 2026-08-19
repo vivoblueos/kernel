@@ -394,7 +394,8 @@ impl Connection {
         ipc_reply: Arc<OperationIPCReply>,
         f: F,
     ) {
-        if let Some(posix_socket) = network_manager.borrow_mut().get_posix_socket(socket_fd) {
+        let posix_socket = { network_manager.borrow().get_posix_socket(socket_fd) };
+        if let Some(posix_socket) = posix_socket {
             if posix_socket.borrow().is_shutdown() {
                 log::debug!("Socket {} already shutdown", socket_fd);
                 return;
@@ -491,7 +492,10 @@ impl Connection {
                         socket_fd,
                         ipc_reply.clone(),
                         |posix_socket| {
-                            let result = posix_socket.borrow().shutdown();
+                            let result = {
+                                let posix_socket = posix_socket.borrow();
+                                posix_socket.shutdown()
+                            };
                             if result.is_ok() {
                                 network_manager.borrow_mut().remove_posix_socket(socket_fd);
                             }
