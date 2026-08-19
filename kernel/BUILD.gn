@@ -73,7 +73,8 @@ _shared_deps = [
   "//librs:librs_esp32_flash_shared",
 ]
 
-# GCC provides __atomic builtins natively; skip the clang-derived libatomic for GCC toolchains.
+# GCC provides __atomic builtins natively; skip the clang-derived libatomic for
+# GCC toolchains.
 if (current_toolchain != "//build/toolchain:gcc_fv_thumbv8m") {
   _shared_deps += [ ":atomic" ]
 }
