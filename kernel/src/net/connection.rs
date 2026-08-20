@@ -70,6 +70,7 @@ pub struct Connection {
     remote_endpoint: Mutex<Option<IpEndpoint>>,
     is_nonblocking: AtomicBool, // default io mode is blocking, use O_NONBLOCK to set non-blocking
     is_listening: AtomicBool,
+    reuse_address: AtomicBool,
     recv_timeout: Mutex<Option<Duration>>, // block indefinitely as default
     send_timeout: Mutex<Option<Duration>>, // block indefinitely as default
     ipc_reply: Arc<OperationIPCReply>,
@@ -92,6 +93,7 @@ impl Connection {
             remote_endpoint: Mutex::new(None),
             is_nonblocking: AtomicBool::new(false),
             is_listening: AtomicBool::new(false),
+            reuse_address: AtomicBool::new(false),
             recv_timeout: Mutex::new(None),
             send_timeout: Mutex::new(None),
             ipc_reply: Arc::new(OperationIPCReply::new()),
@@ -196,6 +198,10 @@ impl Connection {
         );
         *accepted.local_endpoint.lock() = *listener.local_endpoint.lock();
         *accepted.local_port_lease.lock() = listener.local_port_lease.lock().clone();
+        accepted.reuse_address.store(
+            listener.reuse_address.load(Ordering::Acquire),
+            Ordering::Release,
+        );
         accepted
     }
 
@@ -423,6 +429,14 @@ impl Connection {
     // Set recv timeout : ref to libc::SO_RCVTIMEO
     pub fn set_recv_timeout(&self, timeout: Duration) {
         self.recv_timeout.lock().replace(timeout);
+    }
+
+    pub fn set_reuse_address(&self, reuse_address: bool) {
+        self.reuse_address.store(reuse_address, Ordering::Release);
+    }
+
+    pub fn reuse_address(&self) -> bool {
+        self.reuse_address.load(Ordering::Acquire)
     }
 
     // Set send timeout : ref to libc::SO_SNDTIMEO

@@ -451,9 +451,24 @@ pub fn setsockopt(
         return -libc::EBADF;
     };
 
-    // option_name suppose to contain only one option
+    // `option_name` identifies exactly one POSIX socket option; it is not a
+    // bitmask and multiple options cannot be ORed together. Use exact equality
+    // here because different option numbers may share bits. For example,
+    // SO_REUSEADDR (0x0004) & SO_RCVTIMEO (0x1006) is non-zero.
     if level == libc::SOL_SOCKET {
-        if (option_name & libc::SO_RCVTIMEO) != 0 {
+        if option_name == libc::SO_REUSEADDR {
+            if option_value.is_null()
+                || option_len < core::mem::size_of::<c_int>() as libc::socklen_t
+            {
+                return -1;
+            }
+
+            let reuse_address = unsafe { core::ptr::read_unaligned(option_value.cast::<c_int>()) };
+            connection.set_reuse_address(reuse_address != 0);
+            return 0;
+        }
+
+        if option_name == libc::SO_RCVTIMEO {
             return match unsafe { Timeval::from_ptr(option_value, option_len) } {
                 Some(timeval) => {
                     connection.set_recv_timeout(Duration::from(timeval));
@@ -463,7 +478,7 @@ pub fn setsockopt(
             };
         }
 
-        if (option_name & libc::SO_SNDTIMEO) != 0 {
+        if option_name == libc::SO_SNDTIMEO {
             return match unsafe { Timeval::from_ptr(option_value, option_len) } {
                 Some(timeval) => {
                     connection.set_send_timeout(Duration::from(timeval));
@@ -499,8 +514,27 @@ pub fn getsockopt(
     if option_value.is_null() || option_len.is_null() {
         return -libc::EINVAL;
     }
+
+    // As in setsockopt(), `option_name` is a single option number rather than
+    // a set of flags, so each supported option must be matched exactly.
     if level == libc::SOL_SOCKET {
-        if (option_name & libc::SO_RCVTIMEO) != 0 {
+        if option_name == libc::SO_REUSEADDR {
+            let option_len_value = unsafe { *option_len };
+            if option_len_value < core::mem::size_of::<c_int>() as libc::socklen_t {
+                return -libc::EINVAL;
+            }
+
+            unsafe {
+                core::ptr::write_unaligned(
+                    option_value.cast::<c_int>(),
+                    c_int::from(connection.reuse_address()),
+                );
+                *option_len = core::mem::size_of::<c_int>() as libc::socklen_t;
+            }
+            return 0;
+        }
+
+        if option_name == libc::SO_RCVTIMEO {
             let timeval = Timeval::from(connection.get_recv_timeout());
             unsafe {
                 core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
@@ -509,7 +543,7 @@ pub fn getsockopt(
             return 0;
         }
 
-        if (option_name & libc::SO_SNDTIMEO) != 0 {
+        if option_name == libc::SO_SNDTIMEO {
             let timeval = Timeval::from(connection.get_send_timeout());
             unsafe {
                 core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
