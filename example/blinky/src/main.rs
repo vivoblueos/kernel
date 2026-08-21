@@ -20,7 +20,7 @@ use std::io::Write;
 fn main() -> std::io::Result<()> {
     println!("Running BlueOS Pico2 Blinky Example!");
 
-    let mut file = std::fs::OpenOptions::new().write(true).open("/dev/led0")?;
+    let mut file = std::fs::OpenOptions::new().write(true).open("/dev/led")?;
     let mut is_light_on = false;
 
     loop {

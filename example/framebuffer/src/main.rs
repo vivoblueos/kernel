@@ -249,7 +249,7 @@ fn write_all(fd: libc::c_int, mut buf: &[u8]) -> Result<()> {
                 return Err(Error::new(
                     ErrorKind::WriteZero,
                     "failed to write framebuffer",
-                ))
+                ));
             }
             Ok(size) => buf = &buf[size..],
             Err(librs::errno::Errno(errno)) => return Err(Error::from_raw_os_error(errno)),

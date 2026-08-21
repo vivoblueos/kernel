@@ -24,6 +24,10 @@ reload_autoconf_and_build("wifi_example") {
 
   sources = [ "src/main.rs" ]
   deps = [
+    "//external/vendor/embedded-io-0.6.1:embedded_io",
+    "//external/vendor/embedded-tls-0.16.3:embedded_tls",
+    "//external/vendor/fastrand-2.3.0:fastrand",
+    "//external/vendor/rand_core-0.6.4:rand_core",
     "//kernel/adapter/esp_radio_sys",
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/rsrt:rsrt_std",
@@ -41,6 +45,7 @@ reload_autoconf_and_build("wifi_example") {
     "-L" + rebase_path("//external/vendor/esp-rom-sys-0.1.4/ld/esp32c3"),
     "-L" + rebase_path("//external/vendor/esp-radio-0.18.0"),
     "-L" + rebase_path("//external/vendor/esp-phy-0.2.0"),
+    "-L" + rebase_path("//external/vendor/embedded-tls-0.16.3"),
     "-lesp-phy",
     "-lesp_rom_sys",
     "-lbtbb",
