@@ -344,6 +344,9 @@ impl Connection {
                 let mut endpoint = self.local_endpoint.lock();
                 if endpoint.is_none() {
                     let local_port = PORT_GENERATOR.acquire_port(self.socket_type, 0)?;
+                    self.local_port_lease
+                        .lock()
+                        .replace(PortLease::new(self.socket_type, local_port));
                     endpoint.replace((local_port).into());
                     Some(local_port)
                 } else {
