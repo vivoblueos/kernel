@@ -245,7 +245,7 @@ impl Connection {
             match local_endpoint {
                 Some(endpoint) => endpoint.port,
                 None => {
-                    let port = PORT_GENERATOR.acquire_port(SocketType::SockStream, 0)?;
+                    let port = PORT_GENERATOR.acquire_port(self.socket_type, 0)?;
                     self.local_port_lease
                         .lock()
                         .replace(PortLease::new(self.socket_type, port));
