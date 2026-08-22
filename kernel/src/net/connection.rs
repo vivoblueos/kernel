@@ -958,7 +958,7 @@ impl OperationIPCReply {
                 return result.map_err(Into::into);
             }
 
-            if !self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
+            if self.reply_futex.load(Ordering::Acquire) != STATE_WAITING_FOR_CONSUME {
                 yield_me();
                 continue;
             }
