@@ -97,7 +97,10 @@ pub fn listen(socket: c_int, backlog: c_int) -> c_int {
         log::warn!("fd={}: socket is unbound", socket);
         return -libc::EDESTADDRREQ;
     }
-    connection.listen().map(|_| 0).unwrap_or(-1)
+    connection
+        .listen()
+        .map(|_| 0)
+        .unwrap_or_else(|error| error.to_errno())
 }
 
 pub fn send(socket: c_int, buffer: *const c_void, length: c_size_t, flags: c_int) -> c_ssize_t {
@@ -138,7 +141,7 @@ pub fn send(socket: c_int, buffer: *const c_void, length: c_size_t, flags: c_int
     connection
         .send(f, flags)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn sendto(
@@ -182,7 +185,7 @@ pub fn sendto(
     connection
         .sendto(buf, flags, remote_endpoint)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_ssize_t {
@@ -233,7 +236,7 @@ pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_s
     connection
         .sendmsg(remote_endpoint, identifier, packet_len, send_payload)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn recv(socket: c_int, buffer: *mut c_void, length: c_size_t, flags: c_int) -> c_ssize_t {
@@ -279,7 +282,7 @@ pub fn recv(socket: c_int, buffer: *mut c_void, length: c_size_t, flags: c_int) 
             log::debug!("[Posix] recv msg recv_sized={}", recv_sized);
             recv_sized.try_into().unwrap_or(-1)
         })
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn recvmsg(socket: c_int, message: *mut libc::msghdr, flags: c_int) -> c_ssize_t {
@@ -322,7 +325,7 @@ pub fn recvmsg(socket: c_int, message: *mut libc::msghdr, flags: c_int) -> c_ssi
     connection
         .recvmsg(recv_payload)
         .map(|recv_sized| recv_sized.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn recvfrom(
@@ -379,7 +382,7 @@ pub fn recvfrom(
     connection
         .recvfrom(recv_payload)
         .map(|recv_sized| recv_sized.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn connect(
@@ -404,7 +407,10 @@ pub fn connect(
         return -libc::EADDRNOTAVAIL;
     };
 
-    connection.connect(remote_endpoint).map(|_| 0).unwrap_or(-1)
+    connection
+        .connect(remote_endpoint)
+        .map(|_| 0)
+        .unwrap_or_else(|error| error.to_errno())
 }
 
 pub fn bind(socket: c_int, address: *const libc::sockaddr, address_len: libc::socklen_t) -> c_int {
@@ -433,8 +439,10 @@ pub fn bind(socket: c_int, address: *const libc::sockaddr, address_len: libc::so
     connection
         .bind(local_endpoint)
         .map(|_| 0)
-        .map_err(|e| log::debug!("bind fail {:#?}", e))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| {
+            log::debug!("bind fail {:#?}", error);
+            error.to_errno()
+        })
 }
 
 pub fn setsockopt(
@@ -585,7 +593,10 @@ pub fn shutdown(socket: c_int, how: c_int) -> c_int {
         return -libc::EBADF;
     };
     free_sock_fd(socket);
-    connection.shutdown().map(|_| 0).unwrap_or(-1)
+    connection
+        .shutdown()
+        .map(|_| 0)
+        .unwrap_or_else(|error| error.to_errno())
 }
 
 pub fn getaddrinfo(
