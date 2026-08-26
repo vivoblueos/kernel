@@ -327,38 +327,36 @@ impl SocketAddressV6 {
     }
 }
 
+#[cfg(target_pointer_width = "32")]
+type TimevalAbiField = i32;
+#[cfg(target_pointer_width = "64")]
+type TimevalAbiField = i64;
+
+/// BlueOS follows the target C ABI for socket timeval arguments: ILP32 uses
+/// two 32-bit longs and LP64 uses two 64-bit longs.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct Timeval {
-    pub tv_sec: libc::time_t,
-    pub tv_usec: libc::suseconds_t,
+struct TimevalAbi {
+    tv_sec: TimevalAbiField,
+    tv_usec: TimevalAbiField,
 }
 
-/// The prebuilt Rust std for the 32-bit BlueOS target uses the traditional
-/// 32-bit timeval ABI (two i32 fields), while BlueOS libc exposes time_t as
-/// i64. Accept both layouts at the socket syscall boundary.
-#[repr(C)]
-struct Timeval32 {
-    tv_sec: i32,
-    tv_usec: i32,
+#[derive(Clone, Copy)]
+pub struct Timeval {
+    pub tv_sec: i64,
+    pub tv_usec: i64,
 }
 
 impl Timeval {
     pub unsafe fn from_ptr(ptr: *const c_void, len: libc::socklen_t) -> Option<Self> {
-        if ptr.is_null() {
+        if ptr.is_null() || len != core::mem::size_of::<TimevalAbi>() as libc::socklen_t {
             return None;
         }
-        if len == core::mem::size_of::<Self>() as libc::socklen_t {
-            return Self::validated(ptr.cast::<Self>().read_unaligned());
-        }
-        if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
-            let timeval = ptr.cast::<Timeval32>().read_unaligned();
-            return Self::validated(Self {
-                tv_sec: timeval.tv_sec as libc::time_t,
-                tv_usec: timeval.tv_usec as libc::suseconds_t,
-            });
-        }
-        None
+        let timeval = ptr.cast::<TimevalAbi>().read_unaligned();
+        Self::validated(Self {
+            tv_sec: from_timeval_abi_field(timeval.tv_sec),
+            tv_usec: from_timeval_abi_field(timeval.tv_usec),
+        })
     }
 
     pub unsafe fn write_to_ptr(
@@ -366,21 +364,15 @@ impl Timeval {
         ptr: *mut c_void,
         len: libc::socklen_t,
     ) -> Option<libc::socklen_t> {
-        if ptr.is_null() {
+        if ptr.is_null() || len != core::mem::size_of::<TimevalAbi>() as libc::socklen_t {
             return None;
         }
-        if len == core::mem::size_of::<Self>() as libc::socklen_t {
-            ptr.cast::<Self>().write_unaligned(*self);
-            return Some(core::mem::size_of::<Self>() as libc::socklen_t);
-        }
-        if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
-            let tv_sec = i32::try_from(self.tv_sec).ok()?;
-            let tv_usec = self.tv_usec;
-            ptr.cast::<Timeval32>()
-                .write_unaligned(Timeval32 { tv_sec, tv_usec });
-            return Some(core::mem::size_of::<Timeval32>() as libc::socklen_t);
-        }
-        None
+        let timeval = TimevalAbi {
+            tv_sec: to_timeval_abi_field(self.tv_sec)?,
+            tv_usec: to_timeval_abi_field(self.tv_usec)?,
+        };
+        ptr.cast::<TimevalAbi>().write_unaligned(timeval);
+        Some(core::mem::size_of::<TimevalAbi>() as libc::socklen_t)
     }
 
     fn validated(timeval: Self) -> Option<Self> {
@@ -391,13 +383,32 @@ impl Timeval {
     }
 }
 
-crate::static_assert!(size_of::<Timeval>() == size_of::<libc::timeval>());
+#[cfg(target_pointer_width = "32")]
+fn from_timeval_abi_field(value: TimevalAbiField) -> i64 {
+    i64::from(value)
+}
+
+#[cfg(target_pointer_width = "64")]
+fn from_timeval_abi_field(value: TimevalAbiField) -> i64 {
+    value
+}
+
+#[cfg(target_pointer_width = "32")]
+fn to_timeval_abi_field(value: i64) -> Option<TimevalAbiField> {
+    i32::try_from(value).ok()
+}
+
+#[cfg(target_pointer_width = "64")]
+fn to_timeval_abi_field(value: i64) -> Option<TimevalAbiField> {
+    Some(value)
+}
+
+crate::static_assert!(size_of::<TimevalAbi>() == 2 * size_of::<usize>());
 
 impl From<core::time::Duration> for Timeval {
     fn from(duration: core::time::Duration) -> Timeval {
-        let sec = duration.as_secs() as libc::time_t;
-        let usec = duration.subsec_micros() as libc::suseconds_t;
-        debug_assert!(usec >= 0); // usec >= 0 always holds
+        let sec = duration.as_secs().min(i64::MAX as u64) as i64;
+        let usec = i64::from(duration.subsec_micros());
         Timeval {
             tv_sec: sec,
             tv_usec: usec,
@@ -407,7 +418,7 @@ impl From<core::time::Duration> for Timeval {
 
 impl From<&Timeval> for core::time::Duration {
     fn from(timeval: &Timeval) -> Self {
-        core::time::Duration::new(timeval.tv_sec as u64, timeval.tv_usec as u32)
+        core::time::Duration::new(timeval.tv_sec as u64, timeval.tv_usec as u32 * 1_000)
     }
 }
 
@@ -694,16 +705,16 @@ mod tests {
     }
 
     #[test]
-    fn timeval_accepts_32_bit_layout() {
-        let value = Timeval32 {
+    fn timeval_accepts_target_abi_layout() {
+        let value = TimevalAbi {
             tv_sec: 12,
             tv_usec: 345_678,
         };
 
         let timeval = unsafe {
             Timeval::from_ptr(
-                (&value as *const Timeval32).cast(),
-                size_of::<Timeval32>() as libc::socklen_t,
+                (&value as *const TimevalAbi).cast(),
+                size_of::<TimevalAbi>() as libc::socklen_t,
             )
         }
         .unwrap();
@@ -713,43 +724,69 @@ mod tests {
     }
 
     #[test]
-    fn timeval_writes_32_bit_layout() {
+    fn timeval_writes_target_abi_layout() {
         let timeval = Timeval {
             tv_sec: 23,
             tv_usec: 456_789,
         };
-        let mut value = Timeval32 {
+        let mut value = TimevalAbi {
             tv_sec: 0,
             tv_usec: 0,
         };
 
         let written = unsafe {
             timeval.write_to_ptr(
-                (&mut value as *mut Timeval32).cast(),
-                size_of::<Timeval32>() as libc::socklen_t,
+                (&mut value as *mut TimevalAbi).cast(),
+                size_of::<TimevalAbi>() as libc::socklen_t,
             )
         };
 
-        assert_eq!(written, Some(size_of::<Timeval32>() as libc::socklen_t));
+        assert_eq!(written, Some(size_of::<TimevalAbi>() as libc::socklen_t));
         assert_eq!(value.tv_sec, 23);
         assert_eq!(value.tv_usec, 456_789);
     }
 
     #[test]
     fn timeval_rejects_invalid_microseconds() {
-        let value = Timeval32 {
+        let value = TimevalAbi {
             tv_sec: 1,
             tv_usec: 1_000_000,
         };
 
         let timeval = unsafe {
             Timeval::from_ptr(
-                (&value as *const Timeval32).cast(),
-                size_of::<Timeval32>() as libc::socklen_t,
+                (&value as *const TimevalAbi).cast(),
+                size_of::<TimevalAbi>() as libc::socklen_t,
             )
         };
 
         assert!(timeval.is_none());
+    }
+
+    #[test]
+    fn timeval_matches_target_c_abi_width() {
+        assert_eq!(size_of::<TimevalAbi>(), 2 * size_of::<usize>());
+    }
+
+    #[test]
+    fn timeval_rejects_non_target_abi_width() {
+        let value = [0u8; 16];
+        let wrong_len = if size_of::<TimevalAbi>() == 8 { 16 } else { 8 };
+
+        let timeval =
+            unsafe { Timeval::from_ptr(value.as_ptr().cast(), wrong_len as libc::socklen_t) };
+
+        assert!(timeval.is_none());
+    }
+
+    #[test]
+    fn timeval_converts_microseconds_to_duration() {
+        let duration = core::time::Duration::from(&Timeval {
+            tv_sec: 2,
+            tv_usec: 345_678,
+        });
+
+        assert_eq!(duration, core::time::Duration::from_micros(2_345_678));
     }
 
     #[test]
