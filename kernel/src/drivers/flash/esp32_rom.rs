@@ -17,10 +17,7 @@
 //! ICache -> ROM call -> resume ICache -> restore IRQ. The `.rwtext` wrappers must
 //! live in IRAM: while flash is busy (erase/program) the CPU cannot fetch from flash.
 
-use crate::{
-    arch::{disable_local_irq_save, enable_local_irq_restore},
-    boards::DROM_VADDR_BASE,
-};
+use crate::arch::{disable_local_irq_save, enable_local_irq_restore};
 
 pub const ESP_ROM_SPIFLASH_RESULT_OK: i32 = 0;
 pub const ESP_ROM_SPIFLASH_RESULT_ERR: i32 = 1;
@@ -65,6 +62,8 @@ unsafe extern "C" {
 // Flash MMU table base (EXTMEM region) and the invalid-entry sentinel (BIT(8)).
 const DR_REG_MMU_TABLE: u32 = 0x600C_5000;
 const SOC_MMU_INVALID: u32 = 0x100;
+
+const DROM_VADDR_BASE: u32 = 0x3C00_0000;
 
 /// Run `body` with IRQs disabled and ICache suspended across the ROM call.
 #[inline(always)]

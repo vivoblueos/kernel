@@ -21,7 +21,7 @@
 use crate::{
     devices::{Device, DeviceClass, DeviceId, DeviceManager},
     drivers::flash::{
-        flash_mmap::{self, ExecMapping, MapError},
+        flash_mmap::{self, DromMapping, ExecMapping, MapError},
         internal_flash::{
             with_internal_flash, with_internal_flash_exclusive, EspFlashError,
             ESP_FLASH_SECTOR_SIZE,
@@ -33,17 +33,16 @@ use alloc::{string::String, sync::Arc};
 use embedded_io::ErrorKind;
 
 pub const ESP32_FLASH_DEVICE_NAME: &str = "esp32-flash0";
-const ESP32_FLASH_DEVICE_MAJOR: usize = 1;
-const ESP32_FLASH_DEVICE_MINOR: usize = 0x35;
 
 // device-specific ioctl commands.
 pub const ESP32_FLASH_ERASE_RANGE: u32 = 0x40;
 pub const ESP32_FLASH_MAP_EXEC: u32 = 0x44;
 pub const ESP32_FLASH_UNMAP: u32 = 0x45;
+pub const ESP32_FLASH_QUERY_DRAM_SAFE: u32 = 0x46;
+pub const ESP32_FLASH_MAP_DROM: u32 = 0x47;
 pub const FLASH_IOCTL_ABI_VERSION: u32 = 1;
 // Returns __sys_stack_end: the safe SRAM base above kernel heap/stack, below
 // which the loader may copy out-of-window RW segments. Bounds copy_rw_segments.
-pub const ESP32_FLASH_QUERY_DRAM_SAFE: u32 = 0x46;
 pub use crate::boards::{LOADABLE_REGION_BASE, LOADABLE_REGION_END, LOADABLE_REGION_SIZE};
 
 #[repr(C)]
@@ -53,6 +52,17 @@ struct MapExecRequest {
     flags: u32,
     region_offset: u32,
     image_size: u32,
+    mapped_address: u32,
+}
+
+#[repr(C)]
+struct MapDromRequest {
+    version: u32,
+    size: u32,
+    flags: u32,
+    region_offset: u32,
+    image_size: u32,
+    drom_vaddr: u32,
     mapped_address: u32,
 }
 
@@ -133,7 +143,10 @@ impl InternalFlashRegion {
 enum Esp32FlashState {
     Idle,
     Busy,
-    Mapped { mapping: ExecMapping },
+    Mapped {
+        irom: ExecMapping,
+        drom: Option<DromMapping>,
+    },
 }
 
 impl Default for Esp32FlashState {
@@ -259,34 +272,123 @@ impl Esp32FlashDevice {
             let out = core::ptr::addr_of_mut!((*(arg as *mut MapExecRequest)).mapped_address);
             core::ptr::write_volatile(out, mapping.segment_address as u32);
         }
-        *self.state.irqsave_lock() = Esp32FlashState::Mapped { mapping };
+        *self.state.irqsave_lock() = Esp32FlashState::Mapped {
+            irom: mapping,
+            drom: None,
+        };
         Ok(())
     }
 
-    /// Release the executable mapping. Caller must not execute in the range.
+    /// Add an independent D-bus (DROM) mapping for a .rodata PT_LOAD. Must
+    /// follow MAP_EXEC. Caller passes the ELF's DROM vaddr; kernel writes the
+    /// mapped vaddr back through the request out-pointer.
+    fn ioctl_map_drom(&self, arg: usize) -> Result<(), ErrorKind> {
+        if arg == 0 || arg % core::mem::align_of::<MapDromRequest>() != 0 {
+            return Err(ErrorKind::InvalidInput);
+        }
+
+        let req = unsafe { core::ptr::read_volatile(arg as *const MapDromRequest) };
+        validate_request_header(
+            req.version,
+            req.size,
+            req.flags,
+            core::mem::size_of::<MapDromRequest>() as u32,
+        )?;
+        let size = usize::try_from(req.image_size).map_err(|_| ErrorKind::InvalidInput)?;
+        if size == 0 {
+            return Err(ErrorKind::InvalidInput);
+        }
+        let physical = self
+            .region
+            .absolute_offset(req.region_offset, size)
+            .map_err(map_flash_err)?;
+
+        // Require a live I-bus mapping (map_exec first) and no existing DROM.
+        {
+            let state = self.state.irqsave_lock();
+            match &*state {
+                Esp32FlashState::Mapped { irom: _, drom: None } => {}
+                Esp32FlashState::Mapped { drom: Some(_), .. } => {
+                    return Err(ErrorKind::PermissionDenied);
+                }
+                _ => return Err(ErrorKind::InvalidInput),
+            }
+        }
+
+        let mapping = match with_internal_flash_exclusive(|| {
+            flash_mmap::map_drom(physical, size, req.drom_vaddr)
+        }) {
+            Ok(Ok(mapping)) => mapping,
+            Ok(Err(error)) => return Err(map_mmap_err(error)),
+            Err(error) => return Err(map_flash_err(error)),
+        };
+
+        unsafe {
+            let out = core::ptr::addr_of_mut!((*(arg as *mut MapDromRequest)).mapped_address);
+            core::ptr::write_volatile(out, mapping.drom_vaddr as u32);
+        }
+        let mut state = self.state.irqsave_lock();
+        match core::mem::replace(&mut *state, Esp32FlashState::Busy) {
+            Esp32FlashState::Mapped { irom, drom: None } => {
+                *state = Esp32FlashState::Mapped {
+                    irom,
+                    drom: Some(mapping),
+                };
+                Ok(())
+            }
+            other => {
+                // Lost the race or state changed under us; restore and refuse.
+                *state = other;
+                Err(ErrorKind::Other)
+            }
+        }
+    }
+
+    /// Release both mappings (DROM first, then IROM). Caller must not access
+    /// either range after.
     fn ioctl_unmap(&self) -> Result<(), ErrorKind> {
         let mut state = self.state.irqsave_lock();
         let old = core::mem::replace(&mut *state, Esp32FlashState::Busy);
-        let mapping = match old {
-            Esp32FlashState::Mapped { mapping } => mapping,
+        let (irom, drom) = match old {
+            Esp32FlashState::Mapped { irom, drom } => (irom, drom),
             other => {
                 *state = other;
                 return Err(ErrorKind::InvalidInput);
             }
         };
         drop(state);
-        let result = with_internal_flash_exclusive(|| flash_mmap::unmap_exec(&mapping));
+        // DROM first: it was mapped last and sits on its own entries.
+        if let Some(dm) = &drom {
+            let r = with_internal_flash_exclusive(|| flash_mmap::unmap_drom(dm));
+            if let Ok(Err(error)) = r {
+                // Roll back: restore full Mapped state.
+                *self.state.irqsave_lock() = Esp32FlashState::Mapped { irom, drom };
+                return Err(map_mmap_err(error));
+            }
+            if let Err(error) = r {
+                *self.state.irqsave_lock() = Esp32FlashState::Mapped { irom, drom };
+                return Err(map_flash_err(error));
+            }
+        }
+        let result = with_internal_flash_exclusive(|| flash_mmap::unmap_exec(&irom));
         match result {
             Ok(Ok(())) => {
                 self.finish_flash_operation();
                 Ok(())
             }
             Ok(Err(error)) => {
-                *self.state.irqsave_lock() = Esp32FlashState::Mapped { mapping };
+                // I-bus unmap failed; DROM already gone. Restore I-bus-only Mapped.
+                *self.state.irqsave_lock() = Esp32FlashState::Mapped {
+                    irom,
+                    drom: None,
+                };
                 Err(map_mmap_err(error))
             }
             Err(error) => {
-                *self.state.irqsave_lock() = Esp32FlashState::Mapped { mapping };
+                *self.state.irqsave_lock() = Esp32FlashState::Mapped {
+                    irom,
+                    drom: None,
+                };
                 Err(map_flash_err(error))
             }
         }
@@ -313,7 +415,7 @@ impl Device for Esp32FlashDevice {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(ESP32_FLASH_DEVICE_MAJOR, ESP32_FLASH_DEVICE_MINOR)
+        DeviceId::new(1, 0x35)
     }
 
     fn read(&self, pos: u64, buf: &mut [u8], _is_nonblocking: bool) -> Result<usize, ErrorKind> {
@@ -348,6 +450,7 @@ impl Device for Esp32FlashDevice {
             ESP32_FLASH_MAP_EXEC => self.ioctl_map_exec(arg),
             ESP32_FLASH_UNMAP => self.ioctl_unmap(),
             ESP32_FLASH_QUERY_DRAM_SAFE => self.ioctl_query_dram_safe(arg),
+            ESP32_FLASH_MAP_DROM => self.ioctl_map_drom(arg),
             _ => Err(ErrorKind::Unsupported),
         }
     }
@@ -377,7 +480,9 @@ fn map_flash_err(e: EspFlashError) -> ErrorKind {
 
 fn map_mmap_err(e: MapError) -> ErrorKind {
     match e {
-        MapError::AlreadyMapped => ErrorKind::PermissionDenied,
+        MapError::AlreadyMapped
+        | MapError::DromAlreadyMapped
+        | MapError::DromNotAfterExec => ErrorKind::PermissionDenied,
         MapError::ZeroSize
         | MapError::OutOfRange
         | MapError::Overflow
@@ -403,17 +508,16 @@ pub fn init_esp32_flash_device() -> Result<(), ErrorKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blueos_test_macro::test;
 
     fn region() -> InternalFlashRegion {
         InternalFlashRegion::new(LOADABLE_REGION_BASE, LOADABLE_REGION_SIZE)
     }
 
     #[test]
-    fn loadable_region_reserves_one_mib() {
-        assert_eq!(LOADABLE_REGION_BASE, 0x0020_0000);
-        assert_eq!(LOADABLE_REGION_SIZE, 0x0010_0000);
-        assert_eq!(LOADABLE_REGION_END, 0x0030_0000);
+    fn loadable_region_reserves_xip_window() {
+        assert_eq!(LOADABLE_REGION_BASE, 0x0011_0000);
+        assert_eq!(LOADABLE_REGION_SIZE, 0x002F_0000);
+        assert_eq!(LOADABLE_REGION_END, 0x0040_0000);
     }
 
     fn map_request(region_offset: u32, image_size: u32) -> MapExecRequest {
@@ -496,6 +600,15 @@ mod tests {
         assert_eq!(core::mem::offset_of!(EraseRangeRequest, flags), 8);
         assert_eq!(core::mem::offset_of!(EraseRangeRequest, region_offset), 12);
         assert_eq!(core::mem::offset_of!(EraseRangeRequest, length), 16);
+
+        assert_eq!(core::mem::size_of::<MapDromRequest>(), 28);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, version), 0);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, size), 4);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, flags), 8);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, region_offset), 12);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, image_size), 16);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, drom_vaddr), 20);
+        assert_eq!(core::mem::offset_of!(MapDromRequest, mapped_address), 24);
     }
 
     #[test]
@@ -523,7 +636,8 @@ mod tests {
     fn mapped_state_rejects_flash_mutation() {
         let dev = Esp32FlashDevice::new(ESP32_FLASH_DEVICE_NAME, region());
         *dev.state.irqsave_lock() = Esp32FlashState::Mapped {
-            mapping: ExecMapping::for_test(),
+            irom: ExecMapping::for_test(),
+            drom: None,
         };
         assert_eq!(
             dev.begin_flash_operation(),

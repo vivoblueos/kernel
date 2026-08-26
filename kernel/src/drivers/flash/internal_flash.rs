@@ -21,7 +21,6 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const ESP_FLASH_SECTOR_SIZE: usize = 4096;
 pub const ESP_FLASH_WORD_SIZE: usize = 4;
-const ESP_FLASH_BLOCK_64K_SIZE: usize = 65536;
 const ROM_PAGE_SIZE: usize = 256;
 const ESP_FLASH_READ_CHUNK_SIZE: usize = 1024;
 
@@ -219,59 +218,17 @@ impl Esp32c3InternalFlash {
             return Err(EspFlashError::UnalignedErase);
         }
         self.check_bounds(offset, len as usize)?;
-        if len == 0 {
-            return Ok(());
+        let first_sector = offset / ESP_FLASH_SECTOR_SIZE as u32;
+        let sector_count = len / ESP_FLASH_SECTOR_SIZE as u32;
+        for index in 0..sector_count {
+            self.erase_sector(first_sector + index)?;
         }
-        let sector_size = ESP_FLASH_SECTOR_SIZE as u32;
-        let block_size = ESP_FLASH_BLOCK_64K_SIZE as u32;
-        let head_bytes = block_size - (offset % block_size);
-        let head_sectors = if head_bytes == block_size {
-            0
-        } else {
-            let h = core::cmp::min(head_bytes, len) / sector_size;
-            h
-        };
-        let t0 = Tick::now();
-        for i in 0..head_sectors {
-            self.erase_sector(offset / sector_size + i)?;
-        }
-        let head_total = head_sectors * sector_size;
-        let remaining = len - head_total;
-        let block_count = remaining / block_size;
-        if block_count > 0 {
-            let first_block = (offset + head_total) / block_size;
-            for i in 0..block_count {
-                self.erase_block(first_block + i)?;
-            }
-        }
-        let tail_offset = head_total + block_count * block_size;
-        let tail_sectors = (len - tail_offset) / sector_size;
-        let tail_base_sector = (offset + tail_offset) / sector_size;
-        for i in 0..tail_sectors {
-            self.erase_sector(tail_base_sector + i)?;
-        }
-        let elapsed = Tick::now().since(t0);
-        log::warn!(
-            "erase_region off={:#x} len={} head_sec={} blk_64k={} tail_sec={} erase_ms={}",
-            offset,
-            len,
-            head_sectors,
-            block_count,
-            tail_sectors,
-            elapsed.as_millis()
-        );
         Ok(())
     }
 
     fn erase_sector(&mut self, sector: u32) -> Result<(), EspFlashError> {
         // ROM takes a sector INDEX (byte_off / 4096), not a byte offset.
         let r = unsafe { esp32_rom::rom_erase_sector(sector) };
-        rom_result(r)
-    }
-
-    fn erase_block(&mut self, block: u32) -> Result<(), EspFlashError> {
-        // ROM takes a 64KB block INDEX (byte_off / 65536), not a byte offset.
-        let r = unsafe { esp32_rom::rom_erase_block(block) };
         rom_result(r)
     }
 
