@@ -228,7 +228,7 @@ impl PosixSocket for IcmpSocket {
                             packet_len,
                             f,
                             is_nonblocking,
-                            ipc_reply,
+                            ipc_reply: ipc_reply.clone(),
                         };
                         let socket_operation = Some(wait_operation);
                         let waker = socket_waker::create_closure_waker(
@@ -237,6 +237,7 @@ impl PosixSocket for IcmpSocket {
                             is_shutdown,
                         );
                         socket.register_send_waker(&waker);
+                        ipc_reply.park_for_socket_wait();
                         log::debug!(
                             "icmp socket not ready for send_queue={:?}",
                             socket.send_queue()
@@ -288,7 +289,7 @@ impl PosixSocket for IcmpSocket {
                             socket_fd,
                             f,
                             is_nonblocking,
-                            ipc_reply,
+                            ipc_reply: ipc_reply.clone(),
                         };
                         let socket_operation = Some(wait_operation);
                         let waker = socket_waker::create_closure_waker(
@@ -297,6 +298,7 @@ impl PosixSocket for IcmpSocket {
                             is_shutdown,
                         );
                         socket.register_recv_waker(&waker);
+                        ipc_reply.park_for_socket_wait();
                         log::debug!(
                             "no data for icmp recvmsg recv_queue={:?}",
                             socket.recv_queue()

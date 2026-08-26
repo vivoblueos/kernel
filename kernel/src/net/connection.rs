@@ -51,9 +51,9 @@ pub struct Connection {
     local_endpoint: Mutex<Option<IpListenEndpoint>>,
     remote_endpoint: Mutex<Option<IpEndpoint>>,
     is_nonblocking: AtomicBool, // default io mode is blocking, use O_NONBLOCK to set non-blocking
+    reuse_address: AtomicBool,
     recv_timeout: Mutex<Option<Duration>>, // block indefinitely as default
     send_timeout: Mutex<Option<Duration>>, // block indefinitely as default
-    ipc_reply: Arc<OperationIPCReply>,
 }
 
 impl Connection {
@@ -71,28 +71,41 @@ impl Connection {
             local_endpoint: Mutex::new(None),
             remote_endpoint: Mutex::new(None),
             is_nonblocking: AtomicBool::new(false),
+            reuse_address: AtomicBool::new(false),
             recv_timeout: Mutex::new(None),
             send_timeout: Mutex::new(None),
-            ipc_reply: Arc::new(OperationIPCReply::new()),
         }
+    }
+
+    fn new_ipc_reply() -> Arc<OperationIPCReply> {
+        Arc::new(OperationIPCReply::new())
     }
 
     pub fn set_is_nonblocking(&self, is_nonblocking: bool) {
         self.is_nonblocking.store(is_nonblocking, Ordering::Release);
     }
 
+    pub fn set_reuse_address(&self, reuse_address: bool) {
+        self.reuse_address.store(reuse_address, Ordering::Release);
+    }
+
+    pub fn reuse_address(&self) -> bool {
+        self.reuse_address.load(Ordering::Acquire)
+    }
+
     pub fn create(&mut self) -> ConnectionResult {
+        let ipc_reply = Self::new_ipc_reply();
         let create_task = Operation::Create {
             socket_fd: self.socket_fd,
             socket_domain: self.socket_domain,
             socket_type: self.socket_type,
             socket_protocol: self.socket_protocol,
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         log::debug!("[Socket {}] Create request queued", self.socket_fd);
 
-        self.ipc_reply.queue_and_wait(create_task)
+        ipc_reply.queue_and_wait(create_task, None)
     }
 
     pub fn bind(&self, local_endpoint: IpEndpoint) -> ConnectionResult {
@@ -124,16 +137,17 @@ impl Connection {
                 local_endpoint
             };
 
+            let ipc_reply = Self::new_ipc_reply();
             let bind_task = Operation::Bind {
                 socket_fd: self.socket_fd,
                 local_endpoint,
-                ipc_reply: self.ipc_reply.clone(),
+                ipc_reply: ipc_reply.clone(),
             };
 
             log::debug!("[Socket {}] Bind request queued", self.socket_fd);
 
             // Wait for network stack response and return directly
-            self.ipc_reply.queue_and_wait(bind_task)
+            ipc_reply.queue_and_wait(bind_task, None)
         } else {
             Err(ConnectionError::UnsupportedSocketType(self.socket_type))
         }
@@ -145,16 +159,17 @@ impl Connection {
             None => return Err(ConnectionError::LockFail("local endpoint".into())),
         };
 
+        let ipc_reply = Self::new_ipc_reply();
         let listen_task = Operation::Listen {
             socket_fd: self.socket_fd,
             local_endpoint,
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         log::debug!("[Socket {}] Listen request queued", self.socket_fd);
 
         // Wait for network stack response and return directly
-        self.ipc_reply.queue_and_wait(listen_task)
+        ipc_reply.queue_and_wait(listen_task, None)
     }
 
     pub fn connect(&self, remote_endpoint: IpEndpoint) -> ConnectionResult {
@@ -171,80 +186,85 @@ impl Connection {
             }
         };
 
+        let ipc_reply = Self::new_ipc_reply();
         let connect_task = Operation::Connect {
             socket_fd: self.socket_fd,
             remote_endpoint,
             local_port,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         self.remote_endpoint.lock().replace(remote_endpoint);
 
         log::debug!("[Socket {}] Connect request queued", self.socket_fd);
 
-        self.ipc_reply.queue_and_wait(connect_task)
+        ipc_reply.queue_and_wait(connect_task, None)
     }
 
     pub fn shutdown(&self) -> ConnectionResult {
         // Construct shutdown request with cloned response channel
+        let ipc_reply = Self::new_ipc_reply();
         let shutdown_task = Operation::Shutdown {
             socket_fd: self.socket_fd,
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
         log::debug!("[Socket {}] Shutdown request queued", self.socket_fd);
 
         // Await and return final shutdown status from network stack
-        self.ipc_reply.queue_and_wait(shutdown_task)
+        ipc_reply.queue_and_wait(shutdown_task, None)
     }
 
     pub fn recv(&self, f: FnRecv) -> ConnectionResult {
         // Construct receive request with buffer ownership transfer
+        let ipc_reply = Self::new_ipc_reply();
         let recv_task = Operation::Recv {
             socket_fd: self.socket_fd,
             f,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
         log::debug!("[Socket {}] Recv request queued", self.socket_fd);
 
         // Wait for network stack response and convert result
-        self.ipc_reply.queue_and_wait(recv_task)
+        ipc_reply.queue_and_wait(recv_task, *self.recv_timeout.lock())
     }
 
     pub fn recvfrom(&self, f: FnRecvWithEndpoint) -> ConnectionResult {
         // Construct receive request with buffer ownership transfer
+        let ipc_reply = Self::new_ipc_reply();
         let recv_task = Operation::RecvFrom {
             socket_fd: self.socket_fd,
             f,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
         log::debug!("[Socket {}] RecvFrom request queued", self.socket_fd);
 
         // Wait for network stack response and convert result
-        self.ipc_reply.queue_and_wait(recv_task)
+        ipc_reply.queue_and_wait(recv_task, *self.recv_timeout.lock())
     }
 
     pub fn send(&self, f: FnSend, _flag: i32) -> ConnectionResult {
         // Construct send request with buffer reference
+        let ipc_reply = Self::new_ipc_reply();
         let send_task = Operation::Send {
             socket_fd: self.socket_fd,
             f,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
         log::debug!("[Socket {}] Send request queued", self.socket_fd);
 
-        self.ipc_reply.queue_and_wait(send_task)
+        ipc_reply.queue_and_wait(send_task, *self.send_timeout.lock())
     }
 
     pub fn sendto(
@@ -271,13 +291,14 @@ impl Connection {
         };
 
         // Construct send request with buffer reference
+        let ipc_reply = Self::new_ipc_reply();
         let sendto_task = Operation::SendTo {
             socket_fd: self.socket_fd,
             remote_endpoint,
             local_port,
             buffer: message,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
@@ -287,7 +308,7 @@ impl Connection {
             message.len()
         );
 
-        self.ipc_reply.queue_and_wait(sendto_task)
+        ipc_reply.queue_and_wait(sendto_task, *self.send_timeout.lock())
     }
 
     // ICMP/ICMPv6 only now
@@ -299,6 +320,7 @@ impl Connection {
         f: FnSendMsg,
     ) -> ConnectionResult {
         // Construct send request with buffer reference
+        let ipc_reply = Self::new_ipc_reply();
         let sendmsg_task = Operation::SendMsg {
             socket_fd: self.socket_fd,
             remote_endpoint,
@@ -306,39 +328,41 @@ impl Connection {
             packet_len,
             f,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
         log::debug!("[Socket {}] SendMsg request queued", self.socket_fd);
 
-        self.ipc_reply.queue_and_wait(sendmsg_task)
+        ipc_reply.queue_and_wait(sendmsg_task, *self.send_timeout.lock())
     }
 
     pub fn recvmsg(&self, f: FnRecvWithEndpoint) -> ConnectionResult {
         // Construct send request with buffer reference
+        let ipc_reply = Self::new_ipc_reply();
         let sendmsg_task = Operation::RecvMsg {
             socket_fd: self.socket_fd,
             f,
             is_nonblocking: self.is_nonblocking.load(Ordering::Acquire),
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         // Log successful request submission
         log::debug!("[Socket {}] RecvMsg request queued", self.socket_fd);
 
-        self.ipc_reply.queue_and_wait(sendmsg_task)
+        ipc_reply.queue_and_wait(sendmsg_task, *self.recv_timeout.lock())
     }
 
     pub fn control(&self, cmd: NetIfaceControl) -> ConnectionResult {
+        let ipc_reply = Self::new_ipc_reply();
         let control_task = Operation::NetControl {
             cmd,
-            ipc_reply: self.ipc_reply.clone(),
+            ipc_reply: ipc_reply.clone(),
         };
 
         log::debug!("[Socket {}] NetControl request queued", self.socket_fd);
 
-        self.ipc_reply.queue_and_wait(control_task)
+        ipc_reply.queue_and_wait(control_task, None)
     }
 
     // Set recv timeout : ref to libc::SO_RCVTIMEO
@@ -346,9 +370,17 @@ impl Connection {
         self.recv_timeout.lock().replace(timeout);
     }
 
+    pub fn clear_recv_timeout(&self) {
+        self.recv_timeout.lock().take();
+    }
+
     // Set send timeout : ref to libc::SO_SNDTIMEO
     pub fn set_send_timeout(&self, timeout: Duration) {
         self.send_timeout.lock().replace(timeout);
+    }
+
+    pub fn clear_send_timeout(&self) {
+        self.send_timeout.lock().take();
     }
 
     // Get recv timeout : ref to libc::SO_RCVTIMEO
@@ -412,6 +444,11 @@ impl Connection {
     pub fn handle_socket_msg(network_manager: Rc<RefCell<NetworkManager>>) -> bool {
         // one msg at a time , TODO batch
         if let Some(socket_request) = NETSTACK_QUEUE.dequeue() {
+            if !socket_request.try_start() {
+                log::debug!("[Connection] drop cancelled socket operation");
+                return true;
+            }
+
             match socket_request {
                 Operation::Create {
                     socket_fd,
@@ -770,11 +807,11 @@ pub static NETSTACK_QUEUE: heapless::mpmc::MpMcQueue<Operation, 32> =
 // for socket operation
 pub type OperationResult = Result<usize, SocketError>;
 
-const IPC_REPLY_TIMEOUT: usize = 1_000;
-
 const STATE_IDLE: usize = 0;
-const STATE_WAITING_FOR_CONSUME: usize = 1;
-const STATE_AFTER_CONSUME: usize = 2;
+const STATE_WAITING: usize = 1;
+const STATE_EXECUTING: usize = 2;
+const STATE_COMPLETED: usize = 3;
+const STATE_CANCELLED: usize = 4;
 
 pub struct OperationIPCReply {
     reply_result: Mutex<Option<OperationResult>>,
@@ -789,30 +826,23 @@ impl OperationIPCReply {
         }
     }
 
-    fn queue_and_wait(&self, task: Operation) -> ConnectionResult {
-        // NOTE: Must store before enqueue, our connection suppose to be only one thread can write at one time.
-        // If multiple threads share this socket, a stalled owner can block all I/O indefinitely.
-        while self.reply_futex.load(Ordering::Acquire) != STATE_IDLE {
-            yield_me();
-        }
-        self.reply_futex
-            .store(STATE_WAITING_FOR_CONSUME, Ordering::Release);
+    fn queue_and_wait(&self, task: Operation, timeout: Option<Duration>) -> ConnectionResult {
+        self.reply_futex.store(STATE_WAITING, Ordering::Release);
 
         // Enqueue creation request to network loop
         NETSTACK_QUEUE.enqueue(task).map_err(|_| {
             // TODO when queue is full , return POSIX EAGAIN error
             //      user can retry in some calls like send/recv, but not for connect / bind which has state change
-            self.reply_futex.store(STATE_IDLE, Ordering::Release);
+            self.reply_futex.store(STATE_CANCELLED, Ordering::Release);
             log::error!("NetStackQueueFull");
 
             ConnectionError::NetStackQueueFull
         })?;
 
-        self.queue_and_wait_timeout(IPC_REPLY_TIMEOUT)
+        self.wait_for_reply(timeout)
     }
 
-    fn queue_and_wait_timeout(&self, _timeout: usize) -> ConnectionResult {
-        // TODO: timeout is not implemented yet; we wait indefinitely and retry.
+    fn wait_for_reply(&self, timeout: Option<Duration>) -> ConnectionResult {
         let t = scheduler::current_thread();
         log::debug!(
             "[Thread ID 0x{:x}] futex::atomic_wait for addr=0x{:x} begin!",
@@ -820,49 +850,104 @@ impl OperationIPCReply {
             (self.reply_futex.as_ptr() as *const _ as usize)
         );
 
+        let timeout_ticks = timeout.map(duration_to_ticks);
+        let deadline = timeout_ticks.map(Tick::after);
+        let timeout_millis = timeout
+            .map(|duration| duration.as_millis().min(usize::MAX as u128) as usize)
+            .unwrap_or(0);
+
         loop {
-            if let Some(result) = self.reply_result.lock().take() {
-                self.reply_futex.store(STATE_IDLE, Ordering::Release);
-                return result.map_err(Into::into);
-            }
-
-            if !self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
-                yield_me();
-                continue;
-            }
-
-            let Err(e) =
-                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
-            else {
-                continue;
-            };
-
-            match e {
-                code::EAGAIN => {
-                    log::debug!("EAGAIN: operation task finish before wait, try again");
+            let state = self.reply_futex.load(Ordering::Acquire);
+            match state {
+                STATE_COMPLETED => {
+                    let result = self
+                        .reply_result
+                        .lock()
+                        .take()
+                        .expect("completed socket operation without a result");
+                    return result.map_err(Into::into);
                 }
-                code::ETIMEDOUT => {
-                    log::error!("Unexpected ETIMEDOUT");
-                    debug_assert!(
-                        false,
-                        "atomic_wait returned ETIMEDOUT without timeout support"
-                    );
+                STATE_CANCELLED => return Err(ConnectionError::Timeout(timeout_millis)),
+                STATE_WAITING => {
+                    let remaining = deadline.map(|deadline| deadline.since(Tick::now()));
+                    if remaining == Some(Tick(0)) {
+                        if self.try_cancel() {
+                            return Err(ConnectionError::Timeout(timeout_millis));
+                        }
+                        continue;
+                    }
+                    self.wait_for_state_change(STATE_WAITING, remaining.unwrap_or(Tick::MAX));
                 }
-                _ => {
-                    // Treat as spurious wake; keep waiting.
-                    log::error!("Unexpected atomic_wait error: {:?}", e);
-                    debug_assert!(false, "atomic_wait returned unexpected error: {:?}", e);
+                STATE_EXECUTING => {
+                    let remaining = deadline.map(|deadline| deadline.since(Tick::now()));
+                    match remaining {
+                        Some(Tick(0)) => yield_me(),
+                        Some(remaining) => self.wait_for_state_change(STATE_EXECUTING, remaining),
+                        None => self.wait_for_state_change(STATE_EXECUTING, Tick::MAX),
+                    }
                 }
+                STATE_IDLE => yield_me(),
+                _ => unreachable!("invalid socket operation reply state"),
             }
         }
+    }
+
+    fn wait_for_state_change(&self, state: usize, timeout: Tick) {
+        if let Err(error) = futex::atomic_wait(&self.reply_futex, state, timeout) {
+            if error != code::EAGAIN && error != code::ETIMEDOUT {
+                log::error!("Unexpected atomic_wait error: {:?}", error);
+                debug_assert!(false, "atomic_wait returned unexpected error: {:?}", error);
+            }
+        }
+    }
+
+    fn try_start(&self) -> bool {
+        self.reply_futex
+            .compare_exchange(
+                STATE_WAITING,
+                STATE_EXECUTING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    pub(crate) fn park_for_socket_wait(&self) {
+        let previous = self.reply_futex.compare_exchange(
+            STATE_EXECUTING,
+            STATE_WAITING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        debug_assert_eq!(previous, Ok(STATE_EXECUTING));
+    }
+
+    fn try_cancel(&self) -> bool {
+        let cancelled = self
+            .reply_futex
+            .compare_exchange(
+                STATE_WAITING,
+                STATE_CANCELLED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok();
+        if cancelled {
+            let _ = futex::atomic_wake(&self.reply_futex, 1);
+        }
+        cancelled
     }
 
     fn do_wakeup_client(&self, result: OperationResult) {
         self.reply_result.lock().replace(result);
 
-        // State
-        self.reply_futex
-            .store(STATE_AFTER_CONSUME, Ordering::Release);
+        let previous = self.reply_futex.compare_exchange(
+            STATE_EXECUTING,
+            STATE_COMPLETED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        debug_assert_eq!(previous, Ok(STATE_EXECUTING));
 
         let _ = futex::atomic_wake(&self.reply_futex, 1);
     }
@@ -884,6 +969,16 @@ impl OperationIPCReply {
             socket_fd,
             (self.reply_futex.as_ptr() as *const _ as usize)
         );
+    }
+}
+
+fn duration_to_ticks(duration: Duration) -> Tick {
+    let micros = duration.as_micros().min(u64::MAX as u128) as u64;
+    let ticks = Tick::from_micros(micros);
+    if ticks == Tick(0) {
+        Tick(1)
+    } else {
+        ticks
     }
 }
 
@@ -975,6 +1070,29 @@ pub enum Operation {
     },
 }
 
+impl Operation {
+    fn ipc_reply(&self) -> &OperationIPCReply {
+        match self {
+            Self::Create { ipc_reply, .. }
+            | Self::Listen { ipc_reply, .. }
+            | Self::Connect { ipc_reply, .. }
+            | Self::Shutdown { ipc_reply, .. }
+            | Self::Send { ipc_reply, .. }
+            | Self::SendTo { ipc_reply, .. }
+            | Self::SendMsg { ipc_reply, .. }
+            | Self::Recv { ipc_reply, .. }
+            | Self::RecvFrom { ipc_reply, .. }
+            | Self::RecvMsg { ipc_reply, .. }
+            | Self::Bind { ipc_reply, .. }
+            | Self::NetControl { ipc_reply, .. } => ipc_reply,
+        }
+    }
+
+    fn try_start(&self) -> bool {
+        self.ipc_reply().try_start()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -982,7 +1100,6 @@ mod tests {
 
     #[test]
     fn test_connection_creation() {
-        let ipc_reply = Arc::new(OperationIPCReply::new());
         let connection = Connection::new(
             1,
             SocketDomain::AfInet,
@@ -996,11 +1113,13 @@ mod tests {
         assert_eq!(connection.socket_protocol, SocketProtocol::Tcp);
         assert!(connection.local_endpoint.lock().is_none());
         assert!(connection.remote_endpoint.lock().is_none());
+        assert!(!connection.reuse_address());
+        connection.set_reuse_address(true);
+        assert!(connection.reuse_address());
     }
     // in test thread, ENQUEUE is not supported, so we cannot test bind now
     // #[test]
     fn test_connection_bind() {
-        let ipc_reply = Arc::new(OperationIPCReply::new());
         let connection = Connection::new(
             1,
             SocketDomain::AfInet,
@@ -1020,7 +1139,6 @@ mod tests {
     // in test thread, ENQUEUE is not supported, so we cannot test listen now
     // #[test]
     fn test_connection_listen() {
-        let ipc_reply = Arc::new(OperationIPCReply::new());
         let connection = Connection::new(
             1,
             SocketDomain::AfInet,
@@ -1035,5 +1153,37 @@ mod tests {
         assert!(bind_result.is_ok());
         let listen_result = connection.listen();
         assert!(listen_result.is_ok(), "Listen should succeed after binding");
+    }
+
+    #[test]
+    fn operation_reply_can_be_parked_and_restarted() {
+        let reply = OperationIPCReply::new();
+        reply.reply_futex.store(STATE_WAITING, Ordering::Release);
+
+        assert!(reply.try_start());
+        assert_eq!(reply.reply_futex.load(Ordering::Acquire), STATE_EXECUTING);
+
+        reply.park_for_socket_wait();
+        assert_eq!(reply.reply_futex.load(Ordering::Acquire), STATE_WAITING);
+        assert!(reply.try_start());
+    }
+
+    #[test]
+    fn operation_reply_cancels_only_while_waiting() {
+        let waiting = OperationIPCReply::new();
+        waiting.reply_futex.store(STATE_WAITING, Ordering::Release);
+        assert!(waiting.try_cancel());
+        assert!(!waiting.try_start());
+
+        let executing = OperationIPCReply::new();
+        executing
+            .reply_futex
+            .store(STATE_WAITING, Ordering::Release);
+        assert!(executing.try_start());
+        assert!(!executing.try_cancel());
+        assert_eq!(
+            executing.reply_futex.load(Ordering::Acquire),
+            STATE_EXECUTING
+        );
     }
 }

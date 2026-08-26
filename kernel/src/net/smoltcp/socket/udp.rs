@@ -210,7 +210,7 @@ impl PosixSocket for UdpSocket {
                             local_port,
                             buffer: message,
                             is_nonblocking,
-                            ipc_reply,
+                            ipc_reply: ipc_reply.clone(),
                         };
                         let socket_operation = Some(wait_operation);
                         let waker = socket_waker::create_closure_waker(
@@ -219,6 +219,7 @@ impl PosixSocket for UdpSocket {
                             is_shutdown,
                         );
                         socket.register_send_waker(&waker);
+                        ipc_reply.park_for_socket_wait();
                         log::debug!(
                             "blocking : udp socket not ready for send_queue={:?}",
                             socket.send_queue()
@@ -298,7 +299,7 @@ impl PosixSocket for UdpSocket {
                             socket_fd,
                             f,
                             is_nonblocking,
-                            ipc_reply,
+                            ipc_reply: ipc_reply.clone(),
                         };
 
                         let socket_operation = Some(wait_operation);
@@ -308,6 +309,7 @@ impl PosixSocket for UdpSocket {
                             is_shutdown,
                         );
                         socket.register_recv_waker(&waker);
+                        ipc_reply.park_for_socket_wait();
                         log::debug!(
                             "blocking : no data for udp recvfrom recv_queue={:?}",
                             socket.recv_queue()

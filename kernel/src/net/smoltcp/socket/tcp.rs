@@ -187,7 +187,7 @@ impl PosixSocket for TcpSocket {
                             socket_fd,
                             f,
                             is_nonblocking,
-                            ipc_reply,
+                            ipc_reply: ipc_reply.clone(),
                         };
                         let socket_operation = Some(wait_operation);
                         let waker = socket_waker::create_closure_waker(
@@ -196,6 +196,7 @@ impl PosixSocket for TcpSocket {
                             is_shutdown,
                         );
                         socket.register_send_waker(&waker);
+                        ipc_reply.park_for_socket_wait();
                         log::debug!(
                             "tcp socket not ready for send={:?}, send_queue={:?}",
                             socket.state(),
@@ -277,7 +278,7 @@ impl PosixSocket for TcpSocket {
                             socket_fd,
                             f,
                             is_nonblocking,
-                            ipc_reply,
+                            ipc_reply: ipc_reply.clone(),
                         };
                         let socket_operation = Some(recv_ops);
                         let recv_waker = socket_waker::create_closure_waker(
@@ -286,6 +287,7 @@ impl PosixSocket for TcpSocket {
                             is_shutdown,
                         );
                         socket.register_recv_waker(&recv_waker);
+                        ipc_reply.park_for_socket_wait();
                         log::debug!(
                             "TCP state[{:?}]: no data for recv, recv_queue={:?}",
                             socket.state(),

@@ -34,7 +34,74 @@ use libc::{size_t, timeval};
 use smoltcp::wire::{IpAddress, IpEndpoint};
 use spin::rwlock::RwLock;
 
-const ONE_ELEMENT: usize = 1;
+fn read_socket_option_int(
+    option_value: *const c_void,
+    option_len: libc::socklen_t,
+) -> Option<c_int> {
+    if option_value.is_null() || option_len < core::mem::size_of::<c_int>() as libc::socklen_t {
+        return None;
+    }
+
+    Some(unsafe { core::ptr::read_unaligned(option_value.cast::<c_int>()) })
+}
+
+fn write_socket_option_int(
+    option_value: *mut c_void,
+    option_len: *mut libc::socklen_t,
+    value: c_int,
+) -> bool {
+    if option_value.is_null() || option_len.is_null() {
+        return false;
+    }
+
+    let actual_len = core::mem::size_of::<c_int>() as libc::socklen_t;
+    let provided_len = unsafe { core::ptr::read_unaligned(option_len) };
+    if provided_len < actual_len {
+        return false;
+    }
+
+    unsafe {
+        core::ptr::write_unaligned(option_value.cast::<c_int>(), value);
+        core::ptr::write_unaligned(option_len, actual_len);
+    }
+    true
+}
+
+fn socket_timeout_from_timeval(timeval: &Timeval) -> Option<Option<Duration>> {
+    if timeval.tv_sec < 0 || timeval.tv_usec < 0 || timeval.tv_usec >= 1_000_000 {
+        return None;
+    }
+    if timeval.tv_sec == 0 && timeval.tv_usec == 0 {
+        return Some(None);
+    }
+
+    Some(Some(Duration::new(
+        timeval.tv_sec as u64,
+        timeval.tv_usec as u32 * 1_000,
+    )))
+}
+
+fn write_socket_timeout(
+    option_value: *mut c_void,
+    option_len: *mut libc::socklen_t,
+    timeout: Duration,
+) -> bool {
+    if option_value.is_null() || option_len.is_null() {
+        return false;
+    }
+
+    let actual_len = core::mem::size_of::<Timeval>() as libc::socklen_t;
+    let provided_len = unsafe { core::ptr::read_unaligned(option_len) };
+    if provided_len < actual_len {
+        return false;
+    }
+
+    unsafe {
+        core::ptr::write_unaligned(option_value.cast::<Timeval>(), Timeval::from(timeout));
+        core::ptr::write_unaligned(option_len, actual_len);
+    }
+    true
+}
 
 pub fn socket(domain: c_int, type_: c_int, protocol_: c_int) -> c_int {
     let Ok(socket_domain) = SocketDomain::try_from(domain) else {
@@ -451,34 +518,46 @@ pub fn setsockopt(
         return -libc::EBADF;
     };
 
-    // option_name suppose to contain only one option
-    if level == libc::SOL_SOCKET {
-        if (option_name & libc::SO_RCVTIMEO) != 0 {
-            return match unsafe { Timeval::from_ptr(option_value, option_len) } {
-                Some(timeval) => {
-                    connection.set_recv_timeout(Duration::from(timeval));
-                    0
-                }
-                None => -1,
-            };
-        }
-
-        if (option_name & libc::SO_SNDTIMEO) != 0 {
-            return match unsafe { Timeval::from_ptr(option_value, option_len) } {
-                Some(timeval) => {
-                    connection.set_send_timeout(Duration::from(timeval));
-                    0
-                }
-                None => -1,
-            };
-        }
-
-        // The specified option is invalid at the specified socket level.
-        -libc::EINVAL
-    } else {
+    if level != libc::SOL_SOCKET {
         // Do not support level other than SOL_SOCKET, like TCP...
         // The option is not supported by the protocol.
-        -libc::ENOPROTOOPT
+        return -libc::ENOPROTOOPT;
+    }
+
+    match option_name {
+        libc::SO_REUSEADDR => {
+            let Some(reuse_address) = read_socket_option_int(option_value, option_len) else {
+                return -libc::EINVAL;
+            };
+            // smoltcp has no address-reuse switch. BlueOS permits one listener per
+            // endpoint, but accepts and remembers the POSIX option for compatibility.
+            connection.set_reuse_address(reuse_address != 0);
+            0
+        }
+        libc::SO_RCVTIMEO => {
+            let Some(timeval) = (unsafe { Timeval::from_ptr(option_value, option_len) }) else {
+                return -libc::EINVAL;
+            };
+            match socket_timeout_from_timeval(timeval) {
+                Some(Some(timeout)) => connection.set_recv_timeout(timeout),
+                Some(None) => connection.clear_recv_timeout(),
+                None => return -libc::EINVAL,
+            }
+            0
+        }
+        libc::SO_SNDTIMEO => {
+            let Some(timeval) = (unsafe { Timeval::from_ptr(option_value, option_len) }) else {
+                return -libc::EINVAL;
+            };
+            match socket_timeout_from_timeval(timeval) {
+                Some(Some(timeout)) => connection.set_send_timeout(timeout),
+                Some(None) => connection.clear_send_timeout(),
+                None => return -libc::EINVAL,
+            }
+            0
+        }
+        // The specified option is invalid at the specified socket level.
+        _ => -libc::EINVAL,
     }
 }
 
@@ -496,68 +575,56 @@ pub fn getsockopt(
         return -libc::EBADF;
     };
 
-    if option_value.is_null() || option_len.is_null() {
-        return -libc::EINVAL;
-    }
-    if level == libc::SOL_SOCKET {
-        if (option_name & libc::SO_RCVTIMEO) != 0 {
-            let timeval = Timeval::from(connection.get_recv_timeout());
-            unsafe {
-                core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
-                *option_len = size_of::<Timeval>() as u32;
-            }
-            return 0;
-        }
-
-        if (option_name & libc::SO_SNDTIMEO) != 0 {
-            let timeval = Timeval::from(connection.get_send_timeout());
-            unsafe {
-                core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
-                *option_len = size_of::<Timeval>() as u32;
-            }
-            return 0;
-        }
-
-        if (option_name & libc::SO_DOMAIN) != 0 {
-            return connection
-                .socket_domain()
-                .write_to_ptr(option_value, option_len)
-                .map(|()| 0)
-                .unwrap_or(-1);
-        }
-
-        if (option_name & libc::SO_PROTOCOL) != 0 {
-            return connection
-                .socket_protocol()
-                .into_ptr(option_value, option_len)
-                .map(|()| 0)
-                .unwrap_or(-1);
-        }
-
-        if (option_name & libc::SO_TYPE) != 0 {
-            return connection
-                .socket_type()
-                .write_to_ptr(option_value, option_len)
-                .map(|()| 0)
-                .unwrap_or(-1);
-        }
-
-        // TODO
-        if (option_name & libc::SO_SNDBUF) != 0 {
-            return -1;
-        }
-
-        // TODO
-        if (option_name & libc::SO_RCVBUF) != 0 {
-            return -1;
-        }
-
-        // The specified option is invalid at the specified socket level.
-        -libc::EINVAL
-    } else {
+    if level != libc::SOL_SOCKET {
         // Do not support level other than SOL_SOCKET, like TCP...
         // The option is not supported by the protocol.
-        -libc::ENOPROTOOPT
+        return -libc::ENOPROTOOPT;
+    }
+
+    match option_name {
+        libc::SO_REUSEADDR => {
+            let value = if connection.reuse_address() { 1 } else { 0 };
+            if write_socket_option_int(option_value, option_len, value) {
+                0
+            } else {
+                -libc::EINVAL
+            }
+        }
+        libc::SO_RCVTIMEO => {
+            if write_socket_timeout(option_value, option_len, connection.get_recv_timeout()) {
+                0
+            } else {
+                -libc::EINVAL
+            }
+        }
+        libc::SO_SNDTIMEO => {
+            if write_socket_timeout(option_value, option_len, connection.get_send_timeout()) {
+                0
+            } else {
+                -libc::EINVAL
+            }
+        }
+        libc::SO_DOMAIN => connection
+            .socket_domain()
+            .write_to_ptr(option_value, option_len)
+            .map(|()| 0)
+            .unwrap_or(-1),
+        libc::SO_PROTOCOL => connection
+            .socket_protocol()
+            .into_ptr(option_value, option_len)
+            .map(|()| 0)
+            .unwrap_or(-1),
+        libc::SO_TYPE => connection
+            .socket_type()
+            .write_to_ptr(option_value, option_len)
+            .map(|()| 0)
+            .unwrap_or(-1),
+        // TODO
+        libc::SO_SNDBUF => -1,
+        // TODO
+        libc::SO_RCVBUF => -1,
+        // The specified option is invalid at the specified socket level.
+        _ => -libc::EINVAL,
     }
 }
 
@@ -603,4 +670,65 @@ pub fn freeaddrinfo(res: *mut libc::addrinfo) -> usize {
     log::debug!("sys_freeaddrinfo");
     // TODO
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn socket_timeout_converts_microseconds() {
+        let timeout = socket_timeout_from_timeval(&Timeval {
+            tv_sec: 1,
+            tv_usec: 500_000,
+        });
+
+        assert_eq!(timeout, Some(Some(Duration::from_millis(1_500))));
+    }
+
+    #[test]
+    fn zero_socket_timeout_clears_the_option() {
+        let timeout = socket_timeout_from_timeval(&Timeval {
+            tv_sec: 0,
+            tv_usec: 0,
+        });
+
+        assert_eq!(timeout, Some(None));
+    }
+
+    #[test]
+    fn socket_timeout_rejects_invalid_values() {
+        assert_eq!(
+            socket_timeout_from_timeval(&Timeval {
+                tv_sec: -1,
+                tv_usec: 0,
+            }),
+            None
+        );
+        assert_eq!(
+            socket_timeout_from_timeval(&Timeval {
+                tv_sec: 0,
+                tv_usec: 1_000_000,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn socket_option_int_helpers_support_unaligned_buffers() {
+        let mut storage = [0u8; core::mem::size_of::<c_int>() + 1];
+        let value_ptr = unsafe { storage.as_mut_ptr().add(1) };
+        let mut option_len = core::mem::size_of::<c_int>() as libc::socklen_t;
+
+        assert!(write_socket_option_int(
+            value_ptr.cast(),
+            &mut option_len,
+            1
+        ));
+        assert_eq!(
+            read_socket_option_int(value_ptr.cast(), option_len),
+            Some(1)
+        );
+    }
 }
