@@ -410,8 +410,7 @@ impl Connection {
     }
 
     pub fn handle_socket_msg(network_manager: Rc<RefCell<NetworkManager>>) -> bool {
-        // one msg at a time , TODO batch
-        if let Some(socket_request) = NETSTACK_QUEUE.dequeue() {
+        while let Some(socket_request) = NETSTACK_QUEUE.dequeue() {
             match socket_request {
                 Operation::Create {
                     socket_fd,
@@ -792,8 +791,15 @@ impl OperationIPCReply {
     fn queue_and_wait(&self, task: Operation) -> ConnectionResult {
         // NOTE: Must store before enqueue, our connection suppose to be only one thread can write at one time.
         // If multiple threads share this socket, a stalled owner can block all I/O indefinitely.
-        while self.reply_futex.load(Ordering::Acquire) != STATE_IDLE {
-            yield_me();
+        loop {
+            match self.reply_futex.load(Ordering::Acquire) {
+                STATE_IDLE => break,
+                STATE_AFTER_CONSUME => {
+                    let _ = self.reply_result.lock().take();
+                    self.reply_futex.store(STATE_IDLE, Ordering::Release);
+                }
+                _ => yield_me(),
+            }
         }
         self.reply_futex
             .store(STATE_WAITING_FOR_CONSUME, Ordering::Release);
@@ -811,8 +817,7 @@ impl OperationIPCReply {
         self.queue_and_wait_timeout(IPC_REPLY_TIMEOUT)
     }
 
-    fn queue_and_wait_timeout(&self, _timeout: usize) -> ConnectionResult {
-        // TODO: timeout is not implemented yet; we wait indefinitely and retry.
+    fn queue_and_wait_timeout(&self, timeout: usize) -> ConnectionResult {
         let t = scheduler::current_thread();
         log::debug!(
             "[Thread ID 0x{:x}] futex::atomic_wait for addr=0x{:x} begin!",
@@ -831,9 +836,11 @@ impl OperationIPCReply {
                 continue;
             }
 
-            let Err(e) =
-                futex::atomic_wait(&self.reply_futex, STATE_WAITING_FOR_CONSUME, Tick::MAX)
-            else {
+            let Err(e) = futex::atomic_wait(
+                &self.reply_futex,
+                STATE_WAITING_FOR_CONSUME,
+                Tick::from_millis(timeout as u64),
+            ) else {
                 continue;
             };
 
@@ -842,11 +849,13 @@ impl OperationIPCReply {
                     log::debug!("EAGAIN: operation task finish before wait, try again");
                 }
                 code::ETIMEDOUT => {
-                    log::error!("Unexpected ETIMEDOUT");
-                    debug_assert!(
-                        false,
-                        "atomic_wait returned ETIMEDOUT without timeout support"
+                    log::error!(
+                        "[Thread ID 0x{:x}] recv timeout after {}ms, aborting operation",
+                        Thread::id(&t),
+                        timeout
                     );
+                    self.reply_futex.store(STATE_IDLE, Ordering::Release);
+                    return Err(ConnectionError::Timeout(timeout));
                 }
                 _ => {
                     // Treat as spurious wake; keep waiting.
