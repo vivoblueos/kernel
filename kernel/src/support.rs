@@ -27,6 +27,7 @@ use core::{
 };
 
 #[derive(Debug)]
+#[must_use]
 pub struct DisableInterruptGuard {
     old: usize,
 }
@@ -47,6 +48,7 @@ impl Drop for DisableInterruptGuard {
     }
 }
 
+#[must_use]
 pub struct PlainDisableInterruptGuard;
 
 impl PlainDisableInterruptGuard {
@@ -237,6 +239,7 @@ pub fn nonnull_slice_end<T>(ptr: NonNull<[T]>) -> *mut T {
     (ptr.as_ptr() as *mut T).wrapping_add(nonnull_slice_len(ptr))
 }
 
+#[must_use]
 pub(crate) struct PerCpuVarAccessGuard {
     t: ThreadNode,
     id: u8,
