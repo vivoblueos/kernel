@@ -84,6 +84,7 @@ pub(crate) struct UniqueListHead<T, A: IntrusiveAdapter<T>, O: StaticListOwner<T
     PhantomData<O>,
 );
 
+#[must_use]
 pub(crate) struct UniqueListHeadAccessGuard<
     T: 'static,
     A: IntrusiveAdapter<T> + 'static,

@@ -822,6 +822,7 @@ impl Drop for Thread {
     }
 }
 
+#[must_use]
 pub(crate) struct PreemptGuard {
     t: ThreadNode,
     pub status: bool,
