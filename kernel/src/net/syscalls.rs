@@ -34,8 +34,6 @@ use libc::{size_t, timeval};
 use smoltcp::wire::{IpAddress, IpEndpoint};
 use spin::rwlock::RwLock;
 
-const ONE_ELEMENT: usize = 1;
-
 pub fn socket(domain: c_int, type_: c_int, protocol_: c_int) -> c_int {
     let Ok(socket_domain) = SocketDomain::try_from(domain) else {
         // The implementation does not support the specified address family.
@@ -97,7 +95,10 @@ pub fn listen(socket: c_int, backlog: c_int) -> c_int {
         log::warn!("fd={}: socket is unbound", socket);
         return -libc::EDESTADDRREQ;
     }
-    connection.listen().map(|_| 0).unwrap_or(-1)
+    connection
+        .listen()
+        .map(|_| 0)
+        .unwrap_or_else(|error| error.to_errno())
 }
 
 pub fn send(socket: c_int, buffer: *const c_void, length: c_size_t, flags: c_int) -> c_ssize_t {
@@ -138,7 +139,7 @@ pub fn send(socket: c_int, buffer: *const c_void, length: c_size_t, flags: c_int
     connection
         .send(f, flags)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn sendto(
@@ -182,7 +183,7 @@ pub fn sendto(
     connection
         .sendto(buf, flags, remote_endpoint)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_ssize_t {
@@ -233,7 +234,7 @@ pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_s
     connection
         .sendmsg(remote_endpoint, identifier, packet_len, send_payload)
         .map(|send_sizes| send_sizes.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn recv(socket: c_int, buffer: *mut c_void, length: c_size_t, flags: c_int) -> c_ssize_t {
@@ -279,7 +280,7 @@ pub fn recv(socket: c_int, buffer: *mut c_void, length: c_size_t, flags: c_int) 
             log::debug!("[Posix] recv msg recv_sized={}", recv_sized);
             recv_sized.try_into().unwrap_or(-1)
         })
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn recvmsg(socket: c_int, message: *mut libc::msghdr, flags: c_int) -> c_ssize_t {
@@ -322,7 +323,7 @@ pub fn recvmsg(socket: c_int, message: *mut libc::msghdr, flags: c_int) -> c_ssi
     connection
         .recvmsg(recv_payload)
         .map(|recv_sized| recv_sized.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn recvfrom(
@@ -379,7 +380,7 @@ pub fn recvfrom(
     connection
         .recvfrom(recv_payload)
         .map(|recv_sized| recv_sized.try_into().unwrap_or(-1))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| error.to_errno() as c_ssize_t)
 }
 
 pub fn connect(
@@ -404,7 +405,10 @@ pub fn connect(
         return -libc::EADDRNOTAVAIL;
     };
 
-    connection.connect(remote_endpoint).map(|_| 0).unwrap_or(-1)
+    connection
+        .connect(remote_endpoint)
+        .map(|_| 0)
+        .unwrap_or_else(|error| error.to_errno())
 }
 
 pub fn bind(socket: c_int, address: *const libc::sockaddr, address_len: libc::socklen_t) -> c_int {
@@ -433,8 +437,10 @@ pub fn bind(socket: c_int, address: *const libc::sockaddr, address_len: libc::so
     connection
         .bind(local_endpoint)
         .map(|_| 0)
-        .map_err(|e| log::debug!("bind fail {:#?}", e))
-        .unwrap_or(-1)
+        .unwrap_or_else(|error| {
+            log::debug!("bind fail {:#?}", error);
+            error.to_errno()
+        })
 }
 
 pub fn setsockopt(
@@ -455,26 +461,42 @@ pub fn setsockopt(
     // bitmask and multiple options cannot be ORed together.
     if level == libc::SOL_SOCKET {
         if option_name == libc::SO_REUSEADDR {
-            return -libc::ENOPROTOOPT;
+            // Rust std::net::TcpListener sets SO_REUSEADDR before bind().
+            // smoltcp does not need this option for the single-listener
+            // agent, but rejecting it prevents every listener from binding.
+            if option_value.is_null()
+                || option_len < core::mem::size_of::<c_int>() as libc::socklen_t
+            {
+                return -libc::EINVAL;
+            }
+            return 0;
         }
 
         if option_name == libc::SO_RCVTIMEO {
             return match unsafe { Timeval::from_ptr(option_value, option_len) } {
                 Some(timeval) => {
-                    connection.set_recv_timeout(Duration::from(timeval));
+                    if timeval.tv_sec == 0 && timeval.tv_usec == 0 {
+                        connection.clear_recv_timeout();
+                    } else {
+                        connection.set_recv_timeout(Duration::from(&timeval));
+                    }
                     0
                 }
-                None => -1,
+                None => -libc::EINVAL,
             };
         }
 
         if option_name == libc::SO_SNDTIMEO {
             return match unsafe { Timeval::from_ptr(option_value, option_len) } {
                 Some(timeval) => {
-                    connection.set_send_timeout(Duration::from(timeval));
+                    if timeval.tv_sec == 0 && timeval.tv_usec == 0 {
+                        connection.clear_send_timeout();
+                    } else {
+                        connection.set_send_timeout(Duration::from(&timeval));
+                    }
                     0
                 }
-                None => -1,
+                None => -libc::EINVAL,
             };
         }
 
@@ -509,14 +531,26 @@ pub fn getsockopt(
     // a set of flags, so each supported option must be matched exactly.
     if level == libc::SOL_SOCKET {
         if option_name == libc::SO_REUSEADDR {
-            return -libc::ENOPROTOOPT;
+            // The null checks above make these raw-pointer accesses valid.
+            unsafe {
+                if *option_len < core::mem::size_of::<c_int>() as libc::socklen_t {
+                    return -libc::EINVAL;
+                }
+                // The listener does not expose reuse semantics, but returning
+                // a well-formed value keeps std::net compatible with smoltcp.
+                core::ptr::write_unaligned(option_value.cast::<c_int>(), 0);
+                *option_len = core::mem::size_of::<c_int>() as libc::socklen_t;
+            }
+            return 0;
         }
 
         if option_name == libc::SO_RCVTIMEO {
             let timeval = Timeval::from(connection.get_recv_timeout());
             unsafe {
-                core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
-                *option_len = size_of::<Timeval>() as u32;
+                let Some(written) = timeval.write_to_ptr(option_value, *option_len) else {
+                    return -libc::EINVAL;
+                };
+                *option_len = written;
             }
             return 0;
         }
@@ -524,8 +558,10 @@ pub fn getsockopt(
         if option_name == libc::SO_SNDTIMEO {
             let timeval = Timeval::from(connection.get_send_timeout());
             unsafe {
-                core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
-                *option_len = size_of::<Timeval>() as u32;
+                let Some(written) = timeval.write_to_ptr(option_value, *option_len) else {
+                    return -libc::EINVAL;
+                };
+                *option_len = written;
             }
             return 0;
         }
@@ -644,7 +680,7 @@ pub fn shutdown(socket: c_int, how: c_int) -> c_int {
     if result.is_ok() {
         let _ = free_sock_fd(socket);
     }
-    result.map(|_| 0).unwrap_or(-1)
+    result.map(|_| 0).unwrap_or_else(|error| error.to_errno())
 }
 
 pub fn getaddrinfo(
