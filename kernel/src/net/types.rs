@@ -375,7 +375,7 @@ impl Timeval {
         }
         if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
             let tv_sec = i32::try_from(self.tv_sec).ok()?;
-            let tv_usec = i32::try_from(self.tv_usec).ok()?;
+            let tv_usec = self.tv_usec;
             ptr.cast::<Timeval32>()
                 .write_unaligned(Timeval32 { tv_sec, tv_usec });
             return Some(core::mem::size_of::<Timeval32>() as libc::socklen_t);
