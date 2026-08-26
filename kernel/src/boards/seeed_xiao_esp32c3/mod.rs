@@ -34,13 +34,6 @@ pub type ClockImpl =
 
 pub type Spi2Impl = blueos_driver::spi::esp32_spi::Esp32Spi2<0x6002_4000, 0x600c_0000, 80_000_000>;
 
-// ESP32-C3 on-chip flash and MMU layout.
-pub const LOADABLE_REGION_BASE: u32 = blueos_kconfig::CONFIG_ESP32_LOADABLE_REGION_BASE;
-pub const LOADABLE_REGION_SIZE: u32 = blueos_kconfig::CONFIG_ESP32_LOADABLE_REGION_SIZE;
-pub const LOADABLE_REGION_END: u32 = LOADABLE_REGION_BASE + LOADABLE_REGION_SIZE;
-pub const IROM_VADDR_BASE: u32 = 0x4200_0000;
-pub const DROM_VADDR_BASE: u32 = 0x3C00_0000;
-pub const FLASH_MMU_PAGE_SIZE: u32 = 0x0001_0000;
 core::arch::global_asm!(
     "
 .section .trap
@@ -203,10 +196,10 @@ crate::define_peripheral! {
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(20)),
     (led_b, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(2)),
-    (led_r, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
-     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
+    // (led_r, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+    //  blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
     (flash_cs, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
-     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(1)),
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
 }
 
 #[cfg(enable_block)]
@@ -252,6 +245,15 @@ pub const BLOCK_STORAGE_MOUNT_POINT: &str = "data";
 
 pub const BLOCK_STORAGE_POLICY: crate::boards::BlockStoragePolicy =
     crate::boards::BlockStoragePolicy::Optional;
+
+// ESP32-C3 on-chip flash and MMU layout.
+pub const LOADABLE_REGION_BASE: u32 = 0x0011_0000;
+pub const LOADABLE_REGION_SIZE: u32 = 0x002F_0000;
+pub const LOADABLE_REGION_END: u32 = LOADABLE_REGION_BASE + LOADABLE_REGION_SIZE;
+pub const IROM_VADDR_BASE: u32 = 0x4200_0000;
+pub const DROM_VADDR_BASE: u32 = 0x3C00_0000;
+pub const DROM_VADDR_END: u32 = 0x3C80_0000;
+pub const FLASH_MMU_PAGE_SIZE: u32 = 0x0001_0000;
 
 #[cfg(spi_core)]
 type Spi2Bus = crate::devices::bus::Bus<
@@ -307,9 +309,9 @@ crate::define_pin_states!(
     (5, 1, false, true, false, 2, None, None, true, false),        // lcd dc
     (4, 1, false, true, false, 2, None, None, true, false),        // lcd rst
     (21, 1, false, true, false, 2, None, None, true, false),       // touch rst
-    (1, 1, false, true, false, 2, None, None, true, false),        // flash cs
+    (3, 1, false, true, false, 2, None, None, true, false),        // flash cs
     (2, 1, false, true, false, 2, None, None, true, false),        // led blue
-    (3, 1, false, true, false, 2, None, None, true, false),        // led red
+    //(3, 1, false, true, false, 2, None, None, true, false),        // led red
 );
 
 #[cfg(spi_core)]
@@ -377,13 +379,13 @@ pub(crate) fn init_gpio() {
         crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_B_DEVICE_MINOR),
     )
     .expect("Failed to register led_b");
-    crate::devices::gpio::GeneralGpio::new(
-        get_device!(led_r),
-        Some(crate::devices::gpio::Level::High),
-    )
-    .register(
-        alloc::string::String::from("led_r"),
-        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
-    )
-    .expect("Failed to register led_r");
+    // crate::devices::gpio::GeneralGpio::new(
+    //     get_device!(led_r),
+    //     Some(crate::devices::gpio::Level::High),
+    // )
+    // .register(
+    //     alloc::string::String::from("led_r"),
+    //     crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
+    // )
+    // .expect("Failed to register led_r");
 }

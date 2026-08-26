@@ -121,15 +121,19 @@ extern "C" fn init() {
     crate::boards::init_i2c_bus();
     #[cfg(gpio)]
     crate::boards::init_gpio();
+
+    // ESP32-C3 on-chip flash for XIP loadable region (loader install path).
+    // Must run before init_vfs so /dev/esp32-flash0 exists when the shell opens it.
     #[cfg(soc_esp32c3)]
     {
-        if let Err(error) = crate::drivers::flash::init_internal_flash() {
-            log::warn!("Failed to init internal flash: {:?}", error);
+        if let Err(e) = crate::drivers::flash::init_internal_flash() {
+            log::warn!("Failed to init internal flash: {:?}", e);
         }
-        if let Err(error) = crate::drivers::flash::init_esp32_flash_device() {
-            log::warn!("Failed to init esp32-flash0: {:?}", error);
+        if let Err(e) = crate::drivers::flash::init_esp32_flash_device() {
+            log::warn!("Failed to init esp32-flash0: {:?}", e);
         }
     }
+
     #[cfg(enable_vfs)]
     init_vfs();
 
