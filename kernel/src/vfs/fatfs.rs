@@ -99,6 +99,9 @@ impl FatFileSystem {
                     );
                     fatfs::format_volume(&mut storage, format_opts)
                         .expect("[FatFileSystem] Format volume fail.");
+                    storage
+                        .flush()
+                        .expect("[FatFileSystem] Flush after format fail.");
                     fatfs::FileSystem::new(storage, fatfs::FsOptions::new())
                         .expect("[FatFileSystem] Failed to construct internal fs again")
                 }
@@ -442,6 +445,37 @@ impl FatInode {
             fs: fs.clone(),
         }))
     }
+
+    /// rust-fatfs `Dir::rename` does not overwrite an existing target, so we
+    /// delete it first. Only regular files are removed; directories keep EEXIST.
+    /// Drops any open File handle, then removes the on-disk entry and cache.
+    fn remove_existing_for_overwrite(
+        existing: &Arc<FatInode>,
+        dir: &mut FatDir,
+        new_name: &str,
+    ) -> Result<(), Error> {
+        let is_dir = existing.inner.read().attr.type_() == InodeFileType::Directory;
+        if is_dir {
+            return Err(code::EEXIST);
+        }
+        // Drop any open File handle so Dir::remove is safe.
+        {
+            let mut ex_inner = existing.inner.write();
+            if let Some(file) = ex_inner.as_file_mut() {
+                let (slot, guard) = file.internal_file.get_mut();
+                let old_file = slot.take();
+                drop(old_file);
+                drop(guard);
+            }
+        }
+        // Delete the on-disk FAT entry, then sync the in-memory cache.
+        {
+            let (internal_dir, _) = dir.internal_dir.get();
+            internal_dir.remove(new_name)?;
+        }
+        dir.remove(new_name);
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -550,7 +584,11 @@ impl InodeOps for FatInode {
     }
 
     fn close(&self) -> Result<(), Error> {
-        Ok(())
+        // Persist file contents on close; non-regular inodes have nothing to flush.
+        if self.type_() != InodeFileType::Regular {
+            return Ok(());
+        }
+        self.fsync()
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8], _nonblock: bool) -> Result<usize, Error> {
@@ -713,8 +751,8 @@ impl InodeOps for FatInode {
             if old_name == new_name {
                 return Ok(());
             }
-            if dir.find(new_name).is_some() {
-                return Err(code::EEXIST);
+            if let Some(existing) = dir.find(new_name) {
+                Self::remove_existing_for_overwrite(&existing, dir, new_name)?;
             }
             let mut child_inner = child.inner.write();
             let is_file = child_inner.attr.type_() == InodeFileType::Regular;
@@ -767,8 +805,8 @@ impl InodeOps for FatInode {
         let mut target_inner = target.inner.write();
         let source_dir = source_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
         let target_dir = target_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
-        if target_dir.find(new_name).is_some() {
-            return Err(code::EEXIST);
+        if let Some(existing) = target_dir.find(new_name) {
+            Self::remove_existing_for_overwrite(&existing, target_dir, new_name)?;
         }
         let child = source_dir.find(old_name).ok_or(code::ENOENT)?;
         let mut child_inner = child.inner.write();

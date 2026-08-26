@@ -479,6 +479,11 @@ impl Dcache {
         if Arc::ptr_eq(&child.inode, &target.inode) {
             return Ok(true);
         }
+        // POSIX rename overwrites an existing regular-file destination; the
+        // underlying fs deletes it. Directories still return EEXIST.
+        if target.type_() == InodeFileType::Regular {
+            return Ok(false);
+        }
         Err(code::EEXIST)
     }
 

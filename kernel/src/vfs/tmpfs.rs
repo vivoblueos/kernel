@@ -330,8 +330,13 @@ fn rename_tmpfs_locked(
     let source_dir = source_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
     let target_dir = target_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
     let child = source_dir.find(old_name).ok_or(code::ENOENT)?;
-    if target_dir.find(new_name).is_some() {
-        return Err(code::EEXIST);
+    // POSIX rename overwrites an existing regular-file destination; a directory
+    // destination still fails with EEXIST.
+    if let Some(existing) = target_dir.find(new_name) {
+        if existing.inner.read().attr.type_() == InodeFileType::Directory {
+            return Err(code::EEXIST);
+        }
+        target_dir.remove(new_name);
     }
 
     source_dir.remove(old_name);
