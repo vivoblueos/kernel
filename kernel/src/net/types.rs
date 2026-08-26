@@ -328,19 +328,66 @@ impl SocketAddressV6 {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Timeval {
     pub tv_sec: libc::time_t,
     pub tv_usec: libc::suseconds_t,
 }
 
+/// The prebuilt Rust std for the 32-bit BlueOS target uses the traditional
+/// 32-bit timeval ABI (two i32 fields), while BlueOS libc exposes time_t as
+/// i64. Accept both layouts at the socket syscall boundary.
+#[repr(C)]
+struct Timeval32 {
+    tv_sec: i32,
+    tv_usec: i32,
+}
+
 impl Timeval {
-    pub unsafe fn from_ptr<'a>(ptr: *const c_void, len: libc::socklen_t) -> Option<&'a Self> {
-        let ptr = ptr as *const libc::timeval;
-        if ptr.is_null() || len != (core::mem::size_of::<libc::timeval>() as libc::socklen_t) {
-            None
-        } else {
-            Some(&*(ptr as *const Self))
+    pub unsafe fn from_ptr(ptr: *const c_void, len: libc::socklen_t) -> Option<Self> {
+        if ptr.is_null() {
+            return None;
         }
+        if len == core::mem::size_of::<Self>() as libc::socklen_t {
+            return Self::validated(ptr.cast::<Self>().read_unaligned());
+        }
+        if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
+            let timeval = ptr.cast::<Timeval32>().read_unaligned();
+            return Self::validated(Self {
+                tv_sec: timeval.tv_sec as libc::time_t,
+                tv_usec: timeval.tv_usec as libc::suseconds_t,
+            });
+        }
+        None
+    }
+
+    pub unsafe fn write_to_ptr(
+        &self,
+        ptr: *mut c_void,
+        len: libc::socklen_t,
+    ) -> Option<libc::socklen_t> {
+        if ptr.is_null() {
+            return None;
+        }
+        if len == core::mem::size_of::<Self>() as libc::socklen_t {
+            ptr.cast::<Self>().write_unaligned(*self);
+            return Some(core::mem::size_of::<Self>() as libc::socklen_t);
+        }
+        if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
+            let tv_sec = i32::try_from(self.tv_sec).ok()?;
+            let tv_usec = i32::try_from(self.tv_usec).ok()?;
+            ptr.cast::<Timeval32>()
+                .write_unaligned(Timeval32 { tv_sec, tv_usec });
+            return Some(core::mem::size_of::<Timeval32>() as libc::socklen_t);
+        }
+        None
+    }
+
+    fn validated(timeval: Self) -> Option<Self> {
+        if timeval.tv_sec < 0 || !(0..1_000_000).contains(&timeval.tv_usec) {
+            return None;
+        }
+        Some(timeval)
     }
 }
 
@@ -644,6 +691,65 @@ mod tests {
         assert!(SocketDomain::AfInet == libc::AF_INET);
         assert!(SocketDomain::AfInet6 == libc::AF_INET6);
         assert!(SocketDomain::AfInet != libc::AF_INET6);
+    }
+
+    #[test]
+    fn timeval_accepts_32_bit_layout() {
+        let value = Timeval32 {
+            tv_sec: 12,
+            tv_usec: 345_678,
+        };
+
+        let timeval = unsafe {
+            Timeval::from_ptr(
+                (&value as *const Timeval32).cast(),
+                size_of::<Timeval32>() as libc::socklen_t,
+            )
+        }
+        .unwrap();
+
+        assert_eq!(timeval.tv_sec, 12);
+        assert_eq!(timeval.tv_usec, 345_678);
+    }
+
+    #[test]
+    fn timeval_writes_32_bit_layout() {
+        let timeval = Timeval {
+            tv_sec: 23,
+            tv_usec: 456_789,
+        };
+        let mut value = Timeval32 {
+            tv_sec: 0,
+            tv_usec: 0,
+        };
+
+        let written = unsafe {
+            timeval.write_to_ptr(
+                (&mut value as *mut Timeval32).cast(),
+                size_of::<Timeval32>() as libc::socklen_t,
+            )
+        };
+
+        assert_eq!(written, Some(size_of::<Timeval32>() as libc::socklen_t));
+        assert_eq!(value.tv_sec, 23);
+        assert_eq!(value.tv_usec, 456_789);
+    }
+
+    #[test]
+    fn timeval_rejects_invalid_microseconds() {
+        let value = Timeval32 {
+            tv_sec: 1,
+            tv_usec: 1_000_000,
+        };
+
+        let timeval = unsafe {
+            Timeval::from_ptr(
+                (&value as *const Timeval32).cast(),
+                size_of::<Timeval32>() as libc::socklen_t,
+            )
+        };
+
+        assert!(timeval.is_none());
     }
 
     #[test]
