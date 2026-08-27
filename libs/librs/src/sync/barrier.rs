@@ -18,6 +18,7 @@
 
 #![allow(non_camel_case_types)]
 
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::num::NonZeroU32;
 use libc::{c_int, PTHREAD_PROCESS_PRIVATE};
 
@@ -76,7 +77,7 @@ impl Barrier {
             guard.gen_id = guard.gen_id.wrapping_add(1);
             guard.count = 0;
 
-            let _ = self.cvar.broadcast();
+            self.cvar.broadcast().ignore_result();
 
             drop(guard);
 
