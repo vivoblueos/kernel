@@ -54,6 +54,7 @@ _shared_deps = [
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
+  "//external/vendor/mipidsi-0.10.0:mipidsi",
   "//external/vendor/num-traits-0.2.19:num_traits",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
   "//external/vendor/spin-0.9.8:spin",
@@ -70,10 +71,10 @@ _shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
   "//libc",
-  "//external/vendor/mipidsi-0.10.0:mipidsi"
 ]
 
-# GCC provides __atomic builtins natively; skip the clang-derived libatomic for GCC toolchains.
+# GCC provides __atomic builtins natively; skip the clang-derived libatomic for
+# GCC toolchains.
 if (current_toolchain != "//build/toolchain:gcc_fv_thumbv8m") {
   _shared_deps += [ ":atomic" ]
 }
@@ -135,6 +136,7 @@ build_rust("kernel_integration_test") {
            ":blueos",
            "//external/vendor/byteorder-1.5.0:byteorder",
            "//external/vendor/semihosting-0.1.20:semihosting",
+           "//kernel/infra:blueos_infra",
            "//kernel/rsrt",
            "//kernel/scal:blueos_scal",
            "//libc",

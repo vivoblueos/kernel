@@ -143,7 +143,8 @@ impl Builder {
 
         #[cfg(procfs)]
         {
-            let _ = crate::vfs::trace_thread_create(thread.clone());
+            use blueos_infra::no_let_underscore::IgnoreResult;
+            crate::vfs::trace_thread_create(thread.clone()).ignore_result();
         }
 
         thread

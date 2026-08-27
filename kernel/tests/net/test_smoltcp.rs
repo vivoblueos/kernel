@@ -25,6 +25,7 @@ use blueos::{
     thread::{Builder as ThreadBuilder, Entry, Stack},
     time::Tick,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use blueos_test_macro::test;
 use byteorder::{ByteOrder, NetworkEndian};
 use core::{
@@ -416,10 +417,10 @@ fn test_smoltcp() {
         }),
         Some(Box::new(|| {
             SMOLTCP_TEST_DONE.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&SMOLTCP_TEST_DONE, 1);
+            futex::atomic_wake(&SMOLTCP_TEST_DONE, 1).ignore_result();
         })),
     );
-    let _ = futex::atomic_wait(&SMOLTCP_TEST_DONE, 0, Tick::MAX);
+    futex::atomic_wait(&SMOLTCP_TEST_DONE, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -433,8 +434,8 @@ fn test_smoltcp_icmp_loopback() {
         }),
         Some(Box::new(|| {
             ICMP_LOOPBACK_TEST_DONE.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&ICMP_LOOPBACK_TEST_DONE, 1);
+            futex::atomic_wake(&ICMP_LOOPBACK_TEST_DONE, 1).ignore_result();
         })),
     );
-    let _ = futex::atomic_wait(&ICMP_LOOPBACK_TEST_DONE, 0, Tick::MAX);
+    futex::atomic_wait(&ICMP_LOOPBACK_TEST_DONE, 0, Tick::MAX).ignore_result();
 }
