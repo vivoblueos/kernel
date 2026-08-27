@@ -201,7 +201,7 @@ pub extern "C" fn osTimerDelete(timer_id: osTimerId_t) -> osStatus_t {
         return osStatus_t_osErrorParameter;
     }
 
-    let _ = unsafe { Box::from_raw(timer_id as *mut OsTimer) };
+    unsafe { drop(Box::from_raw(timer_id as *mut OsTimer)) };
     osStatus_t_osOK
 }
 

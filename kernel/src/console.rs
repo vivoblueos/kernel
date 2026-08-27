@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::{devices::console::get_console, support::DisableInterruptGuard};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{fmt, str};
 
 #[macro_export]
@@ -49,7 +50,7 @@ macro_rules! kearly_println {
 pub struct Console;
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let _ = get_console().write(0, s.as_bytes(), true);
+        get_console().write(0, s.as_bytes(), true).ignore_result();
         Ok(())
     }
 }

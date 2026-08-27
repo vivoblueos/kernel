@@ -60,6 +60,7 @@ _shared_deps = [
   "//external/vendor/thiserror-2.0.17:thiserror",
   "//external/vendor/tock-registers-0.9.0:tock_registers",
   "//external/vendor/zerocopy-0.8.27:zerocopy",
+  "//kernel/infra:blueos_infra",
   "//kernel/allocator:allocator_crate",
   "//kernel/arch:arch_crate",
   "//kernel/core_traits",
@@ -133,6 +134,7 @@ build_rust("kernel_integration_test") {
   deps = [
            ":blueos",
            "//external/vendor/byteorder-1.5.0:byteorder",
+           "//kernel/infra:blueos_infra",
            "//external/vendor/semihosting-0.1.20:semihosting",
            "//kernel/rsrt",
            "//kernel/scal:blueos_scal",

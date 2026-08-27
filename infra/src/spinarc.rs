@@ -18,6 +18,7 @@
 extern crate alloc;
 
 use crate::{
+    no_let_underscore::IgnoreAny,
     tinyarc::TinyArc as Arc,
     tinyrwlock::{RwLock, RwLockWriteGuard as WriteGuard},
 };
@@ -192,12 +193,12 @@ impl<T> IlistNode<T> {
             };
             // Now we have acquired all guards.
             let prev = core::mem::replace(&mut write_other_guard.prev, Some(me.clone()));
-            let _ = core::mem::replace(&mut write_me_guard.prev, prev);
+            core::mem::replace(&mut write_me_guard.prev, prev).ignore_old_value();
             if let Some(mut guard) = write_prev_guard {
-                let _ = core::mem::replace(&mut guard.next, Some(me.clone()));
+                core::mem::replace(&mut guard.next, Some(me.clone())).ignore_old_value();
             };
             drop(write_other_guard);
-            let _ = core::mem::replace(&mut write_me_guard.next, Some(other.clone()));
+            core::mem::replace(&mut write_me_guard.next, Some(other.clone())).ignore_old_value();
             write_me_guard.increment_version();
             return true;
         }
@@ -244,12 +245,12 @@ impl<T> IlistNode<T> {
             };
             // Now we have acquired all guards.
             let next = core::mem::replace(&mut write_other_guard.next, Some(me.clone()));
-            let _ = core::mem::replace(&mut write_me_guard.next, next);
+            core::mem::replace(&mut write_me_guard.next, next).ignore_old_value();
             if let Some(mut guard) = write_next_guard {
-                let _ = core::mem::replace(&mut guard.prev, Some(me.clone()));
+                core::mem::replace(&mut guard.prev, Some(me.clone())).ignore_old_value();
             };
             drop(write_other_guard);
-            let _ = core::mem::replace(&mut write_me_guard.prev, Some(other.clone()));
+            core::mem::replace(&mut write_me_guard.prev, Some(other.clone())).ignore_old_value();
             write_me_guard.increment_version();
             return true;
         }

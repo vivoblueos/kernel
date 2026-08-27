@@ -73,7 +73,7 @@ impl InsertByPrio {
     pub const VALUE: u8 = 0;
 }
 
-/// Const type for InsertToEnd  
+/// Const type for InsertToEnd
 pub struct InsertToEnd;
 impl InsertToEnd {
     pub const MODE: InsertMode = InsertMode::InsertToEnd;
@@ -279,7 +279,8 @@ pub fn retire_me() -> ! {
     let retiring = current_thread_ref();
     #[cfg(procfs)]
     {
-        let _ = crate::vfs::trace_thread_close(unsafe { Arc::clone_from(retiring) });
+        use blueos_infra::no_let_underscore::IgnoreResult;
+        crate::vfs::trace_thread_close(unsafe { Arc::clone_from(retiring) }).ignore_result();
     }
     let next = next_ready_thread().map_or_else(idle::current_idle_thread, |v| v);
     debug_assert_eq!(next.state(), thread::READY);

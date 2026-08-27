@@ -21,6 +21,7 @@ use blueos::{
     sync::atomic_wait as futex,
     thread::{Builder as ThreadBuilder, Entry, Stack},
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     ffi::{c_int, c_void},
     fmt::Write,
@@ -373,11 +374,11 @@ pub fn println_hex(buffer: &[u8], received_size: usize) {
         let mut line = String::with_capacity(74);
 
         // Write address header
-        let _ = write!(&mut line, "[{:04x}]  ", i * 16);
+        write!(&mut line, "[{:04x}]  ", i * 16).ignore_result();
 
         // Hex dump section
         for (idx, byte) in chunk.iter().enumerate() {
-            let _ = write!(&mut line, "{:02x}", byte);
+            write!(&mut line, "{:02x}", byte).ignore_result();
             // Add space between bytes, but not after last byte
             if idx < 15 {
                 line.push(' ');

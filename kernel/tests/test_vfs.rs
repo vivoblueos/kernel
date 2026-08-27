@@ -35,6 +35,7 @@ use blueos::{
         syscalls::*,
     },
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use blueos_test_macro::test;
 use core::{
     cmp::min,
@@ -392,7 +393,7 @@ fn verify_directory(path: *const c_char) -> Result<(), c_int> {
         let entry = unsafe { Dirent::from_buf_ref(&buf[next_entry..]) };
         let name = entry.name().unwrap().to_string_lossy();
         let mut dir_full_path = String::with_capacity(name.len() + 1 + path_str.len());
-        let _ = write!(dir_full_path, "{}/{}", path_str, name);
+        write!(dir_full_path, "{}/{}", path_str, name).ignore_result();
         if entry.type_() == DirentType::Dir {
             println!(
                 "\t[VFS Test DirectoryTree]: Found directory: {}, {}, {}",
@@ -638,11 +639,11 @@ fn test_socket_file() {
         }),
         Some(Box::new(|| {
             TCP_SOCKET_FILE_DONE.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&TCP_SOCKET_FILE_DONE, 1);
+            futex::atomic_wake(&TCP_SOCKET_FILE_DONE, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&TCP_SOCKET_FILE_DONE, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_SOCKET_FILE_DONE, 0, Tick::MAX).ignore_result();
 }
 
 #[cfg(enable_net)]
@@ -761,7 +762,7 @@ fn test_socket_file_nonblock() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_DONE, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_CLIENT_DONE, 0, Tick::MAX).ignore_result();
 }
 
 #[cfg(enable_net)]
@@ -790,7 +791,7 @@ fn socket_server_thread() {
         }),
         Some(Box::new(|| {
             TCP_CLIENT_DONE.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&TCP_CLIENT_DONE, 1);
+            futex::atomic_wake(&TCP_CLIENT_DONE, 1).ignore_result();
         })),
     );
 
@@ -816,7 +817,7 @@ fn socket_server_thread() {
     }
     close(server_fd);
     TCP_SERVER_DONE.store(1, Ordering::Relaxed);
-    let _ = futex::atomic_wake(&TCP_SERVER_DONE, 1);
+    futex::atomic_wake(&TCP_SERVER_DONE, 1).ignore_result();
 }
 
 #[cfg(enable_net)]
@@ -858,5 +859,5 @@ fn socket_client_thread(client_fd: i32) {
         scheduler::yield_me();
     }
     close(client_fd);
-    let _ = futex::atomic_wait(&TCP_SERVER_DONE, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_SERVER_DONE, 0, Tick::MAX).ignore_result();
 }
