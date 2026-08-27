@@ -20,6 +20,7 @@
 use alloc::{collections::btree_map::BTreeMap, rc::Rc, string::String, sync::Arc};
 use core::cell::RefCell;
 
+use blueos_infra::no_let_underscore::IgnoreResult;
 use spin::RwLock;
 
 use crate::net::{
@@ -248,6 +249,8 @@ pub(crate) fn init() {
 
     // Register ICMPv6 as secondary key for IcmpProtocol
     if let Some(icmp) = PROTOCOL_REGISTRY.get_by_key(SocketType::SockRaw, iana::ICMP) {
-        let _ = PROTOCOL_REGISTRY.register_secondary_key(icmp, SocketType::SockRaw, iana::ICMPV6);
+        PROTOCOL_REGISTRY
+            .register_secondary_key(icmp, SocketType::SockRaw, iana::ICMPV6)
+            .ignore_result();
     }
 }

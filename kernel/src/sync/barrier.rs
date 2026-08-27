@@ -18,6 +18,7 @@ use crate::{
     sync::{atomic_wait, atomic_wake},
     time::Tick,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 // Used when N is small and contention is low.
@@ -36,11 +37,11 @@ impl<const N: usize> ConstBarrier<N> {
     pub fn wait(&self) {
         let mut n = self.state.fetch_add(1, Ordering::Release) + 1;
         if n == N {
-            let _ = atomic_wake(&self.state, n - 1);
+            atomic_wake(&self.state, n - 1).ignore_result();
             return;
         }
         loop {
-            let _ = atomic_wait(&self.state, n, Tick::MAX);
+            atomic_wait(&self.state, n, Tick::MAX).ignore_result();
             n = self.state.load(Ordering::Acquire);
             if n == N {
                 return;

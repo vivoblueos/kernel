@@ -21,6 +21,7 @@ use blueos::{
     thread::Builder as ThreadBuilder,
     time::Tick,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use blueos_test_macro::test;
 use core::{
     ffi::c_void,
@@ -213,11 +214,11 @@ fn test_icmp_ipv4() {
         }),
         Some(Box::new(|| {
             ICMP_THREAD_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&ICMP_THREAD_FINISH, 1);
+            futex::atomic_wake(&ICMP_THREAD_FINISH, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -236,11 +237,11 @@ fn test_icmp_ipv4_non_blocking() {
         }),
         Some(Box::new(|| {
             ICMP_THREAD_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&ICMP_THREAD_FINISH, 1);
+            futex::atomic_wake(&ICMP_THREAD_FINISH, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -259,11 +260,11 @@ fn test_icmp_ipv6() {
         }),
         Some(Box::new(|| {
             ICMP_THREAD_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&ICMP_THREAD_FINISH, 1);
+            futex::atomic_wake(&ICMP_THREAD_FINISH, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -282,9 +283,9 @@ fn test_icmp_ipv6_non_blocking() {
         }),
         Some(Box::new(|| {
             ICMP_THREAD_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&ICMP_THREAD_FINISH, 1);
+            futex::atomic_wake(&ICMP_THREAD_FINISH, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&ICMP_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }

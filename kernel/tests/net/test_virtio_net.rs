@@ -62,6 +62,7 @@ use blueos::{
     thread::{Builder as ThreadBuilder, Entry, Stack},
     time::Tick,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use blueos_test_macro::test;
 use core::{
     ffi::c_void,
@@ -197,11 +198,11 @@ fn test_virtio_net() {
         }),
         Some(Box::new(|| {
             VIRTIO_NET_CLIENT_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&VIRTIO_NET_CLIENT_FINISH, 1);
+            futex::atomic_wake(&VIRTIO_NET_CLIENT_FINISH, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -220,9 +221,9 @@ fn test_virtio_net_non_blocking() {
         }),
         Some(Box::new(|| {
             VIRTIO_NET_CLIENT_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&VIRTIO_NET_CLIENT_FINISH, 1);
+            futex::atomic_wake(&VIRTIO_NET_CLIENT_FINISH, 1).ignore_result();
         })),
     );
 
-    let _ = futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&VIRTIO_NET_CLIENT_FINISH, 0, Tick::MAX).ignore_result();
 }
