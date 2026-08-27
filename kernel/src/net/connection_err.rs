@@ -53,6 +53,22 @@ pub enum ConnectionError {
     SocketOperationError(SocketError),
 }
 
+impl ConnectionError {
+    pub fn to_errno(&self) -> i32 {
+        match self {
+            Self::SocketOperationError(error) => error.to_errno(),
+            Self::NetStackQueueFull => -libc::EAGAIN,
+            Self::PosixError(error) => error.to_errno(),
+            Self::UnsupportedSocketType(_) => -libc::EOPNOTSUPP,
+            Self::NoAvailableDynamicPort => -libc::EADDRNOTAVAIL,
+            Self::PortInUse(_) => -libc::EADDRINUSE,
+            Self::PortOutOfRange(_, _) => -libc::EINVAL,
+            Self::Timeout(_) => -libc::ETIMEDOUT,
+            Self::LockFail(_) => -libc::EIO,
+        }
+    }
+}
+
 impl From<SocketError> for ConnectionError {
     fn from(err: SocketError) -> Self {
         Self::SocketOperationError(err)
@@ -62,5 +78,27 @@ impl From<SocketError> for ConnectionError {
 impl From<Error> for ConnectionError {
     fn from(err: Error) -> Self {
         Self::PosixError(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn maps_connection_errors_to_negative_errno() {
+        assert_eq!(ConnectionError::Timeout(1000).to_errno(), -libc::ETIMEDOUT);
+        assert_eq!(ConnectionError::NetStackQueueFull.to_errno(), -libc::EAGAIN);
+        assert_eq!(ConnectionError::PortInUse(80).to_errno(), -libc::EADDRINUSE);
+    }
+
+    #[test]
+    fn preserves_nested_error_errno() {
+        let socket_error = ConnectionError::from(SocketError::InvalidSocketFd(7));
+        assert_eq!(socket_error.to_errno(), -libc::EBADF);
+
+        let posix_error = ConnectionError::from(Error::from_errno(-libc::EINTR));
+        assert_eq!(posix_error.to_errno(), -libc::EINTR);
     }
 }

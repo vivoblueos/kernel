@@ -91,3 +91,37 @@ pub enum SocketError {
     #[error("smoltcp icmp recv error: {0}")]
     SmoltcpIcmpRecvError(smoltcp::socket::icmp::RecvError),
 }
+
+impl SocketError {
+    pub fn to_errno(&self) -> i32 {
+        match self {
+            Self::TryAgain | Self::WouldBlock => -libc::EAGAIN,
+            Self::InvalidSocketFd(_) => -libc::EBADF,
+            Self::UnsupportedSocketTypeForOperation(_, _) => -libc::EOPNOTSUPP,
+            Self::InvalidState(_) => -libc::EINVAL,
+            Self::PosixError(errno, _) => *errno,
+            Self::UnsupportedOperation => -libc::ENOSYS,
+            Self::InvalidParam(_, _) => -libc::EINVAL,
+            _ => -libc::EIO,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn maps_socket_errors_to_negative_errno() {
+        assert_eq!(SocketError::WouldBlock.to_errno(), -libc::EAGAIN);
+        assert_eq!(SocketError::InvalidSocketFd(3).to_errno(), -libc::EBADF);
+        assert_eq!(SocketError::UnsupportedOperation.to_errno(), -libc::ENOSYS);
+    }
+
+    #[test]
+    fn preserves_explicit_posix_errno() {
+        let error = SocketError::PosixError(-libc::ECONNRESET, String::new());
+        assert_eq!(error.to_errno(), -libc::ECONNRESET);
+    }
+}

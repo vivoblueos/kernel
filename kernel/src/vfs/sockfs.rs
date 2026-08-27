@@ -110,7 +110,7 @@ impl FileOps for SocketFile {
             Ok(recv_size) => Ok(recv_size),
             Err(e) => {
                 warn!("SocketFile read: connection.recv {}", e);
-                Err(code::ERROR)
+                Err(Error::from_errno(e.to_errno()))
             }
         }
     }
@@ -139,7 +139,7 @@ impl FileOps for SocketFile {
             Ok(sent) => Ok(sent),
             Err(e) => {
                 warn!("SocketFile write: connection.send {}", e);
-                Err(code::ERROR)
+                Err(Error::from_errno(e.to_errno()))
             }
         }
     }
