@@ -33,6 +33,7 @@
 #![feature(strict_provenance_atomic_ptr)]
 
 pub mod intrusive;
+pub mod no_let_underscore;
 pub mod lifetime;
 pub mod list;
 pub mod rbtree;
