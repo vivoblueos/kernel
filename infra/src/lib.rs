@@ -36,6 +36,7 @@
 #![cfg_attr(compatible_old_toolchain, feature(strict_provenance_atomic_ptr))] // 1.91
 
 pub mod intrusive;
+pub mod no_let_underscore;
 pub mod lifetime;
 pub mod list;
 pub mod rbtree;
