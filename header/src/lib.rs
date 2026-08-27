@@ -90,6 +90,7 @@ pub mod syscalls {
         TimerGetTime,
         TimerSetTime,
         TimerGetOverrun,
+        Rename,
         LastNR,
     }
 }

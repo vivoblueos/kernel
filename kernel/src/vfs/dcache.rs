@@ -355,44 +355,100 @@ impl Dcache {
             return Err(code::EINVAL);
         }
 
-        let mut children = self.children.write();
-        let child = match children.get(old_name) {
-            Some(child) => child.clone(),
-            None => {
-                debug!("{} not found", old_name);
-                return Err(code::ENOENT);
-            }
-        };
+        let child = self.lookup(old_name)?;
         if child.is_mount_point() {
             debug!("{} is a mount point", old_name);
             return Err(code::EBUSY);
         }
 
-        // rename in the same directory
-        if ptr::addr_eq(self, Arc::as_ptr(new_dir)) && old_name != new_name {
-            if children.contains_key(new_name) {
-                debug!("{} already exists", new_name);
-                return Err(code::EEXIST);
-            }
-            self.inode.rename(old_name, &self.inode, new_name)?;
-            children.remove(old_name);
-            if child.is_dcacheable() {
-                children.insert(String::from(new_name), child);
-            }
-        } else {
-            let mut new_children = new_dir.children.write();
-            if new_children.contains_key(new_name) {
-                debug!("{} already exists", new_name);
-                return Err(code::EEXIST);
-            }
-            self.inode.rename(old_name, &new_dir.inode, new_name)?;
-            children.remove(old_name);
-            child.set_name_and_parent(new_name, new_dir.this.clone());
-            if child.is_dcacheable() {
-                new_children.insert(String::from(new_name), child);
+        if ptr::addr_eq(self, Arc::as_ptr(new_dir)) && old_name == new_name {
+            return Ok(());
+        }
+
+        if child.type_() == InodeFileType::Directory {
+            let mut current = Some(new_dir.clone());
+            while let Some(dir) = current {
+                if Arc::ptr_eq(&child, &dir) {
+                    return Err(code::EINVAL);
+                }
+                current = dir.parent();
             }
         }
 
+        if ptr::addr_eq(self, Arc::as_ptr(new_dir)) {
+            let mut children = self.children.write();
+            if !children
+                .get(old_name)
+                .is_some_and(|entry| Arc::ptr_eq(entry, &child))
+            {
+                return Err(code::ENOENT);
+            }
+            if Self::validate_target(&child, children.get(new_name))? {
+                return Ok(());
+            }
+            self.inode.rename(old_name, &self.inode, new_name)?;
+            children.remove(old_name);
+            children.remove(new_name);
+            child.set_name_and_parent(new_name, self.this.clone());
+            if child.is_dcacheable() {
+                children.insert(String::from(new_name), child);
+            }
+            return Ok(());
+        }
+
+        let source_first = (self as *const Dcache as usize) < (Arc::as_ptr(new_dir) as usize);
+        if source_first {
+            let mut source_children = self.children.write();
+            let mut target_children = new_dir.children.write();
+            self.rename_between(
+                old_name,
+                new_dir,
+                new_name,
+                &child,
+                &mut source_children,
+                &mut target_children,
+            )?;
+        } else {
+            let mut target_children = new_dir.children.write();
+            let mut source_children = self.children.write();
+            self.rename_between(
+                old_name,
+                new_dir,
+                new_name,
+                &child,
+                &mut source_children,
+                &mut target_children,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn rename_between(
+        &self,
+        old_name: &str,
+        new_dir: &Arc<Dcache>,
+        new_name: &str,
+        child: &Arc<Dcache>,
+        source_children: &mut BTreeMap<String, Arc<Dcache>>,
+        target_children: &mut BTreeMap<String, Arc<Dcache>>,
+    ) -> Result<(), Error> {
+        if !source_children
+            .get(old_name)
+            .is_some_and(|entry| Arc::ptr_eq(entry, child))
+        {
+            return Err(code::ENOENT);
+        }
+        if Self::validate_target(child, target_children.get(new_name))? {
+            return Ok(());
+        }
+        self.inode.rename(old_name, &new_dir.inode, new_name)?;
+        source_children.remove(old_name);
+        target_children.remove(new_name);
+        child.set_name_and_parent(new_name, new_dir.this.clone());
+        if child.is_dcacheable() {
+            target_children.insert(String::from(new_name), child.clone());
+        }
         Ok(())
     }
 
@@ -411,6 +467,24 @@ impl Dcache {
 
         children.insert(name, mount_point);
         Ok(())
+    }
+
+    fn validate_target(child: &Arc<Dcache>, target: Option<&Arc<Dcache>>) -> Result<bool, Error> {
+        let Some(target) = target else {
+            return Ok(false);
+        };
+        if target.is_mount_point() {
+            return Err(code::EBUSY);
+        }
+        if Arc::ptr_eq(&child.inode, &target.inode) {
+            return Ok(true);
+        }
+        // POSIX rename overwrites an existing regular-file destination; the
+        // underlying fs deletes it. Directories still return EEXIST.
+        if target.type_() == InodeFileType::Regular {
+            return Ok(false);
+        }
+        Err(code::EEXIST)
     }
 
     fn remove_mount_point(&self, name: String) -> Result<(), Error> {

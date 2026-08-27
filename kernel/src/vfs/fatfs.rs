@@ -325,11 +325,11 @@ impl core::fmt::Debug for FatFileData {
 
 struct FatFile {
     _parent: Weak<FatInode>,
-    internal_file: InternalFsLock<File>,
+    internal_file: InternalFsLock<Option<File>>,
 }
 
 impl FatFile {
-    fn new(parent: &Weak<FatInode>, internal_file: InternalFsLock<File>) -> Self {
+    fn new(parent: &Weak<FatInode>, internal_file: InternalFsLock<Option<File>>) -> Self {
         Self {
             _parent: parent.clone(),
             internal_file,
@@ -403,7 +403,7 @@ impl FatInode {
                     attr,
                     data: FatFileData::File(FatFile::new(
                         parent,
-                        internal_fs_wrapper.wrap(internal_file),
+                        internal_fs_wrapper.wrap(Some(internal_file)),
                     )),
                 }),
                 this: weak_inode.clone(),
@@ -444,6 +444,37 @@ impl FatInode {
             this: weak_inode.clone(),
             fs: fs.clone(),
         }))
+    }
+
+    /// rust-fatfs `Dir::rename` does not overwrite an existing target, so we
+    /// delete it first. Only regular files are removed; directories keep EEXIST.
+    /// Drops any open File handle, then removes the on-disk entry and cache.
+    fn remove_existing_for_overwrite(
+        existing: &Arc<FatInode>,
+        dir: &mut FatDir,
+        new_name: &str,
+    ) -> Result<(), Error> {
+        let is_dir = existing.inner.read().attr.type_() == InodeFileType::Directory;
+        if is_dir {
+            return Err(code::EEXIST);
+        }
+        // Drop any open File handle so Dir::remove is safe.
+        {
+            let mut ex_inner = existing.inner.write();
+            if let Some(file) = ex_inner.as_file_mut() {
+                let (slot, guard) = file.internal_file.get_mut();
+                let old_file = slot.take();
+                drop(old_file);
+                drop(guard);
+            }
+        }
+        // Delete the on-disk FAT entry, then sync the in-memory cache.
+        {
+            let (internal_dir, _) = dir.internal_dir.get();
+            internal_dir.remove(new_name)?;
+        }
+        dir.remove(new_name);
+        Ok(())
     }
 }
 
@@ -568,11 +599,17 @@ impl InodeOps for FatInode {
         #[cfg(debug)]
         {
             let inner = self.inner.read();
-            let (file, _) = inner.as_file().unwrap().internal_file.get();
+            let (file, _) = inner.as_file().ok_or(code::EIO)?.internal_file.get();
+            let file = file.as_ref().ok_or(code::EIO)?;
             assert_eq!(file.size().unwrap(), inner.attr.size.try_into().unwrap());
         }
         let mut inner = self.inner.write();
-        let (file, _) = inner.as_file_mut().unwrap().internal_file.get_mut();
+        let (file, _) = inner
+            .as_file_mut()
+            .ok_or(code::EIO)?
+            .internal_file
+            .get_mut();
+        let file = file.as_mut().ok_or(code::EIO)?;
         let expected_read_size = buf.len();
         let mut offset = offset;
         let mut total_read_size = 0;
@@ -598,7 +635,12 @@ impl InodeOps for FatInode {
         }
         let (write_size, new_size, extents) = {
             let mut inner = self.inner.write();
-            let (file, _) = inner.as_file_mut().unwrap().internal_file.get_mut();
+            let (file, _) = inner
+                .as_file_mut()
+                .ok_or(code::EIO)?
+                .internal_file
+                .get_mut();
+            let file = file.as_mut().ok_or(code::EIO)?;
             let mut offset = offset;
             let mut total_write_size = 0;
             let expected_write_size = buf.len();
@@ -684,6 +726,139 @@ impl InodeOps for FatInode {
         Ok(())
     }
 
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn InodeOps>,
+        new_name: &str,
+    ) -> Result<(), Error> {
+        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+            return Err(code::EINVAL);
+        }
+        let target = target.downcast_ref::<FatInode>().ok_or(code::EXDEV)?;
+        let source_fs = self.fs.upgrade().ok_or(code::EAGAIN)?;
+        let target_fs = target.fs.upgrade().ok_or(code::EAGAIN)?;
+        if !Arc::ptr_eq(&source_fs, &target_fs) {
+            return Err(code::EXDEV);
+        }
+        if self.type_() != InodeFileType::Directory || target.type_() != InodeFileType::Directory {
+            return Err(code::ENOTDIR);
+        }
+        if core::ptr::eq(self, target) {
+            let mut inner = self.inner.write();
+            let dir = inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+            let child = dir.find(old_name).ok_or(code::ENOENT)?;
+            if old_name == new_name {
+                return Ok(());
+            }
+            if let Some(existing) = dir.find(new_name) {
+                Self::remove_existing_for_overwrite(&existing, dir, new_name)?;
+            }
+            let mut child_inner = child.inner.write();
+            let is_file = child_inner.attr.type_() == InodeFileType::Regular;
+            if is_file {
+                let file = child_inner.as_file_mut().ok_or(code::EIO)?;
+                let (slot, guard) = file.internal_file.get_mut();
+                let old_file = slot.take().ok_or(code::EIO)?;
+                drop(old_file);
+                drop(guard);
+            }
+
+            let (internal_dir, guard) = dir.internal_dir.get();
+            if let Err(error) = internal_dir.rename(old_name, internal_dir, new_name) {
+                if is_file {
+                    child_inner
+                        .as_file_mut()
+                        .ok_or(code::EIO)?
+                        .internal_file
+                        .content = Some(internal_dir.open_file(old_name)?);
+                }
+                return Err(error.into());
+            }
+            if is_file {
+                match internal_dir.open_file(new_name) {
+                    Ok(file) => {
+                        child_inner
+                            .as_file_mut()
+                            .ok_or(code::EIO)?
+                            .internal_file
+                            .content = Some(file);
+                    }
+                    Err(error) => {
+                        let _ = internal_dir.rename(new_name, internal_dir, old_name);
+                        child_inner
+                            .as_file_mut()
+                            .ok_or(code::EIO)?
+                            .internal_file
+                            .content = Some(internal_dir.open_file(old_name)?);
+                        return Err(error.into());
+                    }
+                }
+            }
+            drop(guard);
+            dir.remove(old_name);
+            dir.insert(new_name, &child);
+            return Ok(());
+        }
+
+        let mut source_inner = self.inner.write();
+        let mut target_inner = target.inner.write();
+        let source_dir = source_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+        let target_dir = target_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+        if let Some(existing) = target_dir.find(new_name) {
+            Self::remove_existing_for_overwrite(&existing, target_dir, new_name)?;
+        }
+        let child = source_dir.find(old_name).ok_or(code::ENOENT)?;
+        let mut child_inner = child.inner.write();
+        let is_file = child_inner.attr.type_() == InodeFileType::Regular;
+        if is_file {
+            let file = child_inner.as_file_mut().ok_or(code::EIO)?;
+            let (slot, guard) = file.internal_file.get_mut();
+            let old_file = slot.take().ok_or(code::EIO)?;
+            drop(old_file);
+            drop(guard);
+        }
+
+        let (source_internal, guard) = source_dir.internal_dir.get();
+        let target_internal = &target_dir.internal_dir.content;
+        if let Err(error) = source_internal.rename(old_name, target_internal, new_name) {
+            if is_file {
+                child_inner
+                    .as_file_mut()
+                    .ok_or(code::EIO)?
+                    .internal_file
+                    .content = Some(source_internal.open_file(old_name)?);
+            }
+            return Err(error.into());
+        }
+        if is_file {
+            match target_internal.open_file(new_name) {
+                Ok(file) => {
+                    child_inner
+                        .as_file_mut()
+                        .ok_or(code::EIO)?
+                        .internal_file
+                        .content = Some(file);
+                }
+                Err(error) => {
+                    let _ = target_internal.rename(new_name, source_internal, old_name);
+                    child_inner
+                        .as_file_mut()
+                        .ok_or(code::EIO)?
+                        .internal_file
+                        .content = Some(source_internal.open_file(old_name)?);
+                    return Err(error.into());
+                }
+            }
+        } else {
+            child_inner.as_dir_mut().ok_or(code::EIO)?.parent = target.this.clone();
+        }
+        drop(guard);
+        source_dir.remove(old_name);
+        target_dir.insert(new_name, &child);
+        Ok(())
+    }
+
     fn getdents_at(&self, offset: usize, reader: &mut DirBufferReader) -> Result<usize, Error> {
         if self.type_() != InodeFileType::Directory {
             error!("[FatInode] getdents_at: not a directory");
@@ -754,7 +929,12 @@ impl InodeOps for FatInode {
         }
         let (new_size, extents) = {
             let mut inner = self.inner.write();
-            let (file, _) = inner.as_file_mut().unwrap().internal_file.get_mut();
+            let (file, _) = inner
+                .as_file_mut()
+                .ok_or(code::EIO)?
+                .internal_file
+                .get_mut();
+            let file = file.as_mut().ok_or(code::EIO)?;
             file.seek(SeekFrom::Start(size as u64))?;
             file.truncate()?;
             let new_size = file.size().unwrap() as usize;
@@ -811,7 +991,12 @@ impl InodeOps for FatInode {
             return Err(code::ENOTSUP);
         }
         let mut inner = self.inner.write();
-        let (file, _) = inner.as_file_mut().unwrap().internal_file.get_mut();
+        let (file, _) = inner
+            .as_file_mut()
+            .ok_or(code::EIO)?
+            .internal_file
+            .get_mut();
+        let file = file.as_mut().ok_or(code::EIO)?;
         file.flush()?;
         Ok(())
     }
