@@ -176,6 +176,18 @@ pub(crate) fn init() {
             tmp & !WIFI_BT_SDIO_CLK | 0x00FB9FCF,
         );
     }
+
+    // On-chip flash: ROM unlock + capacity probe + register esp32-flash0 device.
+    // Must precede init_vfs so /dev/esp32-flash0 exists before the shell opens it.
+    #[cfg(soc_esp32c3)]
+    {
+        if let Err(e) = crate::drivers::flash::init_internal_flash() {
+            log::warn!("Failed to init internal flash: {:?}", e);
+        }
+        if let Err(e) = crate::drivers::flash::init_esp32_flash_device() {
+            log::warn!("Failed to init esp32-flash0: {:?}", e);
+        }
+    }
 }
 
 crate::define_peripheral! {
@@ -196,10 +208,10 @@ crate::define_peripheral! {
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(20)),
     (led_b, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(2)),
-    // (led_r, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
-    //  blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
-    (flash_cs, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+    (led_r, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
      blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(3)),
+    (flash_cs, blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+     blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin::new(1)),
 }
 
 #[cfg(enable_block)]
@@ -309,9 +321,9 @@ crate::define_pin_states!(
     (5, 1, false, true, false, 2, None, None, true, false),        // lcd dc
     (4, 1, false, true, false, 2, None, None, true, false),        // lcd rst
     (21, 1, false, true, false, 2, None, None, true, false),       // touch rst
-    (3, 1, false, true, false, 2, None, None, true, false),        // flash cs
+    (1, 1, false, true, false, 2, None, None, true, false),        // flash cs
     (2, 1, false, true, false, 2, None, None, true, false),        // led blue
-    //(3, 1, false, true, false, 2, None, None, true, false),        // led red
+    (3, 1, false, true, false, 2, None, None, true, false),        // led red
 );
 
 #[cfg(spi_core)]
@@ -379,13 +391,13 @@ pub(crate) fn init_gpio() {
         crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_B_DEVICE_MINOR),
     )
     .expect("Failed to register led_b");
-    // crate::devices::gpio::GeneralGpio::new(
-    //     get_device!(led_r),
-    //     Some(crate::devices::gpio::Level::High),
-    // )
-    // .register(
-    //     alloc::string::String::from("led_r"),
-    //     crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
-    // )
-    // .expect("Failed to register led_r");
+    crate::devices::gpio::GeneralGpio::new(
+        get_device!(led_r),
+        Some(crate::devices::gpio::Level::High),
+    )
+    .register(
+        alloc::string::String::from("led_r"),
+        crate::devices::DeviceId::new(LED_DEVICE_MAJOR, LED_R_DEVICE_MINOR),
+    )
+    .expect("Failed to register led_r");
 }
