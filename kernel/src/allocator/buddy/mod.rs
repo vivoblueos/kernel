@@ -166,6 +166,8 @@ mod basic_tests {
     #[test]
     fn alloc_returns_null_when_exhausted() {
         buddy_test_exclusive!();
+        #[cfg(allocator = "slab_dynamic")]
+        crate::allocator::reclaim_page_pool();
         let before = BUDDY_ALLOC.memory_info().free_pages;
         let mut allocated = Vec::new();
         // Exhaust all available pages
@@ -193,6 +195,9 @@ mod basic_tests {
         // allocated is now empty; shrink_to_fit releases the backing heap memory
         allocated.shrink_to_fit();
         mem::drop(allocated);
+
+        #[cfg(allocator = "slab_dynamic")]
+        crate::allocator::reclaim_page_pool();
 
         let after = BUDDY_ALLOC.memory_info().free_pages;
 

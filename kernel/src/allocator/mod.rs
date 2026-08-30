@@ -19,7 +19,7 @@ use crate::{
     static_arc,
 };
 use alloc::alloc::Layout;
-use core::{alloc::GlobalAlloc, ptr};
+use core::{alloc::GlobalAlloc, ptr, ptr::NonNull};
 
 // Raw heap implementations are in the allocator_crate.
 // This module only contains SpinLock wrappers and the GlobalAlloc impl.
@@ -57,19 +57,37 @@ static_arc! {
    HEAP(Heap, Heap::new()),
 }
 
+#[cfg(allocator_buddy)]
+const BUDDY_THRESHOLD: usize = 2048;
+
+#[cfg(allocator = "slab_dynamic")]
+fn dyn_page_alloc() -> Option<allocator_crate::slab::PageAllocation> {
+    let phys = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(0)?;
+    let pfn = (phys - crate::boards::PHYS_DRAM_BASE as usize) >> buddy::page::PAGE_SHIFT;
+    Some(allocator_crate::slab::PageAllocation {
+        addr: kernel_phys_to_virt(phys),
+        token: pfn,
+    })
+}
+
+#[cfg(allocator = "slab_dynamic")]
+unsafe fn dyn_page_free(page: allocator_crate::slab::PageAllocation) {
+    buddy::BUDDY_ALLOC.free_pages_pfn(page.token, 0);
+}
+
 unsafe impl GlobalAlloc for KernelAllocator {
     // TODO: support slab requesting pages from buddy as memory pool
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         #[cfg(allocator_buddy)]
         {
-            use buddy::{heap::order_of_size, page::PAGE_SIZE};
             let size = layout.size().max(layout.align());
-            if size >= PAGE_SIZE {
-                let order = order_of_size(size);
+            if size > BUDDY_THRESHOLD {
+                let order = buddy::heap::order_of_size(size);
                 return buddy::BUDDY_ALLOC
                     .alloc_pages_phys_addr(order)
                     .map_or(ptr::null_mut(), |addr| kernel_phys_to_virt(addr) as *mut u8);
             }
+            // If size <= BUDDY_THRESHOLD, fall back to letting HEAP allocate the memory itself
         }
         HEAP.alloc(layout)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
@@ -79,18 +97,16 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         #[cfg(allocator_buddy)]
         {
-            use buddy::{
-                heap::order_of_size,
-                page::{PAGE_SHIFT, PAGE_SIZE},
-            };
+            use buddy::page::PAGE_SHIFT;
             let size = layout.size().max(layout.align());
-            if size >= PAGE_SIZE {
-                let order = order_of_size(size);
+            if size > BUDDY_THRESHOLD {
+                let order = buddy::heap::order_of_size(size);
                 let phys_addr = kernel_virt_to_phys(ptr as usize);
                 let pfn = (phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
                 buddy::BUDDY_ALLOC.free_pages_pfn(pfn, order);
                 return;
             }
+            // If size <= BUDDY_THRESHOLD, fall back to letting HEAP free the memory itself
         }
         HEAP.dealloc(ptr, layout);
     }
@@ -99,68 +115,40 @@ unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         #[cfg(allocator_buddy)]
         {
-            use buddy::{
-                heap::order_of_size,
-                page::{PAGE_SHIFT, PAGE_SIZE},
-            };
-
             let old_route_size = old_layout.size().max(old_layout.align());
             let new_route_size = new_size.max(old_layout.align());
-            let old_is_buddy = old_route_size >= PAGE_SIZE;
-            let new_is_buddy = new_route_size >= PAGE_SIZE;
+            let old_is_buddy = old_route_size > BUDDY_THRESHOLD;
+            let new_is_buddy = new_route_size > BUDDY_THRESHOLD;
 
-            match (old_is_buddy, new_is_buddy) {
-                (false, false) => HEAP
+            // Both sides stay on the small-object heap: try an in-place realloc.
+            if !old_is_buddy && !new_is_buddy {
+                return HEAP
                     .realloc(ptr, old_layout, new_size)
-                    .map_or(ptr::null_mut(), |ptr| ptr.as_ptr()),
-                (false, true) => {
-                    let new_order = order_of_size(new_route_size);
-                    let Some(new_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(new_order)
-                    else {
-                        return ptr::null_mut();
-                    };
-                    let new_ptr = kernel_phys_to_virt(new_phys_addr) as *mut u8;
-                    ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
-                    HEAP.dealloc(ptr, old_layout);
-                    new_ptr
-                }
-                (true, true) => {
-                    let old_order = order_of_size(old_route_size);
-                    let new_order = order_of_size(new_route_size);
-                    if old_order == new_order {
-                        return ptr;
-                    }
-
-                    let Some(new_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(new_order)
-                    else {
-                        return ptr::null_mut();
-                    };
-                    let new_ptr = kernel_phys_to_virt(new_phys_addr) as *mut u8;
-                    ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
-
-                    let old_phys_addr = kernel_virt_to_phys(ptr as usize);
-                    let old_pfn =
-                        (old_phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
-                    buddy::BUDDY_ALLOC.free_pages_pfn(old_pfn, old_order);
-                    new_ptr
-                }
-                (true, false) => {
-                    let new_layout =
-                        Layout::from_size_align_unchecked(new_size, old_layout.align());
-                    let Some(new_ptr) = HEAP.alloc(new_layout) else {
-                        return ptr::null_mut();
-                    };
-                    let new_ptr = new_ptr.as_ptr();
-                    ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
-
-                    let old_order = order_of_size(old_route_size);
-                    let old_phys_addr = kernel_virt_to_phys(ptr as usize);
-                    let old_pfn =
-                        (old_phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
-                    buddy::BUDDY_ALLOC.free_pages_pfn(old_pfn, old_order);
-                    new_ptr
-                }
+                    .map_or(ptr::null_mut(), |ptr| ptr.as_ptr());
             }
+            // Both sides stay in the buddy pool: reuse the block when the
+            // order (and thus the page count) is unchanged.
+            if old_is_buddy
+                && new_is_buddy
+                && buddy::heap::order_of_size(old_route_size)
+                    == buddy::heap::order_of_size(new_route_size)
+            {
+                return ptr;
+            }
+            // Route changed, or buddy order changed: allocate a fresh block
+            // via the routed `alloc`, copy the data over, then release the
+            // old block via the routed `dealloc`. `self.alloc`/`self.dealloc`
+            // dispatch on the size threshold, so this covers every
+            // combination without special-casing slab vs. buddy.
+
+            let new_layout = Layout::from_size_align_unchecked(new_size, old_layout.align());
+            let new_ptr = self.alloc(new_layout);
+            if new_ptr.is_null() {
+                return ptr::null_mut();
+            }
+            ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
+            self.dealloc(ptr, old_layout);
+            new_ptr
         }
 
         #[cfg(not(allocator_buddy))]
@@ -212,6 +200,11 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         assert!(end > start);
         let pool_size = end as usize - start as usize;
         let order = buddy::heap::order_of_size(pool_size);
+        #[cfg(allocator = "slab_dynamic")]
+        HEAP.set_page_provider(allocator_crate::slab::PageProvider {
+            alloc: dyn_page_alloc,
+            free: dyn_page_free,
+        });
         if let Some(pool_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(order) {
             unsafe {
                 HEAP.init(kernel_phys_to_virt(pool_phys_addr), pool_size);
@@ -248,8 +241,7 @@ pub fn malloc(size: usize) -> *mut u8 {
     }
     const ALIGN: usize = core::mem::size_of::<usize>();
     let layout = Layout::from_size_align(size, ALIGN).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    unsafe { KernelAllocator.alloc(layout) }
 }
 
 /// Free previously allocated memory pointed by ptr.
@@ -260,6 +252,19 @@ pub fn malloc(size: usize) -> *mut u8 {
 pub fn free(ptr: *mut u8) {
     if core::intrinsics::unlikely(ptr.is_null()) {
         return;
+    }
+    #[cfg(allocator = "slab_dynamic")]
+    {
+        if HEAP.owns_slab_ptr(ptr as usize) {
+            unsafe { HEAP.deallocate_unknown_align(ptr) };
+            return;
+        }
+        {
+            let phys = kernel_virt_to_phys(ptr as usize);
+            let pfn = (phys - crate::boards::PHYS_DRAM_BASE as usize) >> buddy::page::PAGE_SHIFT;
+            unsafe { buddy::BUDDY_ALLOC.free_pages_pfn(pfn, 0) };
+            return;
+        }
     }
     unsafe { HEAP.deallocate_unknown_align(ptr) };
 }
@@ -278,6 +283,18 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
     if ptr.is_null() {
         return malloc(newsize);
     }
+    #[cfg(allocator = "slab_dynamic")]
+    {
+        {
+            let old_layout = unsafe {
+                Layout::from_size_align_unchecked(
+                    buddy::page::PAGE_SIZE,
+                    buddy::page::PAGE_SIZE.max(core::mem::size_of::<usize>()),
+                )
+            };
+            return unsafe { KernelAllocator.realloc(ptr, old_layout, newsize) };
+        }
+    }
     unsafe {
         HEAP.realloc_unknown_align(ptr, newsize)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
@@ -294,7 +311,7 @@ pub fn calloc(count: usize, size: usize) -> *mut u8 {
     let required_size = count * size;
     const ALIGN: usize = core::mem::size_of::<usize>();
     if let Ok(layout) = Layout::from_size_align(required_size, ALIGN) {
-        if let Some(alloc_ptr) = HEAP.alloc(layout) {
+        if let Some(alloc_ptr) = unsafe { NonNull::new(KernelAllocator.alloc(layout)) } {
             unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
             alloc_ptr.as_ptr()
         } else {
@@ -317,8 +334,7 @@ pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
     }
 
     let layout = Layout::from_size_align(size, align).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    unsafe { KernelAllocator.alloc(layout) }
 }
 
 /// Deallocates memory that was allocated using `malloc_align`.
@@ -332,7 +348,7 @@ pub fn free_align(ptr: *mut u8, align: usize) {
     }
     unsafe {
         let layout = Layout::from_size_align_unchecked(0, align);
-        HEAP.dealloc(ptr, layout);
+        KernelAllocator.dealloc(ptr, layout);
     }
 }
 
@@ -529,6 +545,47 @@ mod tests {
             alloc::alloc::dealloc(ptr, small_layout);
         }
     }
+
+    // #[cfg(allocator = "slab_dynamic")]
+    // #[test]
+    // fn dynslab_buddy_routing_boundaries() {
+    //     const ALIGN: usize = core::mem::size_of::<usize>();
+
+    //     let dyn_layout = Layout::from_size_align(BUDDY_THRESHOLD, ALIGN).unwrap();
+    //     unsafe {
+    //         let dyn_ptr = alloc::alloc::alloc(dyn_layout);
+    //         assert!(
+    //             !dyn_ptr.is_null(),
+    //             "2048-byte dynslab allocation should succeed"
+    //         );
+    //         assert!(
+    //             HEAP.owns_slab_ptr(dyn_ptr as usize),
+    //             "2048-byte request must be owned by dynslab"
+    //         );
+    //         alloc::alloc::dealloc(dyn_ptr, dyn_layout);
+    //     }
+
+    //     let cases = [(2049, 0), (4096, 0), (4097, 1), (8192, 1), (8193, 2)];
+
+    //     for (size, expected_order) in cases {
+    //         let layout = Layout::from_size_align(size, ALIGN).unwrap();
+    //         unsafe {
+    //             let ptr = alloc::alloc::alloc(layout);
+    //             assert!(
+    //                 !ptr.is_null(),
+    //                 "allocation of {} bytes should succeed",
+    //                 size
+    //             );
+    //             let (order, _, _) = buddy_ptr_info(ptr).expect("allocation must be buddy-owned");
+    //             assert_eq!(
+    //                 order, expected_order,
+    //                 "unexpected buddy order for {} bytes",
+    //                 size
+    //             );
+    //             alloc::alloc::dealloc(ptr, layout);
+    //         }
+    //     }
+    // }
 
     #[test]
     fn fragmentation_test() {
