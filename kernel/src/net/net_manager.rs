@@ -123,6 +123,14 @@ impl NetworkManager {
         self.socket_maps.get(&socket_fd).cloned()
     }
 
+    pub fn insert_posix_socket(
+        &mut self,
+        socket_fd: SocketFd,
+        socket: Rc<RefCell<dyn PosixSocket + 'static>>,
+    ) {
+        self.socket_maps.insert(socket_fd, socket);
+    }
+
     pub fn remove_posix_socket(
         &mut self,
         socket_fd: SocketFd,

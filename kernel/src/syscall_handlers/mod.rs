@@ -136,7 +136,7 @@ mod net_syscalls {
     pub fn listen(_socket: c_int, _backlog: c_int) -> c_int {
         -libc::ENOTSUP
     }
-    pub fn accept(_socket: c_int, _address: *const sockaddr, _address_len: u32) -> c_int {
+    pub fn accept(_socket: c_int, _address: *mut sockaddr, _address_len: *mut socklen_t) -> c_int {
         -libc::ENOTSUP
     }
     pub fn send(
@@ -689,18 +689,7 @@ define_syscall_handler!(
 
 define_syscall_handler!(
     accept(sockfd: c_int, addr: *mut sockaddr, len: *mut socklen_t) -> c_int {
-        let orig_len = if !len.is_null() { unsafe { *len } } else { 0 };
-
-        let result = net_syscalls::accept(
-            sockfd,
-            addr as *const sockaddr,
-            orig_len
-        );
-        if !len.is_null() && result >= 0 {
-            unsafe { *len = orig_len };
-        }
-
-        result
+        net_syscalls::accept(sockfd, addr, len)
     }
 );
 
