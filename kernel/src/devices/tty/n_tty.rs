@@ -69,9 +69,9 @@ impl Tty {
         self.history.lock().get(index).cloned()
     }
 
-    fn clear_line(&self, pos: u64, is_nonblocking: bool) -> Result<(), ErrorKind> {
-        self.dev.send_bytes(b"\r", is_nonblocking)?;
-        self.dev.send_bytes(b"\x1b[2K", is_nonblocking)?;
+    fn clear_line(&self, pos: u64, is_blocking: bool) -> Result<(), ErrorKind> {
+        self.dev.send_bytes(b"\r", !is_blocking)?;
+        self.dev.send_bytes(b"\x1b[2K", !is_blocking)?;
         Ok(())
     }
 
