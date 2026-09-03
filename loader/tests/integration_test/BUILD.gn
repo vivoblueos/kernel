@@ -40,13 +40,34 @@ build_rust("loader_integration_test") {
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   rustflags = [ "--test" ]
 
-  if (defined(loader_test_relocation)) {
+  if (defined(ram_loader_test_relocation)) {
     rustenv = [
-      "LOADER_TEST_RELOCATION_ORIGIN=${loader_test_relocation.origin}",
-      "LOADER_TEST_RELOCATION_LENGTH=${loader_test_relocation.length}",
-      "LOADER_TEST_RELOCATION_PERMISSIONS=${loader_test_relocation.permissions}",
+      "LOADER_TEST_RAM_ORIGIN=" + ram_loader_test_relocation.origin,
+      "LOADER_TEST_RAM_LENGTH=" + ram_loader_test_relocation.length,
+      "LOADER_TEST_RAM_PERMISSIONS=" + ram_loader_test_relocation.permissions,
     ]
     cfgs = [ "loader_test_exec" ]
+
+    if (defined(flash_loader_test_relocation)) {
+      _irom = flash_loader_test_relocation.irom
+      _rodata = flash_loader_test_relocation.rodata
+      _rwdata = flash_loader_test_relocation.rwdata
+      rustenv += [
+        "LOADER_TEST_FLASH_CAPACITY=" + flash_loader_test_relocation.capacity,
+        "LOADER_TEST_IROM_ORIGIN=" + _irom.origin,
+        "LOADER_TEST_IROM_LENGTH=" + _irom.length,
+        "LOADER_TEST_IROM_PERMISSIONS=" + _irom.permissions,
+        "LOADER_TEST_IROM_FLASH_OFFSET=" + _irom.flash_offset,
+        "LOADER_TEST_RODATA_ORIGIN=" + _rodata.origin,
+        "LOADER_TEST_RODATA_LENGTH=" + _rodata.length,
+        "LOADER_TEST_RODATA_PERMISSIONS=" + _rodata.permissions,
+        "LOADER_TEST_RODATA_FLASH_OFFSET=" + _rodata.flash_offset,
+        "LOADER_TEST_RWDATA_ORIGIN=" + _rwdata.origin,
+        "LOADER_TEST_RWDATA_LENGTH=" + _rwdata.length,
+        "LOADER_TEST_RWDATA_PERMISSIONS=" + _rwdata.permissions,
+      ]
+      cfgs += [ "loader_test_flash" ]
+    }
   }
 }
 

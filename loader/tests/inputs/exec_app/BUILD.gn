@@ -15,18 +15,19 @@
 import("//build/boards/${board}.gni")
 import("//build/templates/rust.gni")
 
-assert(defined(loader_test_relocation),
-       "loader_test_relocation must be defined for the EXEC loader test app")
-assert(defined(loader_test_relocation.region),
-       "loader_test_relocation.region must be defined")
-assert(defined(loader_test_relocation.origin),
-       "loader_test_relocation.origin must be defined")
-assert(defined(loader_test_relocation.length),
-       "loader_test_relocation.length must be defined")
-assert(defined(loader_test_relocation.permissions),
-       "loader_test_relocation.permissions must be defined")
+assert(
+    defined(ram_loader_test_relocation),
+    "ram_loader_test_relocation must be defined for the EXEC loader test app")
+assert(defined(ram_loader_test_relocation.region),
+       "ram_loader_test_relocation.region must be defined")
+assert(defined(ram_loader_test_relocation.origin),
+       "ram_loader_test_relocation.origin must be defined")
+assert(defined(ram_loader_test_relocation.length),
+       "ram_loader_test_relocation.length must be defined")
+assert(defined(ram_loader_test_relocation.permissions),
+       "ram_loader_test_relocation.permissions must be defined")
 
-_loader_test_linker_script_template = "link.x.template"
+_loader_test_linker_script_template = "ram_link.x.template"
 _loader_test_linker_script = "${target_gen_dir}/loader_test_relocation_link.x"
 
 action("gen_loader_test_relocation") {
@@ -35,13 +36,13 @@ action("gen_loader_test_relocation") {
   inputs = [ _loader_test_linker_script_template ]
   args = [
     "--region",
-    loader_test_relocation.region,
+    ram_loader_test_relocation.region,
     "--origin",
-    loader_test_relocation.origin,
+    ram_loader_test_relocation.origin,
     "--length",
-    loader_test_relocation.length,
+    ram_loader_test_relocation.length,
     "--permissions",
-    loader_test_relocation.permissions,
+    ram_loader_test_relocation.permissions,
     "--linker-script-template",
     rebase_path(_loader_test_linker_script_template),
     "--linker-script",
@@ -53,15 +54,81 @@ action("gen_loader_test_relocation") {
 build_rust("loader_test_app") {
   testonly = true
   crate_type = "bin"
-  sources = [ "src/main.rs" ]
+  sources = [ "src/xor.rs" ]
   build_deps = [ ":gen_loader_test_relocation" ]
   configs += [ "//build/boards/${board}:app_config" ]
   linker_script = _loader_test_linker_script
   rustflags = [
     "-Cpanic=abort",
     "-Crelocation-model=static",
+    "-Cstrip=symbols",
+    "-Clink-arg=-Wl,-s",
     "-Clink-arg=-Wl,-static",
     "-Clink-arg=-Wl,--no-pie",
     "-Clink-arg=-nostartfiles",
   ]
+}
+
+if (defined(flash_loader_test_relocation)) {
+  _irom = flash_loader_test_relocation.irom
+  _rodata = flash_loader_test_relocation.rodata
+  _rwdata = flash_loader_test_relocation.rwdata
+  _loader_test_xip_linker_script_template = "flash_link.x.template"
+  _loader_test_xip_linker_script = "${target_gen_dir}/loader_test_xip_link.x"
+
+  action("gen_loader_test_xip_relocation") {
+    testonly = true
+    script = "//kernel/loader/tests/scripts/gen_loader_test_relocation.py"
+    inputs = [ _loader_test_xip_linker_script_template ]
+    args = [
+      "--irom-origin",
+      _irom.origin,
+      "--irom-length",
+      _irom.length,
+      "--irom-permissions",
+      _irom.permissions,
+      "--rodata-origin",
+      _rodata.origin,
+      "--rodata-length",
+      _rodata.length,
+      "--rodata-permissions",
+      _rodata.permissions,
+      "--rwdata-origin",
+      _rwdata.origin,
+      "--rwdata-length",
+      _rwdata.length,
+      "--rwdata-permissions",
+      _rwdata.permissions,
+      "--flash-mmu-page-size",
+      flash_loader_test_relocation.page_size,
+      "--linker-script-template",
+      rebase_path(_loader_test_xip_linker_script_template),
+      "--linker-script",
+      rebase_path(_loader_test_xip_linker_script),
+    ]
+    outputs = [ _loader_test_xip_linker_script ]
+  }
+
+  build_rust("loader_test_uselibrs") {
+    testonly = true
+    crate_type = "bin"
+    sources = [ "src/uselibrs.rs" ]
+    build_deps = [ ":gen_loader_test_xip_relocation" ]
+    configs += [ "//build/boards/${board}:app_config" ]
+    linker_script = _loader_test_xip_linker_script
+    rustflags = [
+      "-Cpanic=abort",
+      "-Crelocation-model=static",
+      "-Cstrip=symbols",
+      "-Clink-arg=-Wl,-s",
+      "-Clink-arg=-Wl,-static",
+      "-Clink-arg=-Wl,--no-pie",
+      "-Clink-arg=-nostartfiles",
+    ]
+    deps = [
+      "//kernel/kernel:atomic",
+      "//libc",
+      "//librs:librs_swi",
+    ]
+  }
 }
