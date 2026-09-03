@@ -122,7 +122,7 @@ pub extern "C" fn osTimerDelete(timer_id: osTimerId) -> osStatus {
         return osStatus_osErrorParameter;
     };
 
-    let _ = unsafe { Box::from_raw(os_timer.as_ptr()) };
+    unsafe { drop(Box::from_raw(os_timer.as_ptr())) };
     osStatus_osOK
 }
 

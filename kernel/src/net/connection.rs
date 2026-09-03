@@ -32,6 +32,7 @@ use crate::{
 };
 use ::smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 use alloc::{boxed::Box, format, rc::Rc, sync::Arc};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     cell::RefCell,
     net::SocketAddr,
@@ -864,7 +865,7 @@ impl OperationIPCReply {
         self.reply_futex
             .store(STATE_AFTER_CONSUME, Ordering::Release);
 
-        let _ = futex::atomic_wake(&self.reply_futex, 1);
+        futex::atomic_wake(&self.reply_futex, 1).ignore_result();
     }
 
     fn wakeup_client(&self, result: OperationResult, socket_fd: SocketFd) {

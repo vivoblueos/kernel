@@ -28,7 +28,7 @@ use crate::{
     time::{self, Tick},
 };
 use blueos_driver::uart::{InterruptType, UartConfig, UartCtrlStatus};
-use blueos_infra::tinyrwlock::RwLock;
+use blueos_infra::{no_let_underscore::IgnoreResult, tinyrwlock::RwLock};
 use blueos_kconfig::{CONFIG_SERIAL_RX_FIFO_SIZE, CONFIG_SERIAL_TX_FIFO_SIZE};
 use embedded_io::ErrorKind;
 use libc::{TCIFLUSH, TCIOFF, TCIOFLUSH, TCION, TCOFLUSH, TCOOFF, TCOON};
@@ -328,7 +328,7 @@ impl Serial {
         self.rx_head.set(0);
         self.rx_end.set(0);
         self.rx_futex.fetch_add(1, Ordering::Release);
-        let _ = atomic_wake(&self.rx_futex, usize::MAX);
+        atomic_wake(&self.rx_futex, usize::MAX).ignore_result();
     }
 
     #[inline(always)]
@@ -337,7 +337,7 @@ impl Serial {
         self.tx_head.set(0);
         self.tx_end.set(0);
         self.tx_futex.fetch_add(1, Ordering::Release);
-        let _ = atomic_wake(&self.tx_futex, usize::MAX);
+        atomic_wake(&self.tx_futex, usize::MAX).ignore_result();
     }
 
     #[inline(always)]
@@ -388,7 +388,7 @@ impl Serial {
             self.tx_end
                 .set((self.tx_end.get() + 1) % CONFIG_SERIAL_TX_FIFO_SIZE);
             self.tx_futex.fetch_add(1, Ordering::Release);
-            let _ = atomic_wake(&self.tx_futex, 1);
+            atomic_wake(&self.tx_futex, 1).ignore_result();
 
             if self.tx_head.get() == self.tx_end.get() {
                 self.dev.disable_interrupt(InterruptType::Tx);
@@ -484,7 +484,7 @@ impl Serial {
 
         if nbytes > 0 {
             self.rx_futex.fetch_add(1, Ordering::Release);
-            let _ = atomic_wake(&self.rx_futex, 1);
+            atomic_wake(&self.rx_futex, 1).ignore_result();
         }
     }
 

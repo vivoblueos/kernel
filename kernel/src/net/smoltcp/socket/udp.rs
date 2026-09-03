@@ -22,6 +22,7 @@ use crate::net::{
     SocketDomain, SocketFd, SocketProtocol, SocketResult, SocketType,
 };
 use alloc::{boxed::Box, format, rc::Rc, sync::Arc, vec};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     cell::{Cell, RefCell},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -336,10 +337,12 @@ impl PosixSocket for UdpSocket {
                     .smoltcp_socket_handle
                     .ok_or(SocketError::InvalidHandle)?;
                 // Close the socket first
-                let _ = iface.with_socket::<udp::Socket<'static>, _, i32>(handle, |socket, _| {
-                    socket.close();
-                    Ok(0i32)
-                });
+                iface
+                    .with_socket::<udp::Socket<'static>, _, i32>(handle, |socket, _| {
+                        socket.close();
+                        Ok(0i32)
+                    })
+                    .ignore_result();
                 // Remove from socket set
                 iface.remove_socket(handle);
                 Ok(0)

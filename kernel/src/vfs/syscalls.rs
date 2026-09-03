@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! C API for VFS operations  
+//! C API for VFS operations
 use crate::{
     error::code,
     vfs::{
@@ -27,6 +27,7 @@ use crate::{
     },
 };
 use alloc::{slice, string::String, sync::Arc};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     ffi::{c_char, c_int, c_ulong, c_void, CStr},
     mem::size_of,
@@ -169,7 +170,7 @@ pub fn close(fd: i32) -> i32 {
             Some(entry) => entry,
             None => return -libc::EBADF,
         };
-        let _ = fd_manager.free_fd(fd);
+        fd_manager.free_fd(fd).ignore_result();
         entry
     };
 
