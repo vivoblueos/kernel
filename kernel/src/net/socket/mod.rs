@@ -14,8 +14,14 @@
 
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
-use crate::net::{connection::OperationIPCReply, smoltcp::iface::NetIface, types::SocketResult};
+use crate::net::{
+    connection::{Connection, OperationIPCReply},
+    smoltcp::iface::NetIface,
+    types::SocketResult,
+    SocketFd,
+};
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
+use core::cell::RefCell;
 
 pub mod socket_err;
 pub mod socket_waker;
@@ -25,11 +31,26 @@ pub(crate) type FnSendMsg = Box<dyn FnOnce(&mut [u8]) -> usize + Send>;
 pub(crate) type FnRecv = Box<dyn FnOnce(&mut [u8]) -> (usize, usize) + Send>;
 pub(crate) type FnRecvWithEndpoint = Box<dyn FnOnce(&[u8], IpEndpoint) -> usize + Send>;
 
+pub type AcceptResult = Result<AcceptedSocket, socket_err::SocketError>;
+
+pub struct AcceptedSocket {
+    pub socket: Rc<RefCell<dyn PosixSocket>>,
+    pub local_endpoint: IpEndpoint,
+    pub remote_endpoint: IpEndpoint,
+}
+
 pub trait PosixSocket {
     // smoltcp need to bind socket with interface
     fn bind_interface(&mut self, interface: Arc<NetIface>);
 
-    fn accept(&self, _local_endpoint: IpListenEndpoint) -> SocketResult;
+    fn accept(
+        &mut self,
+        accepted_fd: SocketFd,
+        local_endpoint: IpListenEndpoint,
+        accepted_connection: Arc<Connection>,
+        is_nonblocking: bool,
+        ipc_reply: Arc<OperationIPCReply>,
+    ) -> AcceptResult;
 
     fn bind(&mut self, local_endpoint: IpListenEndpoint) -> SocketResult;
 

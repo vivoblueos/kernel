@@ -89,13 +89,63 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
         })),
     );
 
+    let mut peer_address: libc::sockaddr_storage = unsafe { mem::zeroed() };
+    let mut peer_address_len = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
+    let mut accepted_fd = -1;
+    net_utils::loop_with_io_mode(!args.is_nonblocking, || {
+        accepted_fd = net::syscalls::accept(
+            sock_fd,
+            (&mut peer_address as *mut libc::sockaddr_storage).cast(),
+            &mut peer_address_len,
+        );
+        if accepted_fd >= 0 {
+            true
+        } else {
+            scheduler::yield_me();
+            false
+        }
+    });
+    assert!(accepted_fd >= 0, "Failed to accept TCP connection.");
+    assert_ne!(accepted_fd, sock_fd, "accept() must return a new fd");
+    match args.domain {
+        SocketDomain::AfInet => {
+            assert_eq!(
+                peer_address_len as usize,
+                mem::size_of::<libc::sockaddr_in>()
+            );
+            let peer = unsafe {
+                &*((&peer_address as *const libc::sockaddr_storage).cast::<libc::sockaddr_in>())
+            };
+            assert_eq!(peer.sin_family as i32, AF_INET);
+            assert_eq!(peer.sin_addr.s_addr.to_ne_bytes(), [127, 0, 0, 1]);
+        }
+        SocketDomain::AfInet6 => {
+            assert_eq!(
+                peer_address_len as usize,
+                mem::size_of::<libc::sockaddr_in6>()
+            );
+            let peer = unsafe {
+                &*((&peer_address as *const libc::sockaddr_storage).cast::<libc::sockaddr_in6>())
+            };
+            assert_eq!(peer.sin6_family as i32, AF_INET6);
+            assert_eq!(
+                peer.sin6_addr.s6_addr,
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+            );
+        }
+    }
+
     let mut buffer = vec![0u8; 1024];
     let mut received_text = false;
     let mut received_eof = false;
     net_utils::loop_with_io_mode(!args.is_nonblocking, || {
-        let mut bytes_received =
-            net::syscalls::recv(sock_fd, buffer.as_mut_ptr() as *mut c_void, buffer.len(), 0);
-        println!("Socket[{}] recv {} bytes", sock_fd, bytes_received);
+        let mut bytes_received = net::syscalls::recv(
+            accepted_fd,
+            buffer.as_mut_ptr() as *mut c_void,
+            buffer.len(),
+            0,
+        );
+        println!("Socket[{}] recv {} bytes", accepted_fd, bytes_received);
 
         match bytes_received.cmp(&0) {
             cmp::Ordering::Greater => {
@@ -103,7 +153,7 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
 
                 // Attempt to convert received bytes to UTF-8 string (lossy to avoid errors)
                 let text = String::from_utf8_lossy(&buffer[..received_size]);
-                println!("Socket[{}] recv TCP text: {}", sock_fd, text);
+                println!("Socket[{}] recv TCP text: {}", accepted_fd, text);
 
                 // Print received data in hex format
                 net_utils::println_hex(&buffer[..received_size], received_size);
@@ -113,7 +163,7 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
             cmp::Ordering::Less => {
                 println!(
                     "Socket[{}] unexpected bytes_received={}",
-                    sock_fd, bytes_received
+                    accepted_fd, bytes_received
                 );
                 if received_text {
                     // Exit the test loop once text is received to avoid EOF wait timeout
@@ -122,7 +172,7 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
             }
             cmp::Ordering::Equal => {
                 // bytes_received == 0 means EOF
-                println!("Socket[{}] recv TCP EOF", sock_fd);
+                println!("Socket[{}] recv TCP EOF", accepted_fd);
                 received_eof = true;
                 return true; // Indicate EOF received
             }
@@ -137,11 +187,20 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
         "Failed to receive data or EOF."
     );
 
-    let shutdown_result = net::syscalls::shutdown(sock_fd, 0);
-    println!("Socket[{}] shutdown result {}", sock_fd, shutdown_result);
+    let shutdown_result = net::syscalls::shutdown(accepted_fd, 0);
+    println!(
+        "Socket[{}] shutdown result {}",
+        accepted_fd, shutdown_result
+    );
     assert!(
         shutdown_result == 0,
-        "Failed to shutdown tcp server socket."
+        "Failed to shutdown accepted tcp socket."
+    );
+
+    assert_eq!(
+        net::syscalls::shutdown(sock_fd, 0),
+        0,
+        "Failed to shutdown listening tcp socket."
     );
 
     TCP_SERVER_THREAD_FINISH.store(1, Ordering::Release);

@@ -328,19 +328,65 @@ impl SocketAddressV6 {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Timeval {
     pub tv_sec: libc::time_t,
     pub tv_usec: libc::suseconds_t,
 }
 
+/// The prebuilt Rust std for the 32-bit BlueOS target uses the traditional
+/// 32-bit timeval ABI (two i32 fields), while BlueOS libc exposes time_t as
+/// i64. Accept both layouts at the socket syscall boundary.
+#[repr(C)]
+struct Timeval32 {
+    tv_sec: i32,
+    tv_usec: i32,
+}
+
 impl Timeval {
-    pub unsafe fn from_ptr<'a>(ptr: *const c_void, len: libc::socklen_t) -> Option<&'a Self> {
-        let ptr = ptr as *const libc::timeval;
-        if ptr.is_null() || len != (core::mem::size_of::<libc::timeval>() as libc::socklen_t) {
-            None
-        } else {
-            Some(&*(ptr as *const Self))
+    pub unsafe fn from_ptr(ptr: *const c_void, len: libc::socklen_t) -> Option<Self> {
+        if ptr.is_null() {
+            return None;
         }
+        if len == core::mem::size_of::<libc::timeval>() as libc::socklen_t {
+            return Self::validated((ptr as *const Self).read());
+        }
+        if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
+            let timeval = (ptr as *const Timeval32).read();
+            return Self::validated(Self {
+                tv_sec: timeval.tv_sec as libc::time_t,
+                tv_usec: timeval.tv_usec as libc::suseconds_t,
+            });
+        }
+        None
+    }
+
+    pub unsafe fn write_to_ptr(
+        &self,
+        ptr: *mut c_void,
+        len: libc::socklen_t,
+    ) -> Option<libc::socklen_t> {
+        if ptr.is_null() {
+            return None;
+        }
+        if len == core::mem::size_of::<libc::timeval>() as libc::socklen_t {
+            (ptr as *mut Self).write(*self);
+            return Some(core::mem::size_of::<Self>() as libc::socklen_t);
+        }
+        if len == core::mem::size_of::<Timeval32>() as libc::socklen_t {
+            let tv_sec = i32::try_from(self.tv_sec).ok()?;
+            let tv_usec = i32::try_from(self.tv_usec).ok()?;
+            (ptr as *mut Timeval32).write(Timeval32 { tv_sec, tv_usec });
+            return Some(core::mem::size_of::<Timeval32>() as libc::socklen_t);
+        }
+        None
+    }
+
+    fn validated(timeval: Self) -> Option<Self> {
+        if timeval.tv_sec < 0 || !(0..1_000_000).contains(&timeval.tv_usec) {
+            return None;
+        }
+        Some(timeval)
     }
 }
 
@@ -567,43 +613,44 @@ pub fn write_to_sockaddr(
     endpoint: IpEndpoint,
     sockaddr_ptr: *mut libc::sockaddr,
     socklen_ptr: *mut libc::socklen_t,
-) {
-    if socklen_ptr as usize >= core::mem::size_of::<libc::sockaddr>() {
-        match endpoint.addr {
-            IpAddress::Ipv4(ipv4) => unsafe {
-                let addr_len = core::mem::size_of::<libc::sockaddr_in>();
-                let sockaddr_ptr = sockaddr_ptr.cast::<libc::sockaddr_in>();
-                // addr
-                (*sockaddr_ptr).sin_len = addr_len as u8;
-                (*sockaddr_ptr).sin_family = libc::AF_INET as libc::sa_family_t;
-                (*sockaddr_ptr).sin_port = u16::from_be(endpoint.port);
-                (*sockaddr_ptr).sin_addr.s_addr = u32::from_ne_bytes(ipv4.octets());
-                let addr_ptr = sockaddr_ptr
-                    .cast::<u8>()
-                    .add(core::mem::offset_of!(libc::sockaddr_in, sin_zero));
-                core::ptr::write_bytes(addr_ptr, 0, 6);
-
-                // addr len
-                *socklen_ptr = addr_len as libc::socklen_t;
-            },
-            IpAddress::Ipv6(ipv6) => unsafe {
-                let addr_len = core::mem::size_of::<libc::sockaddr_in6>();
-                let sockaddr_ptr = sockaddr_ptr.cast::<libc::sockaddr_in6>();
-
-                // addr
-                (*sockaddr_ptr).sin6_len = addr_len as u8;
-                (*sockaddr_ptr).sin6_family = libc::AF_INET6 as libc::sa_family_t;
-                (*sockaddr_ptr).sin6_port = u16::from_be(endpoint.port);
-                (*sockaddr_ptr).sin6_flowinfo = 0;
-                (*sockaddr_ptr).sin6_addr.s6_addr = ipv6.octets();
-                (*sockaddr_ptr).sin6_vport = 0;
-                (*sockaddr_ptr).sin6_scope_id = 0;
-
-                // addr len
-                *socklen_ptr = addr_len as libc::socklen_t;
-            },
-        }
+) -> Result<(), i32> {
+    if sockaddr_ptr.is_null() || socklen_ptr.is_null() {
+        return Err(-libc::EINVAL);
     }
+
+    let user_len = unsafe { *socklen_ptr as usize };
+    match endpoint.addr {
+        IpAddress::Ipv4(ipv4) => unsafe {
+            let addr_len = core::mem::size_of::<libc::sockaddr_in>();
+            let mut address: libc::sockaddr_in = core::mem::zeroed();
+            address.sin_len = addr_len as u8;
+            address.sin_family = libc::AF_INET as libc::sa_family_t;
+            address.sin_port = u16::from_be(endpoint.port);
+            address.sin_addr.s_addr = u32::from_ne_bytes(ipv4.octets());
+            core::ptr::copy_nonoverlapping(
+                (&address as *const libc::sockaddr_in).cast::<u8>(),
+                sockaddr_ptr.cast::<u8>(),
+                user_len.min(addr_len),
+            );
+            *socklen_ptr = addr_len as libc::socklen_t;
+        },
+        IpAddress::Ipv6(ipv6) => unsafe {
+            let addr_len = core::mem::size_of::<libc::sockaddr_in6>();
+            let mut address: libc::sockaddr_in6 = core::mem::zeroed();
+            address.sin6_len = addr_len as u8;
+            address.sin6_family = libc::AF_INET6 as libc::sa_family_t;
+            address.sin6_port = u16::from_be(endpoint.port);
+            address.sin6_addr.s6_addr = ipv6.octets();
+            core::ptr::copy_nonoverlapping(
+                (&address as *const libc::sockaddr_in6).cast::<u8>(),
+                sockaddr_ptr.cast::<u8>(),
+                user_len.min(addr_len),
+            );
+            *socklen_ptr = addr_len as libc::socklen_t;
+        },
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -684,5 +731,49 @@ mod tests {
         );
 
         assert_eq!(result, Err(-1));
+    }
+
+    #[test]
+    fn write_to_sockaddr_ipv4() {
+        let endpoint = IpEndpoint::new(
+            IpAddress::Ipv4(core::net::Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        );
+        let mut address: libc::sockaddr_in = unsafe { core::mem::zeroed() };
+        let mut len = size_of::<libc::sockaddr_in>() as libc::socklen_t;
+
+        write_to_sockaddr(
+            endpoint,
+            (&mut address as *mut libc::sockaddr_in).cast(),
+            &mut len,
+        )
+        .unwrap();
+
+        assert_eq!(address.sin_family as i32, libc::AF_INET);
+        assert_eq!(u16::from_be(address.sin_port), 8080);
+        assert_eq!(address.sin_addr.s_addr.to_ne_bytes(), [127, 0, 0, 1]);
+        assert_eq!(len as usize, size_of::<libc::sockaddr_in>());
+    }
+
+    #[test]
+    fn write_to_sockaddr_ipv6() {
+        let endpoint = IpEndpoint::new(IpAddress::Ipv6(core::net::Ipv6Addr::LOCALHOST), 8080);
+        let mut address: libc::sockaddr_in6 = unsafe { core::mem::zeroed() };
+        let mut len = size_of::<libc::sockaddr_in6>() as libc::socklen_t;
+
+        write_to_sockaddr(
+            endpoint,
+            (&mut address as *mut libc::sockaddr_in6).cast(),
+            &mut len,
+        )
+        .unwrap();
+
+        assert_eq!(address.sin6_family as i32, libc::AF_INET6);
+        assert_eq!(u16::from_be(address.sin6_port), 8080);
+        assert_eq!(
+            address.sin6_addr.s6_addr,
+            core::net::Ipv6Addr::LOCALHOST.octets()
+        );
+        assert_eq!(len as usize, size_of::<libc::sockaddr_in6>());
     }
 }

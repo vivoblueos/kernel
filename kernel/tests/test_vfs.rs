@@ -741,7 +741,14 @@ fn create_connected_sockets() -> (i32, i32) {
     assert_eq!(_connect_result, 0, "Failed to connect client");
     println!("Client connected successfully");
 
-    (server_fd, client_fd)
+    let accepted_fd =
+        net::syscalls::accept(server_fd, core::ptr::null_mut(), core::ptr::null_mut());
+    assert!(accepted_fd >= 0, "Failed to accept client connection");
+    assert_ne!(accepted_fd, server_fd, "accept() must return a new fd");
+
+    close(server_fd);
+
+    (accepted_fd, client_fd)
 }
 
 const TEST_NONBLOCK_MODE: usize = 20;
