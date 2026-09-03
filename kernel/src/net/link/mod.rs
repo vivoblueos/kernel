@@ -33,7 +33,7 @@
 //! - **Any bound**: `LinkLayer: Any + 'static` enables safe downcasting.
 //! - **dyn-compatible**: `LinkLayer` is dyn-compatible.
 
-#[cfg(soc_esp32c3)]
+#[cfg(any(soc_esp32c3, soc_esp32c6))]
 pub(crate) mod esp32_wlan;
 pub(crate) mod ethernet_ops;
 pub(crate) mod link_kind;

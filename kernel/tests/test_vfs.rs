@@ -48,8 +48,8 @@ use libc::{
 };
 use semihosting::println;
 
-// In esp32c3, we use usb-serial as the console output,
-// which does not support on qemu yet, so we skip this test on esp32c3 for now.
+// In esp32c3/esp32c6, we use usb-serial as the console output,
+// which does not support on qemu yet, so we skip this test on them for now.
 // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
 #[cfg_attr(not(soc_esp32c3), test)]
 fn test_uart() {
@@ -422,10 +422,10 @@ fn verify_directory(path: *const c_char) -> Result<(), c_int> {
     Ok(())
 }
 
-// In esp32c3, we use usb-serial as the console output,
-// which does not support on qemu yet, so we skip this test on esp32c3 for now.
+// In esp32c3/esp32c6, we use usb-serial as the console output,
+// which does not support on qemu yet, so we skip this test on them for now.
 // See https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/README.md
-#[cfg_attr(not(soc_esp32c3), test)]
+#[cfg_attr(not(any(soc_esp32c3, soc_esp32c6)), test)]
 fn test_std_fds() {
     // Test writing to stdout (fd 1)
     let test_data = b"Hello, this is a test message to stdout!\n";

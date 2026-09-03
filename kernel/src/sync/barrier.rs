@@ -93,15 +93,20 @@ mod tests {
             let b = Arc::new(ConstBarrier::<{ 2 }>::new());
             vt.push(b.clone());
             let counter = counter.clone();
+            let mi = crate::allocator::memory_info();
+            semihosting::println!("[JT] pre-spawn i={} used={}", i, mi.used);
             crate::thread::spawn(move || {
                 counter.fetch_sub(1, Ordering::Relaxed);
                 b.wait();
             });
+            semihosting::println!("[JT] spawned i={}", i);
         }
+        semihosting::println!("[JT] spawn-done vt.len()={}", vt.len());
         assert_eq!(vt.len(), n);
         for b in vt {
             b.wait();
         }
+        semihosting::println!("[JT] counter={}", counter.load(Ordering::SeqCst));
         assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 }
