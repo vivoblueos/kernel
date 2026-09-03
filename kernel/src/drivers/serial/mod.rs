@@ -82,6 +82,16 @@ pub static TTY_SERIAL: Serial = Serial {
 
 impl Serial {
     pub fn send_bytes(&self, bytes: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
+        // FIXME: USB-Serial-JTAG has no transmit consumer until the host enumerates
+        // the device. Do not fill the software ring in that state: a later blocking
+        // write would otherwise wait forever for a TX interrupt that can never make
+        // progress. This is a temporary workaround until the USB-Serial-JTAG driver
+        // is ready to handle TX flow control and/or blocking writes in the absence of a host.
+        #[cfg(usb_serial)]
+        if self.dev.is_bus_busy() {
+            return Ok(bytes.len());
+        }
+
         if is_in_irq() || !is_schedule_ready() {
             // Caution: logging in IRQ context can extend interrupt-off latency.
             //
