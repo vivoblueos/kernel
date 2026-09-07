@@ -53,6 +53,22 @@ pub enum ConnectionError {
     SocketOperationError(SocketError),
 }
 
+impl ConnectionError {
+    pub fn to_errno(&self) -> i32 {
+        match self {
+            Self::SocketOperationError(error) => error.to_errno(),
+            Self::NetStackQueueFull => -libc::EAGAIN,
+            Self::PosixError(error) => error.to_errno(),
+            Self::UnsupportedSocketType(_) => -libc::EOPNOTSUPP,
+            Self::NoAvailableDynamicPort => -libc::EADDRNOTAVAIL,
+            Self::PortInUse(_) => -libc::EADDRINUSE,
+            Self::PortOutOfRange(_, _) => -libc::EINVAL,
+            Self::Timeout(_) => -libc::ETIMEDOUT,
+            Self::LockFail(_) => -libc::EIO,
+        }
+    }
+}
+
 impl From<SocketError> for ConnectionError {
     fn from(err: SocketError) -> Self {
         Self::SocketOperationError(err)

@@ -47,6 +47,7 @@ group("check_kernel_probe") {
 _shared_deps = [
   "//external/rust-fatfs/v0.4:fatfs",
   "//external/vendor/bitflags-2.10.0:bitflags",
+  "//external/vendor/bme280-0.5.1:bme280",
   "//external/vendor/cfg-if-1.0.4:cfg_if",
   "//external/vendor/const-default-1.0.0:const_default",
   "//external/vendor/embedded-hal-1.0.0:embedded_hal",
@@ -54,6 +55,7 @@ _shared_deps = [
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
+  "//external/vendor/max7219-0.5.0:max7219",
   "//external/vendor/num-traits-0.2.19:num_traits",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
   "//external/vendor/spin-0.9.8:spin",

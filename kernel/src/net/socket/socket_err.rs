@@ -91,3 +91,18 @@ pub enum SocketError {
     #[error("smoltcp icmp recv error: {0}")]
     SmoltcpIcmpRecvError(smoltcp::socket::icmp::RecvError),
 }
+
+impl SocketError {
+    pub fn to_errno(&self) -> i32 {
+        match self {
+            Self::TryAgain | Self::WouldBlock => -libc::EAGAIN,
+            Self::InvalidSocketFd(_) => -libc::EBADF,
+            Self::UnsupportedSocketTypeForOperation(_, _) => -libc::EOPNOTSUPP,
+            Self::InvalidState(_) => -libc::EINVAL,
+            Self::PosixError(errno, _) => *errno,
+            Self::UnsupportedOperation => -libc::ENOSYS,
+            Self::InvalidParam(_, _) => -libc::EINVAL,
+            _ => -libc::EIO,
+        }
+    }
+}

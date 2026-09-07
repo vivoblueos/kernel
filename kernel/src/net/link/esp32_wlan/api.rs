@@ -17,7 +17,9 @@ use crate::{
 };
 use alloc::boxed::Box;
 use blueos_driver::interrupt_controller::Interrupt;
+use esp_hal::ram;
 use core::{
+    ffi::CStr,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicU32, Ordering},
 };
@@ -37,6 +39,15 @@ use esp_wifi_sys::{
 use esp_wifi_sys_esp32c3 as esp_wifi_sys;
 #[cfg(soc_esp32c6)]
 use esp_wifi_sys_esp32c6 as esp_wifi_sys;
+
+#[inline]
+fn osi_ticks_to_timeout_us(block_time_tick: u32) -> Option<u32> {
+    if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
+        None
+    } else {
+        Some(block_time_tick.saturating_mul(1_000))
+    }
+}
 
 // #define ESP_EVENT_DEFINE_BASE(id) esp_event_base_t id = #id
 #[unsafe(no_mangle)]
@@ -142,19 +153,28 @@ impl Handler {
         self.f.store(f.cast_mut(), Ordering::Release);
     }
 
+    #[ram]
     pub fn dispatch(&self) {
-        let f = self.f.load(Ordering::Acquire);
-        if !f.is_null() {
-            let func = unsafe {
-                core::mem::transmute::<*const c_void, unsafe extern "C" fn(*mut c_void)>(f)
-            };
-            let arg = self.arg.load(Ordering::Relaxed);
-            unsafe { func(arg) };
-        }
+        dispatch_handler(self);
     }
 }
 
 pub static ISR_INTERRUPT_1: Handler = Handler::new();
+
+/// Dispatch the registered Wi-Fi ISR callback without touching flash-resident
+/// code. The board trap only needs this short path; the callback itself is
+/// supplied by the Wi-Fi binary and is responsible for its own residency.
+#[ram]
+pub fn dispatch_handler(handler: &Handler) {
+    let f = handler.f.load(Ordering::Acquire);
+    if !f.is_null() {
+        let func = unsafe {
+            core::mem::transmute::<*const c_void, unsafe extern "C" fn(*mut c_void)>(f)
+        };
+        let arg = handler.arg.load(Ordering::Relaxed);
+        unsafe { func(arg) };
+    }
+}
 
 // Interrupt descriptors for the two WiFi peripheral sources (WIFI_PWR source=2,
 // WIFI_MAC source=0), both aggregated into CPU intr 1. On C3, set_isr enables
@@ -260,13 +280,13 @@ pub unsafe extern "C" fn clear_intr(intr_source: u32, intr_num: u32) {}
 pub unsafe extern "C" fn set_isr(n: i32, f: *mut c_void, arg: *mut c_void) {
     // [diag] Confirm whether libnet80211 calls this callback + the mie value at call time
     // (check whether the WiFi line1 enable bit is already set).
-    let mie_before: usize;
-    core::arch::asm!(
-        "csrr {mie}, mie",
-        mie = out(reg) mie_before,
-        options(nostack, preserves_flags),
-    );
-    log::info!("[diag] set_isr(n={n}, f={f:p}, arg={arg:p}) mie_before=0x{mie_before:x}");
+    // let mie_before: usize;
+    // core::arch::asm!(
+    //     "csrr {mie}, mie",
+    //     mie = out(reg) mie_before,
+    //     options(nostack, preserves_flags),
+    // );
+    // log::info!("[diag] set_isr(n={n}, f={f:p}, arg={arg:p}) mie_before=0x{mie_before:x}");
     match n {
         0 | 1 => ISR_INTERRUPT_1.set(f, arg),
         _ => panic!("set_isr - unsupported interrupt number {}", n),
@@ -311,13 +331,13 @@ pub unsafe extern "C" fn ints_on(mask: u32) {
     // mask = 1 << cpu_intr_num; WiFi expects mask=0x2 (line1); if not 0x2, the driver
     // routed WiFi to a line other than line1, which does not match set_isr's
     // ISR_INTERRUPT_1 (line1) → never reaches the trap.
-    let mie_before: usize;
-    core::arch::asm!(
-        "csrr {mie}, mie",
-        mie = out(reg) mie_before,
-        options(nostack, preserves_flags),
-    );
-    log::info!("[diag] ints_on(mask=0x{mask:x}) mie_before=0x{mie_before:x}");
+    // let mie_before: usize;
+    // core::arch::asm!(
+    //     "csrr {mie}, mie",
+    //     mie = out(reg) mie_before,
+    //     options(nostack, preserves_flags),
+    // );
+    // log::info!("[diag] ints_on(mask=0x{mask:x}) mie_before=0x{mie_before:x}");
     let tmp = core::ptr::read_volatile(INT_ENABLE_REG as *const u32);
     core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, tmp | mask);
 }
@@ -375,11 +395,7 @@ pub unsafe extern "C" fn semphr_take(semphr: *mut c_void, block_time_tick: u32) 
     if !semphr.is_null() {
         let ptr = SemaphorePtr::new(semphr.cast()).expect("invalid semaphore pointer");
         let handle = SemaphoreHandle::ref_from_ptr(&ptr);
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         handle.take(timeout) as i32
     } else {
@@ -494,11 +510,7 @@ pub unsafe extern "C" fn queue_send_to_back(
     if !queue.is_null() {
         let ptr = QueuePtr::new(queue.cast()).expect("invalid queue pointer");
         let handle = unsafe { QueueHandle::ref_from_ptr(&ptr) };
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         let ret = handle.send_to_back(item.cast(), timeout) as i32;
         ret
@@ -515,11 +527,7 @@ pub unsafe extern "C" fn queue_send_to_front(
     if !queue.is_null() {
         let ptr = QueuePtr::new(queue.cast()).expect("invalid queue pointer");
         let handle = unsafe { QueueHandle::ref_from_ptr(&ptr) };
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         handle.send_to_front(item.cast(), timeout) as i32
     } else {
@@ -535,11 +543,7 @@ pub unsafe extern "C" fn queue_recv(
     if !queue.is_null() {
         let ptr = QueuePtr::new(queue.cast()).expect("invalid queue pointer");
         let handle = unsafe { QueueHandle::ref_from_ptr(&ptr) };
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         let ret = handle.receive(item.cast(), timeout) as i32;
         ret
@@ -606,14 +610,18 @@ pub unsafe extern "C" fn event_group_wait_bits(
 
 pub unsafe extern "C" fn task_create_pinned_to_core(
     task_func: *mut c_void,
-    _task_name: *const core::ffi::c_char,
+    task_name: *const c_char,
     stack_depth: u32,
     param: *mut c_void,
     prio: u32,
     task_handle: *mut c_void,
     core_id: u32,
 ) -> i32 {
-    let task_name = "unused";
+    let task_name = if task_name.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(task_name).to_str().unwrap_or("")
+    };
 
     let task_func = core::mem::transmute::<*mut c_void, extern "C" fn(*mut c_void)>(task_func);
 
@@ -632,13 +640,17 @@ pub unsafe extern "C" fn task_create_pinned_to_core(
 
 pub unsafe extern "C" fn task_create(
     task_func: *mut c_void,
-    _task_name: *const core::ffi::c_char,
+    task_name: *const c_char,
     stack_depth: u32,
     param: *mut c_void,
     prio: u32,
     task_handle: *mut c_void,
 ) -> i32 {
-    let task_name = "unused";
+    let task_name = if task_name.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(task_name).to_str().unwrap_or("")
+    };
 
     let task_func = core::mem::transmute::<*mut c_void, extern "C" fn(*mut c_void)>(task_func);
 
@@ -660,11 +672,11 @@ pub unsafe extern "C" fn task_delete(task_handle: *mut c_void) {
 }
 
 pub unsafe extern "C" fn task_delay(tick: u32) {
-    crate::scheduler::suspend_me_for::<()>(Tick(tick as usize), None);
+    crate::scheduler::suspend_me_for::<()>(Tick::from_millis(tick as u64), None);
 }
 
 pub unsafe extern "C" fn task_ms_to_tick(ms: u32) -> i32 {
-    Tick::from_millis(ms as u64).0 as i32
+    ms as i32
 }
 
 pub unsafe extern "C" fn task_get_current_task() -> *mut c_void {
@@ -767,6 +779,17 @@ pub unsafe extern "C" fn event_post(
         log::warn!("Unknown event id: {}", event_id);
         return 0;
     };
+
+    // Keep the data-plane link state independent from the asynchronous event
+    // worker. The worker can be delayed by other tasklets, while the network
+    // device must stop transmitting as soon as the driver reports a link loss.
+    match event {
+        WifiEvent::StationConnected => super::WIFI_CONNECTED.store(true, Ordering::Release),
+        WifiEvent::StationDisconnected | WifiEvent::StationStop => {
+            super::WIFI_CONNECTED.store(false, Ordering::Release)
+        }
+        _ => {}
+    }
 
     let Some(payload) = super::event::EventInfo::from_wifi_event_raw(event, event_data) else {
         return 0;

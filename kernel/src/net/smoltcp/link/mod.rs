@@ -44,6 +44,24 @@ pub trait SmoltcpDevice: LinkLayer + 'static {
         iface: &mut smoltcp::iface::Interface,
         sockets: &mut smoltcp::iface::SocketSet,
     );
+
+    /// Poll with a bounded ingress budget. Devices that need to protect
+    /// latency-sensitive work, such as Wi-Fi, can override this method;
+    /// existing devices retain the original full-poll behavior by default.
+    fn poll_smoltcp_budgeted(
+        &mut self,
+        timestamp: smoltcp::time::Instant,
+        iface: &mut smoltcp::iface::Interface,
+        sockets: &mut smoltcp::iface::SocketSet,
+        _ingress_budget: usize,
+    ) {
+        self.poll_smoltcp(timestamp, iface, sockets);
+    }
+
+    /// Whether the device has a packet waiting in its software RX queue.
+    fn has_pending_rx(&self) -> bool {
+        false
+    }
 }
 
 impl dyn SmoltcpDevice {

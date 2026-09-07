@@ -56,6 +56,14 @@ if LCD
 
 endif
 
+config MAX7219
+    bool "MAX7219 LED Matrix"
+    default n
+    select SPI_CORE
+    select USE_EMBEDDED_HAL_V1
+    help
+      Enable the MAX7219 LED matrix controller.
+
 config BME280
     bool "BME280 Sensor"
     default n

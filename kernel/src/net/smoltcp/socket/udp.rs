@@ -107,7 +107,14 @@ impl PosixSocket for UdpSocket {
         self.smoltcp_interface.replace(interface.clone());
     }
 
-    fn accept(&self, _local_endpoint: IpListenEndpoint) -> SocketResult {
+    fn accept(
+        &mut self,
+        _accepted_fd: crate::net::SocketFd,
+        _local_endpoint: IpListenEndpoint,
+        _accepted_connection: Arc<crate::net::connection::Connection>,
+        _is_nonblocking: bool,
+        _ipc_reply: Arc<OperationIPCReply>,
+    ) -> crate::net::socket::AcceptResult {
         Err(SocketError::UnsupportedSocketTypeForOperation(
             SocketType::SockDgram,
             "accept()".into(),

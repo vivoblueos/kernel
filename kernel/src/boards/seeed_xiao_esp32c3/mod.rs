@@ -237,6 +237,28 @@ crate::define_bus! {
                     .flip_horizontal(),
             }
         ),
+        #[cfg(max7219)]
+        (max7219, crate::drivers::display::max7219::Max7219Config<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
+            crate::drivers::display::max7219::Max7219Config::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>::new(
+                get_device!(lcd_cs),
+                1,
+                1,
+            )
+        ),
+    ),
+    (
+        i2c_bus,
+        crate::devices::i2c_core::block_i2c::BlockI2c<blueos_driver::i2c::esp32_i2c::Esp32I2c>,
+        #[cfg(ft6336u)]
+        (ft6336u, crate::drivers::input::ft6336u::Ft6336uConfig<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin>,
+            crate::drivers::input::ft6336u::Ft6336uConfig::<blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin> {
+                rst: get_device!(touch_rst_pin),
+            }
+        ),
+        #[cfg(bme280)]
+        (bme280, crate::drivers::sensor::bme280::Bme280Config,
+            crate::drivers::sensor::bme280::Bme280Config::new(0x76)
+        ),
     ),
 }
 
@@ -267,8 +289,15 @@ fn init_spi2_bus() -> crate::drivers::Result<&'static alloc::sync::Arc<Spi2Bus>>
     }
 
     let spi2 = get_device!(spi2);
-    let block_spi = BlockSpi::new(spi2, get_device!(flash_cs), &SpiConfig::spi_flash_default())
-        .map_err(|error| match error {
+    let mut spi_config = SpiConfig::spi_flash_default();
+    #[cfg(max7219)]
+    {
+        // MAX7219 supports SPI mode 0 at up to 10 MHz. The SPI2 bus is shared,
+        // so use the lowest maximum frequency required by an attached device.
+        spi_config.baudrate = 10_000_000;
+    }
+    let block_spi =
+        BlockSpi::new(spi2, get_device!(flash_cs), &spi_config).map_err(|error| match error {
             blueos_hal::err::HalError::Timeout => crate::error::code::ETIMEDOUT,
             _ => crate::error::code::EIO,
         })?;
@@ -356,9 +385,63 @@ pub(crate) fn init_spi_bus() {
             }
         }
     }
+
+    #[cfg(max7219)]
+    {
+        if let Ok(driver) =
+            spi2_bus.probe_driver(&crate::drivers::display::max7219::Max7219DriverModule::<
+                blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+            >::new())
+        {
+            if let Err(error) = driver.init(spi2_bus) {
+                log::warn!("Failed to init MAX7219 driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe MAX7219 driver");
+        }
+    }
 }
 
-pub(crate) fn init_i2c_bus() {}
+pub(crate) fn init_i2c_bus() {
+    use crate::{
+        devices::{bus::Bus, i2c_core::block_i2c::BlockI2c},
+        drivers::InitDriver,
+    };
+    use alloc::sync::Arc;
+
+    if let Ok(block_i2c) = BlockI2c::new(get_device!(i2c0)) {
+        let i2c_bus = Arc::new(Bus::new(block_i2c));
+        for device in crate::boards::get_bus_devices!(i2c_bus) {
+            i2c_bus.register_device(device).unwrap();
+        }
+
+        #[cfg(ft6336u)]
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::input::ft6336u::Ft6336uDriverModule::<
+                blueos_driver::gpio::esp32_gpio::Esp32GpioOutputPin,
+            >::new())
+        {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize FT6336U driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe FT6336U driver");
+        }
+
+        #[cfg(bme280)]
+        if let Ok(driver) =
+            i2c_bus.probe_driver(&crate::drivers::sensor::bme280::Bme280DriverModule)
+        {
+            if let Err(error) = driver.init(&i2c_bus) {
+                log::warn!("Failed to initialize BME280 driver: {}", error);
+            }
+        } else {
+            log::warn!("Failed to probe BME280 driver");
+        }
+    } else {
+        log::warn!("Failed to initialize ESP32-C3 I2C0 bus");
+    }
+}
 
 pub(crate) fn init_gpio() {
     crate::devices::gpio::GeneralGpio::new(

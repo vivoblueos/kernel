@@ -33,9 +33,10 @@ use crate::{
     scheduler, thread,
     thread::{Entry, SystemThreadStorage, ThreadKind, ThreadNode},
 };
-use alloc::{collections::VecDeque, string::String, vec, vec::Vec};
+use alloc::{string::String, vec, vec::Vec};
 use api::*;
 use core::{
+    cell::UnsafeCell,
     mem::MaybeUninit,
     ptr::addr_of,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -96,7 +97,68 @@ pub const WIFI_PROTOCOL_11A: u32 = 16;
 pub const WIFI_PROTOCOL_11AC: u32 = 32;
 pub const WIFI_PROTOCOL_11AX: u32 = 64;
 const WIFI_RX_QUEUE_SIZE: usize = 8;
+const WIFI_TX_QUEUE_SIZE: usize = 4;
 const EVENTINFO_CHANNEL_SIZE: usize = 16;
+
+/// Single-producer/single-consumer RX queue. The producer is the Wi-Fi RX
+/// callback and the consumer is the network stack thread. Keeping ownership
+/// in the ring avoids a lock and heap allocation on the RX callback path.
+struct PacketRing<const N: usize> {
+    slots: [UnsafeCell<MaybeUninit<PacketBuffer>>; N],
+    head: AtomicUsize,
+    tail: AtomicUsize,
+}
+
+unsafe impl<const N: usize> Send for PacketRing<N> {}
+unsafe impl<const N: usize> Sync for PacketRing<N> {}
+
+impl<const N: usize> PacketRing<N> {
+    const fn new() -> Self {
+        assert!(N > 1);
+        Self {
+            slots: [const { UnsafeCell::new(MaybeUninit::uninit()) }; N],
+            head: AtomicUsize::new(0),
+            tail: AtomicUsize::new(0),
+        }
+    }
+
+    #[inline(always)]
+    fn try_push(&self, packet: PacketBuffer) -> Result<(), PacketBuffer> {
+        let head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Acquire);
+        if head.wrapping_sub(tail) >= N {
+            return Err(packet);
+        }
+
+        unsafe {
+            (*self.slots[head % N].get()).write(packet);
+        }
+        self.head.store(head.wrapping_add(1), Ordering::Release);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn pop(&self) -> Option<PacketBuffer> {
+        let tail = self.tail.load(Ordering::Relaxed);
+        let head = self.head.load(Ordering::Acquire);
+        if tail == head {
+            return None;
+        }
+
+        let packet = unsafe { (*self.slots[tail % N].get()).assume_init_read() };
+        self.tail.store(tail.wrapping_add(1), Ordering::Release);
+        Some(packet)
+    }
+
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.head.load(Ordering::Acquire) == self.tail.load(Ordering::Acquire)
+    }
+}
+
+static WIFI_RX_RING: PacketRing<WIFI_RX_QUEUE_SIZE> = PacketRing::new();
+static WIFI_TX_INFLIGHT: AtomicUsize = AtomicUsize::new(0);
+static WIFI_CONNECTED: AtomicBool = AtomicBool::new(false);
 
 #[repr(transparent)]
 pub(super) struct InternalEventSender(Sender<event::EventInfo, EVENTINFO_CHANNEL_SIZE>);
@@ -114,11 +176,6 @@ fn get_wlan_singleton() -> &'static WifiController {
     WLAN_SINGLETON.call_once(|| WifiController {
         init_done: AtomicBool::new(false),
         started: AtomicBool::new(false),
-        connected: AtomicBool::new(false),
-        tx_inflight: AtomicUsize::new(0),
-        rx_queue_size: WIFI_RX_QUEUE_SIZE,
-        tx_queue_size: 4,
-        rx_queue: spin::Mutex::new(VecDeque::new()),
     })
 }
 
@@ -129,8 +186,7 @@ pub(crate) unsafe extern "C" fn esp_wifi_tx_done_cb(
     _data_len: *mut u16,
     _tx_status: bool,
 ) {
-    get_wlan_singleton()
-        .tx_inflight
+    WIFI_TX_INFLIGHT
         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
             Some(x.saturating_sub(1))
         })
@@ -144,30 +200,14 @@ pub(crate) unsafe extern "C" fn recv_cb_sta(
     eb: *mut c_types::c_void,
 ) -> esp_err_t {
     let packet = PacketBuffer { buffer, len, eb };
-    let queued = {
-        let mut queue = get_wlan_singleton().rx_queue.lock();
-        if queue.len() < get_wlan_singleton().rx_queue_size {
-            queue.push_back(packet);
-            true
-        } else {
-            false
-        }
-    };
-
-    if queued {
-        ESP_OK as esp_err_t
-    } else {
-        ESP_ERR_NO_MEM as esp_err_t
+    match WIFI_RX_RING.try_push(packet) {
+        Ok(()) => ESP_OK as esp_err_t,
+        Err(_packet) => ESP_ERR_NO_MEM as esp_err_t,
     }
 }
 struct WifiController {
     init_done: AtomicBool,
     started: AtomicBool,
-    connected: AtomicBool,
-    tx_inflight: AtomicUsize,
-    tx_queue_size: usize,
-    rx_queue_size: usize,
-    rx_queue: spin::Mutex<VecDeque<PacketBuffer>>,
 }
 
 impl WifiController {
@@ -273,13 +313,18 @@ impl WifiController {
 
     #[inline(always)]
     fn can_send(&self) -> bool {
-        self.connected.load(Ordering::Acquire)
-            && self.tx_inflight.load(Ordering::SeqCst) < self.tx_queue_size
+        WIFI_CONNECTED.load(Ordering::Acquire)
+            && WIFI_TX_INFLIGHT.load(Ordering::Acquire) < WIFI_TX_QUEUE_SIZE
     }
 
     #[inline(always)]
     fn can_recv(&self) -> bool {
-        self.connected.load(Ordering::Acquire) && !get_wlan_singleton().rx_queue.lock().is_empty()
+        !WIFI_RX_RING.is_empty()
+    }
+
+    #[inline(always)]
+    fn has_pending_rx(&self) -> bool {
+        !WIFI_RX_RING.is_empty()
     }
 }
 
@@ -398,7 +443,7 @@ pub struct WifiRxToken {
 
 impl WifiRxToken {
     pub(crate) fn get_packet() -> Option<Self> {
-        let packet = get_wlan_singleton().rx_queue.lock().pop_front()?;
+        let packet = WIFI_RX_RING.pop()?;
         Some(Self { packet })
     }
 }
@@ -427,9 +472,15 @@ impl TxToken for WifiTxToken {
             return result;
         }
 
-        get_wlan_singleton()
-            .tx_inflight
-            .fetch_add(1, Ordering::SeqCst);
+        let reserved = WIFI_TX_INFLIGHT
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |inflight| {
+                (inflight < WIFI_TX_QUEUE_SIZE).then_some(inflight + 1)
+            })
+            .is_ok();
+        if !reserved {
+            return result;
+        }
+
         let ret = unsafe {
             esp_wifi_internal_tx(
                 wifi_interface_t_WIFI_IF_STA,
@@ -439,8 +490,7 @@ impl TxToken for WifiTxToken {
         };
 
         if ret != (ESP_OK as i32) {
-            get_wlan_singleton()
-                .tx_inflight
+            WIFI_TX_INFLIGHT
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
                     Some(x.saturating_sub(1))
                 })
@@ -466,6 +516,9 @@ impl Device for Esp32WlanLink {
         &mut self,
         _timestamp: smoltcp::time::Instant,
     ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        // Drain frames already accepted by the driver even after a link loss.
+        // This releases their RX buffers and prevents the network loop from
+        // spinning forever on a stale queue while TX remains disabled.
         if !self.controller.can_recv() {
             return None;
         }
@@ -484,6 +537,8 @@ impl Device for Esp32WlanLink {
     fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
         let mut caps = smoltcp::phy::DeviceCapabilities::default();
         caps.max_transmission_unit = self.mtu();
+        // Keep egress bursts bounded so the Wi-Fi task gets regular scheduling
+        // opportunities to service beacon reception.
         caps.max_burst_size = Some(1);
         caps.medium = SmoltcpMedium::Ethernet;
         caps
@@ -529,6 +584,28 @@ impl SmoltcpDevice for Esp32WlanLink {
 
     fn poll_smoltcp(&mut self, timestamp: Instant, iface: &mut Interface, sockets: &mut SocketSet) {
         iface.poll(timestamp, self, sockets);
+    }
+
+    fn poll_smoltcp_budgeted(
+        &mut self,
+        timestamp: Instant,
+        iface: &mut Interface,
+        sockets: &mut SocketSet,
+        ingress_budget: usize,
+    ) {
+        for _ in 0..ingress_budget {
+            if matches!(
+                iface.poll_ingress_single(timestamp, self, sockets),
+                smoltcp::iface::PollIngressSingleResult::None
+            ) {
+                break;
+            }
+        }
+        iface.poll_egress(timestamp, self, sockets);
+    }
+
+    fn has_pending_rx(&self) -> bool {
+        self.controller.has_pending_rx()
     }
 }
 
@@ -751,19 +828,17 @@ fn esp_api_adapter_init() -> Result<(), NetError> {
         while let Ok(event) = rx.recv().await {
             match event {
                 EventInfo::StationStart => {
-                    log::debug!("Wi-Fi StationStart");
+                    log::info!("WiFi StationStart");
                     // set power save mode to none when connected, otherwise the Wi-Fi will not send data after a while.
                     let ret = unsafe { esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE) };
                     if ret != (ESP_OK as i32) {
                         log::warn!("esp_wifi_set_ps failed: {}", ret);
                         break;
                     }
-                    get_wlan_singleton().connected.store(true, Ordering::SeqCst);
                 }
                 EventInfo::StationStop => {
-                    get_wlan_singleton()
-                        .connected
-                        .store(false, Ordering::SeqCst);
+                    log::info!("WiFi StationStop");
+                    WIFI_CONNECTED.store(false, Ordering::Release);
                 }
                 EventInfo::ScanDone {
                     status,
@@ -796,8 +871,50 @@ fn esp_api_adapter_init() -> Result<(), NetError> {
                         channel, authmode, aid
                     );
                 }
-                EventInfo::StationDisconnected { reason, .. } => {
-                    log::info!("WiFi StationDisconnected: reason={}", reason);
+                EventInfo::StationDisconnected {
+                    ssid,
+                    bssid,
+                    reason,
+                    rssi,
+                } => {
+                    log::warn!(
+                        "WiFi StationDisconnected: ssid={:?} bssid={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} reason={} rssi={} dBm",
+                        ssid,
+                        bssid[0],
+                        bssid[1],
+                        bssid[2],
+                        bssid[3],
+                        bssid[4],
+                        bssid[5],
+                        reason,
+                        rssi,
+                    );
+                }
+                EventInfo::StationBasicServiceSetReceivedSignalStrengthIndicatorLow {
+                    rssi,
+                } => log::warn!("WiFi BSS RSSI low: rssi={} dBm", rssi),
+                EventInfo::StationBeaconTimeout => {
+                    log::warn!("WiFi StationBeaconTimeout");
+                }
+                EventInfo::StationAuthenticationModeChange { old_mode, new_mode } => {
+                    log::warn!(
+                        "WiFi authentication mode changed: old_mode={} new_mode={}",
+                        old_mode, new_mode
+                    );
+                }
+                EventInfo::HomeChannelChange {
+                    old_chan,
+                    old_snd,
+                    new_chan,
+                    new_snd,
+                } => {
+                    log::warn!(
+                        "WiFi home channel changed: old_chan={} old_snd={} new_chan={} new_snd={}",
+                        old_chan,
+                        old_snd,
+                        new_chan,
+                        new_snd,
+                    );
                 }
                 _ => log::debug!("WiFi event: {:?}", event),
             }

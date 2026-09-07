@@ -159,11 +159,14 @@ impl SchedulerImplementation for BkScheduler {
     }
 
     fn usleep(&self, us: u32) {
-        let _ = blueos::scheduler::suspend_me_for::<()>(Tick::from_micros(us as u64), None);
+        let _ = blueos::scheduler::suspend_me_for::<()>(
+            Tick::from_micros_ceil(us as u64),
+            None,
+        );
     }
 
     fn usleep_until(&self, target: u64) {
-        let deadline = Tick::from_micros(target);
+        let deadline = Tick::from_micros_ceil(target);
         let _ = blueos::scheduler::suspend_me_until::<()>(deadline, None);
     }
 
@@ -196,7 +199,9 @@ impl WaitQueueImplementation for EspWaitQueue {
     unsafe fn wait_until(queue: WaitQueuePtr, deadline_instant: Option<u64>) {
         let this = &*(queue.as_ptr() as *const EspWaitQueue);
         let this_thread = scheduler::current_thread();
-        let deadline = deadline_instant.map(Tick::from_micros).unwrap_or(Tick::MAX);
+        let deadline = deadline_instant
+            .map(Tick::from_micros_ceil)
+            .unwrap_or(Tick::MAX);
         let mut w = this.0.irqsave_lock();
         with_iou!(|borrowed_wait_entry| {
             let mut wait_entry = WaitEntry::new(this_thread.clone());

@@ -151,7 +151,7 @@ impl NetIface {
         let SmoltcpState { iface, sockets } = &mut *state;
         if let (Some(iface), Some(sockets)) = (iface.as_mut(), sockets.as_mut()) {
             let mut smoltcp = self.link.write();
-            smoltcp.poll_smoltcp(timestamp, iface, sockets);
+            smoltcp.poll_smoltcp_budgeted(timestamp, iface, sockets, 2);
 
             // Phase 1 marker: native RX path placeholder.
             // In Phase 2, after poll(), we will:
@@ -163,11 +163,22 @@ impl NetIface {
         }
     }
 
+    /// Check whether the link has a packet queued for ingress processing.
+    pub fn has_pending_rx(&self) -> bool {
+        self.link.read().has_pending_rx()
+    }
+
     /// Poll delay from smoltcp.
     ///
     /// `poll_delay` does not need the device (only `iface.poll_delay` is
     /// called), so it is handled directly without going through LinkLayer.
     pub fn poll_delay(&self, timestamp: Instant) -> Option<smoltcp::time::Duration> {
+        // smoltcp reports no deadline for pure ingress polling. Wake the
+        // network task immediately when the link has queued a frame.
+        if self.has_pending_rx() {
+            return Some(smoltcp::time::Duration::from_millis(0));
+        }
+
         let mut smoltcp = self.smoltcp.lock();
         let SmoltcpState { iface, sockets } = &mut *smoltcp;
         if let (Some(iface), Some(sockets)) = (iface.as_mut(), sockets.as_ref()) {

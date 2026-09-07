@@ -43,6 +43,21 @@ impl Tick {
         }
     }
 
+    /// Convert microseconds to scheduler ticks, rounding up so a non-zero
+    /// timeout never becomes a zero-tick busy loop.
+    pub fn from_micros_ceil(micros: u64) -> Self {
+        if micros == 0 {
+            return Self(0);
+        }
+        match micros
+            .checked_mul(TICKS_PER_SECOND as u64)
+            .and_then(|v| v.checked_add(999_999))
+        {
+            Some(v) => Self((v / 1_000_000) as usize),
+            None => Self::MAX,
+        }
+    }
+
     pub fn as_micros(&self) -> u64 {
         (self.0 as u64 * 1_000_000) / (TICKS_PER_SECOND as u64)
     }

@@ -1027,7 +1027,16 @@ pub enum EventInfo {
 
     // we don't currently support NAN - and there is no intention right now to change that
     /// Wi-Fi home channel change, doesn't occur when scanning.
-    HomeChannelChange,
+    HomeChannelChange {
+        /// Previous primary home channel.
+        old_chan: u8,
+        /// Previous secondary channel configuration.
+        old_snd: u32,
+        /// New primary home channel.
+        new_chan: u8,
+        /// New secondary channel configuration.
+        new_snd: u32,
+    },
 }
 
 impl EventInfo {
@@ -1241,7 +1250,13 @@ impl EventInfo {
                 Some(EventInfo::BroadcastTargetWakeTimeTeardown)
             }
             WifiEvent::HomeChannelChange => {
-                Some(EventInfo::HomeChannelChange)
+                let ev = unsafe { HomeChannelChange::from_raw_event_data(payload) };
+                Some(EventInfo::HomeChannelChange {
+                    old_chan: ev.old_chan(),
+                    old_snd: ev.old_snd(),
+                    new_chan: ev.new_chan(),
+                    new_snd: ev.new_snd(),
+                })
             }
             _ => None,
         }
