@@ -176,11 +176,23 @@ pub(crate) fn init() {
             tmp & !WIFI_BT_SDIO_CLK | 0x00FB9FCF,
         );
     }
+
+    // On-chip flash: ROM unlock + capacity probe + register esp32-flash0 device.
+    // Must precede init_vfs so /dev/esp32-flash0 exists before the shell opens it.
+    #[cfg(soc_esp32c3)]
+    {
+        if let Err(e) = crate::drivers::flash::init_internal_flash() {
+            log::warn!("Failed to init internal flash: {:?}", e);
+        }
+        if let Err(e) = crate::drivers::flash::init_esp32_flash_device() {
+            log::warn!("Failed to init esp32-flash0: {:?}", e);
+        }
+    }
 }
 
 crate::define_peripheral! {
-    (console_uart, blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial,
-     blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial::new()),
+    (console_uart, blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial<0x6004_3000>,
+     blueos_driver::uart::esp32_usb_serial::Esp32UsbSerial::<0x6004_3000>::new()),
     (intc, blueos_driver::interrupt_controller::esp32_intc::Esp32Intc,
      blueos_driver::interrupt_controller::esp32_intc::Esp32Intc::new(0x600c_2000)),
     (spi2, Spi2Impl, Spi2Impl::new()),
@@ -245,6 +257,15 @@ pub const BLOCK_STORAGE_MOUNT_POINT: &str = "data";
 
 pub const BLOCK_STORAGE_POLICY: crate::boards::BlockStoragePolicy =
     crate::boards::BlockStoragePolicy::Optional;
+
+// ESP32-C3 on-chip flash and MMU layout.
+pub const LOADABLE_REGION_BASE: u32 = 0x0011_0000;
+pub const LOADABLE_REGION_SIZE: u32 = 0x002F_0000;
+pub const LOADABLE_REGION_END: u32 = LOADABLE_REGION_BASE + LOADABLE_REGION_SIZE;
+pub const IROM_VADDR_BASE: u32 = 0x4200_0000;
+pub const DROM_VADDR_BASE: u32 = 0x3C00_0000;
+pub const DROM_VADDR_END: u32 = 0x3C80_0000;
+pub const FLASH_MMU_PAGE_SIZE: u32 = 0x0001_0000;
 
 #[cfg(spi_core)]
 type Spi2Bus = crate::devices::bus::Bus<

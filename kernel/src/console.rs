@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{devices::console::get_console, support::DisableInterruptGuard};
+use crate::devices::console::get_console;
 use core::{fmt, str};
 
 #[macro_export]
@@ -58,9 +58,13 @@ pub struct EarlyConsole;
 impl fmt::Write for EarlyConsole {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         use blueos_hal::{Has8bitDataReg, HasFifo, HasLineStatusReg};
-        let _guard = DisableInterruptGuard::new();
         let uart = crate::boards::get_device!(console_uart);
         for byte in s.as_bytes() {
+            #[cfg(usb_serial)]
+            if uart.is_bus_busy() {
+                continue;
+            }
+
             while uart.is_bus_busy() {}
             uart.write_data8(*byte);
             uart.flush_tx_fifo();

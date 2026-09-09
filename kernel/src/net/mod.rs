@@ -64,7 +64,7 @@ pub(crate) fn init() {
         ));
     }
 
-    #[cfg(soc_esp32c3)]
+    #[cfg(any(soc_esp32c3, soc_esp32c6))]
     {
         let device = Arc::new(spin::RwLock::new(
             crate::net::link::esp32_wlan::Esp32WlanLink::new(),

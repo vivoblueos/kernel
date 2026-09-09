@@ -26,10 +26,17 @@ use esp_radio_rtos_driver::{
     semaphore::{SemaphoreHandle, SemaphoreKind, SemaphorePtr},
     timer::{TimerHandle, TimerPtr},
 };
-use esp_wifi_sys_esp32c3::{
+// Select the esp-wifi-sys crate per SoC: C3/C6 are same-source bindgen, API names
+// are identical, only the prebuilt .a differs (links libnet80211_c3 / libnet80211_c6
+// respectively). Unified alias esp_wifi_sys.
+use esp_wifi_sys::{
     c_types::{c_char, c_uint, c_void},
     include::{esp_event_base_t, ets_timer, timeval, OSI_FUNCS_TIME_BLOCKING},
 };
+#[cfg(soc_esp32c3)]
+use esp_wifi_sys_esp32c3 as esp_wifi_sys;
+#[cfg(soc_esp32c6)]
+use esp_wifi_sys_esp32c6 as esp_wifi_sys;
 
 // #define ESP_EVENT_DEFINE_BASE(id) esp_event_base_t id = #id
 #[unsafe(no_mangle)]
@@ -89,8 +96,13 @@ pub(super) fn random_u32() -> u32 {
 }
 
 pub(super) fn random_internal(data: &mut [u8]) {
-    use blueos_driver::rng::esp32c3_rng::Esp32c3Rng;
-    static RNG: SpinLock<Esp32c3Rng> = SpinLock::new(Esp32c3Rng::new());
+    // Select the hardware RNG per SoC: C3/C6 have different base addresses but the
+    // same read_one()->u32 interface.
+    #[cfg(soc_esp32c3)]
+    use blueos_driver::rng::esp32c3_rng::Esp32c3Rng as Esp32Rng;
+    #[cfg(soc_esp32c6)]
+    use blueos_driver::rng::esp32c6_rng::Esp32c6Rng as Esp32Rng;
+    static RNG: SpinLock<Esp32Rng> = SpinLock::new(Esp32Rng::new());
 
     let wait_timer_cycles = 16_000_000 * 32 / 80_000_000;
     let until_tick = time::Tick::after(time::Tick(wait_timer_cycles));
@@ -144,7 +156,14 @@ impl Handler {
 
 pub static ISR_INTERRUPT_1: Handler = Handler::new();
 
+// Interrupt descriptors for the two WiFi peripheral sources (WIFI_PWR source=2,
+// WIFI_MAC source=0), both aggregated into CPU intr 1. On C3, set_isr enables
+// these two sources via the intc device's enable_irq; C6 uses raw registers
+// (see the cfg(soc_esp32c6) branch of set_isr) and does not reference these two
+// constants, so they are C3-only.
+#[cfg(soc_esp32c3)]
 static WIFI_PWR_INTERRUPT: Interrupt = Interrupt::new(2, 1);
+#[cfg(soc_esp32c3)]
 static WIFI_MAC_INTERRUPT: Interrupt = Interrupt::new(0, 1);
 
 pub unsafe extern "C" fn env_is_chip() -> bool {
@@ -152,32 +171,164 @@ pub unsafe extern "C" fn env_is_chip() -> bool {
 }
 
 pub unsafe extern "C" fn set_intr(cpu_no: i32, intr_source: u32, intr_num: u32, intr_prio: i32) {
-    let intr = Interrupt::new(intr_source as _, intr_num as _);
-    get_device!(intc).allocate_irq(intr);
-    get_device!(intc).set_priority(intr, intr_prio as _);
+    #[cfg(soc_esp32c3)]
+    {
+        // C3: goes through the INTC core0 device abstraction (0x600C_2000);
+        // allocate_irq maps the peripheral source to a CPU intr, then sets priority.
+        // Interrupt field semantics: source_no = peripheral source number,
+        // irq_no = CPU interrupt number.
+        let intr = Interrupt::new(intr_source as _, intr_num as _);
+        get_device!(intc).allocate_irq(intr);
+        get_device!(intc).set_priority(intr, intr_prio as _);
+    }
+    #[cfg(soc_esp32c6)]
+    {
+        // C6: no intc device abstraction, uses raw registers (INTMTX + PLIC_MX),
+        // equivalent to the board's route_source. libnet80211 calls this callback
+        // with (intr_source, intr_num, intr_prio) in the same semantics as C3:
+        //   intr_source = peripheral source number (WIFI_MAC=0 / WIFI_PWR=2, see esp-idf interrupts.h)
+        //   intr_num    = target CPU interrupt number (libnet80211 aggregates to a single line)
+        //   intr_prio   = priority (0=disabled, 1..15 valid)
+        let _ = cpu_no;
+        // INTMTX mapping register layout = INTMTX_BASE + source*4 (same pattern as
+        // C3 INTC; cross-verified with two examples: USB_SERIAL_JTAG source48→+0xC0,
+        // SYSTIMER_TARGET0 source57→+0xE4).
+        const INTMTX_BASE: usize = 0x6001_0000;
+        // PLIC_MX (machine external interrupt) register layout (see C6 board mod.rs:87-93):
+        //   ENABLE @ +0x00, bit semantics = 1 << line
+        //   TYPE   @ +0x04, clear the bit to set level-triggered
+        //   PRI    @ +0x10, PRI[line] @ PRI + line*4 (note: starts from line 0, not line-1 like C3)
+        const PLIC_MX_BASE: usize = 0x2000_1000;
+        const PLIC_MX_TYPE: usize = PLIC_MX_BASE + 0x04;
+        const PLIC_MX_PRI: usize = PLIC_MX_BASE + 0x10;
+        const PLIC_MX_ENABLE: usize = PLIC_MX_BASE + 0x00;
+
+        let map_reg = INTMTX_BASE + (intr_source as usize) * 4;
+        let line = intr_num as usize;
+        // Temporarily disable mie to prevent spurious triggers during routing
+        // (same style as the board's route_source).
+        let mut mie: usize;
+        core::arch::asm!(
+            "csrr {mie}, mie",
+            "csrw mie, zero",
+            mie = out(reg) mie,
+            options(nostack, preserves_flags),
+        );
+        // 1) INTMTX: map the peripheral source to the CPU intr line (write the target line number).
+        core::ptr::write_volatile(map_reg as *mut u32, line as u32);
+        // 2) PLIC_MX_TYPE: clear the bit → level-triggered (C6 WiFi interrupt is level-triggered).
+        let t = core::ptr::read_volatile(PLIC_MX_TYPE as *const u32);
+        core::ptr::write_volatile(PLIC_MX_TYPE as *mut u32, t & !(1u32 << line));
+        // 3) PLIC_MX_PRI[line]: set priority (low 4 bits valid).
+        core::ptr::write_volatile(
+            (PLIC_MX_PRI + line * 4) as *mut u32,
+            (intr_prio as u32) & 0xF,
+        );
+        // 4) PLIC_MX_ENABLE: enable this line.
+        let en = core::ptr::read_volatile(PLIC_MX_ENABLE as *const u32);
+        core::ptr::write_volatile(PLIC_MX_ENABLE as *mut u32, en | (1u32 << line));
+        // Restore mie and set the enable bit for this line + the standard MEIE (bit11)
+        // aggregate master gate. esp-hal does `csrw mie, u32::MAX` in _setup_interrupts
+        // (esp-hal-1.1.1 src/interrupt/riscv.rs:554), enabling both MEIE and per-line
+        // bits. If C6's mie aggregates external interrupts via MEIP, setting only the
+        // per-line bit without MEIE would prevent the interrupt from reaching the trap.
+        // [BISECT-ROUND2] MEIE (bit11) temporarily dropped to test whether it
+        // is the WiFi-interrupt root cause. Restore `| (1usize << 11)` after.
+        mie |= 1usize << line;
+        core::arch::asm!("fence io, io", options(nostack, preserves_flags));
+        core::arch::asm!(
+            "csrw mie, {mie}",
+            mie = in(reg) mie,
+            options(nostack, preserves_flags),
+        );
+        // [diag] mie value after routing — confirm whether the line={line} bit (1<<{line}) was set.
+        let mie_after: usize;
+        core::arch::asm!(
+            "csrr {mie}, mie",
+            mie = out(reg) mie_after,
+            options(nostack, preserves_flags),
+        );
+        log::info!(
+            "[diag] set_intr(src={intr_source}, line={intr_num}, prio={intr_prio}) mie_after=0x{mie_after:x}"
+        );
+    }
 }
 
 /// Don't support
 pub unsafe extern "C" fn clear_intr(intr_source: u32, intr_num: u32) {}
 
 pub unsafe extern "C" fn set_isr(n: i32, f: *mut c_void, arg: *mut c_void) {
+    // [diag] Confirm whether libnet80211 calls this callback + the mie value at call time
+    // (check whether the WiFi line1 enable bit is already set).
+    let mie_before: usize;
+    core::arch::asm!(
+        "csrr {mie}, mie",
+        mie = out(reg) mie_before,
+        options(nostack, preserves_flags),
+    );
+    log::info!("[diag] set_isr(n={n}, f={f:p}, arg={arg:p}) mie_before=0x{mie_before:x}");
     match n {
         0 | 1 => ISR_INTERRUPT_1.set(f, arg),
         _ => panic!("set_isr - unsupported interrupt number {}", n),
     }
 
-    get_device!(intc).enable_irq(WIFI_PWR_INTERRUPT);
-    get_device!(intc).enable_irq(WIFI_MAC_INTERRUPT);
+    // After registering the ISR, enable the two WiFi interrupt sources
+    // (WIFI_PWR source=2, WIFI_MAC source=0, both aggregated into CPU intr 1;
+    // see the WIFI_PWR/MAC_INTERRUPT constant definitions above).
+    #[cfg(soc_esp32c3)]
+    {
+        get_device!(intc).enable_irq(WIFI_PWR_INTERRUPT);
+        get_device!(intc).enable_irq(WIFI_MAC_INTERRUPT);
+    }
+    #[cfg(soc_esp32c6)]
+    {
+        // C6 has no intc device; WiFi source routing is done by libnet80211 calling
+        // set_intr first (see above), here we only add the CPU intr line enable (1<<1),
+        // same semantics as ints_on but avoiding dependence on libnet80211's later
+        // ints_on timing — ready immediately at set_isr time.
+        // Note: the WIFI_PWR/MAC_INTERRUPT constants (source=2/0, irq=1) are still
+        // kept on C6 to record the mapping; their irq_no=1 is the line for
+        // ISR_INTERRUPT_1.
+        const PLIC_MX_ENABLE: usize = 0x2000_1000;
+        let en = core::ptr::read_volatile(PLIC_MX_ENABLE as *const u32);
+        core::ptr::write_volatile(PLIC_MX_ENABLE as *mut u32, en | (1u32 << 1));
+    }
 }
 
+// libnet80211 enables/masks the CPU external interrupt bits used by WiFi via
+// ints_on/ints_off. The mask semantics are identical on both chips:
+// mask = 1 << cpu_intr_num, OR to enable, AND-NOT to mask.
+// Only the CPU interrupt enable register address differs:
+//   C3 = INTERRUPT_CORE0_CPU_INT_ENABLE_REG @ 0x600C2104 (INTC core0 domain)
+//   C6 = PLIC_MXINT_ENABLE_REG              @ 0x20001000 (PLIC_MX domain, RISC-V PLIC)
+// Source esp-idf: components/soc/esp32c6/register/soc/reg_base.h:7 + plic_reg.h:20.
 pub unsafe extern "C" fn ints_on(mask: u32) {
-    let tmp = core::ptr::read_volatile(0x600C2104 as *const u32);
-    core::ptr::write_volatile(0x600C2104 as *mut u32, tmp | mask);
+    #[cfg(soc_esp32c3)]
+    const INT_ENABLE_REG: usize = 0x600C2104;
+    #[cfg(soc_esp32c6)]
+    const INT_ENABLE_REG: usize = 0x20001000;
+    // [diag] Confirm the CPU interrupt bit mask the driver enables + mie before the call.
+    // mask = 1 << cpu_intr_num; WiFi expects mask=0x2 (line1); if not 0x2, the driver
+    // routed WiFi to a line other than line1, which does not match set_isr's
+    // ISR_INTERRUPT_1 (line1) → never reaches the trap.
+    let mie_before: usize;
+    core::arch::asm!(
+        "csrr {mie}, mie",
+        mie = out(reg) mie_before,
+        options(nostack, preserves_flags),
+    );
+    log::info!("[diag] ints_on(mask=0x{mask:x}) mie_before=0x{mie_before:x}");
+    let tmp = core::ptr::read_volatile(INT_ENABLE_REG as *const u32);
+    core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, tmp | mask);
 }
 
 pub unsafe extern "C" fn ints_off(mask: u32) {
-    let tmp = core::ptr::read_volatile(0x600C2104 as *const u32);
-    core::ptr::write_volatile(0x600C2104 as *mut u32, tmp & !mask);
+    #[cfg(soc_esp32c3)]
+    const INT_ENABLE_REG: usize = 0x600C2104;
+    #[cfg(soc_esp32c6)]
+    const INT_ENABLE_REG: usize = 0x20001000;
+    let tmp = core::ptr::read_volatile(INT_ENABLE_REG as *const u32);
+    core::ptr::write_volatile(INT_ENABLE_REG as *mut u32, tmp & !mask);
 }
 
 pub unsafe extern "C" fn is_from_isr() -> bool {
@@ -656,9 +807,17 @@ pub unsafe extern "C" fn wifi_apb80m_request() {}
 /// no-op
 pub unsafe extern "C" fn wifi_apb80m_release() {}
 
+// The C3 SYSTEM-domain clock constants/statics below are legacy dead code (no
+// references; the live path goes through the esp_phy module). C6's WiFi clock is
+// in the MODEM_SYSCON domain (0x600A_9800) with no single-register equivalent, so
+// these are C3-only.
+#[cfg(soc_esp32c3)]
 const SYSTEM_WIFI_CLK_WIFI_BT_COMMON_M: u32 = 0x78078F;
+#[cfg(soc_esp32c3)]
 static PHY_CLK_REF: AtomicU32 = AtomicU32::new(0);
+#[cfg(soc_esp32c3)]
 static PHY_CLK_LOCK: SpinLock<()> = SpinLock::new(());
+#[cfg(soc_esp32c3)]
 const WIFI_CLK_EN_REG_ADDRESS: usize = 0x60026014;
 
 pub unsafe extern "C" fn phy_disable() {
@@ -666,7 +825,23 @@ pub unsafe extern "C" fn phy_disable() {
 }
 
 pub unsafe extern "C" fn phy_enable() {
+    // [diag] Confirm whether libnet80211 calls this callback + the PHY calibration result.
+    // Note: DataCheckFailed is a normal first-boot phenomenon, not the root cause — BlueOS
+    // never persists calibration data (libphy.a has no store/load_cal_data_to_nvs symbol,
+    // nor does it call set_phy_calibration_data), so the calibration buffer is all zeros
+    // on every boot and the checksum necessarily fails. register_chipv7_phy still runs the
+    // RF calibration and configures PHY (the return code only means "the supplied old data
+    // was invalid"), and calibrated is still set to true.
+    // Cross-check: C3 takes the exact same path yet can scan, proving DataCheckFailed is
+    // not fatal. What actually needs checking is whether set_isr/set_intr/ints_on are
+    // reached by the driver and whether mie line1 is set.
+    log::info!("[diag] phy_enable callback invoked");
     core::mem::forget(esp_phy::enable_phy());
+    if let Some(result) = esp_phy::last_calibration_result() {
+        log::info!("[diag] phy calibration result: {:?}", result);
+    } else {
+        log::warn!("[diag] phy not calibrated (last_calibration_result=None)");
+    }
 }
 
 // no-support
@@ -675,7 +850,11 @@ pub unsafe extern "C" fn phy_update_country_info(_country: *const core::ffi::c_c
 }
 
 pub unsafe extern "C" fn read_mac(mac_out: *mut u8, type_: u32) -> i32 {
+    // Select the eFuse MAC reader per SoC: C3/C6 EFUSE base addresses differ, field layout is the same.
+    #[cfg(soc_esp32c3)]
     let mac = blueos_driver::hwinfo::esp32c3::mac();
+    #[cfg(soc_esp32c6)]
+    let mac = blueos_driver::hwinfo::esp32c6::mac();
     match type_ {
         0 => {
             // Station
@@ -774,18 +953,31 @@ pub unsafe extern "C" fn ets_timer_arm_us(ptimer: *mut c_void, us: u32, repeat: 
     timer.arm(us as u64, repeat);
 }
 
+// WiFi MAC reset: set the reset bit to 1 then clear to 0 (pulse); the protocol is
+// identical on both chips, only the register address / bit number differs.
+//   C3: APB_CTRL_WIFI_RST_EN_REG @ 0x60026018, bit SYSTEM_WIFIMAC_RST = BIT(2)
+//       (SYSTEM domain, esp-idf syscon_reg.h:201)
+//   C6: MODEM_SYSCON_MODEM_RST_CONF_REG @ 0x600A9810, bit RST_WIFIMAC = BIT(10)
+//       (MODEM_SYSCON domain, esp-idf modem_syscon_reg.h:190,199-202; C6 has no SYSTEM-domain WiFi reset)
 pub unsafe extern "C" fn wifi_reset_mac() {
-    const APB_CTRL_BASE: usize = 0x6002_6000;
-    const WIFI_RST_EN: *mut u32 = (APB_CTRL_BASE + 0x18) as *mut u32;
-    const MAC_RST: u32 = 1 << 2;
-
-    // set_bit()
-    let value = core::ptr::read_volatile(WIFI_RST_EN);
-    core::ptr::write_volatile(WIFI_RST_EN, value | MAC_RST);
-
-    // clear_bit()
-    let value = core::ptr::read_volatile(WIFI_RST_EN);
-    core::ptr::write_volatile(WIFI_RST_EN, value & !MAC_RST);
+    #[cfg(soc_esp32c3)]
+    {
+        const WIFI_RST_EN: *mut u32 = 0x6002_6018 as *mut u32;
+        const MAC_RST: u32 = 1 << 2;
+        let value = core::ptr::read_volatile(WIFI_RST_EN);
+        core::ptr::write_volatile(WIFI_RST_EN, value | MAC_RST);
+        let value = core::ptr::read_volatile(WIFI_RST_EN);
+        core::ptr::write_volatile(WIFI_RST_EN, value & !MAC_RST);
+    }
+    #[cfg(soc_esp32c6)]
+    {
+        const MODEM_RST_CONF: *mut u32 = 0x600A_9810 as *mut u32;
+        const RST_WIFIMAC: u32 = 1 << 10;
+        let value = core::ptr::read_volatile(MODEM_RST_CONF);
+        core::ptr::write_volatile(MODEM_RST_CONF, value | RST_WIFIMAC);
+        let value = core::ptr::read_volatile(MODEM_RST_CONF);
+        core::ptr::write_volatile(MODEM_RST_CONF, value & !RST_WIFIMAC);
+    }
 }
 
 /// no-op

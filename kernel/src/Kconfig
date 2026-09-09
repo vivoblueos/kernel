@@ -41,6 +41,10 @@ config SERIAL_TX_FIFO_SIZE
     default 256
     int "The serial tx fifo size"
 
+config USB_SERIAL
+    default n
+    bool "Use USB-Serial-JTAG as the console"
+
 config THREAD_STATS
     default n
     bool "Enable statistics of thread"

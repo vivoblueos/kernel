@@ -82,6 +82,16 @@ pub static TTY_SERIAL: Serial = Serial {
 
 impl Serial {
     pub fn send_bytes(&self, bytes: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
+        // FIXME: USB-Serial-JTAG has no transmit consumer until the host enumerates
+        // the device. Do not fill the software ring in that state: a later blocking
+        // write would otherwise wait forever for a TX interrupt that can never make
+        // progress. This is a temporary workaround until the USB-Serial-JTAG driver
+        // is ready to handle TX flow control and/or blocking writes in the absence of a host.
+        #[cfg(usb_serial)]
+        if self.dev.is_bus_busy() {
+            return Ok(bytes.len());
+        }
+
         if is_in_irq() || !is_schedule_ready() {
             // Caution: logging in IRQ context can extend interrupt-off latency.
             //
@@ -157,36 +167,46 @@ impl Serial {
 
     pub fn read_bytes(&self, bytes: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind> {
         let mut nbytes = 0;
-        for byte in bytes {
-            loop {
-                if let Some(c) = self.get_char() {
-                    *byte = c;
-                    nbytes += 1;
-                    break;
-                }
-                if is_nonblocking {
-                    return Ok(nbytes);
-                }
-
-                if !is_schedule_ready() {
-                    continue;
-                }
-
-                // `rx_futex` is used as a sequence counter. Waiting on a captured sequence
-                // value avoids lost wakeups between empty-check and wait enqueue.
-                let rx_seq = self.rx_futex.load(Ordering::Acquire);
-
-                if let Some(c) = self.get_char() {
-                    *byte = c;
-                    nbytes += 1;
-                    break;
-                }
-
-                match atomic_wait(&self.rx_futex, rx_seq, Tick::MAX) {
-                    Ok(()) | Err(code::EAGAIN) => {}
-                    Err(code::ETIMEDOUT) => return Err(ErrorKind::TimedOut),
-                    Err(_) => return Err(ErrorKind::Other),
-                }
+        // POSIX read semantics: return as soon as at least 1 byte is read; the
+        // whole buf need not be filled.
+        // Historical root cause: the f25145f refactor once rewrote this as
+        // `for byte in bytes { block to fill each slot }`, so blocking mode had to
+        // fill bytes.len() (n_tty passes 512) before returning — shell input was
+        // never echoed. Now restored to the pre-refactor fifo_rx semantics: block
+        // while the first byte has not arrived, then non-blockingly drain the FIFO
+        // until empty and return nbytes>=1.
+        while nbytes < bytes.len() {
+            // 1) Non-blocking attempt: drain bytes already present in the RX ring.
+            if let Some(c) = self.get_char() {
+                bytes[nbytes] = c;
+                nbytes += 1;
+                continue;
+            }
+            // 2) FIFO empty:
+            //    - non-blocking mode: return immediately (may be 0 bytes, valid).
+            //    - blocking mode: if >=1 byte already taken, return per POSIX;
+            //      otherwise block waiting for the first byte.
+            if is_nonblocking {
+                return Ok(nbytes);
+            }
+            if nbytes > 0 {
+                return Ok(nbytes);
+            }
+            // Blocking and no byte taken yet: use `rx_futex` as a sequence number,
+            // capture its current value then wait, to avoid a lost wakeup between
+            // the "empty check" and the "enqueue wakeup".
+            let rx_seq = self.rx_futex.load(Ordering::Acquire);
+            // Re-check after wake: get_char may have already been enqueued by the
+            // ISR between capture and wait; if so, take it to skip a redundant wait.
+            if let Some(c) = self.get_char() {
+                bytes[nbytes] = c;
+                nbytes += 1;
+                continue;
+            }
+            match atomic_wait(&self.rx_futex, rx_seq, Tick::MAX) {
+                Ok(()) | Err(code::EAGAIN) => {}
+                Err(code::ETIMEDOUT) => return Err(ErrorKind::TimedOut),
+                Err(_) => return Err(ErrorKind::Other),
             }
         }
         Ok(nbytes)

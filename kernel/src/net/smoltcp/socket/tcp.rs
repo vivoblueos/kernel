@@ -16,8 +16,8 @@ use crate::net::{
     connection::{Operation, OperationIPCReply, OperationResult},
     net_manager::NetworkManager,
     socket::{
-        socket_err::SocketError, socket_waker, FnRecv, FnRecvWithEndpoint, FnSend, FnSendMsg,
-        PosixSocket,
+        socket_err::SocketError, socket_waker, AcceptResult, AcceptedSocket, FnRecv,
+        FnRecvWithEndpoint, FnSend, FnSendMsg, PosixSocket,
     },
     SocketDomain, SocketFd, SocketProtocol, SocketResult, SocketType,
 };
@@ -83,19 +83,52 @@ impl TcpSocket {
         }
     }
 
-    pub fn with<F>(&mut self, f: F) -> SocketResult
+    pub fn with<F, R>(&mut self, f: F) -> Result<R, SocketError>
     where
-        F: FnOnce(&mut tcp::Socket<'static>, &mut Interface) -> SocketResult,
+        F: FnOnce(&mut tcp::Socket<'static>, &mut Interface) -> Result<R, SocketError>,
     {
         match &self.smoltcp_interface {
             Some(iface) => {
                 let handle = self
                     .smoltcp_socket_handle
                     .ok_or(SocketError::InvalidHandle)?;
-                iface.with_socket::<tcp::Socket<'static>, F, usize>(handle, f)
+                iface.with_socket::<tcp::Socket<'static>, F, R>(handle, f)
             }
             None => Err(SocketError::InterfaceNoAvailable),
         }
+    }
+
+    fn wait_for_accept(
+        &mut self,
+        accepted_fd: SocketFd,
+        local_endpoint: IpListenEndpoint,
+        accepted_connection: Arc<crate::net::connection::Connection>,
+        is_nonblocking: bool,
+        ipc_reply: Arc<OperationIPCReply>,
+    ) -> AcceptResult {
+        if is_nonblocking {
+            return Err(SocketError::TryAgain);
+        }
+
+        let accept_operation = Operation::Accept {
+            socket_fd: self.socket_fd,
+            accepted_fd,
+            local_endpoint,
+            accepted_connection,
+            is_nonblocking,
+            ipc_reply: ipc_reply.clone(),
+        };
+        let waker = socket_waker::create_closure_waker(
+            "TCP accept()".into(),
+            Some(accept_operation),
+            self.is_shutdown.clone(),
+        );
+        self.with(|socket, _| {
+            socket.register_recv_waker(&waker);
+            Ok(())
+        })?;
+
+        Err(SocketError::WouldBlock)
     }
 }
 
@@ -105,11 +138,90 @@ impl PosixSocket for TcpSocket {
         self.smoltcp_interface.replace(interface.clone());
     }
 
-    fn accept(&self, _local_endpoint: IpListenEndpoint) -> SocketResult {
-        Err(SocketError::UnsupportedSocketTypeForOperation(
-            SocketType::SockStream,
-            "use listen() for each connection".into(),
-        ))
+    fn accept(
+        &mut self,
+        accepted_fd: SocketFd,
+        local_endpoint: IpListenEndpoint,
+        accepted_connection: Arc<crate::net::connection::Connection>,
+        is_nonblocking: bool,
+        ipc_reply: Arc<OperationIPCReply>,
+    ) -> AcceptResult {
+        let (state, local_endpoint_connected, remote_endpoint) = self.with(|socket, _| {
+            Ok((
+                socket.state(),
+                socket.local_endpoint(),
+                socket.remote_endpoint(),
+            ))
+        })?;
+
+        match state {
+            State::Listen | State::SynReceived => {
+                return self.wait_for_accept(
+                    accepted_fd,
+                    local_endpoint,
+                    accepted_connection,
+                    is_nonblocking,
+                    ipc_reply,
+                );
+            }
+            State::Established | State::CloseWait => {}
+            _ => {
+                return Err(SocketError::InvalidState(format!(
+                    "TCP state[{}] cannot accept a connection",
+                    state
+                )));
+            }
+        }
+
+        let remote_endpoint = remote_endpoint.ok_or_else(|| {
+            SocketError::InvalidState("accepted socket has no remote endpoint".into())
+        })?;
+        let local_endpoint_connected = local_endpoint_connected.ok_or_else(|| {
+            SocketError::InvalidState("accepted socket has no local endpoint".into())
+        })?;
+        let interface = self
+            .smoltcp_interface
+            .clone()
+            .ok_or(SocketError::InterfaceNoAvailable)?;
+        let old_handle = self
+            .smoltcp_socket_handle
+            .take()
+            .ok_or(SocketError::InvalidHandle)?;
+
+        // The established handle becomes the accepted socket. The listening fd gets
+        // a fresh handle so it remains usable for the next connection.
+        let new_listener_handle = match self.create_smoltcp_socket() {
+            Some(handle) => handle,
+            None => {
+                self.smoltcp_socket_handle = Some(old_handle);
+                return Err(SocketError::CreateSmoltcpSocketFail);
+            }
+        };
+
+        let listen_result = self.with(|socket, _| {
+            socket
+                .listen(local_endpoint)
+                .map_err(SocketError::SmoltcpTcpListenError)
+        });
+        if let Err(error) = listen_result {
+            interface.remove_socket(new_listener_handle);
+            self.smoltcp_socket_handle = Some(old_handle);
+            return Err(error);
+        }
+
+        let mut accepted_socket = TcpSocket::new(
+            self.network_manager.clone(),
+            accepted_fd,
+            self.socket_domain,
+        );
+        accepted_socket.smoltcp_interface = Some(interface);
+        accepted_socket.smoltcp_socket_handle = Some(old_handle);
+
+        Ok(AcceptedSocket {
+            socket: Rc::new(RefCell::new(accepted_socket)),
+            local_endpoint: local_endpoint_connected,
+            remote_endpoint,
+        })
     }
 
     // TCP bind() : TCP Server side method, create smoltcp socket for tcp server
@@ -177,11 +289,7 @@ impl PosixSocket for TcpSocket {
             }
 
             match socket.state() {
-                State::SynSent
-                | State::SynReceived
-                | State::Listen
-                | State::CloseWait
-                | State::Established => {
+                State::SynSent | State::SynReceived | State::CloseWait | State::Established => {
                     if !is_nonblocking {
                         let wait_operation = Operation::Send {
                             socket_fd,
@@ -267,8 +375,7 @@ impl PosixSocket for TcpSocket {
                     log::debug!("{}", msg);
                     Ok(0)
                 }
-                State::SynSent | State::SynReceived | State::Established | State::Listen => {
-                    // FIXME: Treating Listen state as Established temporarily, since accept() is not implemented yet
+                State::SynSent | State::SynReceived | State::Established => {
                     if is_nonblocking {
                         // O_NONBLOCK is set, so return immediately without blocking
                         Err(SocketError::TryAgain)

@@ -1,5 +1,6 @@
-/* This code is derived from
- * https://github.com/esp-rs/esp-hal/tree/main/esp-hal/ld/esp32c3
+/* This code is derived from esp-hal's esp32c6 link script
+ * (https://github.com/esp-rs/esp-hal/tree/main/esp-hal/ld/esp32c6) and the
+ * seeed_xiao_esp32c3 link.x in this repo.
  * Copyright 2021 esp-rs
  * License: Apache-2.0 OR MIT
  */
@@ -7,57 +8,58 @@
 OUTPUT_ARCH("riscv")
 ENTRY(_start)
 
-INCLUDE "rom/esp32c3.rom.ld"
-
 MEMORY
 {
     /*
-        https://github.com/espressif/esptool/blob/ed64d20b051d05f3f522bacc6a786098b562d4b8/esptool/targets/esp32c3.py#L78-L90
-        MEMORY_MAP = [[0x00000000, 0x00010000, "PADDING"],
-                  [0x3C000000, 0x3C800000, "DROM"],
-                  [0x3FC80000, 0x3FCE0000, "DRAM"],
-                  [0x3FC88000, 0x3FD00000, "BYTE_ACCESSIBLE"],
-                  [0x3FF00000, 0x3FF20000, "DROM_MASK"],
-                  [0x40000000, 0x40060000, "IROM_MASK"],
-                  [0x42000000, 0x42800000, "IROM"],
-                  [0x4037C000, 0x403E0000, "IRAM"],
-                  [0x50000000, 0x50002000, "RTC_IRAM"],
-                  [0x50000000, 0x50002000, "RTC_DRAM"],
-                  [0x600FE000, 0x60100000, "MEM_INTERNAL2"]]
+        C6 memory map (from external/vendor/esp-hal-1.1.1/ld/esp32c6/memory.x):
+        - A single HP RAM segment (no C3-style IRAM/DRAM split): both code and
+          data live in RAM, so RWTEXT and RWDATA alias the same region.
+        - RTC_FAST is 16K on C6 (C3 had 8K).
+
+        esptool C6 MEMORY_MAP (for reference):
+          DROM  0x42800000
+          DRAM  0x40800000
+          IROM  0x42000000
+          RTC_IRAM/RTC_DRAM 0x50000000
     */
 
-    ICACHE : ORIGIN = 0x4037C000,  LENGTH = 0x4000
-    /* Instruction RAM */
-    IRAM : ORIGIN = 0x4037C000 + 0x4000, LENGTH = 313K - 0x4000
-    /* Data RAM */
-    DRAM : ORIGIN = 0x3FC80000, LENGTH = 313K
-    
-    /* memory available after the 2nd stage bootloader is finished */
-    dram2_seg ( RW )       : ORIGIN = ORIGIN(DRAM) + LENGTH(DRAM), len = 0x3fcde710 - (ORIGIN(DRAM) + LENGTH(DRAM))
+    /* Unified HP RAM: executable + readable + writable */
+    RAM : ORIGIN = 0x40800000, LENGTH = 0x6E610
 
-    /* External flash
+    /* External flash.
 
      The 0x20 offset is a convenience for the app binary image generation.
      Flash cache has 64KB pages. The .bin file which is flashed to the chip
      has a 0x18 byte file header, and each segment has a 0x08 byte segment
      header. Setting this offset makes it simple to meet the flash cache MMU's
      constraint that (paddr % 64KB == vaddr % 64KB).)
-    */    
+    */
 
-    /* Instruction ROM */
-    IROM : ORIGIN =   0x42000000 + 0x20, LENGTH = 0x400000 - 0x20
-    /* Data ROM */
-    DROM (rxai!w) : ORIGIN = 0x3C000000 + 0x20, LENGTH = 0x400000 - 0x20
+    /* On C6 the bootloader maps a single flash window at 0x42000000 for both
+       code and rodata (unlike C3, where DROM 0x3C000000 < IROM 0x42000000 are
+       separate windows). esptool writes image segments in ascending vaddr
+       order, and the bootloader requires the app description to be the first
+       segment after the image header. With two regions (IROM 0x42000000,
+       DROM 0x42800000) the .text segment ends up before .rodata_desc and the
+       app_desc magic is no longer at the start of the partition, producing
+       "Failed to fetch app description header" / "not bootable".
+
+       The fix mirrors upstream esp-hal (esp32c6/memory.x): a single ROM region
+       aliased to both ROTEXT and RODATA, with .rotext_dummy reserving the
+       rodata footprint inside it so the two do not overlap. */
+    ROM : ORIGIN = 0x42000000 + 0x20, LENGTH = 0x400000 - 0x20
 
     /* RTC fast memory (executable). Persists over deep sleep. */
-    RTC_FAST : ORIGIN = 0x50000000, LENGTH = 0x2000 /*- ESP_BOOTLOADER_RESERVE_RTC*/    
+    RTC_FAST : ORIGIN = 0x50000000, LENGTH = 0x4000
 }
 
-REGION_ALIAS("ROTEXT", IROM);
-REGION_ALIAS("RODATA", DROM);
+/* C6 maps code and rodata into one flash window: ROTEXT and RODATA share ROM. */
+REGION_ALIAS("ROTEXT", ROM);
+REGION_ALIAS("RODATA", ROM);
 
-REGION_ALIAS("RWDATA", DRAM);
-REGION_ALIAS("RWTEXT", IRAM);
+/* C6 has a single HP RAM region used for both code and data. */
+REGION_ALIAS("RWDATA", RAM);
+REGION_ALIAS("RWTEXT", RAM);
 
 REGION_ALIAS("RTC_FAST_RWTEXT", RTC_FAST);
 REGION_ALIAS("RTC_FAST_RWDATA", RTC_FAST);
@@ -77,32 +79,14 @@ SECTIONS {
     /* unconditionally add patched SPI-flash ROM functions (from esp-rom-sys) - the linker is still happy if there are none */
     *:esp_rom_spiflash.*(.literal .literal.* .text .text.*)
     . = ALIGN(4);
-  } > RWTEXT
-
-  .rwtext.wifi :
-  {
-    . = ALIGN(4);
-    *( .wifi0iram  .wifi0iram.*)
-    *( .wifirxiram  .wifirxiram.*)
-    *( .wifislprxiram  .wifislprxiram.*)
-    *( .wifislpiram  .wifislpiram.*)
-    *( .phyiram  .phyiram.*)
-    *( .iram1  .iram1.*)
-    *( .wifiextrairam.* )
-    *( .coexiram.* )
-    /* Precompiled WiFi blob functions that use GP-relative addressing need to run
-       in IRAM, close to __global_pointer$ (in DRAM), because their rodata constants
-       end up in DROM at >4KB distance from GP, causing R_RISCV_GPREL_I overflow. */
-    *libpp.a:pm_beacon_offset.o(.text .text.* .literal .literal.*)
-    . = ALIGN(4);
 
     _rwtext_len = . - ORIGIN(RWTEXT);
   } > RWTEXT
 
-  .rwdata_dummy (NOLOAD) : ALIGN(4)
-  {
-    . = . + SIZEOF(.rwtext) + SIZEOF(.rwtext.wifi) + SIZEOF(.trap);
-  } > RWDATA
+  /* No .rwdata_dummy here: on C3, IRAM and DRAM are two vaddr mappings of the
+     same physical RAM, so a dummy was needed to keep .rwtext (IRAM) and .data
+     (DRAM) from colliding. On C6 RWTEXT and RWDATA are the same region placed
+     sequentially, so no dummy is required. */
 
   .sdata : ALIGN(4)
   {
@@ -124,13 +108,6 @@ SECTIONS {
     *(.data .data.*);
     *(.data1)
     _data_end = ABSOLUTE(.);
-    . = ALIGN(4);
-  } > RWDATA
-
-  .data.wifi :
-  {
-    . = ALIGN(4);
-    *( .dram1 .dram1.*)
     . = ALIGN(4);
   } > RWDATA
 
@@ -189,13 +166,6 @@ SECTIONS {
     KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*)))
     KEEP (*(EXCLUDE_FILE (*crtend.* *crtbegin.*) .init_array))
     PROVIDE(__init_array_end = .);
-    . = ALIGN(4);
-  } > RODATA  
-
-  .rodata.wifi : ALIGN(4)
-  {
-    . = ALIGN(4);
-    *( .rodata_wlog_*.* )
     . = ALIGN(4);
   } > RODATA
 }
@@ -278,7 +248,7 @@ SECTIONS
   .heap (NOLOAD) : {
     . = ALIGN(8);
     __heap_start = .;
-    . = ORIGIN(DRAM) + LENGTH(DRAM) - 0x6000;
+    . = ORIGIN(RAM) + LENGTH(RAM) - 0x6000;
     __heap_end = .;
   } > RWDATA
 
@@ -304,10 +274,28 @@ SECTIONS {
   }
 }
 
+PROVIDE(__global_pointer$ = ALIGN(_sdata_start, 4) + 0x800);
+
+/* ---- Symbol aliases referenced by the closed-source libnet80211 / libwpa_supplicant .a ----
+ * C3's link.x (seeed_xiao_esp32c3/link.x:305-321) aliases the g_* / WIFI_EVENT symbols
+ * the .a files need onto BlueOS's own __ESP_RADIO_* symbols, and EXTERN-forces two mesh
+ * symbols to be kept.
+ * C6's ROM .ld does not provide these symbols (unlike C3, whose esp32c3.rom.ld strongly
+ * defines ROM addresses such as g_misc_nvs/g_osi_funcs_p; C6 ROM only has g_osi_funcs_p),
+ * so C6 must PROVIDE them in this link.x itself, otherwise the link errors with
+ * undefined reference to `g_misc_nvs` / `WIFI_EVENT` / `g_wifi_osi_funcs` / `g_log_level`, etc.
+ *   __ESP_RADIO_G_WIFI_OSI_FUNCS   -> kernel/src/net/link/esp32_wlan/mod.rs
+ *   __ESP_RADIO_G_WIFI_FEATURE_CAPS-> kernel/src/net/link/esp32_wlan/mod.rs
+ *   __ESP_RADIO_WIFI_EVENT         -> kernel/src/net/link/esp32_wlan/api.rs:42
+ *   __ESP_RADIO_G_LOG_LEVEL        -> kernel/src/net/link/esp32_wlan/mod.rs (added by BlueOS)
+ *   __ESP_RADIO_G_MISC_NVS         -> kernel/src/net/link/esp32_wlan/mod.rs (added by BlueOS)
+ * g_espnow_user_oui / mesh_sta_auth_expire_time have no Rust definition; EXTERN only
+ * prevents them from being dropped by --gc-sections (kept as placeholders for future
+ * mesh/espnow implementations, weak references do not error).
+ */
 EXTERN( __ESP_RADIO_G_WIFI_OSI_FUNCS );
 EXTERN( __ESP_RADIO_G_WIFI_FEATURE_CAPS );
 
-PROVIDE(__global_pointer$ = ALIGN(_sdata_start, 4) + 0x800);
 PROVIDE( g_wifi_osi_funcs = __ESP_RADIO_G_WIFI_OSI_FUNCS );
 PROVIDE( g_wifi_feature_caps = __ESP_RADIO_G_WIFI_FEATURE_CAPS );
 

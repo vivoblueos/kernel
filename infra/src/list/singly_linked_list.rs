@@ -387,8 +387,8 @@ mod tests {
         let v3 = Box::new(Node { next: 0, data: 3 });
         unsafe {
             list.push(NonNull::new_unchecked(Box::into_raw(v1)));
-            list.push(NonNull::new_unchecked(Box::into_raw(v2))); // 2 在中间
-            list.push(NonNull::new_unchecked(Box::into_raw(v3))); // 3 在头
+            list.push(NonNull::new_unchecked(Box::into_raw(v2))); // 2 in the middle
+            list.push(NonNull::new_unchecked(Box::into_raw(v3))); // 3 at the head
         }
 
         {
