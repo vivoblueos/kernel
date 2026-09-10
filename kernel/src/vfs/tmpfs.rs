@@ -320,6 +320,39 @@ impl InnerNode {
     }
 }
 
+fn rename_tmpfs_locked(
+    source_inner: &mut InnerNode,
+    target_inner: &mut InnerNode,
+    old_name: &str,
+    new_name: &str,
+    target: &TmpInode,
+) -> Result<(), Error> {
+    let source_dir = source_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+    let target_dir = target_inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+    let child = source_dir.find(old_name).ok_or(code::ENOENT)?;
+    // POSIX rename overwrites an existing regular-file destination; a directory
+    // destination still fails with EEXIST.
+    if let Some(existing) = target_dir.find(new_name) {
+        if existing.inner.read().attr.type_() == InodeFileType::Directory {
+            return Err(code::EEXIST);
+        }
+        target_dir.remove(new_name);
+    }
+
+    source_dir.remove(old_name);
+    target_dir.insert(new_name, &child);
+    source_inner.dec_size();
+    target_inner.inc_size();
+
+    let mut child_inner = child.inner.write();
+    if child_inner.attr.type_() == InodeFileType::Directory {
+        child_inner.as_dir_mut().ok_or(code::EIO)?.parent = target.this.clone();
+        source_inner.dec_nlinks();
+        target_inner.inc_nlinks();
+    }
+    Ok(())
+}
+
 impl InodeOps for TmpInode {
     fn create(
         &self,
@@ -565,6 +598,63 @@ impl InodeOps for TmpInode {
         target.dec_nlinks();
         target.dec_nlinks();
         Ok(())
+    }
+
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn InodeOps>,
+        new_name: &str,
+    ) -> Result<(), Error> {
+        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+            return Err(code::EINVAL);
+        }
+        let target = target.downcast_ref::<TmpInode>().ok_or(code::EXDEV)?;
+        let source_fs = self.fs.upgrade().ok_or(code::EAGAIN)?;
+        let target_fs = target.fs.upgrade().ok_or(code::EAGAIN)?;
+        if !Arc::ptr_eq(&source_fs, &target_fs) {
+            return Err(code::EXDEV);
+        }
+        if self.type_() != InodeFileType::Directory || target.type_() != InodeFileType::Directory {
+            return Err(code::ENOTDIR);
+        }
+
+        if core::ptr::eq(self, target) {
+            let mut inner = self.inner.write();
+            let dir = inner.as_dir_mut().ok_or(code::ENOTDIR)?;
+            let child = dir.find(old_name).ok_or(code::ENOENT)?;
+            if old_name == new_name {
+                return Ok(());
+            }
+            if dir.find(new_name).is_some() {
+                return Err(code::EEXIST);
+            }
+            dir.remove(old_name);
+            dir.insert(new_name, &child);
+            return Ok(());
+        }
+
+        if (self as *const TmpInode as usize) < (target as *const TmpInode as usize) {
+            let mut source_inner = self.inner.write();
+            let mut target_inner = target.inner.write();
+            rename_tmpfs_locked(
+                &mut source_inner,
+                &mut target_inner,
+                old_name,
+                new_name,
+                target,
+            )
+        } else {
+            let mut target_inner = target.inner.write();
+            let mut source_inner = self.inner.write();
+            rename_tmpfs_locked(
+                &mut source_inner,
+                &mut target_inner,
+                old_name,
+                new_name,
+                target,
+            )
+        }
     }
 
     fn getdents_at(&self, offset: usize, reader: &mut DirBufferReader) -> Result<usize, Error> {
