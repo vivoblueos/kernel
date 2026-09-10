@@ -30,11 +30,9 @@ use core::{
     sync::atomic::{AtomicI32, Ordering},
     time::Duration,
 };
-use libc::{size_t, timeval};
+use libc::size_t;
 use smoltcp::wire::{IpAddress, IpEndpoint};
 use spin::rwlock::RwLock;
-
-const ONE_ELEMENT: usize = 1;
 
 pub fn socket(domain: c_int, type_: c_int, protocol_: c_int) -> c_int {
     let Ok(socket_domain) = SocketDomain::try_from(domain) else {
@@ -461,20 +459,20 @@ pub fn setsockopt(
         if option_name == libc::SO_RCVTIMEO {
             return match unsafe { Timeval::from_ptr(option_value, option_len) } {
                 Some(timeval) => {
-                    connection.set_recv_timeout(Duration::from(timeval));
+                    connection.set_recv_timeout(Duration::from(&timeval));
                     0
                 }
-                None => -1,
+                None => -libc::EINVAL,
             };
         }
 
         if option_name == libc::SO_SNDTIMEO {
             return match unsafe { Timeval::from_ptr(option_value, option_len) } {
                 Some(timeval) => {
-                    connection.set_send_timeout(Duration::from(timeval));
+                    connection.set_send_timeout(Duration::from(&timeval));
                     0
                 }
-                None => -1,
+                None => -libc::EINVAL,
             };
         }
 
@@ -515,8 +513,10 @@ pub fn getsockopt(
         if option_name == libc::SO_RCVTIMEO {
             let timeval = Timeval::from(connection.get_recv_timeout());
             unsafe {
-                core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
-                *option_len = size_of::<Timeval>() as u32;
+                let Some(written) = timeval.write_to_ptr(option_value, *option_len) else {
+                    return -libc::EINVAL;
+                };
+                *option_len = written;
             }
             return 0;
         }
@@ -524,8 +524,10 @@ pub fn getsockopt(
         if option_name == libc::SO_SNDTIMEO {
             let timeval = Timeval::from(connection.get_send_timeout());
             unsafe {
-                core::ptr::copy_nonoverlapping(&timeval, option_value as *mut Timeval, ONE_ELEMENT);
-                *option_len = size_of::<Timeval>() as u32;
+                let Some(written) = timeval.write_to_ptr(option_value, *option_len) else {
+                    return -libc::EINVAL;
+                };
+                *option_len = written;
             }
             return 0;
         }
