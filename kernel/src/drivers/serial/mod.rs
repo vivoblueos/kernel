@@ -143,7 +143,9 @@ impl Serial {
                                 #[cfg(smp)]
                                 let _lock = self.critical_section_guard.irqsave_lock();
                                 match self.send_byte_fifo(b) {
-                                    Ok(()) => break 'i,
+                                    Ok(()) => {
+                                        break 'i;
+                                    }
                                     Err(ErrorKind::OutOfMemory) => {
                                         continue 'i;
                                     }
@@ -334,6 +336,7 @@ impl Serial {
 
     #[inline(always)]
     fn flush_rx_fifo(&self) {
+        #[cfg(smp)]
         let _lock = self.critical_section_guard.irqsave_lock();
         self.rx_head.set(0);
         self.rx_end.set(0);
@@ -343,6 +346,7 @@ impl Serial {
 
     #[inline(always)]
     fn flush_tx_fifo(&self) {
+        #[cfg(smp)]
         let _lock = self.critical_section_guard.irqsave_lock();
         self.tx_head.set(0);
         self.tx_end.set(0);
@@ -377,6 +381,7 @@ impl Serial {
         // handler to run before we finish updating the TX buffer state. But it's not a problem as the interrupt
         // handler will check the buffer state and return immediately if there's no data to send.
         // So we can just accept this minor timing jitter for simplicity.
+        #[cfg(smp)]
         let _lock = self.critical_section_guard.irqsave_lock();
         self.dev.enable_interrupt(InterruptType::Tx);
         // FIXME: In the certain SoCs that TX is an edge interrupt. It only fires
@@ -412,6 +417,7 @@ impl Serial {
 
     #[inline(always)]
     fn get_char(&self) -> Option<u8> {
+        #[cfg(smp)]
         let _lock = self.critical_section_guard.irqsave_lock();
         if self.rx_head.get() != self.rx_end.get() {
             let c = self.rx_buffer.borrow()[self.rx_end.get() as usize];
