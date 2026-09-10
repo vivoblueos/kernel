@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+ENTRY(_start)
+
+MEMORY
+{
+  IROM (@IROM_PERMISSIONS@)     : ORIGIN = @IROM_ORIGIN@,   LENGTH = @IROM_LENGTH@
+  RODATA (@RODATA_PERMISSIONS@) : ORIGIN = @RODATA_ORIGIN@, LENGTH = @RODATA_LENGTH@
+  RWDATA (@RWDATA_PERMISSIONS@) : ORIGIN = @RWDATA_ORIGIN@, LENGTH = @RWDATA_LENGTH@
+}
+
+PHDRS
+{
+  text PT_LOAD FLAGS(5);
+  rodata PT_LOAD FLAGS(4);
+  data PT_LOAD FLAGS(6);
+}
+
+SECTIONS
+{
+  .text : ALIGN(4)
+  {
+    KEEP(*(.text._start))
+    *(.text .text.*)
+  } > IROM :text
+
+  .rodata : ALIGN(4)
+  {
+    *(.srodata .srodata.*)
+    *(.rodata .rodata.*)
+  } > RODATA :rodata
+
+  .data : ALIGN(4)
+  {
+    PROVIDE(__global_pointer$ = . + 0x800);
+    *(.sdata .sdata.*)
+    *(.data .data.*)
+    *(.tdata .tdata.*)
+  } > RWDATA :data
+
+  .bss (NOLOAD) : ALIGN(4)
+  {
+    *(.sbss .sbss.*)
+    *(.bss .bss.*)
+    *(.tbss .tbss.*)
+    *(COMMON)
+  } > RWDATA :data
+
+  /DISCARD/ :
+  {
+    *(.eh_frame*)
+    *(.comment*)
+  }
+
+  ASSERT(SIZEOF(.text) > 0, "EXEC payload has no text")
+  ASSERT(SIZEOF(.text) <= @FLASH_MMU_PAGE_SIZE@,
+         "EXEC payload text exceeds its flash MMU page")
+  ASSERT(SIZEOF(.rodata) <= @FLASH_MMU_PAGE_SIZE@,
+         "EXEC payload rodata exceeds its flash MMU page")
+}

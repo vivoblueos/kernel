@@ -22,6 +22,8 @@ use semihosting::{io::Read, println};
 
 extern "C" {
     static LOADER_TEST_ELF_PATH: *const c_char;
+    #[cfg(loader_test_flash)]
+    static LOADER_TEST_USELIBRS_ELF_PATH: *const c_char;
     static INVALID_MAGIC_ELF_PATH: *const c_char;
     static INVALID_ENTRY_ELF_PATH: *const c_char;
     static INVALID_SEGMENT_SIZE_ELF_PATH: *const c_char;
@@ -30,8 +32,13 @@ extern "C" {
 #[cfg(loader_test_exec)]
 mod loader_test_config {
     use blueos_loader as loader;
+    #[cfg(loader_test_flash)]
+    use esp_rom_sys::rom::spiflash::{
+        esp_rom_spiflash_erase_sector, esp_rom_spiflash_unlock, esp_rom_spiflash_write,
+        ESP_ROM_SPIFLASH_RESULT_OK, ESP_ROM_SPIFLASH_RESULT_TIMEOUT,
+    };
 
-    const fn parse_hex(value: &str) -> usize {
+    pub(super) const fn parse_hex(value: &str) -> usize {
         let bytes = value.as_bytes();
         if bytes.len() <= 2 || bytes[0] != b'0' || (bytes[1] != b'x' && bytes[1] != b'X') {
             panic!("loader test relocation value must be hexadecimal");
@@ -52,7 +59,7 @@ mod loader_test_config {
         result
     }
 
-    const fn parse_permissions(value: &str) -> loader::MemoryPermissions {
+    pub(super) const fn parse_permissions(value: &str) -> loader::MemoryPermissions {
         let bytes = value.as_bytes();
         let mut index = 0;
         let mut permissions = loader::MemoryPermissions::NONE;
@@ -69,15 +76,275 @@ mod loader_test_config {
         permissions
     }
 
-    pub const TEST_REGION_START: usize = parse_hex(env!("LOADER_TEST_RELOCATION_ORIGIN"));
-    pub const TEST_REGION_END: usize =
-        TEST_REGION_START + parse_hex(env!("LOADER_TEST_RELOCATION_LENGTH"));
-    pub const TEST_REGION_PERMISSIONS: loader::MemoryPermissions =
-        parse_permissions(env!("LOADER_TEST_RELOCATION_PERMISSIONS"));
+    #[cfg(loader_test_flash)]
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
+    #[cfg(loader_test_flash)]
+    pub const FLASH_CAPACITY: usize = parse_hex(env!("LOADER_TEST_FLASH_CAPACITY"));
+    #[cfg(loader_test_flash)]
+    pub const FLASH_PAGE_SIZE: usize = parse_hex(env!("LOADER_TEST_FLASH_PAGE_SIZE"));
+
+    pub const RAM_START: usize = parse_hex(env!("LOADER_TEST_RAM_ORIGIN"));
+    pub const RAM_END: usize = RAM_START + parse_hex(env!("LOADER_TEST_RAM_LENGTH"));
+
+    #[cfg(loader_test_flash)]
+    pub const IROM_START: usize = parse_hex(env!("LOADER_TEST_IROM_ORIGIN"));
+    #[cfg(loader_test_flash)]
+    pub const IROM_END: usize = IROM_START + parse_hex(env!("LOADER_TEST_IROM_LENGTH"));
+    #[cfg(loader_test_flash)]
+    pub const IROM_FLASH_OFFSET: usize = parse_hex(env!("LOADER_TEST_IROM_FLASH_OFFSET"));
+
+    #[cfg(loader_test_flash)]
+    pub const RODATA_START: usize = parse_hex(env!("LOADER_TEST_RODATA_ORIGIN"));
+    #[cfg(loader_test_flash)]
+    pub const RODATA_END: usize = RODATA_START + parse_hex(env!("LOADER_TEST_RODATA_LENGTH"));
+    #[cfg(loader_test_flash)]
+    pub const RODATA_FLASH_OFFSET: usize = parse_hex(env!("LOADER_TEST_RODATA_FLASH_OFFSET"));
+
+    #[cfg(loader_test_flash)]
+    pub const RWDATA_START: usize = parse_hex(env!("LOADER_TEST_RWDATA_ORIGIN"));
+    #[cfg(loader_test_flash)]
+    pub const RWDATA_END: usize = RWDATA_START + parse_hex(env!("LOADER_TEST_RWDATA_LENGTH"));
+
+    #[cfg(loader_test_flash)]
+    static IROM_WRITTEN: AtomicUsize = AtomicUsize::new(0);
+    #[cfg(loader_test_flash)]
+    static RODATA_WRITTEN: AtomicUsize = AtomicUsize::new(0);
+
+    /// Writes a sector-aligned image to the ESP32-C3 boot flash through its ROM driver.
+    ///
+    /// ESP32 QEMU exposes its boot NOR flash through the dedicated SPI1 controller,
+    /// which is serviced by these ROM routines. The destination range is erased first.
+    #[cfg(loader_test_flash)]
+    fn write_boot_flash(offset: u32, data: &[u8]) -> Result<(), &'static str> {
+        const SECTOR_ERASE_SIZE: usize = 4096;
+        const PROGRAM_CHUNK_SIZE: usize = 256;
+
+        if data.is_empty() {
+            return Ok(());
+        }
+        if offset as usize % SECTOR_ERASE_SIZE != 0 {
+            return Err("Boot flash destination must be sector aligned");
+        }
+        let end = (offset as usize)
+            .checked_add(data.len())
+            .ok_or("Boot flash destination overflow")?;
+        if end > FLASH_CAPACITY {
+            return Err("Boot flash destination exceeds capacity");
+        }
+
+        let check_result = |result| match result {
+            ESP_ROM_SPIFLASH_RESULT_OK => Ok(()),
+            ESP_ROM_SPIFLASH_RESULT_TIMEOUT => Err("Boot flash operation timed out"),
+            _ => Err("Boot flash is not ready"),
+        };
+
+        check_result(unsafe { esp_rom_spiflash_unlock() })?;
+        let first_sector = offset as usize / SECTOR_ERASE_SIZE;
+        let sector_count = data.len().div_ceil(SECTOR_ERASE_SIZE);
+        for sector in first_sector..first_sector + sector_count {
+            check_result(unsafe { esp_rom_spiflash_erase_sector(sector as u32) })?;
+        }
+
+        const WORDS_PER_CHUNK: usize = PROGRAM_CHUNK_SIZE / core::mem::size_of::<u32>();
+        let mut words = [u32::MAX; WORDS_PER_CHUNK];
+        let mut written = 0usize;
+        while written < data.len() {
+            let len = core::cmp::min(PROGRAM_CHUNK_SIZE, data.len() - written);
+            words.fill(u32::MAX);
+            let bytes = unsafe {
+                core::slice::from_raw_parts_mut(words.as_mut_ptr().cast::<u8>(), PROGRAM_CHUNK_SIZE)
+            };
+            bytes[..len].copy_from_slice(&data[written..written + len]);
+            let aligned_len = len.next_multiple_of(core::mem::size_of::<u32>());
+            check_result(unsafe {
+                esp_rom_spiflash_write(offset + written as u32, words.as_ptr(), aligned_len as u32)
+            })?;
+            written += len;
+        }
+        Ok(())
+    }
+
+    #[cfg(loader_test_flash)]
+    pub fn write_load_data(
+        mapper: &mut loader::MemoryMapper,
+        vaddr: usize,
+        data: &[u8],
+    ) -> loader::Result {
+        let (region_start, flash_offset, written) = if (IROM_START..IROM_END).contains(&vaddr) {
+            (IROM_START, IROM_FLASH_OFFSET, &IROM_WRITTEN)
+        } else if (RODATA_START..RODATA_END).contains(&vaddr) {
+            (RODATA_START, RODATA_FLASH_OFFSET, &RODATA_WRITTEN)
+        } else {
+            mapper.write_slice_at(vaddr, data)?;
+            return Ok(());
+        };
+        let offset = vaddr
+            .checked_sub(region_start)
+            .and_then(|value| flash_offset.checked_add(value))
+            .ok_or("Flash destination overflow")?;
+        let end = offset
+            .checked_add(data.len())
+            .ok_or("Flash destination overflow")?;
+        if end > FLASH_CAPACITY {
+            return Err("Flash destination exceeds capacity");
+        }
+        write_boot_flash(offset as u32, data)?;
+        written.fetch_max(vaddr - region_start + data.len(), Ordering::Relaxed);
+        Ok(())
+    }
+
+    #[cfg(not(loader_test_flash))]
     pub static TEST_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
-        loader::MemoryRegion::new(TEST_REGION_START, TEST_REGION_END, TEST_REGION_PERMISSIONS)
+        loader::MemoryRegion::new(
+            RAM_START,
+            RAM_END,
+            parse_permissions(env!("LOADER_TEST_RAM_PERMISSIONS")),
+        )
     }];
+
+    #[cfg(loader_test_flash)]
+    pub static TEST_REGIONS: [loader::MemoryRegion; 4] = [
+        unsafe {
+            loader::MemoryRegion::new(
+                RAM_START,
+                RAM_END,
+                parse_permissions(env!("LOADER_TEST_RAM_PERMISSIONS")),
+            )
+        },
+        unsafe {
+            loader::MemoryRegion::new(
+                IROM_START,
+                IROM_END,
+                parse_permissions(env!("LOADER_TEST_IROM_PERMISSIONS")),
+            )
+        },
+        unsafe {
+            loader::MemoryRegion::new(
+                RODATA_START,
+                RODATA_END,
+                parse_permissions(env!("LOADER_TEST_RODATA_PERMISSIONS")),
+            )
+        },
+        unsafe {
+            loader::MemoryRegion::new(
+                RWDATA_START,
+                RWDATA_END,
+                parse_permissions(env!("LOADER_TEST_RWDATA_PERMISSIONS")),
+            )
+        },
+    ];
+
+    #[cfg(not(loader_test_flash))]
+    pub static NON_EXEC_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
+        loader::MemoryRegion::new(
+            RAM_START,
+            RAM_END,
+            loader::MemoryPermissions::READ.bitor(loader::MemoryPermissions::WRITE),
+        )
+    }];
+
+    #[cfg(loader_test_flash)]
+    pub static NON_EXEC_REGIONS: [loader::MemoryRegion; 4] = [
+        unsafe {
+            loader::MemoryRegion::new(
+                RAM_START,
+                RAM_END,
+                loader::MemoryPermissions::READ.bitor(loader::MemoryPermissions::WRITE),
+            )
+        },
+        unsafe { loader::MemoryRegion::new(IROM_START, IROM_END, loader::MemoryPermissions::READ) },
+        unsafe {
+            loader::MemoryRegion::new(
+                RODATA_START,
+                RODATA_END,
+                parse_permissions(env!("LOADER_TEST_RODATA_PERMISSIONS")),
+            )
+        },
+        unsafe {
+            loader::MemoryRegion::new(
+                RWDATA_START,
+                RWDATA_END,
+                parse_permissions(env!("LOADER_TEST_RWDATA_PERMISSIONS")),
+            )
+        },
+    ];
+
+    #[cfg(loader_test_flash)]
+    unsafe extern "C" {
+        fn Cache_Ibus_MMU_Set(
+            ext_ram: u32,
+            vaddr: u32,
+            paddr: u32,
+            page_size_kb: u32,
+            page_count: u32,
+            fixed: u32,
+        ) -> i32;
+        fn Cache_Dbus_MMU_Set(
+            ext_ram: u32,
+            vaddr: u32,
+            paddr: u32,
+            page_size_kb: u32,
+            page_count: u32,
+            fixed: u32,
+        ) -> i32;
+    }
+
+    #[cfg(loader_test_flash)]
+    pub fn map_written_flash(require_rodata: bool) -> Result<(), &'static str> {
+        let irom_pages = IROM_WRITTEN
+            .load(Ordering::Relaxed)
+            .div_ceil(FLASH_PAGE_SIZE);
+        let rodata_pages = RODATA_WRITTEN
+            .load(Ordering::Relaxed)
+            .div_ceil(FLASH_PAGE_SIZE);
+        if irom_pages == 0 || (require_rodata && rodata_pages == 0) {
+            return Err("Expected flash-backed ELF segments were not written");
+        }
+
+        const IROM_BUS_START: usize = 0x4200_0000;
+        const DROM_BUS_START: usize = 0x3c00_0000;
+        let irom_first_page = (IROM_START - IROM_BUS_START) / FLASH_PAGE_SIZE;
+        if rodata_pages > 0 {
+            let rodata_first_page = (RODATA_START - DROM_BUS_START) / FLASH_PAGE_SIZE;
+            if irom_first_page < rodata_first_page + rodata_pages
+                && rodata_first_page < irom_first_page + irom_pages
+            {
+                return Err("IROM and DROM segments overlap in the shared flash MMU");
+            }
+        }
+
+        let page_size_kb = (FLASH_PAGE_SIZE / 1024) as u32;
+        let irom_result = unsafe {
+            Cache_Ibus_MMU_Set(
+                0,
+                IROM_START as u32,
+                IROM_FLASH_OFFSET as u32,
+                page_size_kb,
+                irom_pages as u32,
+                0,
+            )
+        };
+        if irom_result != 0 {
+            return Err("Failed to map IROM flash pages");
+        }
+        if rodata_pages > 0 {
+            let rodata_result = unsafe {
+                Cache_Dbus_MMU_Set(
+                    0,
+                    RODATA_START as u32,
+                    RODATA_FLASH_OFFSET as u32,
+                    page_size_kb,
+                    rodata_pages as u32,
+                    0,
+                )
+            };
+            if rodata_result != 0 {
+                return Err("Failed to map DROM flash pages");
+            }
+        }
+        Ok(())
+    }
 }
 
 fn read_all(ptr: *const core::ffi::c_char) -> semihosting::io::Result<Vec<u8>> {
@@ -96,10 +363,10 @@ fn read_all(ptr: *const core::ffi::c_char) -> semihosting::io::Result<Vec<u8>> {
 }
 
 mod test_elf_loader {
+    #[cfg(loader_test_flash)]
+    use super::loader_test_config::{map_written_flash, write_load_data};
     #[cfg(loader_test_exec)]
-    use super::loader_test_config::{
-        TEST_REGIONS, TEST_REGION_END, TEST_REGION_PERMISSIONS, TEST_REGION_START,
-    };
+    use super::loader_test_config::{NON_EXEC_REGIONS, RAM_START, TEST_REGIONS};
     use super::*;
     use blueos_test_macro::test;
 
@@ -110,30 +377,22 @@ mod test_elf_loader {
     static SHORT_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
         // SAFETY: This is a valid subset of the configured loader test range.
         loader::MemoryRegion::new(
-            TEST_REGION_START,
-            TEST_REGION_START + 16,
-            TEST_REGION_PERMISSIONS,
-        )
-    }];
-
-    #[cfg(loader_test_exec)]
-    static NON_EXEC_REGIONS: [loader::MemoryRegion; 1] = [unsafe {
-        // SAFETY: The configured region supports read and write accesses.
-        loader::MemoryRegion::new(
-            TEST_REGION_START,
-            TEST_REGION_END,
-            loader::MemoryPermissions::READ.bitor(loader::MemoryPermissions::WRITE),
+            RAM_START,
+            RAM_START + 16,
+            loader::MemoryPermissions::READ
+                .bitor(loader::MemoryPermissions::WRITE)
+                .bitor(loader::MemoryPermissions::EXECUTE),
         )
     }];
 
     fn new_mapper() -> loader::MemoryMapper {
         #[cfg(loader_test_exec)]
         {
-            loader::MemoryMapper::new(Some(&TEST_REGIONS))
+            loader::MemoryMapper::new(Some(&TEST_REGIONS), None)
         }
         #[cfg(not(loader_test_exec))]
         {
-            loader::MemoryMapper::new(None)
+            loader::MemoryMapper::new(None, None)
         }
     }
 
@@ -157,6 +416,18 @@ mod test_elf_loader {
             let run = unsafe { core::mem::transmute::<usize, fn()>(entry) };
             run();
         }
+    }
+
+    #[cfg(all(loader_test_flash, not(debug_assertions)))]
+    #[test]
+    fn test_load_uselibrs_and_run_from_flash() {
+        let buf = read_all(unsafe { LOADER_TEST_USELIBRS_ELF_PATH }).unwrap();
+        let mut mapper = loader::MemoryMapper::new(Some(&TEST_REGIONS), Some(write_load_data));
+        assert!(loader::load_elf(&buf, &mut mapper).is_ok());
+        map_written_flash(true).unwrap();
+        let entry = mapper.real_entry().unwrap();
+        let run = unsafe { core::mem::transmute::<usize, extern "C" fn() -> i32>(entry) };
+        assert_eq!(run(), 0);
     }
 
     // FIXME: We should use FS's lseek API to get lower footprint.
@@ -202,7 +473,7 @@ mod test_elf_loader {
     #[test]
     fn test_exec_rejects_allocated_mapper() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
-        let mut mapper = loader::MemoryMapper::new(None);
+        let mut mapper = loader::MemoryMapper::new(None, None);
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 
@@ -210,10 +481,10 @@ mod test_elf_loader {
     #[test]
     fn test_exec_rejects_out_of_range_without_writing() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
-        let before = unsafe { (TEST_REGION_START as *const u32).read_volatile() };
-        let mut mapper = loader::MemoryMapper::new(Some(&SHORT_REGIONS));
+        let before = unsafe { (RAM_START as *const u32).read_volatile() };
+        let mut mapper = loader::MemoryMapper::new(Some(&SHORT_REGIONS), None);
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
-        let after = unsafe { (TEST_REGION_START as *const u32).read_volatile() };
+        let after = unsafe { (RAM_START as *const u32).read_volatile() };
         assert_eq!(after, before);
     }
 
@@ -221,7 +492,7 @@ mod test_elf_loader {
     #[test]
     fn test_exec_rejects_non_executable_region() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();
-        let mut mapper = loader::MemoryMapper::new(Some(&NON_EXEC_REGIONS));
+        let mut mapper = loader::MemoryMapper::new(Some(&NON_EXEC_REGIONS), None);
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 }
