@@ -18,12 +18,10 @@ group("check_newlib_c_cc") {
   ]
 }
 
-# workaround for bindgen need libclang, it's not consistency with the c/c++ toolchain
-# but type info is same
 config("newlib_include_config") {
   cflags = [
     "-I${current_sysroot}/include",
-    "--target=arm-none-eabi",
+    "--target=$rust_abi_target",
   ]
 }
 

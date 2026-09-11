@@ -37,8 +37,8 @@ use core::{
 };
 use libc::{
     clockid_t, pthread_attr_t, pthread_barrier_t, pthread_barrierattr_t, pthread_key_t,
-    pthread_rwlockattr_t, pthread_t, timespec, EAGAIN, EBUSY, EDEADLK, EINVAL, EPERM, ESRCH,
-    ETIMEDOUT, PTHREAD_MUTEX_DEFAULT, PTHREAD_MUTEX_ERRORCHECK, PTHREAD_MUTEX_NORMAL,
+    pthread_rwlockattr_t, pthread_t, size_t, timespec, EAGAIN, EBUSY, EDEADLK, EINVAL, EPERM,
+    ESRCH, ETIMEDOUT, PTHREAD_MUTEX_DEFAULT, PTHREAD_MUTEX_ERRORCHECK, PTHREAD_MUTEX_NORMAL,
     PTHREAD_MUTEX_RECURSIVE, PTHREAD_PROCESS_PRIVATE,
 };
 use spin::RwLock;
@@ -715,7 +715,24 @@ pub extern "C" fn pthread_attr_init(attr: *mut pthread_attr_t) -> c_int {
     0
 }
 
+#[no_mangle]
 pub extern "C" fn pthread_attr_destroy(_: *mut pthread_attr_t) -> c_int {
+    0
+}
+
+#[linkage = "weak"]
+#[no_mangle]
+pub extern "C" fn pthread_attr_setstacksize(attr: *mut pthread_attr_t, stacksize: size_t) -> c_int {
+    unsafe { (*(attr as *mut InnerPthreadAttr)).stack_size = stacksize };
+    0
+}
+
+#[linkage = "weak"]
+#[no_mangle]
+pub extern "C" fn pthread_attr_setdetachstate(
+    _attr: *mut pthread_attr_t,
+    _detachstate: c_int,
+) -> c_int {
     0
 }
 
@@ -912,6 +929,19 @@ pub extern "C" fn pthread_condattr_init(condattr: *mut CondAttr) -> c_int {
 #[no_mangle]
 pub extern "C" fn pthread_condattr_destroy(condattr: *mut CondAttr) -> c_int {
     unsafe { core::ptr::drop_in_place(condattr) };
+    0
+}
+
+// Clock selection for condition variables: this target exposes a single
+// CLOCK_MONOTONIC clock for all cond waits, so the request is accepted but
+// ignored. quickjs-ng's js_cond_init (cutils.h) calls it; harmless on the
+// live path.
+#[linkage = "weak"]
+#[no_mangle]
+pub extern "C" fn pthread_condattr_setclock(
+    _condattr: *mut CondAttr,
+    _clock_id: clockid_t,
+) -> c_int {
     0
 }
 
