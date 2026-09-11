@@ -15,6 +15,7 @@
 import("//build/default_targets.gni")
 import("//build/templates/board.gni")
 import("//build/templates/linker_script.gni")
+import("//build/templates/quickjs.gni")
 
 generate_linker_script("default_linker_script") {
   preprocessor = "arm-none-fv-eabi-gcc"
@@ -34,11 +35,13 @@ blueos_board("newlib_mps3_an547") {
     ldflags = [
       "-mthumb",
       "-mcpu=cortex-m55",
+      # disable MVE?  cortex-m33
       "-march=armv8.1-m.main+mve.fp+fp.dp",
       "-mfpu=fpv5-d16",
       "-mfloat-abi=hard",
       "-nostartfiles",
       "-Wl,-gc-sections",
+      "-Wl,-z,noexecstack"
     ]
     rustflags = [
       "--cfg",
@@ -70,4 +73,48 @@ blueos_board("newlib_mps3_an547") {
   check_all = [ "//librs/tests/newlib_c_cc:check_newlib_c_cc" ]
 
   # this target enable VFS default
+}
+
+# QuickJS: top-level convenience target to build & boot the selected engine in
+# QEMU. Deliberately NOT part of default/check_all — it needs QEMU and is a
+# manual target. Dispatches on quickjs_mode:
+#   qjs_check -> non-interactive scripted run; asserts QUICKJS_CHECK_PASS and
+#                the checker terminates the emulator. you can start with:
+#                `gn gen out/qjs_check.dsc --args='board="newlib_mps3_an547" build_type="debug" direct_syscall_handler=true quickjs_flavor="quickjs" quickjs_mode="qjs_check"'
+#                `ninja -C out/qjs_check.dsc run_quickjs`, then you could got the cases output.
+#   repl      -> interactive read-eval-print loop; generates the runner scripts and
+#                prints how to launch them (an action cannot hold an interactive
+#                terminal through ninja). you can then launch the REPL with:
+#                `gn gen out/repl.dsc --args='board="newlib_mps3_an547" build_type="debug" direct_syscall_handler=true quickjs_flavor="quickjs" quickjs_mode="repl"'
+#                ninja -C out/repl.dsc run_quickjs`, if you want quickjs-ng, change the args.
+
+if (quickjs_enabled) {
+  if (quickjs_mode == "qjs_check") {
+    group("run_quickjs") {
+      testonly = true
+      deps = [ "${quickjs_app_label}:run_quickjs_check" ]
+    }
+  } else {
+    # repl: build the app + runner scripts, then tell the user how to launch.
+    run_quickjs_runner_out =
+        rebase_path("${root_out_dir}/bin/quickjs_runner-qemu.sh")
+    action("run_quickjs") {
+      testonly = true
+      script = "//build/boards/newlib_mps3_an547/echo.py"
+      deps = [ "${quickjs_app_label}:quickjs_runner" ]
+      args = [
+        "QuickJS REPL (flavor=${quickjs_flavor}) runner is ready.",
+        "Launch it with:",
+        "  ${run_quickjs_runner_out}",
+      ]
+      outputs = [ "${target_gen_dir}/${target_name}/dummy" ]
+    }
+  }
+} else {
+  # quickjs_flavor == "off": nothing was built; say so.
+  action("run_quickjs") {
+    script = "//build/boards/newlib_mps3_an547/echo.py"
+    args = [ "QuickJS is not enabled (quickjs_flavor=off)." ]
+    outputs = [ "${target_gen_dir}/${target_name}/dummy" ]
+  }
 }

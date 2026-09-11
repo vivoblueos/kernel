@@ -1,0 +1,96 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Selects which JavaScript engine lineage to compile into BlueOS, and how the
+# top-level `run_quickjs` target launches it.
+#
+#   quickjs_flavor:
+#     "ng"      -> //external/quickjs-ng   (community-maintained quickjs-ng) [default]
+#     "quickjs" -> //external/quickjs      (original Bellard QuickJS)
+#     "off"     -> feature disabled; nothing is built and run_quickjs reports
+#                  that the feature is not enabled.
+#
+#   quickjs_mode (used by the run_quickjs target):
+#     "qjs_check" -> non-interactive scripted check run; boots QEMU, evaluates a
+#                    fixed JS set, prints QUICKJS_CHECK_PASS, auto-exits. [default]
+#     "repl"      -> interactive read-eval-print loop for a human user.
+declare_args() {
+  quickjs_flavor = "ng"
+  quickjs_mode = "qjs_check"
+}
+
+# Fail fast at `gn gen` with the allowed values named.
+assert(quickjs_flavor == "ng" || quickjs_flavor == "quickjs" ||
+           quickjs_flavor == "off",
+       "quickjs_flavor must be \"ng\", \"quickjs\" or \"off\", got \"${quickjs_flavor}\"")
+
+assert(quickjs_mode == "qjs_check" || quickjs_mode == "repl",
+       "quickjs_mode must be \"qjs_check\" or \"repl\", got \"${quickjs_mode}\"")
+
+# Convenience gate: true when the feature is enabled (a flavor is selected).
+quickjs_enabled = quickjs_flavor != "off"
+
+# Resolved selectors for consumers (only meaningful when quickjs_enabled). The
+# app is a plain C executable (src/qjs_entry.c inside the flavor's bk_bindings)
+# linked by the toolchain against newlib + the flavor's qjs shell staticlib
+# and the librs newlib-adapter staticlib — no Rust std/rsrt. The app executable
+# targets live co-located with the flavor-specific engine bindings, so the
+# top-level run_quickjs label resolves to the selected flavor's bk_bindings.
+if (quickjs_flavor == "ng") {
+  quickjs_engine_target = "//external/quickjs-ng:quickjs_ng"
+  quickjs_shell_target = "//external/quickjs-ng:quickjs_shell"
+  quickjs_librs_newlib_target = "//external/quickjs-ng/bk_bindings:librs_newlib"
+  quickjs_app_label = "//external/quickjs-ng/bk_bindings"
+} else if (quickjs_flavor == "quickjs") {
+  quickjs_engine_target = "//external/quickjs:quickjs_bellard"
+  quickjs_shell_target = "//external/quickjs:quickjs_shell"
+  quickjs_librs_newlib_target = "//external/quickjs/bk_bindings:librs_newlib"
+  quickjs_app_label = "//external/quickjs/bk_bindings"
+} else {
+  # "off": no engine, shell, or newlib-adapter target is built.
+  quickjs_engine_target = ""
+  quickjs_shell_target = ""
+  quickjs_librs_newlib_target = ""
+  quickjs_app_label = ""
+}
+
+# The QuickJS engine/shell is plain C that calls newlib (strcmp, memcpy,
+# assert, soft-fp helpers, ...). The app executable is linked directly by the
+# toolchain's GCC (the newlib_c_cc model), so libc/libm/libgcc are supplied
+# as absolute paths resolved from the toolchain for this board's ABI (same
+# flags the kernel link uses).
+if (quickjs_enabled) {
+  _qk_abi_flags = [
+    "-mthumb",
+    "-march=armv8.1-m.main+mve.fp+fp.dp",
+    "-mfpu=fpv5-d16",
+    "-mfloat-abi=hard",
+  ]
+  _qk_libc = exec_script("//build/scripts/get_lib_path.py",
+                         [ "arm-none-fv-eabi-gcc", "libc.a" ] + _qk_abi_flags,
+                         "string")
+  _qk_libm = exec_script("//build/scripts/get_lib_path.py",
+                         [ "arm-none-fv-eabi-gcc", "libm.a" ] + _qk_abi_flags,
+                         "string")
+  _qk_libgcc = exec_script("//build/scripts/get_lib_path.py",
+                           [ "arm-none-fv-eabi-gcc", "libgcc.a" ] + _qk_abi_flags,
+                           "string")
+  quickjs_newlib_libs = [
+    _qk_libc,
+    _qk_libm,
+    _qk_libgcc,
+  ]
+} else {
+  quickjs_newlib_libs = []
+}
