@@ -56,7 +56,7 @@ pub enum MapError {
 
 /// Executable mapping handle. `segment_address` is the entry the Loader jumps
 /// to; the rest describe the page-aligned mapping for unmap.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ExecMapping {
     pub segment_address: usize,
     pub mapped_page_address: usize,
@@ -265,7 +265,7 @@ pub fn map_drom(
         .ok_or(MapError::Overflow)?;
     check_loadable_range(physical_offset, physical_end)?;
 
-    if drom_vaddr < DROM_VADDR_BASE || drom_vaddr >= DROM_VADDR_END {
+    if !(DROM_VADDR_BASE..DROM_VADDR_END).contains(&drom_vaddr) {
         return Err(MapError::OutOfRange);
     }
     let drom_end = drom_vaddr.checked_add(size_u32).ok_or(MapError::Overflow)?;
@@ -389,6 +389,7 @@ impl ExecMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     fn base() -> u32 {
         LOADABLE_REGION_BASE

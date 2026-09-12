@@ -107,6 +107,17 @@ pub const LOADABLE_REGION_BASE: u32 = 0x0020_0000;
 pub const LOADABLE_REGION_SIZE: u32 = 0x0030_0000;
 #[cfg(esp32_internal_flash)]
 pub const LOADABLE_REGION_END: u32 = LOADABLE_REGION_BASE + LOADABLE_REGION_SIZE;
+// C6 splits the flash-cache window into separate I-bus (0x4200_0000) and
+// D-bus (0x4280_0000) halves, unlike C3's DROM at 0x3C00_0000. Page size
+// matches Cache_MMU_Set's psize argument (64 KB) in esp32c6_rom.rs.
+#[cfg(esp32_internal_flash)]
+pub const IROM_VADDR_BASE: u32 = 0x4200_0000;
+#[cfg(esp32_internal_flash)]
+pub const DROM_VADDR_BASE: u32 = 0x4280_0000;
+#[cfg(esp32_internal_flash)]
+pub const DROM_VADDR_END: u32 = 0x4300_0000;
+#[cfg(esp32_internal_flash)]
+pub const FLASH_MMU_PAGE_SIZE: u32 = 0x0001_0000;
 
 const INTMTX_BASE: usize = 0x6001_0000;
 

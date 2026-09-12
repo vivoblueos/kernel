@@ -49,7 +49,7 @@ pub enum MapError {
 
 /// Executable mapping handle. `segment_address` is the entry the Loader jumps
 /// to; the rest describe the page-aligned mapping for unmap.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ExecMapping {
     pub segment_address: usize,
     pub mapped_page_address: usize,
@@ -288,6 +288,7 @@ impl ExecMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     fn base() -> u32 {
         LOADABLE_REGION_BASE

@@ -228,8 +228,7 @@ impl Esp32c3InternalFlash {
         let head_sectors = if head_bytes == block_size {
             0
         } else {
-            let h = core::cmp::min(head_bytes, len) / sector_size;
-            h
+            core::cmp::min(head_bytes, len) / sector_size
         };
         let t0 = Tick::now();
         for i in 0..head_sectors {
