@@ -12,12 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::errno::ERRNO;
 pub use blueos_header::syscalls::NR::{
     Accept, Bind, Connect, Getsockopt, Listen, Recv, Recvfrom, Recvmsg, Send, Sendmsg, Sendto,
     Setsockopt, Shutdown, Socket,
 };
 use blueos_scal::bk_syscall;
 use core::ffi::{c_int, c_size_t, c_ssize_t, c_void};
+
+#[inline]
+fn syscall_result(result: isize) -> isize {
+    if result < 0 {
+        ERRNO.set((-result) as c_int);
+        -1
+    } else {
+        result
+    }
+}
 
 /// Creates a new communication endpoint
 ///
@@ -31,7 +42,7 @@ use core::ffi::{c_int, c_size_t, c_ssize_t, c_void};
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/socket.html>
 #[no_mangle]
 pub extern "C" fn socket(domain: c_int, type_: c_int, protocol: c_int) -> c_int {
-    bk_syscall!(Socket, domain, type_, protocol) as c_int
+    syscall_result(bk_syscall!(Socket, domain, type_, protocol) as isize) as c_int
 }
 
 /// Bind socket to local address
@@ -50,7 +61,7 @@ pub unsafe extern "C" fn bind(
     address: *const libc::sockaddr,
     address_len: libc::socklen_t,
 ) -> c_int {
-    bk_syscall!(Bind, socket, address, address_len) as c_int
+    syscall_result(bk_syscall!(Bind, socket, address, address_len) as isize) as c_int
 }
 
 /// Connect socket to remote address
@@ -69,7 +80,7 @@ pub unsafe extern "C" fn connect(
     address: *const libc::sockaddr,
     address_len: libc::socklen_t,
 ) -> c_int {
-    bk_syscall!(Connect, socket, address, address_len) as c_int
+    syscall_result(bk_syscall!(Connect, socket, address, address_len) as isize) as c_int
 }
 
 /// Listen for socket connections
@@ -87,7 +98,7 @@ pub unsafe extern "C" fn connect(
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/listen.html>
 #[no_mangle]
 pub extern "C" fn listen(socket: c_int, backlog: c_int) -> c_int {
-    bk_syscall!(Listen, socket, backlog) as c_int
+    syscall_result(bk_syscall!(Listen, socket, backlog) as isize) as c_int
 }
 
 /// Accept incoming connection
@@ -106,7 +117,7 @@ pub unsafe extern "C" fn accept(
     _address: *mut libc::sockaddr,
     _address_len: *mut libc::socklen_t,
 ) -> c_int {
-    bk_syscall!(Accept, sock_fd, _address, _address_len) as c_int
+    syscall_result(bk_syscall!(Accept, sock_fd, _address, _address_len) as isize) as c_int
 }
 
 /// Send message through socket
@@ -128,7 +139,7 @@ pub unsafe extern "C" fn send(
     length: c_size_t,
     flags: c_int,
 ) -> c_ssize_t {
-    bk_syscall!(Send, socket, buffer, length, flags) as c_ssize_t
+    syscall_result(bk_syscall!(Send, socket, buffer, length, flags) as isize) as c_ssize_t
 }
 
 /// Send message through socket
@@ -155,7 +166,9 @@ pub unsafe extern "C" fn sendto(
     dest_addr: *const libc::sockaddr,
     dest_len: libc::socklen_t,
 ) -> c_ssize_t {
-    bk_syscall!(Sendto, socket, message, length, flags, dest_addr, dest_len) as c_ssize_t
+    syscall_result(
+        bk_syscall!(Sendto, socket, message, length, flags, dest_addr, dest_len) as isize,
+    ) as c_ssize_t
 }
 
 /// Receive message from socket
@@ -177,7 +190,7 @@ pub unsafe extern "C" fn recv(
     length: c_size_t,
     flags: c_int,
 ) -> c_ssize_t {
-    bk_syscall!(Recv, socket, buffer, length, flags) as c_ssize_t
+    syscall_result(bk_syscall!(Recv, socket, buffer, length, flags) as isize) as c_ssize_t
 }
 
 /// Recv a message from a socket
@@ -206,7 +219,7 @@ pub unsafe extern "C" fn recvfrom(
     address: *mut libc::sockaddr,
     address_len: *mut libc::socklen_t,
 ) -> c_ssize_t {
-    bk_syscall!(
+    syscall_result(bk_syscall!(
         Recvfrom,
         socket,
         buffer,
@@ -214,7 +227,7 @@ pub unsafe extern "C" fn recvfrom(
         flags,
         address,
         address_len
-    ) as c_ssize_t
+    ) as isize) as c_ssize_t
 }
 
 /// Shutdown socket communication
@@ -229,7 +242,7 @@ pub unsafe extern "C" fn recvfrom(
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/shutdown.html>
 #[no_mangle]
 pub extern "C" fn shutdown(socket: c_int, how: c_int) -> c_int {
-    bk_syscall!(Shutdown, socket, how) as c_int
+    syscall_result(bk_syscall!(Shutdown, socket, how) as isize) as c_int
 }
 
 /// Set the socket options
@@ -252,14 +265,14 @@ pub unsafe extern "C" fn setsockopt(
     option_value: *const c_void,
     option_len: libc::socklen_t,
 ) -> c_int {
-    bk_syscall!(
+    syscall_result(bk_syscall!(
         Setsockopt,
         socket,
         level,
         option_name,
         option_value,
         option_len
-    ) as c_int
+    ) as isize) as c_int
 }
 
 /// get the socket options
@@ -282,14 +295,14 @@ pub unsafe extern "C" fn getsockopt(
     option_value: *mut c_void,
     option_len: *mut libc::socklen_t,
 ) -> c_int {
-    bk_syscall!(
+    syscall_result(bk_syscall!(
         Getsockopt,
         socket,
         level,
         option_name,
         option_value,
         option_len
-    ) as c_int
+    ) as isize) as c_int
 }
 
 /// Send message through socket
@@ -311,7 +324,7 @@ pub unsafe extern "C" fn sendmsg(
     message: *const libc::msghdr,
     flags: c_int,
 ) -> c_ssize_t {
-    bk_syscall!(Sendmsg, socket, message, flags) as c_ssize_t
+    syscall_result(bk_syscall!(Sendmsg, socket, message, flags) as isize) as c_ssize_t
 }
 
 /// Recv message through socket
@@ -335,5 +348,5 @@ pub unsafe extern "C" fn recvmsg(
     message: *mut libc::msghdr,
     flags: c_int,
 ) -> c_ssize_t {
-    bk_syscall!(Recvmsg, socket, message, flags) as c_ssize_t
+    syscall_result(bk_syscall!(Recvmsg, socket, message, flags) as isize) as c_ssize_t
 }
