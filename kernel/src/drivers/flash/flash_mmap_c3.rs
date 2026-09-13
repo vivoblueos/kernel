@@ -32,7 +32,7 @@
 //! the loader guarantees the DROM vaddr's entries do not collide with the
 //! live I-bus mapping.
 
-use super::esp32_rom;
+use super::esp32c3_rom;
 use crate::{
     boards::{
         DROM_VADDR_BASE, DROM_VADDR_END, IROM_VADDR_BASE, LOADABLE_REGION_BASE,
@@ -56,7 +56,7 @@ pub enum MapError {
 
 /// Executable mapping handle. `segment_address` is the entry the Loader jumps
 /// to; the rest describe the page-aligned mapping for unmap.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ExecMapping {
     pub segment_address: usize,
     pub mapped_page_address: usize,
@@ -164,7 +164,7 @@ pub fn map_exec(physical_offset: u32, size: usize) -> Result<ExecMapping, MapErr
         // vaddr/paddr page-aligned by construction; one ROM call covers all pages
         // (linear 1:1). rc: 0=ok, 2/3/4=align/psize/range.
         let num_pages = (mapped_size / FLASH_MMU_PAGE_SIZE as usize) as u32;
-        let rc = unsafe { esp32_rom::rom_mmu_map(mapped_page_address, page_base, num_pages) };
+        let rc = unsafe { esp32c3_rom::rom_mmu_map(mapped_page_address, page_base, num_pages) };
         if rc != 0 {
             let mut state = MMAP_STATE.irqsave_lock();
             state.irom_handle = None;
@@ -173,16 +173,16 @@ pub fn map_exec(physical_offset: u32, size: usize) -> Result<ExecMapping, MapErr
         }
         // Wire up the D-bus (DROM) view too — see module doc on the shared table.
         let drom_vaddr = DROM_VADDR_BASE.wrapping_add(page_base);
-        let rc_d = unsafe { esp32_rom::rom_mmu_map_d(drom_vaddr, page_base, num_pages) };
+        let rc_d = unsafe { esp32c3_rom::rom_mmu_map_d(drom_vaddr, page_base, num_pages) };
         if rc_d != 0 {
             let mut v = mapped_page_address;
             for _ in 0..num_pages {
                 let entry_id = (v & 0x7F_FFFF) >> 16;
-                unsafe { esp32_rom::rom_mmu_unmap(entry_id) };
+                unsafe { esp32c3_rom::rom_mmu_unmap(entry_id) };
                 v += FLASH_MMU_PAGE_SIZE;
             }
             unsafe {
-                esp32_rom::rom_invalidate_icache_all();
+                esp32c3_rom::rom_invalidate_icache_all();
             }
             instruction_fence();
             let mut state = MMAP_STATE.irqsave_lock();
@@ -193,7 +193,7 @@ pub fn map_exec(physical_offset: u32, size: usize) -> Result<ExecMapping, MapErr
     }
 
     unsafe {
-        esp32_rom::rom_invalidate_icache_all();
+        esp32c3_rom::rom_invalidate_icache_all();
     }
     instruction_fence();
 
@@ -231,12 +231,12 @@ pub fn unmap_exec(mapping: &ExecMapping) -> Result<(), MapError> {
         // One write per entry clears both I-bus and D-bus views (shared table; see module doc).
         for _ in 0..num_pages {
             let entry_id = (vaddr & 0x7F_FFFF) >> 16;
-            unsafe { esp32_rom::rom_mmu_unmap(entry_id) };
+            unsafe { esp32c3_rom::rom_mmu_unmap(entry_id) };
             vaddr += FLASH_MMU_PAGE_SIZE;
         }
     }
     unsafe {
-        esp32_rom::rom_invalidate_icache_all();
+        esp32c3_rom::rom_invalidate_icache_all();
     }
     instruction_fence();
     {
@@ -265,12 +265,10 @@ pub fn map_drom(
         .ok_or(MapError::Overflow)?;
     check_loadable_range(physical_offset, physical_end)?;
 
-    if drom_vaddr < DROM_VADDR_BASE || drom_vaddr >= DROM_VADDR_END {
+    if !(DROM_VADDR_BASE..DROM_VADDR_END).contains(&drom_vaddr) {
         return Err(MapError::OutOfRange);
     }
-    let drom_end = drom_vaddr
-        .checked_add(size_u32)
-        .ok_or(MapError::Overflow)?;
+    let drom_end = drom_vaddr.checked_add(size_u32).ok_or(MapError::Overflow)?;
     if drom_end > DROM_VADDR_END {
         return Err(MapError::OutOfRange);
     }
@@ -309,7 +307,7 @@ pub fn map_drom(
     #[cfg(not(test))]
     {
         let num_pages = (mapped_size / FLASH_MMU_PAGE_SIZE as usize) as u32;
-        let rc = unsafe { esp32_rom::rom_mmu_map_d(mapped_page_vaddr, page_base, num_pages) };
+        let rc = unsafe { esp32c3_rom::rom_mmu_map_d(mapped_page_vaddr, page_base, num_pages) };
         if rc != 0 {
             let mut state = MMAP_STATE.irqsave_lock();
             state.drom_handle = None;
@@ -319,7 +317,7 @@ pub fn map_drom(
     }
 
     unsafe {
-        esp32_rom::rom_invalidate_icache_all();
+        esp32c3_rom::rom_invalidate_icache_all();
     }
     instruction_fence();
 
@@ -355,12 +353,12 @@ pub fn unmap_drom(mapping: &DromMapping) -> Result<(), MapError> {
         let mut vaddr = mapping.drom_vaddr as u32;
         for _ in 0..num_pages {
             let entry_id = (vaddr & 0x7F_FFFF) >> 16;
-            unsafe { esp32_rom::rom_mmu_unmap(entry_id) };
+            unsafe { esp32c3_rom::rom_mmu_unmap(entry_id) };
             vaddr += FLASH_MMU_PAGE_SIZE;
         }
     }
     unsafe {
-        esp32_rom::rom_invalidate_icache_all();
+        esp32c3_rom::rom_invalidate_icache_all();
     }
     instruction_fence();
     {
@@ -391,6 +389,7 @@ impl ExecMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     fn base() -> u32 {
         LOADABLE_REGION_BASE

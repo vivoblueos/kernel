@@ -101,6 +101,24 @@ const MIDELEG_USOFT_BIT: usize = 1 << 0;
 
 const MIDELEG_DELEG_MASK: usize = MIDELEG_USOFT_BIT | MIDELEG_UTIMER_BIT | MIDELEG_UEXT_BIT;
 
+#[cfg(esp32_internal_flash)]
+pub const LOADABLE_REGION_BASE: u32 = 0x0020_0000;
+#[cfg(esp32_internal_flash)]
+pub const LOADABLE_REGION_SIZE: u32 = 0x0030_0000;
+#[cfg(esp32_internal_flash)]
+pub const LOADABLE_REGION_END: u32 = LOADABLE_REGION_BASE + LOADABLE_REGION_SIZE;
+// C6 splits the flash-cache window into separate I-bus (0x4200_0000) and
+// D-bus (0x4280_0000) halves, unlike C3's DROM at 0x3C00_0000. Page size
+// matches Cache_MMU_Set's psize argument (64 KB) in esp32c6_rom.rs.
+#[cfg(esp32_internal_flash)]
+pub const IROM_VADDR_BASE: u32 = 0x4200_0000;
+#[cfg(esp32_internal_flash)]
+pub const DROM_VADDR_BASE: u32 = 0x4280_0000;
+#[cfg(esp32_internal_flash)]
+pub const DROM_VADDR_END: u32 = 0x4300_0000;
+#[cfg(esp32_internal_flash)]
+pub const FLASH_MMU_PAGE_SIZE: u32 = 0x0001_0000;
+
 const INTMTX_BASE: usize = 0x6001_0000;
 
 const INTMTX_USB_SERIAL_JTAG_MAP: usize = INTMTX_BASE + 0xC0;
@@ -674,6 +692,15 @@ pub(crate) fn init() {
         // Preserve other bits.
         let v = read32(PCR_MSPI_CLK_CONF);
         write32(PCR_MSPI_CLK_CONF, (v & !(0xFF << 8)) | (5 << 8));
+    }
+
+    #[cfg(esp32_internal_flash)]
+    {
+        if let Err(error) = crate::drivers::flash::init_internal_flash() {
+            log::warn!("Failed to init ESP32-C6 internal flash: {:?}", error);
+        } else if let Err(error) = crate::drivers::flash::init_esp32_flash_device() {
+            log::warn!("Failed to register ESP32-C6 flash device: {:?}", error);
+        }
     }
 
     unsafe {

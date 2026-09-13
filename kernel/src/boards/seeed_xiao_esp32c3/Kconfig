@@ -74,6 +74,12 @@ config SOC_ESP32C3
     select RISCV
     select I2C_CORE
 
+config ESP32_INTERNAL_FLASH
+    bool "Enable ESP32-C3 internal flash"
+    default y
+    help
+      Enable the on-chip flash device and loadable XIP region.
+
 config ESP32_LOADABLE_REGION_BASE
     hex "ESP32-C3 loadable flash region base"
     default 0x00200000

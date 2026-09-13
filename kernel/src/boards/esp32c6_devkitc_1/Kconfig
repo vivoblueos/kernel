@@ -24,5 +24,11 @@ config SOC_ESP32C6
     select RISCV
     select HAS_MIE
 
+config ESP32_INTERNAL_FLASH
+    bool "Enable ESP32-C6 internal flash"
+    default y
+    help
+      Enable the on-chip flash device and loadable XIP region.
+
 config NUM_IRQS
     default 31

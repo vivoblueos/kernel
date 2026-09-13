@@ -179,7 +179,7 @@ pub(crate) fn init() {
 
     // On-chip flash: ROM unlock + capacity probe + register esp32-flash0 device.
     // Must precede init_vfs so /dev/esp32-flash0 exists before the shell opens it.
-    #[cfg(soc_esp32c3)]
+    #[cfg(all(soc_esp32c3, esp32_internal_flash))]
     {
         if let Err(e) = crate::drivers::flash::init_internal_flash() {
             log::warn!("Failed to init internal flash: {:?}", e);

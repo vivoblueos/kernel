@@ -15,12 +15,13 @@
 //! ESP32-C3 on-chip main flash raw read/write/erase driver (mask ROM spiflash API).
 //! `write()` does NOT auto-erase; callers must `erase_region` first.
 
-use super::esp32_rom;
+use super::esp32c3_rom;
 use crate::{scheduler, sync::Mutex, time::Tick};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const ESP_FLASH_SECTOR_SIZE: usize = 4096;
 pub const ESP_FLASH_WORD_SIZE: usize = 4;
+const ESP_FLASH_BLOCK_64K_SIZE: usize = 65536;
 const ROM_PAGE_SIZE: usize = 256;
 const ESP_FLASH_READ_CHUNK_SIZE: usize = 1024;
 
@@ -29,12 +30,12 @@ pub(crate) fn init_internal_flash() -> Result<(), EspFlashError> {
     if !INTERNAL_FLASH_LOCK.init() {
         return Err(EspFlashError::Busy);
     }
-    let r = unsafe { esp32_rom::rom_unlock() };
-    if r != esp32_rom::ESP_ROM_SPIFLASH_RESULT_OK {
+    let r = unsafe { esp32c3_rom::rom_unlock() };
+    if r != esp32c3_rom::ESP_ROM_SPIFLASH_RESULT_OK {
         log::warn!("esp_rom_spiflash_unlock returned {}", r);
         return Err(EspFlashError::RomError(r));
     }
-    let chip_size = unsafe { esp32_rom::rom_chip_size() };
+    let chip_size = unsafe { esp32c3_rom::rom_chip_size() };
     INTERNAL_FLASH_CAPACITY.store(chip_size, Ordering::Release);
     log::info!(
         "internal flash ROM chip size: {} bytes ({:#x})",
@@ -105,7 +106,7 @@ pub enum EspFlashError {
 }
 
 fn rom_result(r: i32) -> Result<(), EspFlashError> {
-    if r == esp32_rom::ESP_ROM_SPIFLASH_RESULT_OK {
+    if r == esp32c3_rom::ESP_ROM_SPIFLASH_RESULT_OK {
         Ok(())
     } else {
         Err(EspFlashError::RomError(r))
@@ -122,7 +123,7 @@ impl Esp32c3InternalFlash {
     }
 
     pub fn detect() -> Result<Self, EspFlashError> {
-        let size = unsafe { esp32_rom::rom_chip_size() };
+        let size = unsafe { esp32c3_rom::rom_chip_size() };
         Ok(Self::new(size))
     }
 
@@ -155,7 +156,7 @@ impl Esp32c3InternalFlash {
             let head_len = core::cmp::min(ESP_FLASH_WORD_SIZE - head_mis, buf.len());
             let mut scratch: EspAlignedBuffer<ESP_FLASH_WORD_SIZE> = EspAlignedBuffer::new();
             let r = unsafe {
-                esp32_rom::rom_read(
+                esp32c3_rom::rom_read(
                     word_off,
                     scratch.0.as_ptr() as *const u32,
                     ESP_FLASH_WORD_SIZE as u32,
@@ -178,7 +179,7 @@ impl Esp32c3InternalFlash {
                 remaining & !(ESP_FLASH_WORD_SIZE - 1),
             );
             let r = unsafe {
-                esp32_rom::rom_read(
+                esp32c3_rom::rom_read(
                     offset + done as u32,
                     chunk.0.as_ptr() as *const u32,
                     n as u32,
@@ -197,7 +198,7 @@ impl Esp32c3InternalFlash {
             let tail = buf.len() - done;
             let mut scratch: EspAlignedBuffer<ESP_FLASH_WORD_SIZE> = EspAlignedBuffer::new();
             let r = unsafe {
-                esp32_rom::rom_read(
+                esp32c3_rom::rom_read(
                     word_off,
                     scratch.0.as_ptr() as *const u32,
                     ESP_FLASH_WORD_SIZE as u32,
@@ -218,17 +219,58 @@ impl Esp32c3InternalFlash {
             return Err(EspFlashError::UnalignedErase);
         }
         self.check_bounds(offset, len as usize)?;
-        let first_sector = offset / ESP_FLASH_SECTOR_SIZE as u32;
-        let sector_count = len / ESP_FLASH_SECTOR_SIZE as u32;
-        for index in 0..sector_count {
-            self.erase_sector(first_sector + index)?;
+        if len == 0 {
+            return Ok(());
         }
+        let sector_size = ESP_FLASH_SECTOR_SIZE as u32;
+        let block_size = ESP_FLASH_BLOCK_64K_SIZE as u32;
+        let head_bytes = block_size - (offset % block_size);
+        let head_sectors = if head_bytes == block_size {
+            0
+        } else {
+            core::cmp::min(head_bytes, len) / sector_size
+        };
+        let t0 = Tick::now();
+        for i in 0..head_sectors {
+            self.erase_sector(offset / sector_size + i)?;
+        }
+        let head_total = head_sectors * sector_size;
+        let remaining = len - head_total;
+        let block_count = remaining / block_size;
+        if block_count > 0 {
+            let first_block = (offset + head_total) / block_size;
+            for i in 0..block_count {
+                self.erase_block(first_block + i)?;
+            }
+        }
+        let tail_offset = head_total + block_count * block_size;
+        let tail_sectors = (len - tail_offset) / sector_size;
+        let tail_base_sector = (offset + tail_offset) / sector_size;
+        for i in 0..tail_sectors {
+            self.erase_sector(tail_base_sector + i)?;
+        }
+        let elapsed = Tick::now().since(t0);
+        log::warn!(
+            "erase_region off={:#x} len={} head_sec={} blk_64k={} tail_sec={} erase_ms={}",
+            offset,
+            len,
+            head_sectors,
+            block_count,
+            tail_sectors,
+            elapsed.as_millis()
+        );
         Ok(())
     }
 
     fn erase_sector(&mut self, sector: u32) -> Result<(), EspFlashError> {
         // ROM takes a sector INDEX (byte_off / 4096), not a byte offset.
-        let r = unsafe { esp32_rom::rom_erase_sector(sector) };
+        let r = unsafe { esp32c3_rom::rom_erase_sector(sector) };
+        rom_result(r)
+    }
+
+    fn erase_block(&mut self, block: u32) -> Result<(), EspFlashError> {
+        // ROM takes a 64KB block INDEX (byte_off / 65536), not a byte offset.
+        let r = unsafe { esp32c3_rom::rom_erase_block(block) };
         rom_result(r)
     }
 
@@ -252,7 +294,7 @@ impl Esp32c3InternalFlash {
             let write_len = core::cmp::min(page_remaining, data.len() - done);
             page.0[..write_len].copy_from_slice(&data[done..done + write_len]);
             let r = unsafe {
-                esp32_rom::rom_write(
+                esp32c3_rom::rom_write(
                     current_offset,
                     page.0.as_ptr() as *const u32,
                     write_len as u32,
@@ -300,7 +342,7 @@ impl Esp32c3InternalFlash {
             }
 
             let r = unsafe {
-                esp32_rom::rom_write(current, page.0.as_ptr() as *const u32, write_len as u32)
+                esp32c3_rom::rom_write(current, page.0.as_ptr() as *const u32, write_len as u32)
             };
             rom_result(r)?;
             current += write_len as u32;
@@ -325,7 +367,7 @@ impl<const N: usize> EspAlignedBuffer<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::{super::esp32_rom, *};
+    use super::{super::esp32c3_rom, *};
     use blueos_test_macro::test;
 
     #[test]
@@ -369,13 +411,13 @@ mod tests {
 
     #[test]
     fn rom_result_maps_codes() {
-        assert_eq!(rom_result(esp32_rom::ESP_ROM_SPIFLASH_RESULT_OK), Ok(()));
+        assert_eq!(rom_result(esp32c3_rom::ESP_ROM_SPIFLASH_RESULT_OK), Ok(()));
         assert_eq!(
-            rom_result(esp32_rom::ESP_ROM_SPIFLASH_RESULT_ERR),
+            rom_result(esp32c3_rom::ESP_ROM_SPIFLASH_RESULT_ERR),
             Err(EspFlashError::RomError(1))
         );
         assert_eq!(
-            rom_result(esp32_rom::ESP_ROM_SPIFLASH_RESULT_TIMEOUT),
+            rom_result(esp32c3_rom::ESP_ROM_SPIFLASH_RESULT_TIMEOUT),
             Err(EspFlashError::RomError(2))
         );
     }

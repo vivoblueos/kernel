@@ -23,8 +23,11 @@ MEMORY
           RTC_IRAM/RTC_DRAM 0x50000000
     */
 
-    /* Unified HP RAM: executable + readable + writable */
-    RAM : ORIGIN = 0x40800000, LENGTH = 0x6E610
+    /* Unified HP RAM used by the kernel. Keep the top 64 KiB separate for loadable-app RW data. */
+    RAM : ORIGIN = 0x40800000, LENGTH = 0x5E610
+
+    /* Top 64 KiB of C6 HP RAM reserved for loadable applications. */
+    EXTRA_RAM : ORIGIN = ORIGIN(RAM) + LENGTH(RAM), LENGTH = 0x10000
 
     /* External flash.
 
