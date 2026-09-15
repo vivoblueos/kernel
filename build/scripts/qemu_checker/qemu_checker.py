@@ -89,6 +89,7 @@ class Checker(object):
         self.rules = []
         self.succ_lines = []
         self.fail_lines = []
+        self.counters = []
         self.test_dir = os.path.abspath(test_dir)
 
     def add_succ_line(self, line):
@@ -115,6 +116,10 @@ class Checker(object):
         self.add_rule(pattern, AssertFail(), 3)
         return self
 
+    def add_count(self, pattern, expected):
+        self.counters.append([pattern, expected, 0])
+        return self
+
     def add_rule(self, pattern, action, priority):
         self.rules.append(Rule(pattern, action, priority))
         return self
@@ -127,7 +132,22 @@ class Checker(object):
         self.total_timeout = timeout
         return self
 
+    def count_matches(self, line):
+        for counter in self.counters:
+            if counter[0].search(line):
+                counter[2] += 1
+
+    def counts_satisfied(self):
+        satisfied = True
+        for pattern, expected, seen in self.counters:
+            if seen != expected:
+                LOGGER.error('Count mismatch: %r expected %d lines, saw %d',
+                             pattern.pattern, expected, seen)
+                satisfied = False
+        return satisfied
+
     def check(self, line):
+        self.count_matches(line)
         for rule in self.rules:
             m = rule.pattern.search(line)
             if m:
@@ -162,7 +182,10 @@ class Checker(object):
                         succ = False
                         break
                     except AssertSuccNotifier:
-                        succ = True
+                        # The terminal success line arrived: every COUNT
+                        # directive must have seen exactly its expected number
+                        # of matching lines over the whole run.
+                        succ = self.counts_satisfied()
                         break
         except asyncio.TimeoutError:
             LOGGER.error('Check Timeout')
@@ -190,6 +213,7 @@ CHECK_FAIL = re.compile(r'^//\s*CHECK-FAIL:\s*(.*)$')
 CHECK_SUCC = re.compile(r'^//\s*CHECK-SUCC:\s*(.*)$')
 ASSERT_FAIL = re.compile(r'^//\s*ASSERT-FAIL:\s*(.*)$')
 ASSERT_SUCC = re.compile(r'^//\s*ASSERT-SUCC:\s*(.*)$')
+COUNT = re.compile(r'^//\s*COUNT:\s*(.*?)\s*==\s*(\d+)\s*$')
 NEWLINE_TIMEOUT = re.compile(r'^//\s*NEWLINE-TIMEOUT:\s*(\d+)$')
 TOTAL_TIMEOUT = re.compile(r'^//\s*TOTAL-TIMEOUT:\s*(\d+)$')
 
@@ -217,6 +241,11 @@ class DirectiveParser(object):
                 m = ASSERT_SUCC.match(line)
                 if m:
                     self.checker.add_assert_succ(re.compile(m.group(1)))
+                    continue
+                m = COUNT.match(line)
+                if m:
+                    self.checker.add_count(re.compile(m.group(1)),
+                                           int(m.group(2)))
                     continue
                 m = NEWLINE_TIMEOUT.match(line)
                 if m:
