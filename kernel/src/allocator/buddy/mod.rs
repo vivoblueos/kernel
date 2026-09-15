@@ -12,581 +12,89 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use self::{
-    heap::{order_of_size, BuddyMemoryInfo},
-    page::{PageFlags, MAX_ORDER, PAGE_SIZE},
-};
+//! Kernel wrapper for the raw buddy algorithm in `allocator_crate`.
+
+mod heap;
+
 use crate::types::{Arc, ArcInner};
-use alloc::vec::Vec;
-use core::{mem, ptr, sync::atomic::Ordering};
-
-pub mod heap;
-pub mod page;
-
-use heap::BuddyAllocator;
-
-// Physical memory layout of buddy allocator
-// ============================================================================
-//
-//   mem_start (e.g. 0x4000_0000)
-//   +-- kernel image (.text .rodata .data .bss)
-//   +-- __heap_start -- __heap_end (a small memory region reserved by link.x)
-//   |
-//   |    +--------------------------------------------------------------+
-//   |    |  struct Page[total_pages]  <-- page descriptor array         |
-//   |    |  each page 32-48 bytes, flags: FREE/RESERVED/order/refcount  |
-//   |    +--------------------------------------------------------------+
-//   |
-//   +--> start_pfn (first usable page after metadata)
-//        |
-//        |  Usable region is split into the largest possible buddy-aligned
-//        |  blocks (up to MAX_ORDER=11, 8 MB). The head page of each block
-//        |  has FREE=1 and its actual order; all other pages have FREE=0
-//        |  (invalid). The first block's order may be < MAX_ORDER if
-//        |  start_pfn is not aligned to a MAX_ORDER boundary.
-//        |
-//        |  +----------+  +----------+         +----------+  +----------+
-//        |  | pfn=N    |  | pfn=N+1  |  ...    | pfn=M    |  | pfn=M+1  |  ...
-//        |  | FREE=1   |  | FREE=0   |         | FREE=1   |  | FREE=0   |
-//        |  | order=11 |  | (invalid)|         | order=11 |  | (invalid)|
-//        |  +----------+  +----------+         +----------+  +----------+
-//        |       ^ chunk 0 head                     ^ chunk 1 head
-//        |
-//        |           ... all pages in between FREE=0 ...
-//        |
-//        |  +----------+         +----------+
-//        |  | pfn=P    |  ...    | pfn=end  |
-//        |  | FREE=1   |         | FREE=0   |
-//        |  | order=K  |         | (invalid)|
-//        |  +----------+         +----------+
-//        |       ^ last chunk head (order=K < 11 if size < 8 MB)
-//        |
-//        +--> each MAX_ORDER chunk spans 2048 pages; only the head page
-//             has valid flags.
-//
-//   mem_end (e.g. 0x4800_0000)
-// ============================================================================
+pub(super) use allocator_crate::buddy::{order_of_size, PAGE_SIZE};
+use heap::BuddyHeap;
 
 #[allow(non_snake_case)]
 mod BUDDY_ALLOC {
     use super::*;
 
-    // ArcInner contains heap memory (BuddyAllocator) and a reference count, this is an immutable reference
-    static CTRL_BLOCK: ArcInner<BuddyAllocator> = ArcInner::new(BuddyAllocator::new());
-    // Wrap ArcInner with Arc to form a globally accessible Arc<BuddyAllocator>, initialized at compile time
-    pub(in crate::allocator) static PTR: Arc<BuddyAllocator> =
+    static CTRL_BLOCK: ArcInner<BuddyHeap> = ArcInner::new(BuddyHeap::new());
+    pub(in crate::allocator) static PTR: Arc<BuddyHeap> =
         unsafe { Arc::from_static_inner_ref(&CTRL_BLOCK) };
 }
 
-// Expose BUDDY_ALLOC's PTR as BUDDY_ALLOC so other modules can access the global BuddyAllocator instance via allocator::buddy::BUDDY_ALLOC.
 pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
 
 #[cfg(test)]
-fn assert_page_conservation() {
-    let info = BUDDY_ALLOC.memory_info();
-    assert_eq!(
-        info.total_pages,
-        info.free_pages + info.used_pages + info.reserved_pages,
-        "page conservation violated: total={} free={} used={} reserved={}",
-        info.total_pages,
-        info.free_pages,
-        info.used_pages,
-        info.reserved_pages
-    );
-}
-
-#[cfg(test)]
-macro_rules! buddy_test_exclusive {
-    () => {
-        let _buddy_test_guard = BUDDY_ALLOC.test_exclusive();
-    };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Basic allocation / deallocation
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod basic_tests {
+mod tests {
     use super::*;
+    use allocator_crate::buddy::{BuddyAllocator, PAGE_SHIFT};
     use blueos_test_macro::test;
+    use core::ptr::NonNull;
+
+    #[repr(C, align(64))]
+    struct TestMetadata([u8; 4096]);
 
     #[test]
-    fn init_creates_valid_state() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        let info = BUDDY_ALLOC.memory_info();
-        assert!(info.total_pages > 0);
-        assert!(info.reserved_pages > 0);
-        assert_page_conservation();
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-    }
+    fn layout_reserves_complete_metadata_pages() {
+        let phys_start = 0x4000_0000;
+        let phys_end = phys_start + 64 * PAGE_SIZE;
+        let kernel_end = phys_start + 2 * PAGE_SIZE + 123;
+        let layout = heap::plan_layout(phys_start, phys_end, kernel_end, |addr| addr).unwrap();
+        let metadata_layout = BuddyAllocator::metadata_layout(64).unwrap();
 
-    #[test]
-    fn alloc_single_page() {
-        buddy_test_exclusive!();
-        let before_free = BUDDY_ALLOC.memory_info().free_pages;
-        let page = BUDDY_ALLOC
-            .alloc_pages(0)
-            .expect("alloc single page should succeed");
-        let after_free = BUDDY_ALLOC.memory_info().free_pages;
-
-        assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
-        assert_eq!(unsafe { (*page).order }, 0);
-        assert_eq!(after_free, before_free - 1);
-        assert_page_conservation();
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
-        let final_free = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(final_free, before_free);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn alloc_large_block() {
-        buddy_test_exclusive!();
-        let before_free = BUDDY_ALLOC.memory_info().free_pages;
-        let page = BUDDY_ALLOC
-            .alloc_pages(2)
-            .expect("alloc order=2 should succeed");
-        let after_free = BUDDY_ALLOC.memory_info().free_pages;
-
-        assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
-        assert_eq!(unsafe { (*page).order }, 2);
-        assert_eq!(after_free, before_free - 4);
-        assert_page_conservation();
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 2) };
-        let final_free = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(final_free, before_free);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn alloc_returns_null_when_exhausted() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        let mut allocated = Vec::new();
-        // Exhaust all available pages
-        while let Some(page) = BUDDY_ALLOC.alloc_pages(0) {
-            allocated.push(unsafe { (*page).pfn });
-        }
-
-        // Next allocation should fail
-        assert!(BUDDY_ALLOC.alloc_pages(0).is_none());
-
-        // Free one and try again
-        let pfn = allocated.pop().unwrap();
-        let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
-        unsafe { BUDDY_ALLOC.free_pages(page, 0) };
-        let recovered = BUDDY_ALLOC
-            .alloc_pages(0)
-            .expect("should succeed after free");
-        unsafe { BUDDY_ALLOC.free_pages(&mut *recovered, 0) };
-
-        // Clean up remaining allocations
-        for pfn in allocated.drain(..) {
-            let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
-            unsafe { BUDDY_ALLOC.free_pages(page, 0) };
-        }
-        // allocated is now empty; shrink_to_fit releases the backing heap memory
-        allocated.shrink_to_fit();
-        mem::drop(allocated);
-
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn test_exclusive_guard_is_reentrant_for_owner() {
-        let _outer_guard = BUDDY_ALLOC.test_exclusive();
-        let _inner_guard = BUDDY_ALLOC.test_exclusive();
-
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        let page = BUDDY_ALLOC
-            .alloc_pages(0)
-            .expect("owner should allocate while holding nested guards");
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
-
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Split / coalesce
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod split_coalesce_tests {
-    use super::*;
-    use blueos_test_macro::test;
-
-    #[test]
-    fn split_on_demand() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        // Allocate order=1 (2 pages) — may trigger split from larger blocks
-        let page = BUDDY_ALLOC
-            .alloc_pages(1)
-            .expect("alloc order=1 should succeed");
-        assert_eq!(unsafe { (*page).order }, 1);
-        assert!(!unsafe { (*page).flags.contains(PageFlags::FREE) });
-        assert_page_conservation();
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn coalesce_adjacent_buddies() {
-        buddy_test_exclusive!();
-        let total_free = BUDDY_ALLOC.memory_info().free_pages;
-        let mut allocated = Vec::new();
-        let mut buddies = None;
-
-        // Keep allocating pages until we find two pages whose PFNs are buddies of each other.
-        while let Some(page) = BUDDY_ALLOC.alloc_pages(1) {
-            let pfn = unsafe { (*page).pfn };
-            if let Some(index) = allocated
-                .iter()
-                .position(|&(allocated_pfn, _)| allocated_pfn ^ pfn == 2)
-            {
-                let (buddy_pfn, buddy_page) = allocated.swap_remove(index);
-                buddies = Some((buddy_pfn, buddy_page, pfn, page));
-                break;
-            }
-            allocated.push((pfn, page));
-        }
-
-        // Free the extra pages that were allocated earlier
-        for (_, page) in allocated {
-            unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
-        }
-
-        let (pfn1, p1, pfn2, p2) = buddies.expect("must find order=1 buddy pair");
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(before, total_free - 4);
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 1) };
-        let mid = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(mid, total_free - 2);
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 1) };
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, total_free);
-
-        // The two order=1 buddies should have coalesced into a single larger
-        // block (order >= 2, possibly merged further with neighboring free
-        // buddies). Verify coalescing directly via the page descriptors without
-        // relying on any particular free-list ordering: after the merge, the two
-        // original buddy heads can no longer BOTH remain free order=1 blocks.
-        let head1 = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn1) };
-        let head2 = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn2) };
-        let both_still_order1_free = head1.flags.contains(PageFlags::FREE)
-            && head1.order == 1
-            && head2.flags.contains(PageFlags::FREE)
-            && head2.order == 1;
-        assert!(
-            !both_still_order1_free,
-            "buddies pfn={} and pfn={} did not coalesce (both still free order=1 heads)",
-            pfn1, pfn2
-        );
-
-        // The coalesced block is now available, so an order=2 allocation must
-        // succeed. Its pfn is not asserted: under FIFO free lists the block
-        // returned need not be the one just coalesced.
-        let merged = BUDDY_ALLOC
-            .alloc_pages(2)
-            .expect("order=2 alloc after coalescing");
-        unsafe { BUDDY_ALLOC.free_pages(&mut *merged, 2) };
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn coalesce_chain() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-
-        // Allocate four order=0 pages that form two order=1 pairs
-        let pages: Vec<_> = (0..4)
-            .map(|_| BUDDY_ALLOC.alloc_pages(0).expect("alloc"))
-            .collect();
-
-        // Free all four in reverse order — should fully coalesce
-        for page in pages.into_iter().rev() {
-            unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
-        }
-
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn coalescing_clears_removed_buddy_head_metadata() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        let p1 = BUDDY_ALLOC.alloc_pages(0).expect("first page");
-        let p2 = BUDDY_ALLOC.alloc_pages(0).expect("second page");
-        let p1_pfn = unsafe { (*p1).pfn };
-        let p2_pfn = unsafe { (*p2).pfn };
-
-        // They are not buddy pairs
-        if p1_pfn ^ p2_pfn != 1 {
-            unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 0) };
-            unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 0) };
-            let after = BUDDY_ALLOC.memory_info().free_pages;
-            assert_eq!(after, before);
-            return;
-        }
-
-        // They are buddy pairs
-        unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 0) };
-        unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 0) };
-
-        let removed_buddy_pfn = p1_pfn.max(p2_pfn);
-        let removed_buddy = unsafe { &*BUDDY_ALLOC.pfn_to_virt(removed_buddy_pfn) };
-        assert!(
-            !removed_buddy.flags.contains(PageFlags::FREE),
-            "merged buddy head pfn={} must not remain marked free",
-            removed_buddy_pfn
-        );
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Aligned allocation
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod aligned_tests {
-    use super::*;
-    use blueos_test_macro::test;
-
-    #[test]
-    fn alloc_aligned_basic() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        // Allocate 8KB (order=1) aligned to 16KB (align_order=2)
-        let page = BUDDY_ALLOC
-            .alloc_pages_aligned(1, 2)
-            .expect("aligned alloc should succeed");
-        let addr = unsafe { BUDDY_ALLOC.pfn_to_phys((*page).pfn) };
-
+        assert_eq!(layout.metadata_virt_start, phys_start + 3 * PAGE_SIZE);
+        assert_eq!(layout.metadata_len, metadata_layout.size());
+        assert_eq!(layout.total_pages, 64);
         assert_eq!(
-            addr & ((4 * PAGE_SIZE) - 1),
-            0,
-            "address should be 16KB aligned"
+            layout.managed_start_pfn,
+            3 + metadata_layout.size().div_ceil(PAGE_SIZE)
         );
-        assert_page_conservation();
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 1) };
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
     }
 
     #[test]
-    fn alloc_aligned_does_not_leak() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        let mut allocated = Vec::new();
-        // Multiple aligned allocations
-        for _ in 0..10 {
-            if let Some(page) = BUDDY_ALLOC.alloc_pages_aligned(1, 2) {
-                allocated.push(unsafe { (*page).pfn });
-            }
-        }
-
-        // Free all
-        for pfn in allocated.drain(..) {
-            let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
-            unsafe { BUDDY_ALLOC.free_pages(page, 1) };
-        }
-        allocated.shrink_to_fit();
-        mem::drop(allocated);
-
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Boundary tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod boundary_tests {
-    use super::*;
-    use blueos_test_macro::test;
-
-    #[test]
-    fn alloc_max_order() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        // Try allocating the largest possible order
-        let page = BUDDY_ALLOC.alloc_pages(MAX_ORDER);
-        if page.is_some() {
-            let addr = unsafe { BUDDY_ALLOC.pfn_to_phys((*page.unwrap()).pfn) };
-            assert_eq!(addr & ((PAGE_SIZE << MAX_ORDER) - 1), 0);
-            unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), MAX_ORDER) };
-        }
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn alloc_beyond_max_order_fails() {
-        buddy_test_exclusive!();
-        assert!(BUDDY_ALLOC.alloc_pages(MAX_ORDER + 1).is_none());
-    }
-
-    #[test]
-    fn alloc_zero_pages() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-        let page = BUDDY_ALLOC.alloc_pages(0);
-        assert!(page.is_some());
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page.unwrap(), 0) };
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stress / sequence tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod stress_tests {
-    use super::*;
-    use blueos_test_macro::test;
-
-    #[test]
-    fn random_alloc_free_sequence() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-
-        let mut allocated: Vec<(usize, usize)> = Vec::new();
-        let orders = [0, 0, 1, 0, 1, 2, 0, 1, 0, 2];
-
-        for &order in &orders {
-            if let Some(page) = BUDDY_ALLOC.alloc_pages(order) {
-                let pfn = unsafe { (*page).pfn };
-                allocated.push((pfn, order));
-            }
-        }
-
-        // Free in reverse order
-        for (pfn, order) in allocated.into_iter().rev() {
-            let page = unsafe { &mut *BUDDY_ALLOC.pfn_to_virt(pfn) };
-            unsafe { BUDDY_ALLOC.free_pages(page, order) };
-        }
-
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn alloc_free_alloc_no_leak() {
-        buddy_test_exclusive!();
-        let before = BUDDY_ALLOC.memory_info().free_pages;
-
-        // Allocate and free the same pattern multiple times
-        for _ in 0..5 {
-            let p1 = BUDDY_ALLOC.alloc_pages(2).unwrap();
-            let p2 = BUDDY_ALLOC.alloc_pages(1).unwrap();
-            unsafe { BUDDY_ALLOC.free_pages(&mut *p1, 2) };
-            unsafe { BUDDY_ALLOC.free_pages(&mut *p2, 1) };
-        }
-
-        let after = BUDDY_ALLOC.memory_info().free_pages;
-        assert_eq!(after, before);
-        assert_page_conservation();
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// order_of_size helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod order_tests {
-    use super::{heap::order_of_size, page::PAGE_SIZE};
-    use blueos_test_macro::test;
-
-    #[test]
-    fn order_of_size_basic() {
-        assert_eq!(order_of_size(1), 0);
-        assert_eq!(order_of_size(PAGE_SIZE), 0);
-        assert_eq!(order_of_size(PAGE_SIZE + 1), 1);
-        assert_eq!(order_of_size(2 * PAGE_SIZE), 1);
-        assert_eq!(order_of_size(3 * PAGE_SIZE), 2);
-        assert_eq!(order_of_size(4 * PAGE_SIZE), 2);
-        assert_eq!(order_of_size(8 * PAGE_SIZE), 3);
-        assert_eq!(order_of_size(16 * PAGE_SIZE), 4);
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PFN translation helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod translation_tests {
-    use super::{
-        page::{Page, PAGE_SHIFT},
-        *,
-    };
-    use blueos_test_macro::test;
-
-    #[test]
-    fn pfn_to_virt_returns_descriptor_for_same_pfn() {
-        buddy_test_exclusive!();
-        let page = BUDDY_ALLOC.alloc_pages(0).expect("alloc single page");
-        let pfn = unsafe { (*page).pfn };
-        let descriptor = unsafe { &*BUDDY_ALLOC.pfn_to_virt(pfn) };
-
-        assert_eq!(descriptor.pfn, pfn);
-        assert_eq!(descriptor as *const Page, page as *const Page);
-
-        unsafe { BUDDY_ALLOC.free_pages(&mut *page, 0) };
-        assert_page_conservation();
-    }
-
-    #[test]
-    fn pfn_to_phys_matches_page_stride() {
-        buddy_test_exclusive!();
-        let first = BUDDY_ALLOC.alloc_pages(0).expect("first page");
-        let second = BUDDY_ALLOC.alloc_pages(0).expect("second page");
-        let first_pfn = unsafe { (*first).pfn };
-        let second_pfn = unsafe { (*second).pfn };
-        let first_phys = BUDDY_ALLOC.pfn_to_phys(first_pfn);
-        let second_phys = BUDDY_ALLOC.pfn_to_phys(second_pfn);
-
-        assert_eq!(
-            second_phys.wrapping_sub(first_phys),
-            (second_pfn - first_pfn) << PAGE_SHIFT
-        );
-
+    fn wrapper_allocates_and_releases_physical_addresses() {
+        // Keep the metadata buffer off the test thread's 4 KiB release stack.
+        // Together with this function's call frames, an inline 4 KiB buffer
+        // exceeds that stack and corrupts the adjacent static thread storage.
+        let mut metadata = alloc::boxed::Box::new(TestMetadata([0; 4096]));
+        let metadata_layout = BuddyAllocator::metadata_layout(64).unwrap();
+        assert!(metadata_layout.size() <= metadata.0.len());
+        let heap = BuddyHeap::new();
         unsafe {
-            BUDDY_ALLOC.free_pages(&mut *first, 0);
-            BUDDY_ALLOC.free_pages(&mut *second, 0);
+            heap.init_for_test(
+                0x8000_0000,
+                64,
+                4,
+                NonNull::new(metadata.0.as_mut_ptr()).unwrap(),
+                metadata.0.len(),
+            )
+            .unwrap();
         }
-        assert_page_conservation();
+
+        let before = heap.memory_info();
+        let phys = heap.alloc_pages_phys_addr(2).unwrap();
+        assert_eq!(phys & ((PAGE_SIZE << 2) - 1), 0);
+        assert_eq!(heap.phys_addr_to_pfn_for_test(phys), Some(4));
+        assert_eq!(heap.memory_info().free_pages, before.free_pages - 4);
+        unsafe { heap.free_pages_phys_addr(phys, 2) };
+        assert_eq!(heap.memory_info(), before);
+
+        assert_eq!(heap.phys_addr_to_pfn_for_test(phys + 1), None);
+        assert_eq!(heap.phys_addr_to_pfn_for_test(0x7fff_f000), None);
+        assert_eq!(
+            heap.phys_addr_to_pfn_for_test(0x8000_0000 + (64 << PAGE_SHIFT)),
+            None
+        );
+        assert_eq!(
+            heap.phys_addr_to_virt_for_test(phys),
+            crate::mm::kernel_phys_to_virt(phys)
+        );
     }
 }

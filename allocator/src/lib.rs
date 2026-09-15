@@ -13,10 +13,12 @@
 // limitations under the License.
 
 #![no_std]
+#![feature(const_trait_impl)]
 
 extern crate alloc;
 
 pub mod block;
+pub mod buddy;
 pub mod llff;
 pub mod llff_hole;
 pub mod slab;
