@@ -13,11 +13,12 @@
 // limitations under the License.
 
 #![no_std]
-#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
+#![feature(const_trait_impl)]
 
 extern crate alloc;
 
 pub mod block;
+pub mod buddy;
 pub mod llff;
 pub mod llff_hole;
 pub mod slab;
