@@ -39,10 +39,14 @@ if (coverage || profile) {
 build_rust("blueos_loader") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  rustflags = [
+    "--cfg",
+    "target_board=\"${board}\"",
+  ]
   deps = [
     "//external/vendor/goblin-0.9.3:goblin",
     "//kernel/infra:blueos_infra",
-    "//librs",
   ]
 }
 
@@ -50,10 +54,35 @@ run_clippy("blueos_loader_clippy") {
   deps = [ ":blueos_loader" ]
 }
 
+build_rust("loader_unittest") {
+  testonly = true
+  crate_name = "loader_unittest"
+  crate_type = "bin"
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  deps = [
+    "//external/vendor/goblin-0.9.3:goblin",
+    "//kernel/infra:blueos_infra",
+  ]
+  rustflags = [ "--test" ]
+}
+
+run_host("run_loader_unittest") {
+  testonly = true
+  runner = ":loader_unittest(//build/toolchain:host)"
+}
+
+run_clippy("loader_unittest_clippy") {
+  testonly = true
+  deps = [ ":loader_unittest(//build/toolchain:host)" ]
+}
+
 group("check_loader_by_clippy") {
   testonly = true
   deps = [
     ":blueos_loader_clippy",
+
+    # ":loader_unittest_clippy",
     "tests/integration_test:loader_integration_test_clippy",
   ]
   if (coverage || profile) {

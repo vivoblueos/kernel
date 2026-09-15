@@ -54,6 +54,7 @@ _shared_deps = [
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
+  "//external/vendor/mipidsi-0.10.0:mipidsi",
   "//external/vendor/num-traits-0.2.19:num_traits",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
   "//external/vendor/spin-0.9.8:spin",
@@ -70,10 +71,14 @@ _shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
   "//libc",
-  "//external/vendor/mipidsi-0.10.0:mipidsi"
 ]
 
-# GCC provides __atomic builtins natively; skip the clang-derived libatomic for GCC toolchains.
+if (defined(dynamic_loader) && dynamic_loader) {
+  _shared_deps += [ "//kernel/loader:blueos_loader" ]
+}
+
+# GCC provides __atomic builtins natively; skip the clang-derived libatomic for
+# GCC toolchains.
 if (current_toolchain != "//build/toolchain:gcc_fv_thumbv8m") {
   _shared_deps += [ ":atomic" ]
 }
@@ -176,6 +181,14 @@ build_rust("blueos") {
   deps = _shared_deps
   public_deps = board_deps
   public_deps += [ "//kernel/kconfig:generate_rustflags_file" ]
+  if (defined(dynamic_loader) && dynamic_loader) {
+    cfgs += [ "dynamic_loader" ]
+  }
+  if (defined(boot_dynamic_seed) && boot_dynamic_seed) {
+    # Catalog only: it holds VFS paths and host paths, not artifact bytes.
+    deps += [ ":boot_seed_catalog" ]
+    cfgs += [ "boot_dynamic_seed" ]
+  }
   public_configs += [
     "//kernel/kconfig:kconfigs",
     "//build/boards/${board}:kernel_config",
@@ -184,6 +197,139 @@ build_rust("blueos") {
 
 run_clippy("blueos_clippy") {
   deps = [ ":blueos" ]
+}
+
+# Build the bootable kernel image whose sole static application installs the
+# boot system image and launches the dynamic bootstrap shell. Keeping both in
+# the dedicated image prevents unrelated QEMU test binaries from also seeding a
+# root and running an interactive shell.
+#
+# The system image is *not* embedded here: `gen_boot_seed_files` records where
+# each artifact lives on the host, and boot streams the bytes into the root
+# tmpfs over semihosting. The kernel image therefore carries no application
+# bytes at all.
+# Gated per board via `boot_dynamic_seed` (currently qemu_mps2_an385).
+if (defined(boot_dynamic_seed) && boot_dynamic_seed) {
+  build_rust("kernel_image") {
+    crate_type = "bin"
+    edition = "2021"
+    sources = [ "src/kernel_image.rs" ]
+    deps = [
+      ":blueos",
+      "//kernel/rsrt",
+      "//libc",
+      "//librs",
+    ]
+
+    # The board runners read the generated rustflags file, so the kconfig
+    # generation must be reachable through public deps.
+    public_deps = [ "//kernel/kconfig:generate_rustflags_file" ]
+    cfgs = _kernel_default_cfgs
+    linker_script = default_linker_script
+    public_configs += [
+      "//kernel/kconfig:kconfigs",
+      "//build/boards/${board}:kernel_config",
+    ]
+  }
+
+  _clang_c_layout =
+      "${root_gen_dir}/apps/example/dynamic/clang_c/clang_c_layout.json"
+  _clang_cxx_layout =
+      "${root_gen_dir}/apps/example/dynamic/clang_cxx/clang_cxx_layout.json"
+  _multi_layout =
+      "${root_gen_dir}/apps/example/dynamic/multi_dso/multi_layout.json"
+  _cycle_layout =
+      "${root_gen_dir}/apps/example/dynamic/cycle_demo/cycle_demo_layout.json"
+  _scope_layout =
+      "${root_gen_dir}/apps/example/dynamic/scope_demo/scope_demo_layout.json"
+  _scope_bad_layout =
+      "${root_gen_dir}/apps/example/dynamic/scope_bad/scope_bad_layout.json"
+  _tls_layout =
+      "${root_gen_dir}/apps/example/dynamic/tls_demo/tls_demo_layout.json"
+
+  _boot_seed_catalog = "${target_gen_dir}/boot_seed_catalog.rs"
+
+  action("gen_boot_seed_files") {
+    script = "//build/scripts/gen_boot_seed_files.py"
+    deps = [
+      "//apps/example/dynamic/clang_c:clang_c_layout",
+      "//apps/example/dynamic/clang_cxx:clang_cxx_layout",
+      "//apps/example/dynamic/cycle_demo:cycle_demo_layout",
+      "//apps/example/dynamic/hello",
+      "//apps/example/dynamic/multi_dso:multi_layout",
+      "//apps/example/dynamic/rust_std",
+      "//apps/example/dynamic/scope_bad:scope_bad_layout",
+      "//apps/example/dynamic/scope_demo:scope_demo_layout",
+      "//apps/example/dynamic/scope_demo:scope_sys",
+      "//apps/example/dynamic/tls_demo:tls_demo_layout",
+      "//apps/shell",
+      "//librs:libc",
+
+      # Wait for the ELF contract checks before including these artifacts in
+      # the boot seed catalog. The artifact targets above remain direct deps
+      # because GN resolves each `inputs` entry to its producing target.
+      "//apps/example/dynamic/hello:hello_check",
+      "//apps/example/dynamic/rust_std:rust_std_check",
+      "//apps/example/dynamic/scope_demo:scope_sys_check",
+      "//apps/shell:shell_check",
+      "//librs:libc_check",
+    ]
+    inputs = [
+      "${root_out_dir}/bin/hello",
+      "${root_out_dir}/bin/rust_std",
+      "${root_out_dir}/bin/shell",
+      "${root_out_dir}/lib/liblibrs.so",
+      "${root_out_dir}/lib/libscope_sys.so",
+      _clang_c_layout,
+      _clang_cxx_layout,
+      _multi_layout,
+      _cycle_layout,
+      _scope_layout,
+      _scope_bad_layout,
+      _tls_layout,
+    ]
+
+    # Fixed files and application bundle layouts share one source of truth.
+    # `inputs` above only orders the artifact targets ahead of the boot image;
+    # the generated catalog records their paths, never their bytes.
+    args = [
+      "--catalog-out",
+      rebase_path(_boot_seed_catalog),
+      "--file",
+      "/apps/hello/app.elf," + rebase_path("${root_out_dir}/bin/hello"),
+      "--file",
+      "/apps/rust_std/app.elf," + rebase_path("${root_out_dir}/bin/rust_std"),
+      "--file",
+      "/apps/shell/app.elf," + rebase_path("${root_out_dir}/bin/shell"),
+      "--file",
+      "/system/lib/libc.so.1," + rebase_path("${root_out_dir}/lib/liblibrs.so"),
+      "--file",
+      "/system/lib/libscope_sys.so.1," +
+          rebase_path("${root_out_dir}/lib/libscope_sys.so"),
+      "--layout",
+      rebase_path(_clang_c_layout),
+      "--layout",
+      rebase_path(_clang_cxx_layout),
+      "--layout",
+      rebase_path(_multi_layout),
+      "--layout",
+      rebase_path(_cycle_layout),
+      "--layout",
+      rebase_path(_scope_layout),
+      "--layout",
+      rebase_path(_scope_bad_layout),
+      "--layout",
+      rebase_path(_tls_layout),
+    ]
+    outputs = [ _boot_seed_catalog ]
+  }
+
+  build_rust("boot_seed_catalog") {
+    crate_type = "rlib"
+    sources = [ _boot_seed_catalog ]
+    edition = "2021"
+    deps = [ ":gen_boot_seed_files" ]
+  }
 }
 
 cbindgen("rust_wrapper") {

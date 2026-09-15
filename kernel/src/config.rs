@@ -21,9 +21,14 @@ pub const TASKLET_STACK_SIZE: usize = 512;
 
 // We must ensure the stack is big enough to contain context and
 // to perform computing in the schedule loop.
-#[cfg(all(debug_assertions, target_pointer_width = "32"))]
+// Unit tests exercise deep, instrumentation-heavy call chains (notably the
+// dynamic-loader namespace planner). Keep their system stacks at the debug
+// size even when the test image itself is optimized; otherwise the test
+// runner can overflow a 4 KiB release stack and corrupt the adjacent static
+// `SystemThreadStorage` before the next test starts.
+#[cfg(all(any(test, debug_assertions), target_pointer_width = "32"))]
 pub const SYSTEM_THREAD_STACK_SIZE: usize = 8 << 10;
-#[cfg(all(not(debug_assertions), target_pointer_width = "32"))]
+#[cfg(all(not(any(test, debug_assertions)), target_pointer_width = "32"))]
 pub const SYSTEM_THREAD_STACK_SIZE: usize = 4 << 10;
 
 #[cfg(all(debug_assertions, target_pointer_width = "32"))]
@@ -31,9 +36,9 @@ pub const DEFAULT_STACK_SIZE: usize = 8 << 10;
 #[cfg(all(not(debug_assertions), target_pointer_width = "32"))]
 pub const DEFAULT_STACK_SIZE: usize = 4 << 10;
 
-#[cfg(all(debug_assertions, target_pointer_width = "64"))]
+#[cfg(all(any(test, debug_assertions), target_pointer_width = "64"))]
 pub const SYSTEM_THREAD_STACK_SIZE: usize = 32 << 10;
-#[cfg(all(not(debug_assertions), target_pointer_width = "64"))]
+#[cfg(all(not(any(test, debug_assertions)), target_pointer_width = "64"))]
 pub const SYSTEM_THREAD_STACK_SIZE: usize = 4096;
 
 #[cfg(all(debug_assertions, target_pointer_width = "64"))]

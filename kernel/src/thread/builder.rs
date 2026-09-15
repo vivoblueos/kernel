@@ -101,6 +101,26 @@ where
     None
 }
 
+/// Spawn a kernel thread running `f` on a stack of `stack_size` bytes.
+///
+/// For work whose stack depth must be a decision rather than an inheritance:
+/// [`spawn`] gives the thread the default stack, so a caller that runs deep,
+/// data-dependent work would otherwise impose its own depth on whichever
+/// thread happened to trigger it.
+pub fn spawn_with_stack<F>(stack_size: usize, f: F) -> Option<ThreadNode>
+where
+    F: FnOnce() + Send + 'static,
+{
+    let stack = Stack::from_size(stack_size)?;
+    let entry = Box::new(f);
+    let builder = Builder::new(Entry::Closure(entry)).set_stack(stack);
+    let t = builder.build();
+    if scheduler::queue_ready_thread(thread::IDLE, t.clone()).is_ok() {
+        return Some(t);
+    }
+    None
+}
+
 pub struct Builder {
     stack: Option<Stack>,
     entry: Entry,

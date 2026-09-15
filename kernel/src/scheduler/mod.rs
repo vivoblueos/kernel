@@ -245,6 +245,9 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
                 Entry::C(f) => f(),
                 Entry::Closure(f) => f(),
                 Entry::Posix(f, arg) => f(arg),
+                // A raw entry is an initial-PC primitive, never a cleanup
+                // callback.
+                Entry::Raw(..) => debug_assert!(false, "raw entry installed as cleanup"),
             }
         };
     }
