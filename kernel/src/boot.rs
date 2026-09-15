@@ -127,6 +127,9 @@ extern "C" fn init() {
 
     scheduler::init();
     logger::logger_init();
+
+    #[cfg(dynamic_loader)]
+    crate::application::runtime::init();
     time::timer::init();
     #[cfg(kernel_async)]
     asynk::init();

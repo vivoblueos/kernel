@@ -1,0 +1,32 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Keep the board-level check graph independent of the individual dynamic ELF
+# fixtures. New runtime tests should be registered here so every board that
+# opts into this group receives the complete suite.
+group("check_dynamic") {
+  testonly = true
+  deps = [
+    "//kernel/tests/dynamic_clang_c_test:run_dynamic_clang_c_test",
+    "//kernel/tests/dynamic_clang_cxx_test:run_dynamic_clang_cxx_test",
+    "//kernel/tests/dynamic_cycle_test:run_dynamic_cycle_test",
+    "//kernel/tests/dynamic_multidso_test:run_dynamic_multidso_test",
+    "//kernel/tests/dynamic_rust_std_test:run_dynamic_rust_std_test",
+    "//kernel/tests/dynamic_scope_bad_test:run_dynamic_scope_bad_test",
+    "//kernel/tests/dynamic_scope_test:run_dynamic_scope_test",
+    "//kernel/tests/dynamic_sequence_test:run_dynamic_sequence_test",
+    "//kernel/tests/dynamic_test:run_dynamic_test",
+    "//kernel/tests/dynamic_tls_test:run_dynamic_tls_test",
+  ]
+}

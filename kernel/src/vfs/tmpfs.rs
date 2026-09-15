@@ -452,13 +452,27 @@ impl InodeOps for TmpInode {
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8], nonblock: bool) -> Result<usize, Error> {
-        let inner = self.inner.read();
-        if let Some(device) = inner.as_device() {
+        // Device I/O can block (a console read waits for input) and must not
+        // hold the inode lock: a concurrent writer to the same device would
+        // otherwise spin on the write lock behind a blocked reader. Clone the
+        // device handle under the lock and do the I/O outside it.
+        #[cfg(armv7m)]
+        if let Some(device) = {
+            let inner = self.inner.read();
+            inner.as_device().cloned()
+        } {
             return device
                 .read(offset as u64, buf, nonblock)
                 .map_err(Error::from);
         }
 
+        let inner = self.inner.read();
+        #[cfg(not(armv7m))]
+        if let Some(device) = inner.as_device() {
+            return device
+                .read(offset as u64, buf, nonblock)
+                .map_err(Error::from);
+        }
         let Some(data) = inner.as_file() else {
             warn!("read_at: inode is not a file");
             return Err(code::EISDIR);
@@ -474,13 +488,25 @@ impl InodeOps for TmpInode {
     }
 
     fn write_at(&self, offset: usize, buf: &[u8], nonblock: bool) -> Result<usize, Error> {
-        let mut inner = self.inner.write();
-        if let Some(device) = inner.as_device() {
+        // Symmetric with `read_at`: device writes run outside the inode lock
+        // so a blocked device reader never starves device writers.
+        #[cfg(armv7m)]
+        if let Some(device) = {
+            let inner = self.inner.read();
+            inner.as_device().cloned()
+        } {
             return device
                 .write(offset as u64, buf, nonblock)
                 .map_err(Error::from);
         }
 
+        let mut inner = self.inner.write();
+        #[cfg(not(armv7m))]
+        if let Some(device) = inner.as_device() {
+            return device
+                .write(offset as u64, buf, nonblock)
+                .map_err(Error::from);
+        }
         let write_end = offset + buf.len();
         let need_resize;
         {

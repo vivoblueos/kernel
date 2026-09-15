@@ -1,0 +1,54 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+# Negative end-to-end test: an undefined weak control-flow target must fail
+# closed during relocation and the application must never launch.
+
+build_rust("dynamic_scope_bad_test") {
+  testonly = true
+  crate_type = "bin"
+  edition = "2021"
+  sources = [ "src/test.rs" ]
+  deps = [
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//kernel/kernel:blueos",
+    "//kernel/rsrt",
+    "//libc",
+    "//librs",
+  ]
+  linker_script = default_linker_script
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+  rustflags = [ "--test" ]
+}
+
+gen_qemu_runner("dynamic_scope_bad_test_runner") {
+  testonly = true
+  img = ":dynamic_scope_bad_test"
+  qemu = qemu_exe
+  machine = qemu_machine
+  semihosting = true
+  qemu_args = qemu_extra_args
+  block_img = "dynamic_scope_bad_test_block.img"
+  block_args = qemu_block_args
+}
+
+run_qemu_check("run_dynamic_scope_bad_test") {
+  testonly = true
+  runner = ":dynamic_scope_bad_test_runner"
+  checker = "src/test.rs"
+}

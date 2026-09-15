@@ -101,9 +101,9 @@ extern "C" fn init() {
     #[cfg(feature = "std")]
     {
         extern "C" {
-            fn __librs_start_main();
+            fn __librs_start_main_static();
         }
-        unsafe { __librs_start_main() };
+        unsafe { __librs_start_main_static() };
     }
 
     #[cfg(not(feature = "std"))]

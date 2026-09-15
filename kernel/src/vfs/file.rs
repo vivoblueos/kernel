@@ -254,6 +254,41 @@ impl File {
         self.dcache.fs_info()
     }
 
+    /// Length of the underlying file, in bytes.
+    #[cfg(armv7m)]
+    pub fn file_len(&self) -> Result<u64, Error> {
+        Ok(self.dcache.size() as u64)
+    }
+
+    /// Positional read that leaves the shared file offset unchanged.
+    #[cfg(armv7m)]
+    pub fn read_at(&self, offset: u64, dst: &mut [u8]) -> Result<usize, Error> {
+        if !self.access_mode().is_readable() {
+            return Err(code::EACCES);
+        }
+        let offset = usize::try_from(offset).map_err(|_| code::EOVERFLOW)?;
+        self.dcache.inode().read_at(offset, dst, self.is_nonblock())
+    }
+
+    /// Fill `dst` with positional reads, without changing the shared offset.
+    #[cfg(armv7m)]
+    pub fn read_exact_at(&self, offset: u64, dst: &mut [u8]) -> Result<(), Error> {
+        if !self.access_mode().is_readable() {
+            return Err(code::EACCES);
+        }
+        let mut read = 0;
+        while read < dst.len() {
+            let delta = u64::try_from(read).map_err(|_| code::EOVERFLOW)?;
+            let at = offset.checked_add(delta).ok_or(code::EOVERFLOW)?;
+            let n = self.read_at(at, &mut dst[read..])?;
+            if n == 0 {
+                return Err(code::ENODATA);
+            }
+            read += n;
+        }
+        Ok(())
+    }
+
     delegate! {
         to self.dcache {
             pub fn type_(&self) -> InodeFileType;
