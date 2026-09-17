@@ -1,6 +1,9 @@
 allocator/src/buddy.rs
-allocator/src/lib.rs
+allocator/src/lib.rs                    --- PASS
 kernel/src/allocator/buddy/heap.rs
-kernel/src/allocator/buddy/mod.rs
-kernel/src/allocator/buddy/page.rs
-kernel/src/allocator/mod.rs
+kernel/src/allocator/buddy/mod.rs       --- 除了单元测试都 pass
+kernel/src/allocator/buddy/page.rs      --- 删除，pass
+kernel/src/allocator/mod.rs             --- 除了两个新增测试，都 pass
+
+可以看看 init, alloc, dealloc, realloc 等方法，是如何通过两个文件实现的
+
