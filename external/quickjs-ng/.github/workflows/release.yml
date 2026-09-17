@@ -1,0 +1,183 @@
+name: release
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  check_meson_version:
+    runs-on: ubuntu-22.04
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: install meson and ninja
+        run: |
+          pip install --upgrade meson ninja
+      - name: check meson version
+        run: |
+          MESON_VERSION=$(meson introspect meson.build --projectinfo | jq -r '.version')
+          test "${{ github.ref_name }}" = "v${MESON_VERSION}"
+
+  linux:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, armv7, riscv64, x86, x86_64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: quickjs-ng/setup-alpine@master
+        with:
+          # mimalloc v3 (mimalloc3-dev) lives in the edge testing repo; enable it.
+          # riscv64 has no v3 build there, so it falls back to mimalloc2-dev.
+          branch: edge
+          arch: ${{matrix.arch}}
+          extra-repositories: |
+            http://dl-cdn.alpinelinux.org/alpine/edge/testing
+          packages: "build-base make cmake ${{ matrix.arch == 'riscv64' && 'mimalloc2-dev' || 'mimalloc3-dev' }}"
+          apk-tools-url: https://raw.githubusercontent.com/quickjs-ng/apk-for-ci/refs/heads/master/apk.static#!sha256!34bb1a96f0258982377a289392d4ea9f3f4b767a4bb5806b1b87179b79ad8a1c
+      - name: build
+        shell: alpine.sh {0}
+        run: |
+          mkdir build
+          cd build
+          cmake -DQJS_BUILD_WERROR=ON -DQJS_BUILD_CLI_STATIC=ON -DQJS_BUILD_CLI_WITH_STATIC_MIMALLOC=ON ..
+          cd ..
+          cmake --build build --target qjs_exe -j$(getconf _NPROCESSORS_ONLN)
+          cmake --build build --target qjsc -j$(getconf _NPROCESSORS_ONLN)
+          mv build/qjs build/qjs-linux-${{matrix.arch}}
+          mv build/qjsc build/qjsc-linux-${{matrix.arch}}
+      - name: check
+        shell: alpine.sh {0}
+        run: |
+          file build/*-linux-${{matrix.arch}}
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: qjs-linux-${{matrix.arch}}
+          path: build/*-linux-${{matrix.arch}}
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - uses: actions/checkout@v7
+      - name: install mimalloc
+        if: ${{ matrix.arch == 'arm64' }}
+        run: brew install mimalloc
+      - name: build
+        run: |
+          mkdir build
+          cd build
+          cmake -DCMAKE_OSX_ARCHITECTURES=${{matrix.arch}} -DQJS_BUILD_WERROR=ON ${{ matrix.arch == 'arm64' && '-DQJS_BUILD_CLI_WITH_STATIC_MIMALLOC=ON -DCMAKE_PREFIX_PATH=/opt/homebrew' || '' }} ..
+          make -j$(getconf _NPROCESSORS_ONLN)
+      - name: build amalgamation
+        if: ${{ matrix.arch == 'arm64' }}
+        run: make amalgam # writes build/quickjs-amalgam.zip; runs qjs natively on arm64
+      - name: rename
+        run: |
+          mv build/qjs build/qjs-darwin-${{matrix.arch}}
+          mv build/qjsc build/qjsc-darwin-${{matrix.arch}}
+      - name: check
+        run: |
+          lipo -info build/qjs-darwin-${{matrix.arch}} build/qjsc-darwin-${{matrix.arch}}
+      - name: upload amalgamation
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: quickjs-amalgam.zip
+          path: build/quickjs-amalgam.zip
+          compression-level: 0 # already compressed
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: qjs-darwin-${{matrix.arch}}
+          path: build/*-darwin-${{matrix.arch}}
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x86_64]
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.arch == 'x86' && 'mingw32' || 'ucrt64' }}
+          install: >-
+            git
+            make
+          pacboy: >-
+            cmake:p
+            ninja:p
+            toolchain:p
+            ${{ matrix.arch == 'x86_64' && 'mimalloc:p' || '' }}
+      - name: build
+        env:
+          QJS_BUILD_CLI_WITH_STATIC_MIMALLOC: ${{ matrix.arch == 'x86_64' && 'ON' || 'OFF' }}
+        run: |
+          make
+          mv build/qjs.exe build/qjs-windows-${{matrix.arch}}.exe
+          mv build/qjsc.exe build/qjsc-windows-${{matrix.arch}}.exe
+      - name: check
+        run: |
+          file build/qjs-windows-${{matrix.arch}}.exe
+          ldd build/qjs-windows-${{matrix.arch}}.exe build/qjsc-windows-${{matrix.arch}}.exe
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: qjs-windows-${{matrix.arch}}
+          path: build/*-windows-${{matrix.arch}}.exe
+
+  wasi:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: setup wasi-sdk
+        run: |
+          wget -nv https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-linux.deb -P /tmp
+          sudo apt install /tmp/wasi-sdk*.deb
+      - name: build
+        run: |
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake -DQJS_BUILD_WERROR=ON
+          make -C build qjs_exe
+          mv build/qjs build/qjs-wasi.wasm
+      - name: build wasi reactor
+        run: |
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake -DQJS_BUILD_WERROR=ON -DQJS_WASI_REACTOR=ON
+          make -C build qjs_wasi
+          mv build/qjs.wasm build/qjs-wasi-reactor.wasm
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: qjs-wasi
+          path: |
+            build/qjs-wasi.wasm
+            build/qjs-wasi-reactor.wasm
+
+  upload-to-release:
+    needs: [linux, macos, windows, wasi, check_meson_version]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: get assets
+        uses: actions/download-artifact@v8
+        with:
+          path: build
+          merge-multiple: true
+      - run: ls -R build
+      - name: release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            build/*

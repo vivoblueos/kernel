@@ -1,0 +1,138 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "arm-none-fv-eabi-gcc" ],
+                       "string")
+
+# quickjs-ng engine core. Host-only frontends/tools (qjs.c, qjsc.c,
+# run-test262.c, unicode_gen.c, api-test.c, ctest.c, fuzz.c, lre-test.c,
+# qjs-wasi-reactor.c, quickjs-libc.c) are intentionally excluded — BlueOS
+# provides its own REPL front-end and no host libc is available.
+static_library("quickjs_ng") {
+  # quickjs-ng core engine. ng merged/removed cutils.c; the engine core is
+  # these four translation units (host frontends qjs.c/qjsc.c, quickjs-libc.c,
+  # and the various test/fuzz tools are excluded).
+  sources = [
+    "dtoa.c",
+    "libregexp.c",
+    "libunicode.c",
+    "quickjs.c",
+  ]
+
+  public_configs += [ "//build/boards/${board}:kernel_config" ]
+
+  include_dirs = [ "." ]
+
+  cflags = [
+    "-std=gnu11",
+    "-fshort-enums",
+    "-fsigned-char",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-DCONFIG_VERSION=\"0.16.2\"",
+    "-D_GNU_SOURCE",
+    # quickjs-ng uses the pthread-based thread shims in cutils.h (js_mutex_t /
+    # js_cond_t / js_once_t are unconditional because quickjs.c's Atomics code
+    # needs them, so the EMSCRIPTEN/__wasi__ no-thread path is not usable).
+    # The pthread *implementations* are provided by //librs (librs/src/pthread.rs,
+    # librs/src/syncs.rs, librs/src/time/mod.rs).
+    # declares the pthread/clock prototypes behind these feature-test macros, so
+    # define them to expose the prototypes; the symbols resolve to adapter at link.
+    "-D_POSIX_THREADS=1",
+    "-D_POSIX_TIMERS=1",
+    "-D_POSIX_MONOTONIC_CLOCK=1",
+    # quickjs.c uses alloca() but only includes <alloca.h> for __sun; newlib's
+    # <alloca.h> isn't reached. Map alloca to the compiler builtin directly.
+    "-Dalloca=__builtin_alloca",
+    "-isystem",
+    "${_sysroot}/include",
+    "-w",  # upstream vendor code: silence its warnings
+  ]
+}
+
+# Common cflags shared by the shell front-end targets (qjs_main + the shell
+# proper). Kept in one place so the two targets stay ABI-consistent.
+_shell_cflags = [
+  "-std=gnu11",
+  "-fshort-enums",
+  "-fsigned-char",
+  "-ffunction-sections",
+  "-fdata-sections",
+  "-DCONFIG_VERSION=\"0.16.2\"",
+  "-D_GNU_SOURCE",
+  "-D_POSIX_THREADS=1",
+  "-D_POSIX_TIMERS=1",
+  "-D_POSIX_MONOTONIC_CLOCK=1",
+  "-Dalloca=__builtin_alloca",
+  "-isystem",
+  "${_sysroot}/include",
+  "-w",  # upstream vendor code: silence its warnings
+  # GCC 14 makes -Wincompatible-pointer-types a hard error; -w won't hide it.
+  # quickjs-libc.c mixes int* with int32_t* (long int* on this target), so
+  # downgrade those back to warnings. Vendor code, not our ABI.
+  "-fpermissive",
+]
+
+# qjs.c alone, in its own target so it can be compiled with -D__wasi__. qjs.c's
+# standalone-executable support references qjsc_standalone[] (the compiled
+# standalone.js module) which we never generate. qjs.c gates every reference to
+# it behind its `emscripten_or_wasi` macro, so define __wasi__ for qjs.c ONLY
+# (not quickjs-libc.c, whose __wasi__ gates would strip the std/os stdio the
+# REPL needs) to compile that dead code out.
+static_library("quickjs_qjs_main") {
+  sources = [ "qjs.c" ]
+
+  public_configs += [ "//build/boards/${board}:kernel_config" ]
+
+  include_dirs = [ "." ]
+
+  deps = [ ":quickjs_ng" ]
+
+  cflags = _shell_cflags + [ "-D__wasi__" ]
+}
+
+# The qjs interactive shell: the engine's own `main()` frontend (qjs_main
+# above) plus the quickjs-libc std/os module bindings and the compiled-in
+# repl.js REPL bytecode (qjsc_repl). The BlueOS app (bk_bindings) links this
+# and jumps into its `main()` from a C `app_entry`. This is plain C linked by
+# the toolchain against newlib — no Rust std/rsrt is involved (the
+# librs_newlib staticlib supplies the underscore syscall stubs newlib's
+# wrappers call).
+static_library("quickjs_shell") {
+  sources = [
+    "gen/repl.c",
+    "quickjs-libc.c",
+  ]
+
+  public_configs += [ "//build/boards/${board}:kernel_config" ]
+
+  # bk_include first: it shadows the toolchain's missing/bare POSIX
+  # headers (poll.h, dlfcn.h, sys/ioctl.h, termios.h) with the BlueOS shims.
+  include_dirs = [
+    "bk_include",
+    ".",
+  ]
+
+  deps = [
+    ":quickjs_ng",
+    ":quickjs_qjs_main",
+  ]
+
+  # Mirror the engine core cflags so ABI-sensitive macros (enum/char width,
+  # pthread feature-test, alloca) match the engine objects this links against.
+  cflags = _shell_cflags
+}

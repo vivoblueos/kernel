@@ -1,0 +1,125 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "arm-none-fv-eabi-gcc" ],
+                       "string")
+
+# The upstream Makefile defines CONFIG_VERSION from the VERSION file
+# (Makefile:156). Mirror that so the string stays in sync with the engine.
+_config_version = read_file("//external/quickjs/VERSION", "trim string")
+
+# Original (Bellard) QuickJS engine core. Host-only frontends/tools are
+# excluded (see the quickjs-ng BUILD.gn note).
+static_library("quickjs_bellard") {
+  sources = [
+    "cutils.c",
+    "dtoa.c",
+    "libregexp.c",
+    "libunicode.c",
+    "quickjs.c",
+  ]
+
+  public_configs += [ "//build/boards/${board}:kernel_config" ]
+
+  include_dirs = [ "." ]
+
+  cflags = [
+    "-std=gnu11",
+    "-fshort-enums",
+    "-fsigned-char",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-D_GNU_SOURCE",
+    # Bellard QuickJS uses the pthread-based thread shims in cutils.h for
+    # Atomics/workers. The pthread *implementations* come from //librs;
+    # newlib hides the prototypes behind these feature-test
+    # macros, so define them to expose the prototypes (symbols resolve at link).
+    "-D_POSIX_THREADS=1",
+    "-D_POSIX_TIMERS=1",
+    "-D_POSIX_MONOTONIC_CLOCK=1",
+    # Version string the Makefile normally injects (see _config_version above).
+    "-DCONFIG_VERSION=\"${_config_version}\"",
+    # newlib's struct tm lacks tm_gmtoff; select the gmtime_r/mktime fallback we
+    # added to getTimezoneOffset (mirrors quickjs-ng's NO_TM_GMTOFF path).
+    "-DNO_TM_GMTOFF=1",
+    # quickjs.c uses alloca() but only includes <alloca.h> for __sun; map it to
+    # the compiler builtin directly (newlib's <alloca.h> isn't reached).
+    "-Dalloca=__builtin_alloca",
+    "-isystem",
+    "${_sysroot}/include",
+    "-w",  # upstream vendor code: silence its warnings
+    # GCC 14 turns -Wincompatible-pointer-types into a hard error by default,
+    # and -w does not silence it. Bellard quickjs.c freely mixes int* with
+    # int32_t* (which is long int* on this target), so downgrade those default
+    # errors back to warnings; -w then hides them. Vendor code, not our ABI.
+    "-fpermissive",
+  ]
+}
+
+# The qjs interactive shell: the engine's own `main()` frontend plus the
+# quickjs-libc std/os module bindings and the compiled-in repl.js REPL
+# bytecode (qjsc_repl, generated into gen/repl.c by the host qjsc). The BlueOS
+# app (bk_bindings) links this and jumps into its `main()` from a C
+# `app_entry`. This is plain C linked by the toolchain against newlib — no
+# Rust std/rsrt is involved (the librs_newlib staticlib supplies the underscore
+# syscall stubs newlib's wrappers call).
+static_library("quickjs_shell") {
+  # cutils.c is the engine's utility TU but is pulled in as a header-only-ish
+  # dependency by quickjs-libc.c/qjs.c; compiling it here too is harmless and
+  # keeps the shell self-contained (symbols dedupe against quickjs_bellard).
+  sources = [
+    "cutils.c",
+    "gen/repl.c",
+    "qjs.c",
+    "quickjs-libc.c",
+  ]
+
+  public_configs += [ "//build/boards/${board}:kernel_config" ]
+
+  # bk_include first: it shadows the toolchain's missing/bare POSIX
+  # headers (poll.h, dlfcn.h, sys/ioctl.h, termios.h) with the BlueOS shims.
+  include_dirs = [
+    "bk_include",
+    ".",
+  ]
+
+  deps = [ ":quickjs_bellard" ]
+
+  # Mirror the engine core cflags so ABI-sensitive macros (enum/char width,
+  # pthread feature-test, alloca, NO_TM_GMTOFF) match the engine objects this
+  # links against.
+  cflags = [
+    "-std=gnu11",
+    "-fshort-enums",
+    "-fsigned-char",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-D_GNU_SOURCE",
+    "-D_POSIX_THREADS=1",
+    "-D_POSIX_TIMERS=1",
+    "-D_POSIX_MONOTONIC_CLOCK=1",
+    "-DCONFIG_VERSION=\"${_config_version}\"",
+    "-DNO_TM_GMTOFF=1",
+    "-Dalloca=__builtin_alloca",
+    "-isystem",
+    "${_sysroot}/include",
+    "-w",  # upstream vendor code: silence its warnings
+    # See the note on the "quickjs_bellard" target: GCC 14 incompatible-pointer
+    # errors need downgrading for the vendor frontend code too.
+    "-fpermissive",
+  ]
+}
