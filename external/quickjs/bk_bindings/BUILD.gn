@@ -17,7 +17,6 @@
 # adapter are co-located with the engine they wrap. The QuickJS app is a plain
 # C `app_entry` executable that consumes the engine's public headers directly
 
-
 import("//build/boards/${board}.gni")
 import("//build/templates/bindgen.gni")
 import("//build/templates/rust.gni")

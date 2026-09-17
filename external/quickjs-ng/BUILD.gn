@@ -45,6 +45,7 @@ static_library("quickjs_ng") {
     "-fdata-sections",
     "-DCONFIG_VERSION=\"0.16.2\"",
     "-D_GNU_SOURCE",
+
     # quickjs-ng uses the pthread-based thread shims in cutils.h (js_mutex_t /
     # js_cond_t / js_once_t are unconditional because quickjs.c's Atomics code
     # needs them, so the EMSCRIPTEN/__wasi__ no-thread path is not usable).
@@ -55,6 +56,7 @@ static_library("quickjs_ng") {
     "-D_POSIX_THREADS=1",
     "-D_POSIX_TIMERS=1",
     "-D_POSIX_MONOTONIC_CLOCK=1",
+
     # quickjs.c uses alloca() but only includes <alloca.h> for __sun; newlib's
     # <alloca.h> isn't reached. Map alloca to the compiler builtin directly.
     "-Dalloca=__builtin_alloca",
@@ -81,6 +83,7 @@ _shell_cflags = [
   "-isystem",
   "${_sysroot}/include",
   "-w",  # upstream vendor code: silence its warnings
+
   # GCC 14 makes -Wincompatible-pointer-types a hard error; -w won't hide it.
   # quickjs-libc.c mixes int* with int32_t* (long int* on this target), so
   # downgrade those back to warnings. Vendor code, not our ABI.

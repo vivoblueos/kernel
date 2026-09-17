@@ -44,6 +44,7 @@ static_library("quickjs_bellard") {
     "-ffunction-sections",
     "-fdata-sections",
     "-D_GNU_SOURCE",
+
     # Bellard QuickJS uses the pthread-based thread shims in cutils.h for
     # Atomics/workers. The pthread *implementations* come from //librs;
     # newlib hides the prototypes behind these feature-test
@@ -51,17 +52,21 @@ static_library("quickjs_bellard") {
     "-D_POSIX_THREADS=1",
     "-D_POSIX_TIMERS=1",
     "-D_POSIX_MONOTONIC_CLOCK=1",
+
     # Version string the Makefile normally injects (see _config_version above).
     "-DCONFIG_VERSION=\"${_config_version}\"",
+
     # newlib's struct tm lacks tm_gmtoff; select the gmtime_r/mktime fallback we
     # added to getTimezoneOffset (mirrors quickjs-ng's NO_TM_GMTOFF path).
     "-DNO_TM_GMTOFF=1",
+
     # quickjs.c uses alloca() but only includes <alloca.h> for __sun; map it to
     # the compiler builtin directly (newlib's <alloca.h> isn't reached).
     "-Dalloca=__builtin_alloca",
     "-isystem",
     "${_sysroot}/include",
     "-w",  # upstream vendor code: silence its warnings
+
     # GCC 14 turns -Wincompatible-pointer-types into a hard error by default,
     # and -w does not silence it. Bellard quickjs.c freely mixes int* with
     # int32_t* (which is long int* on this target), so downgrade those default
@@ -118,6 +123,7 @@ static_library("quickjs_shell") {
     "-isystem",
     "${_sysroot}/include",
     "-w",  # upstream vendor code: silence its warnings
+
     # See the note on the "quickjs_bellard" target: GCC 14 incompatible-pointer
     # errors need downgrading for the vendor frontend code too.
     "-fpermissive",
