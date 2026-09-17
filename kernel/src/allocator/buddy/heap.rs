@@ -50,12 +50,18 @@ fn checked_align_up(value: usize, align: usize) -> Option<usize> {
     value.checked_add(align - 1).map(|v| v & !(align - 1))
 }
 
+// 四个参数：
+// 1.物理地址起始位置
+// 2.物理地址结束位置 
+// 3.内核镜像末尾虚拟地址
+// 4.虚拟地址转物理地址的函数
 pub(super) fn plan_layout(
     phys_start: usize,
     phys_end: usize,
     kernel_end_virt: usize,
     mut virt_to_phys: impl FnMut(usize) -> usize,
 ) -> Result<BuddyLayout, BuddyLayoutError> {
+    // 1. 检查物理地址是否规范，是否对 PAGE_SIZE 对齐
     if phys_start >= phys_end
         || phys_start & (PAGE_SIZE - 1) != 0
         || phys_end & (PAGE_SIZE - 1) != 0
@@ -63,6 +69,7 @@ pub(super) fn plan_layout(
         return Err(BuddyLayoutError::InvalidPhysicalRange);
     }
 
+    // 2. 计算整个物理内存区域有多少页
     let total_pages = (phys_end - phys_start) >> PAGE_SHIFT;
     let metadata_layout = BuddyAllocator::metadata_layout(total_pages)?;
     let metadata_virt_start =
