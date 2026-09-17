@@ -31,12 +31,14 @@ declare_args() {
 }
 
 # Fail fast at `gn gen` with the allowed values named.
-assert(quickjs_flavor == "ng" || quickjs_flavor == "quickjs" ||
-           quickjs_flavor == "off",
-       "quickjs_flavor must be \"ng\", \"quickjs\" or \"off\", got \"${quickjs_flavor}\"")
+assert(
+    quickjs_flavor == "ng" || quickjs_flavor == "quickjs" ||
+        quickjs_flavor == "off",
+    "quickjs_flavor must be \"ng\", \"quickjs\" or \"off\", got \"${quickjs_flavor}\"")
 
-assert(quickjs_mode == "qjs_check" || quickjs_mode == "repl",
-       "quickjs_mode must be \"qjs_check\" or \"repl\", got \"${quickjs_mode}\"")
+assert(
+    quickjs_mode == "qjs_check" || quickjs_mode == "repl",
+    "quickjs_mode must be \"qjs_check\" or \"repl\", got \"${quickjs_mode}\"")
 
 # Convenience gate: true when the feature is enabled (a flavor is selected).
 quickjs_enabled = quickjs_flavor != "off"
@@ -78,13 +80,22 @@ if (quickjs_enabled) {
     "-mfloat-abi=hard",
   ]
   _qk_libc = exec_script("//build/scripts/get_lib_path.py",
-                         [ "arm-none-fv-eabi-gcc", "libc.a" ] + _qk_abi_flags,
+                         [
+                               "arm-none-fv-eabi-gcc",
+                               "libc.a",
+                             ] + _qk_abi_flags,
                          "string")
   _qk_libm = exec_script("//build/scripts/get_lib_path.py",
-                         [ "arm-none-fv-eabi-gcc", "libm.a" ] + _qk_abi_flags,
+                         [
+                               "arm-none-fv-eabi-gcc",
+                               "libm.a",
+                             ] + _qk_abi_flags,
                          "string")
   _qk_libgcc = exec_script("//build/scripts/get_lib_path.py",
-                           [ "arm-none-fv-eabi-gcc", "libgcc.a" ] + _qk_abi_flags,
+                           [
+                                 "arm-none-fv-eabi-gcc",
+                                 "libgcc.a",
+                               ] + _qk_abi_flags,
                            "string")
   quickjs_newlib_libs = [
     _qk_libc,

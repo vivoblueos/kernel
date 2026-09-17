@@ -35,13 +35,14 @@ blueos_board("newlib_mps3_an547") {
     ldflags = [
       "-mthumb",
       "-mcpu=cortex-m55",
+
       # disable MVE?  cortex-m33
       "-march=armv8.1-m.main+mve.fp+fp.dp",
       "-mfpu=fpv5-d16",
       "-mfloat-abi=hard",
       "-nostartfiles",
       "-Wl,-gc-sections",
-      "-Wl,-z,noexecstack"
+      "-Wl,-z,noexecstack",
     ]
     rustflags = [
       "--cfg",

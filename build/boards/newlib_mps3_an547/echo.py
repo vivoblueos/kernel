@@ -13,7 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Print each argument on its own line and exit 0.
 
 Used by GN `action`s that only need to surface a message to the user (e.g. the
