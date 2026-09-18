@@ -368,6 +368,19 @@ impl<R: ElfReader> AdmittedImage<R> {
             None => DynamicFeatureSummary::empty(),
         };
 
+        // GNU ld does not necessarily emit PT_PHDR for a PIE even when the
+        // program-header table is part of a mapped PT_LOAD. In that common
+        // layout, derive the table's virtual address from the segment's
+        // file-to-virtual mapping so the application can receive AT_PHDR.
+        if phdr_vaddr.is_none() {
+            let phdr_file_len = u64::from(self.header.program_header_entry_size())
+                * u64::from(self.header.program_header_count());
+            let phdr_file_range =
+                FileRange::new(self.header.program_header_offset(), phdr_file_len);
+            phdr_vaddr = infer_program_header_vaddr(phdr_file_range, &load_segments)
+                .map_err(|error| error.at_stage(LoadStage::Inspect))?;
+        }
+
         let phdr_geometry = ProgramHeaderGeometry::new(
             self.header.program_header_entry_size(),
             self.header.program_header_count(),
@@ -390,6 +403,26 @@ impl<R: ElfReader> AdmittedImage<R> {
         .with_policy(self.policy)
         .with_role(self.role))
     }
+}
+
+/// Find the program-header table in a mapped file range and translate its
+/// file offset to the corresponding ELF virtual address.
+fn infer_program_header_vaddr(
+    program_headers: FileRange,
+    load_segments: &[LoadSegmentInfo],
+) -> LoadResult<Option<TargetAddress>> {
+    let program_headers_end = program_headers.end()?;
+    for segment in load_segments {
+        let file_range = segment.file_range();
+        if program_headers.offset() < file_range.offset()
+            || program_headers_end > file_range.end()?
+        {
+            continue;
+        }
+        let offset_in_segment = program_headers.offset() - file_range.offset();
+        return segment.vaddr().checked_add(offset_in_segment).map(Some);
+    }
+    Ok(None)
 }
 
 fn permissions_from_flags(flags: u32) -> MemoryPermissions {
@@ -415,4 +448,43 @@ pub(crate) fn program_header_error(index: u16, field: ProgramHeaderField, value:
             value,
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn infers_program_header_vaddr_from_containing_load_segment() {
+        let load_segments = [LoadSegmentInfo::new(
+            0,
+            FileRange::new(0x20, 0x200),
+            TargetAddress::new(0x1000),
+            0x200,
+            4,
+            MemoryPermissions::READ,
+        )];
+
+        let actual =
+            infer_program_header_vaddr(FileRange::new(0x34, 0xc0), &load_segments).unwrap();
+
+        assert_eq!(actual, Some(TargetAddress::new(0x1014)));
+    }
+
+    #[test]
+    fn leaves_program_header_vaddr_absent_when_table_is_not_mapped() {
+        let load_segments = [LoadSegmentInfo::new(
+            0,
+            FileRange::new(0x100, 0x100),
+            TargetAddress::new(0x2000),
+            0x100,
+            4,
+            MemoryPermissions::READ,
+        )];
+
+        let actual =
+            infer_program_header_vaddr(FileRange::new(0x34, 0xc0), &load_segments).unwrap();
+
+        assert_eq!(actual, None);
+    }
 }

@@ -4,12 +4,13 @@
 // CHECK-SUCC: hello dynamic app
 // CHECK-SUCC: argv0=/apps/hello/app.elf
 // CHECK-SUCC: argv0=app.elf
-// CHECK-SUCC: auxv: AT_PHDR ok
+// COUNT: auxv: AT_PHDR ok == 2
 // CHECK-SUCC: APP_LAUNCHED handle=.* path=/apps/hello/app.elf
 // CHECK-SUCC: APP_INIT_COMPLETE handle=.*
 // CHECK-SUCC: APP_REAP handle=.* private_images=1 imported_dsos=1
 // CHECK-SUCC: DSO_REUSE path=/system/lib/libc.so.1
 // ASSERT-SUCC: Dynamic application test ended
+// ASSERT-FAIL: auxv: no AT_PHDR
 // ASSERT-FAIL: Backtrace in Panic.*
 // ASSERT-FAIL: ASSERTION FAILED.*
 
