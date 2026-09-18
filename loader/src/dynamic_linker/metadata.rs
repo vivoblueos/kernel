@@ -140,10 +140,10 @@ impl ImageLifecycleMetadata {
 /// Records the load-biased runtime location of the image's program-header
 /// table so a later link can publish `AT_PHDR/AT_PHENT/AT_PHNUM` auxv entries
 /// without re-decoding the image. `AT_PHENT`/`AT_PHNUM` are the raw
-/// ELF header geometry, always available; `AT_PHDR` is present only when the
-/// image names the table with a `PT_PHDR` entry (a static ET_EXEC without one
-/// resolves to `None`, in which case the kernel points `AT_PHDR` at its pinned
-/// program-header copy instead).
+/// ELF header geometry, always available; `AT_PHDR` is present when the image
+/// names the table with a `PT_PHDR` entry or when the table is wholly covered
+/// by a mapped `PT_LOAD`. An image with neither representation resolves to
+/// `None`.
 #[derive(Clone, Copy, Debug)]
 pub struct ProgramHeaderRuntimeInfo {
     runtime_vaddr: Option<TargetAddress>,
@@ -164,12 +164,12 @@ impl ProgramHeaderRuntimeInfo {
     }
 
     /// Build the summary from the raw ELF header geometry and the mapped
-    /// `PT_PHDR` virtual address (if any), both already validated at admit.
+    /// program-header virtual address (if any), both captured during
+    /// inspection.
     ///
-    /// `phdr_vaddr` is the ELF virtual address of `PT_PHDR`; `load_bias` maps
-    /// it to the runtime address actually occupied by the table. Without a
-    /// `PT_PHDR` entry the table location is unknown, so `runtime_vaddr` is
-    /// `None`.
+    /// `phdr_vaddr` is the ELF virtual address of the program-header table;
+    /// `load_bias` maps it to the runtime address actually occupied by the
+    /// table. When the table is not mapped, `runtime_vaddr` is `None`.
     #[inline]
     pub fn from_headers(
         program_header_entry_size: u16,
