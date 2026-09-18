@@ -13,7 +13,7 @@
 // limitations under the License.
 
 mod config;
-use crate::{arch, error::Error, sync::SpinLock, time};
+use crate::{arch, arch::irq, error::Error, sync::SpinLock, time};
 use blueos_driver::uart::ns16x50::Ns16x50Isr;
 use blueos_kconfig::CONFIG_NUM_CORES;
 pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
@@ -36,13 +36,31 @@ pub(crate) fn init() {
         )
     };
     arch::irq::cpu_init();
+    irq::enable_irq_with_priority(
+        config::CONSOLE_UART_IRQNUM,
+        arch::current_cpu_id(),
+        irq::Priority::Normal,
+    );
+    irq::enable_irq_with_priority(
+        config::GENERIC_TIMER_IRQNUM,
+        arch::current_cpu_id(),
+        irq::Priority::Normal,
+    );
+    // RK3568 UART interrupts are level-triggered (active high) on the GIC.
+    irq::set_trigger(
+        config::CONSOLE_UART_IRQNUM,
+        arch::current_cpu_id(),
+        irq::IrqTrigger::Level,
+    );
     let _ = arch::irq::register_handler(
-        config::PL011_UART0_IRQNUM,
-        Box::new(Ns16x50Isr::<{ config::PL011_UART0_BASE as usize }, _>::new(
-            &crate::drivers::serial::TTY_SERIAL,
-            Some(crate::drivers::serial::Serial::xmitchars),
-            Some(crate::drivers::serial::Serial::recvchars),
-        )),
+        config::CONSOLE_UART_IRQNUM,
+        Box::new(
+            Ns16x50Isr::<{ config::CONSOLE_UART_BASE as usize }, _>::new(
+                &crate::drivers::serial::TTY_SERIAL,
+                Some(crate::drivers::serial::Serial::xmitchars),
+                Some(crate::drivers::serial::Serial::recvchars),
+            ),
+        ),
     );
     let _ = arch::irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {}));
 }
@@ -50,7 +68,7 @@ pub(crate) fn init() {
 crate::define_peripheral! {
     (console_uart, blueos_driver::uart::ns16x50::Ns16x50,
      blueos_driver::uart::ns16x50::Ns16x50::new(
-        0xFE660000,
+        config::CONSOLE_UART_BASE as usize,
      )),
 }
 

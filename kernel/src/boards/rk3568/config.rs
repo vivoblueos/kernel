@@ -15,8 +15,8 @@
 use crate::arch::irq::IrqNumber;
 
 pub const APBP_CLOCK: u32 = 0x16e3600;
-pub const PL011_UART0_BASE: u64 = 0xFDD50000;
-pub const PL011_UART0_IRQNUM: IrqNumber = IrqNumber::new(148);
+pub const CONSOLE_UART_BASE: u64 = 0xFE660000;
+pub const CONSOLE_UART_IRQNUM: IrqNumber = IrqNumber::new(150);
 pub const GENERIC_TIMER_IRQNUM: IrqNumber = IrqNumber::new(30);
 pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
 pub const PSCI_BASE: u32 = 0x84000000;
