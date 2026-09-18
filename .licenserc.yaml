@@ -54,9 +54,13 @@ header: # `header` section is configurations for source codes license header.
       - "tests/dynamic_test/src/test.rs" # qemu checker
       - "tests/dynamic_clang_c_test/src/test.rs"
       - "tests/dynamic_clang_cxx_test/src/test.rs"
+      - "tests/dynamic_cycle_test/src/test.rs"
       - "tests/dynamic_multidso_test/src/test.rs"
       - "tests/dynamic_rust_std_test/src/test.rs"
+      - "tests/dynamic_scope_bad_test/src/test.rs"
       - "tests/dynamic_scope_test/src/test.rs"
+      - "tests/dynamic_sequence_test/src/test.rs"
+      - "tests/dynamic_tls_test/src/test.rs"
       - "adapter/rt_thread/include/rt_thread_wrapper.inc"
       - "kernel/src/sync/futex.rs"
       - "scal/src/platform/**"
