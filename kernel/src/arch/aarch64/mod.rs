@@ -139,7 +139,27 @@ macro_rules! enter_el1 {
 macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
+            "
+            // The 64-byte arm64 Image header, described in the Linux kernel
+            // Documentation/arch/arm64/booting.rst. Boot loaders such as
+            // U-Boot's `booti` validate and parse this header before
+            // entering the image.
+            add     x13, x18, #0x16        // 0x00 code0: \"MZ\"
+            b       1f                      // 0x04 code1: branch over the header
+            .quad   {text_offset}           // 0x08 text_offset
+            .quad   {image_end} - {image_start} // 0x10 image_size
+            .quad   0x8                     // 0x18 flags: bit3, keep placement
+            .quad   0                       // 0x20 reserved
+            .quad   0                       // 0x28 reserved
+            .quad   0                       // 0x30 reserved
+            .word   0x644d5241              // 0x38 magic \"ARM\\x64\"
+            .word   0                       // 0x3C res5
+            1:
+            ",
             $crate::enter_el1!(),
+            text_offset = const $crate::boards::TEXT_OFFSET,
+            image_start = sym $crate::boot::_start,
+            image_end = sym $crate::boot::_end,
             entry = sym $crate::arch::aarch64::jump_to_high_va,
             virt_init = sym $crate::arch::aarch64::virt::virt_init,
             init_el1_enable_mmu = sym $crate::arch::aarch64::mmu::init_el1_enable_mmu,
