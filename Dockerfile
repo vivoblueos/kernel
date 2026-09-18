@@ -7,21 +7,21 @@ ENV PATH="/opt/sysroot/usr/local/bin:/opt/sysroot/usr/local/lib/rustlib/x86_64-u
 # Install system packages
 RUN apt-get update \
     && apt-get install -y \
-        git \
-        clang lld \
-        python3-kconfiglib \
-        python3-pip \
-        ninja-build \
-        generate-ninja \
-        curl \
-        libfdt-dev \
-        libslirp-dev \
-        libglib2.0-dev \
-        build-essential \
-        pkg-config \
-        clang-format yapf3 npm \
-        libpixman-1-0 \
-        libsdl2-dev \
+    git \
+    clang lld \
+    python3-kconfiglib \
+    python3-pip \
+    ninja-build \
+    generate-ninja \
+    curl \
+    libfdt-dev \
+    libslirp-dev \
+    libglib2.0-dev \
+    build-essential \
+    pkg-config \
+    clang-format yapf3 npm \
+    libpixman-1-0 \
+    libsdl2-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install esptool==4.7.0 --break-system-packages \
     && pip3 install devicetree --break-system-packages
@@ -48,7 +48,7 @@ RUN mkdir -p /opt/sysroot \
     && rm qemu.tar.xz
 
 # Download and unpack prebuilt Rust toolchain
-RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.0/blueos-toolchain-ubuntu-latest-2025_10_21_09_53.tar.xz \
+RUN curl -L -o blueos-toolchain.tar.xz https://github.com/vivoblueos/toolchain/releases/download/v0.8.2/blueos-toolchain-ubuntu-latest-2026_08_07_08_31.tar.xz \
     && tar xf blueos-toolchain.tar.xz -C /opt/sysroot \
     && rm blueos-toolchain.tar.xz
 
