@@ -307,7 +307,10 @@ impl Esp32FlashDevice {
         {
             let state = self.state.irqsave_lock();
             match &*state {
-                Esp32FlashState::Mapped { irom: _, drom: None } => {}
+                Esp32FlashState::Mapped {
+                    irom: _,
+                    drom: None,
+                } => {}
                 Esp32FlashState::Mapped { drom: Some(_), .. } => {
                     return Err(ErrorKind::PermissionDenied);
                 }
@@ -378,17 +381,11 @@ impl Esp32FlashDevice {
             }
             Ok(Err(error)) => {
                 // I-bus unmap failed; DROM already gone. Restore I-bus-only Mapped.
-                *self.state.irqsave_lock() = Esp32FlashState::Mapped {
-                    irom,
-                    drom: None,
-                };
+                *self.state.irqsave_lock() = Esp32FlashState::Mapped { irom, drom: None };
                 Err(map_mmap_err(error))
             }
             Err(error) => {
-                *self.state.irqsave_lock() = Esp32FlashState::Mapped {
-                    irom,
-                    drom: None,
-                };
+                *self.state.irqsave_lock() = Esp32FlashState::Mapped { irom, drom: None };
                 Err(map_flash_err(error))
             }
         }
@@ -480,9 +477,9 @@ fn map_flash_err(e: EspFlashError) -> ErrorKind {
 
 fn map_mmap_err(e: MapError) -> ErrorKind {
     match e {
-        MapError::AlreadyMapped
-        | MapError::DromAlreadyMapped
-        | MapError::DromNotAfterExec => ErrorKind::PermissionDenied,
+        MapError::AlreadyMapped | MapError::DromAlreadyMapped | MapError::DromNotAfterExec => {
+            ErrorKind::PermissionDenied
+        }
         MapError::ZeroSize
         | MapError::OutOfRange
         | MapError::Overflow
@@ -508,6 +505,7 @@ pub fn init_esp32_flash_device() -> Result<(), ErrorKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blueos_test_macro::test;
 
     fn region() -> InternalFlashRegion {
         InternalFlashRegion::new(LOADABLE_REGION_BASE, LOADABLE_REGION_SIZE)
