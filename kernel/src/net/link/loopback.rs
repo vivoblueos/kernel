@@ -18,6 +18,7 @@
 
 use alloc::{string::String, vec};
 
+use blueos_infra::no_let_underscore::IgnoreResult;
 use smoltcp::{
     iface::{Interface, SocketSet},
     phy::{Device, DeviceCapabilities, Loopback, Medium as SmoltcpMedium},
@@ -117,8 +118,12 @@ impl SmoltcpDevice for LoopbackLink {
         );
         if caps.medium == smoltcp::phy::Medium::Ip {
             iface.update_ip_addrs(|addrs| {
-                let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
-                let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+                addrs
+                    .push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8))
+                    .ignore_result();
+                addrs
+                    .push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128))
+                    .ignore_result();
             });
         }
         let sockets = SocketSet::new(vec![]);
