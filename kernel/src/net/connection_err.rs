@@ -80,3 +80,25 @@ impl From<Error> for ConnectionError {
         Self::PosixError(err)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn maps_connection_errors_to_negative_errno() {
+        assert_eq!(ConnectionError::Timeout(1000).to_errno(), -libc::ETIMEDOUT);
+        assert_eq!(ConnectionError::NetStackQueueFull.to_errno(), -libc::EAGAIN);
+        assert_eq!(ConnectionError::PortInUse(80).to_errno(), -libc::EADDRINUSE);
+    }
+
+    #[test]
+    fn preserves_nested_error_errno() {
+        let socket_error = ConnectionError::from(SocketError::InvalidSocketFd(7));
+        assert_eq!(socket_error.to_errno(), -libc::EBADF);
+
+        let posix_error = ConnectionError::from(Error::from_errno(-libc::EINTR));
+        assert_eq!(posix_error.to_errno(), -libc::EINTR);
+    }
+}

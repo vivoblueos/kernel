@@ -106,3 +106,22 @@ impl SocketError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn maps_socket_errors_to_negative_errno() {
+        assert_eq!(SocketError::WouldBlock.to_errno(), -libc::EAGAIN);
+        assert_eq!(SocketError::InvalidSocketFd(3).to_errno(), -libc::EBADF);
+        assert_eq!(SocketError::UnsupportedOperation.to_errno(), -libc::ENOSYS);
+    }
+
+    #[test]
+    fn preserves_explicit_posix_errno() {
+        let error = SocketError::PosixError(-libc::ECONNRESET, String::new());
+        assert_eq!(error.to_errno(), -libc::ECONNRESET);
+    }
+}
