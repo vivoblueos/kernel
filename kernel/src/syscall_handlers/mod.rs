@@ -25,13 +25,19 @@ pub use crate::vfs::syscalls::{Stat, Statfs as StatFs};
 use crate::{
     config, scheduler,
     sync::atomic_wait as futex,
-    thread::{self, Builder, Entry, Stack, Thread},
+    thread::{self, Builder, Entry, GlobalQueueVisitor, Stack, Thread},
     time,
     time::Tick,
 };
 
 pub use crate::sync::posix_mqueue;
 use alloc::boxed::Box;
+#[cfg(armv7m)]
+use blueos_header::application::{
+    BlueOsApplicationLaunchRequest, BlueOsStringView, APPLICATION_LAUNCH_REQUEST_ABI_VERSION,
+};
+#[cfg(armv7m)]
+use blueos_header::thread::STACK_FLAG_KERNEL_OWNED;
 use blueos_header::{syscalls::NR, thread::SpawnArgs};
 use core::{
     ffi::{c_size_t, c_ssize_t},
@@ -272,10 +278,10 @@ pub struct mq_attr {
 // bk_syscall! macro should be used by external libraries if syscall
 // is invoked via function call.
 macro_rules! syscall_table {
-    ($(($nr:tt, $mod:ident),)*) => {
+    ($($(#[$meta:meta])* ($nr:tt, $mod:ident),)*) => {
         pub(crate) fn dispatch_syscall(ctx: &Context) -> usize {
             match ctx.nr {
-                $(val if val == NR::$nr as usize =>
+                $($(#[$meta])* val if val == NR::$nr as usize =>
                     return $crate::syscalls::$mod::handle_context(ctx) as usize,)*
                 _ => return usize::MAX,
             }
@@ -283,7 +289,9 @@ macro_rules! syscall_table {
 
         #[macro_export]
         macro_rules! bk_syscall {
-            $(($nr $$(,$arg:expr)*) => { $crate::syscalls::$mod::handle($$($arg),*) });*
+            $(($nr $$(,$arg:expr)*) => {
+                $crate::syscalls::$mod::handle($$($arg),*)
+            });*
         }
     };
 }
@@ -387,22 +395,91 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
         return -1;
     }
     let spawn_args = unsafe {&*spawn_args_ptr};
-    let Some(stack) = Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size) else {
+    #[cfg(not(armv7m))]
+    let stack = Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size);
+    #[cfg(armv7m)]
+    let stack = match spawn_args.stack_flags {
+        0 => Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size),
+        STACK_FLAG_KERNEL_OWNED => {
+        // SAFETY: ownership of this allocation is transferred by the syscall
+        // ABI even when validation fails. `stack_size` describes the complete
+        // allocation, so no application-specific layout enters `Stack`.
+        let stack = unsafe {
+            Stack::from_owned_allocation(
+                spawn_args.stack_start,
+                spawn_args.stack_size,
+                crate::allocator::free,
+            )
+        };
+        if stack.is_none() {
+            // Ownership was transferred on syscall entry; avoid making the
+            // caller guess whether a failed create consumed the allocation.
+            crate::allocator::free(spawn_args.stack_start);
+        }
+        stack
+        }
+        _ => return -1,
+    };
+    let Some(stack) = stack else {
         return -1;
     };
-    let t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
+    let mut t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))
                 .set_stack(stack)
                 .build();
+    let handle = Thread::id(&t);
+    #[cfg(all(enable_vfs, dynamic_loader))]
+    let joined_group = {
+        // Application membership is owned entirely by the backend. Resolve
+        // the creator by id instead of storing an application pointer in
+        // `Thread`, then attach the child to the same group.
+        let current = scheduler::current_thread();
+        let current_id = Thread::id(&current);
+        let group = crate::application::service::ApplicationService::get()
+            .and_then(|service| service.manager().group_for_thread(current_id));
+        if let Some(group) = group {
+            if group.add_member(t.clone()).is_err() {
+                let _ = GlobalQueueVisitor::remove(&mut t);
+                return -1;
+            }
+            // The existing cleanup slot carries a weak, backend-neutral
+            // retirement action. Run any caller cleanup first so application
+            // code cannot be unloaded while it is still executing.
+            let membership = group.membership();
+            let cleanup = spawn_args.cleanup;
+            let cleanup_arg = spawn_args.arg;
+            t.lock().set_cleanup(Entry::Closure(Box::new(move || {
+                if let Some(cleanup) = cleanup {
+                    cleanup(cleanup_arg);
+                }
+                if let Some(group) = membership.upgrade() {
+                    let _ = group.remove_member(handle);
+                }
+            })));
+            Some(group)
+        } else {
+            if let Some(cleanup) = spawn_args.cleanup {
+                t.lock().set_cleanup(Entry::Posix(cleanup, spawn_args.arg));
+            }
+            None
+        }
+    };
+    #[cfg(not(all(enable_vfs, dynamic_loader)))]
     if let Some(cleanup) = spawn_args.cleanup {
         t.lock().set_cleanup(Entry::Posix(cleanup, spawn_args.arg));
     };
-    let handle = Thread::id(&t);
     if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args_ptr as *mut _); }
-    let ok = scheduler::queue_ready_thread(thread::IDLE, t);
+    let ok = scheduler::queue_ready_thread(thread::IDLE, t.clone());
     // We don't increment the rc of the created thread since it's also
     // referenced by the global queue. When this thread is retired,
     // it's removed from the global queue.
-    debug_assert_eq!(ok, Ok(()));
+    if ok.is_err() {
+        #[cfg(all(enable_vfs, dynamic_loader))]
+        if let Some(group) = joined_group {
+            let _ = group.remove_member(handle);
+        }
+        let _ = GlobalQueueVisitor::remove(&mut t);
+        return -1;
+    }
     unsafe {core::mem::transmute(handle)}
 });
 
@@ -492,6 +569,22 @@ alloc_mem(ptr: *mut *mut c_void, size: usize, align: usize) -> c_long {
 define_syscall_handler!(
 free_mem(ptr: *mut c_void) -> c_long {
     crate::allocator::free(ptr as *mut u8);
+    0
+});
+
+// Grow or shrink an existing allocation. librs needs this because `realloc`
+// cannot be written in terms of `malloc`/`free` alone — the caller has no way
+// to learn the old block's size, and the kernel allocator does.
+define_syscall_handler!(
+realloc_mem(ptr: *mut *mut c_void, old: *mut c_void, newsize: usize) -> c_long {
+    if ptr.is_null() {
+        return -1;
+    }
+    let addr = crate::allocator::realloc(old as *mut u8, newsize);
+    if addr.is_null() {
+        return -1;
+    }
+    unsafe { ptr.write(addr as *mut c_void) };
     0
 });
 
@@ -834,6 +927,259 @@ define_syscall_handler!(
     }
 );
 
+// Application lifecycle syscalls. All four handlers derive the
+// authoritative thread group from the current thread id, never from
+// an application-supplied handle.
+//
+// Gated on the loader capability rather than on `armv7m && enable_vfs`: the
+// handlers need `crate::application`, which only exists where the board links
+// the loader.
+#[cfg(all(enable_vfs, dynamic_loader))]
+mod application_syscalls {
+    use super::*;
+    use alloc::vec::Vec;
+
+    /// Kernel-side bounds for the launch copy-in. These mirror (and
+    /// tighten) librs's own scan limits and are the authoritative gate on the
+    /// pointed-to content.
+    const MAX_ARGC: usize = 128;
+    const MAX_TOTAL_STRING_BYTES: usize = 4096;
+    const MAX_PATH_LEN: usize = 256;
+
+    /// Launch an application from a versioned, bounded request: copy the
+    /// fixed header, validate counts/byte totals/NUL rules, copy every string
+    /// into owned storage, then run the whole launch through the assembled
+    /// application service. Returns the minted slot as a positive
+    /// `c_long` on success, or a negative errno. The generation handle remains
+    /// an internal manager capability recovered from the owning thread group.
+    pub fn launch(request_ptr: *const BlueOsApplicationLaunchRequest) -> c_long {
+        if request_ptr.is_null() {
+            return -(libc::EINVAL as c_long);
+        }
+        // SAFETY: the caller passes a pointer into its own shared address
+        // shared address space has no fault-safe copy-in, so a wild pointer is
+        // the caller's own bug. The bounded validation below is the
+        // authoritative gate on the pointed-to content.
+        let request = unsafe { &*request_ptr };
+        if request.abi_version != APPLICATION_LAUNCH_REQUEST_ABI_VERSION
+            || (request.struct_size as usize)
+                < core::mem::size_of::<BlueOsApplicationLaunchRequest>()
+        {
+            return -(libc::EINVAL as c_long);
+        }
+        if request.argc > MAX_ARGC || request.envc > MAX_ARGC {
+            return -(libc::E2BIG as c_long);
+        }
+        if request.argc != 0 && request.argv.is_null() {
+            return -(libc::EINVAL as c_long);
+        }
+        if request.envc != 0 && request.envp.is_null() {
+            return -(libc::EINVAL as c_long);
+        }
+
+        let mut budget = MAX_TOTAL_STRING_BYTES;
+        let mut path = Vec::new();
+        if copy_in_string(&request.path, &mut path, &mut budget).is_err()
+            || path.is_empty()
+            || path.len() > MAX_PATH_LEN
+            || path.contains(&0)
+        {
+            return -(libc::EINVAL as c_long);
+        }
+        let Ok(path) = core::str::from_utf8(&path) else {
+            return -(libc::EINVAL as c_long);
+        };
+
+        let mut argv = Vec::new();
+        let mut envp = Vec::new();
+        if copy_in_strings(request.argv, request.argc, &mut argv, &mut budget).is_err()
+            || copy_in_strings(request.envp, request.envc, &mut envp, &mut budget).is_err()
+        {
+            return -(libc::E2BIG as c_long);
+        }
+
+        let Some(service) = crate::application::service::ApplicationService::get() else {
+            return -(libc::ENOSYS as c_long);
+        };
+        match service.spawn(path, argv, envp) {
+            Ok(handle) => {
+                if handle.slot >= (i32::MAX as u32) {
+                    return -(libc::E2BIG as c_long);
+                }
+                handle.slot as c_long
+            }
+            Err(_) => -(libc::ENOENT as c_long),
+        }
+    }
+
+    /// Copy `count` string views from `head` into owned buffers, charging each
+    /// string's bytes against the shared budget. Rejects a null `data` with a
+    /// non-zero `len`, an embedded NUL and any budget/arithmetic overflow
+    fn copy_in_strings(
+        head: *const BlueOsStringView,
+        count: usize,
+        out: &mut Vec<Vec<u8>>,
+        budget: &mut usize,
+    ) -> Result<(), ()> {
+        if count == 0 {
+            return Ok(());
+        }
+        let mut cursor = head;
+        for _ in 0..count {
+            // SAFETY: same shared-address-space contract as the header copy;
+            // `count` was validated against the caller-declared array length.
+            let view = unsafe { &*cursor };
+            let mut bytes = Vec::new();
+            copy_in_string(view, &mut bytes, budget)?;
+            if bytes.contains(&0) {
+                return Err(());
+            }
+            out.push(bytes);
+            cursor = unsafe { cursor.add(1) };
+        }
+        Ok(())
+    }
+
+    /// Copy one string view into `out`, charging its length against `budget`.
+    fn copy_in_string(
+        view: &BlueOsStringView,
+        out: &mut Vec<u8>,
+        budget: &mut usize,
+    ) -> Result<(), ()> {
+        if view.data.is_null() {
+            return if view.len == 0 { Ok(()) } else { Err(()) };
+        }
+        if view.len > *budget {
+            return Err(());
+        }
+        *budget -= view.len;
+        // SAFETY: `len` is bounded by the validated budget; the pointer range
+        // is the caller's responsibility in the shared address space.
+        let src = unsafe { core::slice::from_raw_parts(view.data, view.len) };
+        out.try_reserve_exact(view.len).map_err(|_| ())?;
+        out.extend_from_slice(src);
+        Ok(())
+    }
+
+    /// Resolve the application group that owns the current thread. Membership
+    /// lives in `ThreadGroup`; the thread retains no reverse link.
+    fn current_membership_group() -> Option<crate::application::group::ThreadGroup> {
+        let current = scheduler::current_thread();
+        let current_id = Thread::id(&current);
+        let service = crate::application::service::ApplicationService::get()?;
+        service.manager().group_for_thread(current_id)
+    }
+
+    /// Signal that the application's init plan completed. The
+    /// authoritative handle is recovered from the current thread's group.
+    pub fn init_complete() -> c_long {
+        let Some(group) = current_membership_group() else {
+            return -(libc::EINVAL as c_long);
+        };
+        let Some(handle) = group.handle() else {
+            return -(libc::EINVAL as c_long);
+        };
+        let Some(service) = crate::application::service::ApplicationService::get() else {
+            return -(libc::ENOSYS as c_long);
+        };
+        match service.complete_init(&group, handle) {
+            Ok(()) => {
+                // Init completion marks the public
+                // Loading → Running transition.
+                log::info!(
+                    "APP_INIT_COMPLETE handle={}:{}",
+                    handle.slot,
+                    handle.generation
+                );
+                0
+            }
+            Err(_) => -(libc::EINVAL as c_long),
+        }
+    }
+
+    /// Begin the two-phase exit: move the public state to `Stopping`, atomically
+    /// forbid new threads, then park the coordinator until every other member
+    /// exited. The group is derived from the current thread,
+    /// never from an application-supplied handle.
+    pub fn begin_exit(_status: c_int) -> c_long {
+        let Some(group) = current_membership_group() else {
+            return -(libc::EINVAL as c_long);
+        };
+        let Some(handle) = group.handle() else {
+            return -(libc::EINVAL as c_long);
+        };
+        let Some(service) = crate::application::service::ApplicationService::get() else {
+            return -(libc::ENOSYS as c_long);
+        };
+        if service.manager().begin_exit(handle).is_err() {
+            return -(libc::EINVAL as c_long);
+        }
+        if group.begin_exit().is_err() {
+            return -(libc::EINVAL as c_long);
+        }
+        // The exit coordinator runs atexit/fini only after every other member
+        // left; parking here makes the syscall itself the wait primitive.
+        if group.wait_for_member_exit().is_err() {
+            return -(libc::EINVAL as c_long);
+        }
+        0
+    }
+
+    /// Finish the two-phase exit after fini/TCB cleanup, then retire this
+    /// thread. Never returns.
+    pub fn finish_exit() -> c_long {
+        let Some(group) = current_membership_group() else {
+            return -(libc::EINVAL as c_long);
+        };
+        if group.finish_fini().is_err() {
+            return -(libc::EINVAL as c_long);
+        }
+        scheduler::retire_me();
+        -1
+    }
+}
+
+#[cfg(all(armv7m, not(all(enable_vfs, dynamic_loader))))]
+mod application_syscalls {
+    use super::*;
+
+    pub fn launch(_request: *const BlueOsApplicationLaunchRequest) -> c_long {
+        -(libc::ENOSYS as c_long)
+    }
+
+    pub fn init_complete() -> c_long {
+        -(libc::ENOSYS as c_long)
+    }
+
+    pub fn begin_exit(_status: c_int) -> c_long {
+        -(libc::ENOSYS as c_long)
+    }
+
+    pub fn finish_exit() -> c_long {
+        -(libc::ENOSYS as c_long)
+    }
+}
+
+#[cfg(armv7m)]
+define_syscall_handler!(application_launch(request: *const BlueOsApplicationLaunchRequest) -> c_long {
+    application_syscalls::launch(request)
+});
+
+#[cfg(armv7m)]
+define_syscall_handler!(application_init_complete() -> c_long {
+    application_syscalls::init_complete()
+});
+
+#[cfg(armv7m)]
+define_syscall_handler!(application_begin_exit(status: c_int) -> c_long {
+    application_syscalls::begin_exit(status)
+});
+
+#[cfg(armv7m)]
+define_syscall_handler!(application_finish_exit() -> c_long {
+    application_syscalls::finish_exit()
+});
+
 #[cfg(enable_syscall)]
 syscall_table! {
     (Echo, echo),
@@ -856,6 +1202,7 @@ syscall_table! {
     (TimerGetOverrun, timer_getoverrun),
     (AllocMem, alloc_mem),
     (FreeMem, free_mem),
+    (ReallocMem, realloc_mem),
     (Write, write),
     (Close, close),
     (Read, read),
@@ -908,6 +1255,14 @@ syscall_table! {
     (MqTimedReceive, mq_timedreceive),
     (MqGetSetAttr, mq_getsetattr),
     (Ioctl, ioctl),
+    #[cfg(armv7m)]
+    (ApplicationLaunch, application_launch),
+    #[cfg(armv7m)]
+    (ApplicationInitComplete, application_init_complete),
+    #[cfg(armv7m)]
+    (ApplicationBeginExit, application_begin_exit),
+    #[cfg(armv7m)]
+    (ApplicationFinishExit, application_finish_exit),
 }
 
 #[cfg(not(enable_syscall))]

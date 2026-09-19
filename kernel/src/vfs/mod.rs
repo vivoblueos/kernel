@@ -49,6 +49,10 @@ mod tmpfs;
 mod utils;
 use alloc::string::String;
 pub use file::AccessMode;
+#[cfg(armv7m)]
+pub use file::File;
+#[cfg(armv7m)]
+pub use path::{get_working_dir, join_path, normalize_path, open_path};
 #[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 
