@@ -210,6 +210,58 @@ pub fn memory_info() -> MemoryInfo {
     KernelAllocator::memory_info()
 }
 
+/// Metadata needed by the C-style allocation APIs, whose deallocation calls do
+/// not carry the allocation size. The header lives immediately before the
+/// pointer returned to the caller.
+#[derive(Clone, Copy)]
+struct AllocationHeader {
+    size: usize,
+    align: usize,
+}
+
+fn layout_with_header(layout: Layout) -> Option<(Layout, usize)> {
+    Layout::new::<AllocationHeader>().extend(layout).ok()
+}
+
+/// Allocate through [`KernelAllocator`] while retaining enough information for
+/// a later size-less [`free`] call.
+unsafe fn alloc_with_header(layout: Layout) -> *mut u8 {
+    let Some((allocation_layout, payload_offset)) = layout_with_header(layout) else {
+        return ptr::null_mut();
+    };
+    let allocation = GlobalAlloc::alloc(&KernelAllocator, allocation_layout);
+    if allocation.is_null() {
+        return ptr::null_mut();
+    }
+
+    let payload = allocation.add(payload_offset);
+    let header = payload
+        .sub(core::mem::size_of::<AllocationHeader>())
+        .cast::<AllocationHeader>();
+    debug_assert_eq!(
+        header.align_offset(core::mem::align_of::<AllocationHeader>()),
+        0
+    );
+    header.write(AllocationHeader {
+        size: layout.size(),
+        align: layout.align(),
+    });
+    payload
+}
+
+/// Read the allocation header stored immediately before `ptr` and recover the
+/// base pointer and layout passed to [`KernelAllocator`].
+unsafe fn allocation_from_payload(ptr: *mut u8) -> (*mut u8, Layout, Layout) {
+    let header = ptr
+        .sub(core::mem::size_of::<AllocationHeader>())
+        .cast::<AllocationHeader>()
+        .read();
+    let payload_layout = Layout::from_size_align_unchecked(header.size, header.align);
+    let (allocation_layout, payload_offset) = layout_with_header(payload_layout)
+        .expect("a previously allocated layout must remain valid");
+    (ptr.sub(payload_offset), allocation_layout, payload_layout)
+}
+
 /// Allocate memory on heap and returns a pointer to it.
 /// If size equals zero, then null mutable raw pointer will be returned.
 // TODO: Make malloc a blocking API, i.e., if the heap lock is
@@ -219,9 +271,10 @@ pub fn malloc(size: usize) -> *mut u8 {
         return ptr::null_mut();
     }
     const ALIGN: usize = core::mem::size_of::<usize>();
-    let layout = Layout::from_size_align(size, ALIGN).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    let Ok(layout) = Layout::from_size_align(size, ALIGN) else {
+        return ptr::null_mut();
+    };
+    unsafe { alloc_with_header(layout) }
 }
 
 /// Free previously allocated memory pointed by ptr.
@@ -233,7 +286,10 @@ pub fn free(ptr: *mut u8) {
     if core::intrinsics::unlikely(ptr.is_null()) {
         return;
     }
-    unsafe { HEAP.deallocate_unknown_align(ptr) };
+    unsafe {
+        let (allocation, layout, _) = allocation_from_payload(ptr);
+        GlobalAlloc::dealloc(&KernelAllocator, allocation, layout);
+    }
 }
 
 /// Reallocate memory pointed by ptr to have a new size.
@@ -251,8 +307,39 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
         return malloc(newsize);
     }
     unsafe {
-        HEAP.realloc_unknown_align(ptr, newsize)
-            .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+        let (allocation, old_allocation_layout, old_payload_layout) = allocation_from_payload(ptr);
+        let Ok(new_payload_layout) = Layout::from_size_align(newsize, old_payload_layout.align())
+        else {
+            return ptr::null_mut();
+        };
+        let Some((new_allocation_layout, new_payload_offset)) =
+            layout_with_header(new_payload_layout)
+        else {
+            return ptr::null_mut();
+        };
+        let (_, old_payload_offset) = layout_with_header(old_payload_layout)
+            .expect("a previously allocated layout must remain valid");
+        debug_assert_eq!(new_payload_offset, old_payload_offset);
+
+        let new_allocation = GlobalAlloc::realloc(
+            &KernelAllocator,
+            allocation,
+            old_allocation_layout,
+            new_allocation_layout.size(),
+        );
+        if new_allocation.is_null() {
+            return ptr::null_mut();
+        }
+
+        let new_payload = new_allocation.add(new_payload_offset);
+        new_payload
+            .sub(core::mem::size_of::<AllocationHeader>())
+            .cast::<AllocationHeader>()
+            .write(AllocationHeader {
+                size: newsize,
+                align: new_payload_layout.align(),
+            });
+        new_payload
     }
 }
 
@@ -263,18 +350,14 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
 /// * `count` - Number of elements to allocate space for.
 /// * `size` - Size of each element.
 pub fn calloc(count: usize, size: usize) -> *mut u8 {
-    let required_size = count * size;
-    const ALIGN: usize = core::mem::size_of::<usize>();
-    if let Ok(layout) = Layout::from_size_align(required_size, ALIGN) {
-        if let Some(alloc_ptr) = HEAP.alloc(layout) {
-            unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
-            alloc_ptr.as_ptr()
-        } else {
-            ptr::null_mut()
-        }
-    } else {
-        ptr::null_mut()
+    let Some(required_size) = count.checked_mul(size) else {
+        return ptr::null_mut();
+    };
+    let allocation = malloc(required_size);
+    if !allocation.is_null() {
+        unsafe { ptr::write_bytes(allocation, 0, required_size) };
     }
+    allocation
 }
 
 /// Allocates aligned memory of at least the specified size.
@@ -288,9 +371,10 @@ pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
         return ptr::null_mut();
     }
 
-    let layout = Layout::from_size_align(size, align).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    let Ok(layout) = Layout::from_size_align(size, align) else {
+        return ptr::null_mut();
+    };
+    unsafe { alloc_with_header(layout) }
 }
 
 /// Deallocates memory that was allocated using `malloc_align`.
@@ -298,14 +382,8 @@ pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
 /// # Arguments
 ///
 /// * `ptr` - Pointer to the memory region to deallocate.
-pub fn free_align(ptr: *mut u8, align: usize) {
-    if ptr.is_null() {
-        return;
-    }
-    unsafe {
-        let layout = Layout::from_size_align_unchecked(0, align);
-        HEAP.dealloc(ptr, layout);
-    }
+pub fn free_align(ptr: *mut u8, _align: usize) {
+    free(ptr);
 }
 
 pub(crate) fn get_max_free_block_size() -> usize {
@@ -418,6 +496,111 @@ mod tests {
 
             // Free the memory
             unsafe { alloc::alloc::dealloc(ptr, layout) };
+        }
+    }
+
+    #[test]
+    fn c_style_allocation_apis_preserve_layout_metadata() {
+        unsafe {
+            let ptr = malloc(257);
+            assert!(!ptr.is_null());
+            assert_eq!(ptr as usize & (core::mem::size_of::<usize>() - 1), 0);
+            for offset in 0..257 {
+                ptr.add(offset).write((offset as u8).wrapping_mul(17));
+            }
+            for offset in 0..257 {
+                assert_eq!(ptr.add(offset).read(), (offset as u8).wrapping_mul(17));
+            }
+            free(ptr);
+
+            let aligned = malloc_align(257, 256);
+            assert!(!aligned.is_null());
+            assert_eq!(aligned as usize & 255, 0);
+            aligned.write(0x5A);
+            aligned.add(256).write(0xA5);
+            assert_eq!(aligned.read(), 0x5A);
+            assert_eq!(aligned.add(256).read(), 0xA5);
+            // `free` is also the deallocator used by the `free_mem` syscall
+            // for memory returned from `malloc_align`.
+            free(aligned);
+
+            let aligned = malloc_align(33, 64);
+            assert!(!aligned.is_null());
+            free_align(aligned, 64);
+        }
+    }
+
+    #[test]
+    fn calloc_zeroes_memory_and_rejects_overflow() {
+        unsafe {
+            let ptr = calloc(37, 11);
+            assert!(!ptr.is_null());
+            for offset in 0..37 * 11 {
+                assert_eq!(ptr.add(offset).read(), 0);
+            }
+            free(ptr);
+        }
+        assert!(calloc(usize::MAX, 2).is_null());
+    }
+
+    #[cfg(allocator_buddy)]
+    #[test]
+    fn c_style_realloc_crosses_allocator_routes() {
+        const SMALL_SIZE: usize = 128;
+        const LARGE_SIZE: usize = BUDDY_THRESHOLD + 1;
+
+        unsafe {
+            let small = malloc(SMALL_SIZE);
+            assert!(!small.is_null());
+            for offset in 0..SMALL_SIZE {
+                small.add(offset).write((offset as u8).wrapping_mul(31));
+            }
+
+            let large = realloc(small, LARGE_SIZE);
+            assert!(!large.is_null());
+            for offset in 0..SMALL_SIZE {
+                assert_eq!(large.add(offset).read(), (offset as u8).wrapping_mul(31));
+            }
+            large.add(LARGE_SIZE - 1).write(0xC3);
+
+            let small_again = realloc(large, SMALL_SIZE / 2);
+            assert!(!small_again.is_null());
+            for offset in 0..SMALL_SIZE / 2 {
+                assert_eq!(
+                    small_again.add(offset).read(),
+                    (offset as u8).wrapping_mul(31)
+                );
+            }
+            free(small_again);
+        }
+    }
+
+    #[cfg(allocator_buddy)]
+    #[test]
+    fn c_style_realloc_failure_keeps_old_allocation() {
+        unsafe {
+            let ptr = malloc(64);
+            assert!(!ptr.is_null());
+            ptr.write(0x6D);
+
+            assert!(realloc(ptr, usize::MAX).is_null());
+            assert_eq!(ptr.read(), 0x6D);
+            free(ptr);
+        }
+    }
+
+    #[cfg(allocator_buddy)]
+    #[test]
+    fn c_style_page_alignment_routes_through_buddy() {
+        unsafe {
+            let ptr = malloc_align(64, buddy::PAGE_SIZE);
+            assert!(!ptr.is_null());
+            assert_eq!(ptr as usize & (buddy::PAGE_SIZE - 1), 0);
+            ptr.write(0x3C);
+            ptr.add(63).write(0xC3);
+            assert_eq!(ptr.read(), 0x3C);
+            assert_eq!(ptr.add(63).read(), 0xC3);
+            free_align(ptr, buddy::PAGE_SIZE);
         }
     }
 

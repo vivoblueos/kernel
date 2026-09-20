@@ -1,4 +1,4 @@
-allocator/src/buddy.rs                  --- 读完, pass
+allocator/src/buddy.rs                  
 allocator/src/lib.rs                    --- 读完，pass
 kernel/src/allocator/buddy/heap.rs      --- 读完，pass
 kernel/src/allocator/buddy/mod.rs       --- 读完，pass
