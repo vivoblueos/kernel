@@ -9,6 +9,10 @@ choice
         bool "SLAB algorithm (static)"
     config ALLOCATOR_SLAB_DYNAMIC
         bool "SLAB algorithm (dynamic, with page pool)"
+        depends on ALLOCATOR_BUDDY
+        help
+          Dynamic SLAB obtains and releases slab pages through the buddy
+          allocator, so it requires ALLOCATOR_BUDDY.
     config ALLOCATOR_LLFF
         bool "LLFF algorithm"
 endchoice
@@ -41,6 +45,7 @@ config ALLOCATOR_BUDDY
         This can coexist with TLSF/SLAB/LLFF, which remain the selected
         heap allocator for small allocations.
         When enabled, slab allocator operates on top of buddy-allocated
-        page pools; >= PAGE_SIZE allocations go directly to buddy;
+        page pools. Requests with effective size > 2048 bytes go directly
+        to buddy; smaller requests remain on the selected heap allocator.
         tlsf/llff keep their original __heap_start~__heap_end path.
         When disabled, the kernel falls back to direct heap management.
