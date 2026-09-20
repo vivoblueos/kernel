@@ -1,6 +1,7 @@
 // NEWLINE-TIMEOUT: 10
 // ASSERT-SUCC: Loader integration test ended
 // ASSERT-FAIL: Backtrace in Panic.*
+// ASSERT-FAIL: loader test: no stack
 
 #![no_main]
 #![no_std]
@@ -15,7 +16,7 @@ extern crate alloc;
 extern crate rsrt;
 use alloc::sync::Arc;
 use blueos::{
-    sync::{atomic_wait, atomic_wake, SpinLock},
+    sync::{atomic_wait, atomic_wake},
     thread,
     time::Tick,
 };
@@ -146,7 +147,7 @@ impl ElfReader for SemihostingElfReader<'_> {
     }
 }
 
-/// Stack used by each loader test while parsing or running an image.
+/// Stack the loader test suite runs on.
 ///
 /// Even a rejected ELF can traverse deep parser and mapping frames. On
 /// riscv64 debug, running that path on the 12 KiB harness stack overwrites the
@@ -154,31 +155,45 @@ impl ElfReader for SemihostingElfReader<'_> {
 /// program also needs room for callbacks into `librs` (`malloc`, `Box`, `Vec`).
 const RUN_STACK_SIZE: usize = 64 * 1024;
 
-/// Run `body` on a stack this test owns, and return its value.
-fn run_on_own_stack<F>(body: F) -> u32
-where
-    F: FnOnce() -> u32 + Send + 'static,
-{
+/// Run the whole suite on a stack this test owns, and return once it ends.
+///
+/// One thread for the suite, not one per test. A thread per test keeps two
+/// `RUN_STACK_SIZE` stacks (131 KiB) in the heap at once, because a worker
+/// publishes its result before it has switched off its stack, so the next test
+/// spawns while the previous stack is still allocated. The
+/// `seeed_xiao_esp32c3` heap is only 271 KiB, and once it is fragmented that
+/// way it can no longer serve `RUN_STACK_SIZE` at all: `Tlsf::map_ceil` rounds
+/// the request up to the next second-level bucket, so the free blocks of
+/// exactly the size being asked for - the ones the previous tests released -
+/// are searched past, and `spawn_with_stack` returns `None`.
+///
+/// A failed spawn ends in a silent `Check Timeout`: nothing reports a panic on
+/// this board (see the panic handler in `kernel/rsrt/src/lib.rs`), so the
+/// checker only sees the output stop.
+fn run_suite_on_own_stack() {
     let done = Arc::new(AtomicUsize::new(0));
-    let placed = Arc::new(SpinLock::new(0u32));
-
-    let (worker_done, worker_placed) = (done.clone(), placed.clone());
-    thread::spawn_with_stack(RUN_STACK_SIZE, move || {
-        *worker_placed.irqsave_lock() = body();
+    let worker_done = done.clone();
+    let spawned = thread::spawn_with_stack(RUN_STACK_SIZE, move || {
+        // The loaded program's malloc/Box/Vec path needs per-thread libc
+        // state. Registering it on the one worker that outlives every test
+        // also keeps the suite from leaving a POSIX TCB behind per test.
+        pthread::register_my_posix_tcb();
+        loader_test_main();
         worker_done.fetch_add(1, Ordering::Release);
         let _ = atomic_wake(&worker_done, usize::MAX);
-    })
-    .expect("spawn the stack that runs the loaded image");
+    });
+
+    if spawned.is_none() {
+        // Say why, rather than letting the checker time out on a silent hang.
+        println!("loader test: no stack for the {RUN_STACK_SIZE}-byte test suite");
+        return;
+    }
 
     while done.load(Ordering::Acquire) == 0 {
         // A spurious return only re-reads the flag; the worker bumps it exactly
         // once and never resets it.
         let _ = atomic_wait(&done, 0, Tick::MAX);
     }
-    // Bind before returning: as a tail expression the guard temporary would
-    // outlive `placed`.
-    let outcome = *placed.irqsave_lock();
-    outcome
 }
 
 mod test_elf_loader {
@@ -224,47 +239,31 @@ mod test_elf_loader {
     }
 
     fn assert_rejected_elf(path: *const c_char) {
-        let path = path as usize;
-        run_on_own_stack(move || {
-            let file = open_test_elf(path as *const c_char);
-            let reader = SemihostingElfReader::new(&file).unwrap();
-            let mut mapper = new_mapper();
-            assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
-            0
-        });
+        let file = open_test_elf(path);
+        let reader = SemihostingElfReader::new(&file).unwrap();
+        let mut mapper = new_mapper();
+        assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
     }
 
     #[test]
     fn test_load_elf_and_run() {
-        let outcome = run_on_own_stack(|| {
-            // The loaded program's malloc/Box/Vec path needs per-thread libc
-            // state. Parsing rejected images does not, and registering every
-            // short-lived worker would leave stale POSIX TCBs on non-ARM targets.
-            pthread::register_my_posix_tcb();
-            let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
-            let reader = SemihostingElfReader::new(&file).unwrap();
-            let mut mapper = new_mapper();
-            assert!(loader::load_elf_from_reader(reader, &mut mapper).is_ok());
+        let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
+        let reader = SemihostingElfReader::new(&file).unwrap();
+        let mut mapper = new_mapper();
+        assert!(loader::load_elf_from_reader(reader, &mut mapper).is_ok());
 
-            let entry = mapper.real_entry().unwrap();
-
-            #[cfg(all(loader_test_exec))]
-            {
-                let run = unsafe { core::mem::transmute::<usize, extern "C" fn() -> u32>(entry) };
-                run()
-            }
-            #[cfg(not(loader_test_exec))]
-            {
-                let run = unsafe { core::mem::transmute::<usize, fn()>(entry) };
-                run();
-                0
-            }
-        });
+        let entry = mapper.real_entry().unwrap();
 
         #[cfg(all(loader_test_exec))]
-        assert_eq!(outcome, EXPECTED_RESULT);
+        {
+            let run = unsafe { core::mem::transmute::<usize, extern "C" fn() -> u32>(entry) };
+            assert_eq!(run(), EXPECTED_RESULT);
+        }
         #[cfg(not(loader_test_exec))]
-        let _ = outcome;
+        {
+            let run = unsafe { core::mem::transmute::<usize, fn()>(entry) };
+            run();
+        }
     }
 
     #[test]
@@ -285,40 +284,31 @@ mod test_elf_loader {
     #[cfg(loader_test_exec)]
     #[test]
     fn test_exec_rejects_allocated_mapper() {
-        run_on_own_stack(|| {
-            let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
-            let reader = SemihostingElfReader::new(&file).unwrap();
-            let mut mapper = loader::MemoryMapper::new(None);
-            assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
-            0
-        });
+        let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
+        let reader = SemihostingElfReader::new(&file).unwrap();
+        let mut mapper = loader::MemoryMapper::new(None);
+        assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
     }
 
     #[cfg(loader_test_exec)]
     #[test]
     fn test_exec_rejects_out_of_range_without_writing() {
-        run_on_own_stack(|| {
-            let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
-            let reader = SemihostingElfReader::new(&file).unwrap();
-            let before = unsafe { (TEST_REGION_START as *const u32).read_volatile() };
-            let mut mapper = loader::MemoryMapper::new(Some(&SHORT_REGIONS));
-            assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
-            let after = unsafe { (TEST_REGION_START as *const u32).read_volatile() };
-            assert_eq!(after, before);
-            0
-        });
+        let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
+        let reader = SemihostingElfReader::new(&file).unwrap();
+        let before = unsafe { (TEST_REGION_START as *const u32).read_volatile() };
+        let mut mapper = loader::MemoryMapper::new(Some(&SHORT_REGIONS));
+        assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
+        let after = unsafe { (TEST_REGION_START as *const u32).read_volatile() };
+        assert_eq!(after, before);
     }
 
     #[cfg(loader_test_exec)]
     #[test]
     fn test_exec_rejects_non_executable_region() {
-        run_on_own_stack(|| {
-            let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
-            let reader = SemihostingElfReader::new(&file).unwrap();
-            let mut mapper = loader::MemoryMapper::new(Some(&NON_EXEC_REGIONS));
-            assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
-            0
-        });
+        let file = open_test_elf(unsafe { LOADER_TEST_ELF_PATH });
+        let reader = SemihostingElfReader::new(&file).unwrap();
+        let mut mapper = loader::MemoryMapper::new(Some(&NON_EXEC_REGIONS));
+        assert!(loader::load_elf_from_reader(reader, &mut mapper).is_err());
     }
 }
 
@@ -335,7 +325,9 @@ pub fn loader_test_runner(tests: &[&dyn Fn()]) {
 #[no_mangle]
 pub extern "C" fn main() -> i32 {
     pthread::register_my_posix_tcb();
-    loader_test_main();
+    // The suite owns its stack, so a test that runs away on deep parser frames
+    // cannot reach this thread's control block.
+    run_suite_on_own_stack();
     #[cfg(coverage)]
     common_cov::write_coverage_data();
     0
