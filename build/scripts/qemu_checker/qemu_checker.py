@@ -80,6 +80,13 @@ class AssertSucc(Action):
         raise AssertSuccNotifier()
 
 
+class GuestPanic(AssertFail):
+
+    def take(self, checker, line):
+        LOGGER.error('Guest panic detected; stopping QEMU check')
+        super().take(checker, line)
+
+
 class Checker(object):
 
     def __init__(self, script, test_dir):
@@ -91,6 +98,10 @@ class Checker(object):
         self.fail_lines = []
         self.counters = []
         self.test_dir = os.path.abspath(test_dir)
+        # A Rust panic is always terminal for a QEMU check. Detect the standard
+        # panic preamble independently of per-test directives so a halted guest
+        # is reported as the real failure instead of an inactivity timeout.
+        self.add_rule(re.compile(r'(^|\s)panicked at\s'), GuestPanic(), 4)
 
     def add_succ_line(self, line):
         self.succ_lines.append(line)
