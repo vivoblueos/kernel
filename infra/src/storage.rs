@@ -21,12 +21,6 @@ use core::{
 #[derive(Debug)]
 pub enum Storage {
     Alloc(*mut u8, Layout),
-    /// An allocation owned through a caller-provided release operation.
-    ///
-    /// This covers memory transferred across an ABI boundary when it was not
-    /// allocated through Rust's global allocator and therefore cannot be
-    /// returned with `alloc::alloc::dealloc`.
-    OwnedRaw(*mut u8, usize, fn(*mut u8)),
     Raw(*mut u8, usize),
 }
 
@@ -60,18 +54,6 @@ impl Storage {
         Storage::Raw(base, size)
     }
 
-    /// Take ownership of raw storage with an explicit release operation.
-    ///
-    /// # Safety
-    ///
-    /// `base` must identify an exclusively owned allocation of at least
-    /// `size` bytes that `release` accepts exactly once. The caller must not
-    /// access or release the allocation after constructing this value.
-    #[inline]
-    pub unsafe fn from_owned_raw(base: *mut u8, size: usize, release: fn(*mut u8)) -> Self {
-        Storage::OwnedRaw(base, size, release)
-    }
-
     #[inline]
     pub const fn new() -> Self {
         Storage::Raw(core::ptr::null_mut(), 0)
@@ -81,7 +63,6 @@ impl Storage {
     pub fn base(&self) -> *mut u8 {
         match self {
             Storage::Alloc(base, _) => *base,
-            Storage::OwnedRaw(base, _, _) => *base,
             Storage::Raw(base, _) => *base,
         }
     }
@@ -90,7 +71,6 @@ impl Storage {
     pub fn size(&self) -> usize {
         match self {
             Storage::Alloc(_, layout) => layout.size(),
-            Storage::OwnedRaw(_, size, _) => *size,
             Storage::Raw(_, size) => *size,
         }
     }
@@ -109,10 +89,8 @@ impl Storage {
 impl Drop for Storage {
     #[inline]
     fn drop(&mut self) {
-        match self {
-            Storage::Alloc(base, layout) => unsafe { alloc::alloc::dealloc(*base, *layout) },
-            Storage::OwnedRaw(base, _, release) => release(*base),
-            Storage::Raw(_, _) => {}
+        if let Storage::Alloc(base, layout) = self {
+            unsafe { alloc::alloc::dealloc(*base, *layout) }
         }
     }
 }
