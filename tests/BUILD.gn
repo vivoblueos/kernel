@@ -26,6 +26,7 @@ group("check_dynamic") {
     "//kernel/tests/dynamic_scope_bad_test:run_dynamic_scope_bad_test",
     "//kernel/tests/dynamic_scope_test:run_dynamic_scope_test",
     "//kernel/tests/dynamic_sequence_test:run_dynamic_sequence_test",
+    "//kernel/tests/dynamic_stack_reclaim_test:run_dynamic_stack_reclaim_test",
     "//kernel/tests/dynamic_test:run_dynamic_test",
     "//kernel/tests/dynamic_tls_test:run_dynamic_tls_test",
   ]
