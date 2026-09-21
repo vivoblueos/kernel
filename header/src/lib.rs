@@ -116,18 +116,12 @@ pub mod thread {
     pub const STACK_ALIGN: usize = 8;
     #[cfg(target_pointer_width = "64")]
     pub const STACK_ALIGN: usize = 16;
-    /// `stack_start` names an allocation whose ownership transfers to the
-    /// kernel when `CreateThread` is entered.
-    #[cfg(armv7m)]
-    pub const STACK_FLAG_KERNEL_OWNED: usize = 1 << 0;
 
     #[repr(C)]
     pub struct SpawnArgs {
         pub spawn_hook: Option<extern "C" fn(tid: usize, spawn_args: *mut SpawnArgs)>,
         pub stack_start: *mut u8,
         pub stack_size: usize,
-        #[cfg(armv7m)]
-        pub stack_flags: usize,
         pub entry: extern "C" fn(*mut core::ffi::c_void),
         pub arg: *mut core::ffi::c_void,
         pub cleanup: Option<extern "C" fn(*mut core::ffi::c_void)>,

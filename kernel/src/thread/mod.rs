@@ -44,6 +44,11 @@ use core::{
 mod builder;
 pub use builder::*;
 
+/// Retirement cleanups that have to run outside the context-switch path.
+/// Only a configuration with a drainer compiles it.
+#[cfg(all(enable_vfs, dynamic_loader))]
+pub mod deferred;
+
 pub type ThreadNode = Arc<Thread>;
 
 pub enum Entry {
@@ -114,32 +119,6 @@ impl Stack {
             return None;
         }
         Some(Self(unsafe { Storage::from_raw(base, size) }))
-    }
-
-    /// Take ownership of an allocation as a thread stack.
-    ///
-    /// The scheduler drops the allocation only after the retired thread has
-    /// switched away from this stack. This avoids running a userspace cleanup
-    /// callback in the context-switch handler.
-    ///
-    /// # Safety
-    ///
-    /// `base` must identify an exclusively owned allocation of `size` bytes;
-    /// `release` must accept its base exactly once. On success the caller must
-    /// neither access nor free the allocation again.
-    #[inline]
-    pub(crate) unsafe fn from_owned_allocation(
-        base: *mut u8,
-        size: usize,
-        release: fn(*mut u8),
-    ) -> Option<Self> {
-        const ALIGN: usize = core::mem::align_of::<Context>();
-        if size < ALIGN || base.is_null() || base as usize % ALIGN != 0 {
-            return None;
-        }
-        Some(Self(unsafe {
-            Storage::from_owned_raw(base, size, release)
-        }))
     }
 
     pub fn size(&self) -> usize {

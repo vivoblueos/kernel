@@ -36,8 +36,6 @@ use alloc::boxed::Box;
 use blueos_header::application::{
     BlueOsApplicationLaunchRequest, BlueOsStringView, APPLICATION_LAUNCH_REQUEST_ABI_VERSION,
 };
-#[cfg(armv7m)]
-use blueos_header::thread::STACK_FLAG_KERNEL_OWNED;
 use blueos_header::{syscalls::NR, thread::SpawnArgs};
 use core::{
     ffi::{c_size_t, c_ssize_t},
@@ -395,32 +393,7 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
         return -1;
     }
     let spawn_args = unsafe {&*spawn_args_ptr};
-    #[cfg(not(armv7m))]
-    let stack = Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size);
-    #[cfg(armv7m)]
-    let stack = match spawn_args.stack_flags {
-        0 => Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size),
-        STACK_FLAG_KERNEL_OWNED => {
-        // SAFETY: ownership of this allocation is transferred by the syscall
-        // ABI even when validation fails. `stack_size` describes the complete
-        // allocation, so no application-specific layout enters `Stack`.
-        let stack = unsafe {
-            Stack::from_owned_allocation(
-                spawn_args.stack_start,
-                spawn_args.stack_size,
-                crate::allocator::free,
-            )
-        };
-        if stack.is_none() {
-            // Ownership was transferred on syscall entry; avoid making the
-            // caller guess whether a failed create consumed the allocation.
-            crate::allocator::free(spawn_args.stack_start);
-        }
-        stack
-        }
-        _ => return -1,
-    };
-    let Some(stack) = stack else {
+    let Some(stack) = Stack::from_raw(spawn_args.stack_start, spawn_args.stack_size) else {
         return -1;
     };
     let mut t = Builder::new(Entry::Posix(spawn_args.entry, spawn_args.arg))

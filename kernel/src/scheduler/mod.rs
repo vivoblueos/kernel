@@ -241,6 +241,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
             // TODO: Add warning log that there are still references to the old thread.
         }
         if let Some(entry) = old.lock().take_cleanup() {
+            // A dynamic application's cleanup enters the kernel through a
+            // system call, which this path cannot make: the switch has already
+            // published the next thread and interrupts are off. Hand it to the
+            // reaper, an ordinary thread, and keep running it here otherwise.
+            #[cfg(all(enable_vfs, dynamic_loader))]
+            crate::thread::deferred::defer(entry);
+            #[cfg(not(all(enable_vfs, dynamic_loader)))]
             match entry {
                 Entry::C(f) => f(),
                 Entry::Closure(f) => f(),

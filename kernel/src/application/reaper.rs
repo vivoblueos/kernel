@@ -28,7 +28,6 @@
 //! leases can make another group quiescent, hence the bounded retry loop.
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 use blueos_loader::{DependencyName, ImageMemory, LinkProduct};
 
@@ -42,6 +41,8 @@ use crate::{
     },
     thread::{self, Builder, Entry},
 };
+
+use crate::thread::deferred;
 
 /// Resource counts produced by one reap operation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -66,9 +67,6 @@ pub struct ApplicationReaper {
     /// Every group a launch handed over — successfully or failed — waiting to
     /// be reaped once its members left and its fini resolved.
     pending: Arc<spin::Mutex<Vec<ThreadGroup>>>,
-    /// Bumped (and woken) on registration so the reaper thread notices new
-    /// work without waiting out its poll bound.
-    wake: Arc<AtomicUsize>,
 }
 
 impl ApplicationReaper {
@@ -78,7 +76,6 @@ impl ApplicationReaper {
             registry,
             memory,
             pending: Arc::new(spin::Mutex::new(Vec::new())),
-            wake: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -88,33 +85,47 @@ impl ApplicationReaper {
     /// over the same way.
     pub fn register(&self, group: &ThreadGroup) {
         self.pending.lock().push(group.clone());
-        self.wake.fetch_add(1, Ordering::Release);
-        let _ = crate::sync::atomic_wake(&self.wake, usize::MAX);
+        deferred::notify();
     }
 
     /// Spawn the kernel reaper thread. It owns clones of the reaper and the
     /// manager and never returns. The reaper releases resources outside every
     /// registry or manager lock.
+    ///
+    /// Retirement depends on this thread: it runs the cleanups that release a
+    /// retired thread's stack and drop its group membership, so an application
+    /// cannot finish exiting until the reaper is scheduled. A spawn that fails
+    /// would strand every later cleanup, so it is fatal rather than asserted.
     pub fn spawn(&self, manager: ApplicationManager) {
         let reaper = self.clone();
         let thread = Builder::new(Entry::Closure(Box::new(move || reaper.run(manager)))).build();
-        let queued = crate::scheduler::queue_ready_thread(thread::IDLE, thread);
-        debug_assert!(queued.is_ok(), "reaper thread must queue");
+        if crate::scheduler::queue_ready_thread(thread::IDLE, thread).is_err() {
+            panic!("application reaper thread must queue");
+        }
     }
 
-    /// The reaper thread body: scan every pending group, reap the ones whose
-    /// members left and whose fini resolved, then park for a bounded interval
-    /// and repeat.
+    /// The reaper thread body.
+    ///
+    /// The order of one pass matters. The generation is read *before* the
+    /// queue and the pending groups are inspected, so a cleanup posted or a
+    /// group registered mid-pass moves the value the following wait compares
+    /// against — it wakes this thread rather than being slept through.
+    ///
+    /// Posted cleanups run first. Dropping a retired thread's group membership
+    /// is part of its cleanup, and a group that still holds a member is not
+    /// empty, so no group can be reaped — and no image released — while a
+    /// cleanup that still refers to that image is pending.
     fn run(&self, manager: ApplicationManager) -> ! {
         loop {
+            let generation = deferred::generation();
+            deferred::drain();
             self.scan(&manager);
-            let epoch = self.wake.load(Ordering::Acquire);
             // A bounded wait: member exits and lifecycle transitions are plain
             // shared state with no wake plumbing into this thread, so the poll
             // bound is what makes the reaper eventually observe them.
             let _ = crate::sync::atomic_wait(
-                &self.wake,
-                epoch,
+                deferred::wait_address(),
+                generation,
                 crate::time::Tick::from_millis(REAPER_POLL_MILLIS),
             );
         }
