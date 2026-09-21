@@ -12,7 +12,7 @@
 #![test_runner(stack_reclaim_test_runner)]
 #![reexport_test_harness_main = "stack_reclaim_test_main"]
 
-//! Prove that a retired pthread's stack comes back.
+//! Prove that all per-launch resources, including pthread stacks, come back.
 //!
 //! A dynamic application allocates its own thread stacks and the kernel only
 //! borrows them: the cleanup that returns the storage to the libc allocator
@@ -21,8 +21,10 @@
 //! allocator needs is not available.
 //!
 //! A cleanup that never runs leaks a whole stack per thread and reports
-//! nothing, so this test launches the pthread-heavy fixture repeatedly and
-//! asserts the heap does not drift upwards between rounds.
+//! nothing. A strong reference left in either non-returning exit frame leaks a
+//! much smaller fixed set of blocks. This test launches the pthread-heavy
+//! fixture repeatedly and requires the steady-state heap not to drift upwards
+//! between rounds.
 
 extern crate alloc;
 extern crate rsrt;
@@ -41,14 +43,10 @@ const FIXTURE: &str = "/apps/tls_demo/app.elf";
 /// Rounds compared against each other, after one warm-up launch.
 const ROUNDS: usize = 3;
 
-/// Slack allowed between two consecutive rounds.
-///
-/// A stalled cleanup is not subtle: a stack is `DEFAULT_STACK_SIZE` (12288)
-/// bytes plus its tail metadata, and the fixture runs several threads per
-/// launch, so one leaked round moves the heap by tens of KiB — measured at
-/// 61968 bytes with the cleanup deliberately disabled. The bound only absorbs
-/// bookkeeping that legitimately differs between rounds.
-const DRIFT_TOLERANCE: usize = 8192;
+/// Steady-state launches must be allocation-neutral after the reaper removed
+/// the manager slot. The warm-up below absorbs cached system DSOs and one-time
+/// allocator/runtime setup, so even a single retained slab block is a failure.
+const DRIFT_TOLERANCE: usize = 0;
 
 fn heap_used() -> usize {
     blueos::allocator::memory_info().used
@@ -78,7 +76,7 @@ fn launch_fixture(service: &ApplicationService) {
 }
 
 #[test]
-fn pthread_stack_is_reclaimed() {
+fn application_launch_resources_are_reclaimed() {
     let service = runtime::init();
 
     // Warm-up: the first launch is the loading generation for `libc.so.1` and
@@ -95,7 +93,7 @@ fn pthread_stack_is_reclaimed() {
         assert!(
             used <= previous + DRIFT_TOLERANCE,
             "round {round}: heap grew by {} bytes since the previous round; \
-             a retired pthread's stack was not reclaimed",
+             per-launch resources were not fully reclaimed",
             used.saturating_sub(previous)
         );
         previous = used;

@@ -1107,6 +1107,11 @@ mod application_syscalls {
         if group.finish_fini().is_err() {
             return -(libc::EINVAL as c_long);
         }
+        // `retire_me` context-switches away and never unwinds this stack
+        // frame. Release the lookup's strong group handle explicitly;
+        // otherwise one whole reaped group remains live after every
+        // successful application exit.
+        drop(group);
         scheduler::retire_me();
         -1
     }
