@@ -21,6 +21,21 @@ config NETWORK_STACK_SIZE
 menu "smoltcp TCP/IP Stack Configuration"
     depends on ENABLE_NET
 
+config TCP_RX_BUFFER_SIZE
+    int "TCP receive buffer size per socket"
+    default 8192
+    range 512 65536
+    help
+      Size in bytes of the per-socket TCP receive buffer. Larger values let the
+      stack absorb bigger bursts but cost heap per socket.
+
+config TCP_TX_BUFFER_SIZE
+    int "TCP transmit buffer size per socket"
+    default 1024
+    range 512 65536
+    help
+      Size in bytes of the per-socket TCP transmit buffer.
+
 config ASSEMBLER_MAX_SEGMENT_COUNT
     int "Maximum non-contiguous segments count for reassembly"
     default 4

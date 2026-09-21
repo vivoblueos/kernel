@@ -69,8 +69,10 @@ impl TcpSocket {
         };
 
         let tcp_socket = {
-            let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 8 * 1024]);
-            let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
+            let tcp_rx_buffer =
+                tcp::SocketBuffer::new(vec![0; blueos_kconfig::CONFIG_TCP_RX_BUFFER_SIZE as usize]);
+            let tcp_tx_buffer =
+                tcp::SocketBuffer::new(vec![0; blueos_kconfig::CONFIG_TCP_TX_BUFFER_SIZE as usize]);
             tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer)
         };
 
