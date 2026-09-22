@@ -35,6 +35,7 @@ header: # `header` section is configurations for source codes license header.
         limitations under the License.
     paths-ignore: # `paths-ignore` are the path list that will be ignored by license-eye.
       - "licenses"
+      - "blueos-version"
       - "**/cov.rs"
       - "**/Cargo.toml"
       - "**/Cargo.lock"
