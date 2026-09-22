@@ -3,6 +3,10 @@ name: Create and push Docker image of the BlueOS kernel ci
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
