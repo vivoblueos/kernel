@@ -1,0 +1,20 @@
+name: Push librs changes to BlueOS
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: blueos-push-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  push:
+    if: ${{ vars.JOSH_SYNC_ENABLED == 'true' }}
+    uses: vivoblueos/josh-sync/.github/workflows/blueos-push.yml@6a3edbdf4d9edf7342ad01c65c2eb7a9bb148cac
+    with:
+      github-app-client-id: ${{ vars.JOSH_SYNC_APP_CLIENT_ID }}
+      josh-sync-repository: vivoblueos/josh-sync
+      josh-sync-revision: 6a3edbdf4d9edf7342ad01c65c2eb7a9bb148cac
+    secrets:
+      github-app-secret: ${{ secrets.JOSH_SYNC_APP_PRIVATE_KEY }}
