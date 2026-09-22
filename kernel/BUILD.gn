@@ -264,15 +264,6 @@ if (defined(boot_dynamic_seed) && boot_dynamic_seed) {
       "//apps/example/dynamic/tls_demo:tls_demo_layout",
       "//apps/shell",
       "//librs:libc",
-
-      # Wait for the ELF contract checks before including these artifacts in
-      # the boot seed catalog. The artifact targets above remain direct deps
-      # because GN resolves each `inputs` entry to its producing target.
-      "//apps/example/dynamic/hello:hello_check",
-      "//apps/example/dynamic/rust_std:rust_std_check",
-      "//apps/example/dynamic/scope_demo:scope_sys_check",
-      "//apps/shell:shell_check",
-      "//librs:libc_check",
     ]
     inputs = [
       "${root_out_dir}/bin/hello",
