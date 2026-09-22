@@ -1,0 +1,7 @@
+org = "vivoblueos"
+upstream-repo = "vivoblueos/blueos"
+upstream-branch = "main"
+
+repo = "apps_shell"
+path = "apps/shell"
+filter-version = 2
