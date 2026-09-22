@@ -122,10 +122,10 @@ impl InternalFlashRegion {
 
     /// Check alignment + fit.
     pub fn validate(&self, flash_capacity: u32) -> Result<(), EspFlashError> {
-        if self.base % ESP_FLASH_SECTOR_SIZE as u32 != 0 {
+        if !self.base.is_multiple_of(ESP_FLASH_SECTOR_SIZE as u32) {
             return Err(EspFlashError::UnalignedErase);
         }
-        if self.size % ESP_FLASH_SECTOR_SIZE as u32 != 0 {
+        if !self.size.is_multiple_of(ESP_FLASH_SECTOR_SIZE as u32) {
             return Err(EspFlashError::UnalignedErase);
         }
         let end = self
@@ -139,20 +139,15 @@ impl InternalFlashRegion {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum Esp32FlashState {
+    #[default]
     Idle,
     Busy,
     Mapped {
         irom: ExecMapping,
         drom: Option<DromMapping>,
     },
-}
-
-impl Default for Esp32FlashState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 /// Misc device exposing a fixed partition-like region of on-chip flash.
@@ -188,7 +183,7 @@ impl Esp32FlashDevice {
     }
 
     fn ioctl_erase_range(&self, arg: usize) -> Result<(), ErrorKind> {
-        if arg == 0 || arg % core::mem::align_of::<EraseRangeRequest>() != 0 {
+        if arg == 0 || !arg.is_multiple_of(core::mem::align_of::<EraseRangeRequest>()) {
             return Err(ErrorKind::InvalidInput);
         }
 
@@ -235,7 +230,7 @@ impl Esp32FlashDevice {
 
     /// Map a region-relative flash range as executable.
     fn ioctl_map_exec(&self, arg: usize) -> Result<(), ErrorKind> {
-        if arg == 0 || arg % core::mem::align_of::<MapExecRequest>() != 0 {
+        if arg == 0 || !arg.is_multiple_of(core::mem::align_of::<MapExecRequest>()) {
             return Err(ErrorKind::InvalidInput);
         }
 
@@ -283,7 +278,7 @@ impl Esp32FlashDevice {
     /// follow MAP_EXEC. Caller passes the ELF's DROM vaddr; kernel writes the
     /// mapped vaddr back through the request out-pointer.
     fn ioctl_map_drom(&self, arg: usize) -> Result<(), ErrorKind> {
-        if arg == 0 || arg % core::mem::align_of::<MapDromRequest>() != 0 {
+        if arg == 0 || !arg.is_multiple_of(core::mem::align_of::<MapDromRequest>()) {
             return Err(ErrorKind::InvalidInput);
         }
 

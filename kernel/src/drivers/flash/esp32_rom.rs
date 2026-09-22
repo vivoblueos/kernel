@@ -76,13 +76,15 @@ pub(crate) fn with_flash_op<R>(body: impl FnOnce() -> R) -> R {
     result
 }
 
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_read(src_addr: u32, data: *const u32, len: u32) -> i32 {
     with_flash_op(|| unsafe { esp_rom_spiflash_read(src_addr, data, len) })
 }
 
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_write(dest_addr: u32, data: *const u32, len: u32) -> i32 {
     let r = with_flash_op(|| unsafe { esp_rom_spiflash_write(dest_addr, data, len) });
@@ -94,13 +96,15 @@ pub(crate) unsafe fn rom_write(dest_addr: u32, data: *const u32, len: u32) -> i3
     r
 }
 
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_erase_sector(sector_index: u32) -> i32 {
     with_flash_op(|| unsafe { esp_rom_spiflash_erase_sector(sector_index) })
 }
 
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_erase_block(block_index: u32) -> i32 {
     with_flash_op(|| unsafe { esp_rom_spiflash_erase_block(block_index) })
@@ -110,7 +114,8 @@ pub(crate) unsafe fn rom_erase_block(block_index: u32) -> i32 {
 // fetchable from IRAM (flash-backed fetches stall while suspended), same as
 // rom_read/rom_write. The underlying op is a register write, not flash
 // erase/program, so with_flash_op's cache guard is the only protection needed.
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_mmu_map(vaddr: u32, paddr: u32, num_pages: u32) -> i32 {
     // fixed=0 -> linear 1:1 across `num_pages` consecutive 64KB pages.
@@ -121,7 +126,8 @@ pub(crate) unsafe fn rom_mmu_map(vaddr: u32, paddr: u32, num_pages: u32) -> i32 
 // rationale: register op under the unified cache-suspend guard. `vaddr` is the
 // DROM-window address (DROM_VADDR_BASE + page_base); `paddr` is unchanged
 // (same physical flash page the I-bus mapping points at).
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_mmu_map_d(vaddr: u32, paddr: u32, num_pages: u32) -> i32 {
     with_flash_op(|| unsafe { Cache_Dbus_MMU_Set(0, vaddr, paddr, 64, num_pages, 0) })
@@ -129,7 +135,8 @@ pub(crate) unsafe fn rom_mmu_map_d(vaddr: u32, paddr: u32, num_pages: u32) -> i3
 
 // Same .rwtext/cache-guard rationale as rom_mmu_map. Writes the INVALID sentinel
 // (BIT(8)) to one MMU table entry, mirroring mmu_ll_set_entry_invalid.
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_mmu_unmap(entry_id: u32) {
     with_flash_op(|| unsafe {
@@ -140,7 +147,8 @@ pub(crate) unsafe fn rom_mmu_unmap(entry_id: u32) {
 // Diagnostic: read one MMU table entry register. Pure MMIO read (no flash
 // erase/program), so the cache-suspend guard is not required; runs in .rwtext
 // only to keep all MMU-table access colocated.
-#[link_section = ".rwtext"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".rwtext")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".rwtext"))]
 #[inline(never)]
 pub(crate) unsafe fn rom_mmu_entry_read(entry_id: u32) -> u32 {
     unsafe { core::ptr::read_volatile((DR_REG_MMU_TABLE as *const u32).add(entry_id as usize)) }

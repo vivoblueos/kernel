@@ -23,7 +23,8 @@ static KERNEL_STATE: AtomicIsize = AtomicIsize::new(0);
 // osKernelState_t_osKernelLocked is represented by 3
 // osKernelState_t_osKernelSuspended is represented by 4
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelInitialize() -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -44,7 +45,8 @@ pub extern "C" fn osKernelInitialize() -> osStatus_t {
     osStatus_t_osOK
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelStart() -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -64,7 +66,8 @@ pub extern "C" fn osKernelStart() -> osStatus_t {
     osStatus_t_osOK
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelGetState() -> osKernelState_t {
     // Get the current state of the kernel
 
@@ -72,7 +75,8 @@ pub extern "C" fn osKernelGetState() -> osKernelState_t {
     state as osKernelState_t
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osKernelGetInfo(
     version: *mut osVersion_t,
     id_buf: *mut core::ffi::c_char,
@@ -104,7 +108,8 @@ pub unsafe extern "C" fn osKernelGetInfo(
 }
 
 // return previous lock state, 0 means no lock, 1 means locked, -1 means error
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelLock() -> i32 {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -129,7 +134,8 @@ pub extern "C" fn osKernelLock() -> i32 {
     lock
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelUnlock() -> i32 {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -154,7 +160,8 @@ pub extern "C" fn osKernelUnlock() -> i32 {
     lock
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelRestoreLock(lock: i32) -> i32 {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -213,7 +220,8 @@ pub extern "C" fn osKernelRestoreLock(lock: i32) -> i32 {
 //     }
 //     osKernelResume(sleep_ticks);
 // }
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelSuspend() -> u32 {
     if irq::is_in_irq() {
         // If called from an interrupt, return 0 indicating no delay
@@ -235,7 +243,8 @@ pub extern "C" fn osKernelSuspend() -> u32 {
 }
 
 // called in same context as osKernelSuspend
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelResume(sleep_ticks: u32) {
     if irq::is_in_irq() {
         return;

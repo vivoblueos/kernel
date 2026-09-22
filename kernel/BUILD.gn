@@ -54,6 +54,7 @@ _shared_deps = [
   "//external/vendor/embedded-io-0.6.1:embedded_io",
   "//external/vendor/heapless-0.8.0:heapless",
   "//external/vendor/log-0.4.28:log",
+  "//external/vendor/mipidsi-0.10.0:mipidsi",
   "//external/vendor/num-traits-0.2.19:num_traits",
   "//external/vendor/safe-mmio-0.2.5:safe_mmio",
   "//external/vendor/spin-0.9.8:spin",
@@ -70,7 +71,6 @@ _shared_deps = [
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
   "//libc",
-  "//external/vendor/mipidsi-0.10.0:mipidsi"
 ]
 
 # GCC provides __atomic builtins natively; skip the clang-derived libatomic for GCC toolchains.
@@ -164,7 +164,11 @@ run_clippy("kernel_integration_test_clippy") {
 build_rust("blueos") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  if (is_rust_toolchain_older_than_1_90) {
+    edition = "2021"
+  } else {
+    edition = "2021"
+  }
   proc_macro_deps = [
     "//external/vendor/delegate-0.13.4:delegate",
     "//external/vendor/num-derive-0.4.2:num_derive",

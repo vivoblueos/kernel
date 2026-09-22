@@ -56,6 +56,7 @@ header: # `header` section is configurations for source codes license header.
       - "scal/src/platform/**"
       - ".gitignore"
       - ".gitattributes"
+      - "**/.git/**" # .git is a symlink to .repo/projects in repo-tool checkouts, license-eye only skips real .git dirs
       - "**/*.md"
       - "**/*.x" # ld link script
       - "**/*.bak"

@@ -37,25 +37,31 @@ use spin::Once;
 
 // We have to put these globals in the .data section. If not specified explicitly,
 // they might be put in the .bss section and might be used before they are initialized.
-#[link_section = ".data"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 pub(crate) static mut INIT_BSS_DONE: bool = false;
-#[link_section = ".data"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 pub(crate) static mut INIT_ARRAY_DONE: bool = false;
-#[link_section = ".data"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 pub(crate) static mut INIT_HEAP_DONE: bool = false;
-#[link_section = ".data"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 pub(crate) static mut INIT_VFS_DONE: bool = false;
 
 // See https://github.com/rust-lang/rust/pull/134213 for more details about naked function.
-#[no_mangle]
-#[naked]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 pub unsafe extern "C" fn _start() {
     // Arch is responsible to init cores. After initializing
     // cores, arch_bootstrap should continue with `init`.
     crate::arch_bootstrap!(__sys_stack_start, __sys_stack_end, init);
 }
 
-extern "C" {
+unsafe extern "C" {
     pub static __init_array_start: extern "C" fn();
     pub static __init_array_end: extern "C" fn();
     // Apps' entries should be put in bk_app_array section.

@@ -72,7 +72,7 @@ hyper_vector_table:
 "
 );
 
-extern "C" {
+unsafe extern "C" {
     fn hyper_vector_table();
 }
 
@@ -81,8 +81,10 @@ pub fn get_vector_table_addr() -> usize {
     hyper_vector_table as *const () as usize
 }
 
-#[naked]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn sync_from_lower_el1() {
     core::arch::naked_asm!(
         "sub sp, sp, #272\n",
@@ -172,7 +174,8 @@ pub unsafe extern "C" fn sync_from_lower_el1() {
     );
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn sync_from_lower_el1_rust(frame: *mut u64) -> u64 {
     if let Some(vcpu_id) = VCPU_MANAGER.0.current_vcpu_id() {
         handle_guest_request(vcpu_id, frame)
@@ -467,8 +470,10 @@ const HCR_EL2_VI: u64 = 1 << 7;
 const HCR_EL2_VF: u64 = 1 << 6;
 
 /// Solve irq from lower el1.
-#[naked]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn irq_from_lower_el1() {
     core::arch::naked_asm!(
         "sub sp, sp, #272\n",
@@ -525,8 +530,10 @@ pub unsafe extern "C" fn irq_from_lower_el1() {
 }
 
 /// Solve fiq from lower el1.
-#[naked]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn fiq_from_lower_el1() {
     core::arch::naked_asm!(
         "sub sp, sp, #272\n",
@@ -583,20 +590,23 @@ pub unsafe extern "C" fn fiq_from_lower_el1() {
 }
 
 /// Solve serror from lower el1.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn serror_from_lower_el1() {
     asm!("eret", options(noreturn));
 }
 
 /// Solve sync exception from lower el2 sp0.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn sync_current_sp0() {
     loop {
         asm!("wfi");
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn sync_current_spx() {
     let esr: u64;
     let elr: u64;
@@ -618,7 +628,8 @@ pub unsafe extern "C" fn sync_current_spx() {
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn sync_current_el1() {
     let esr: u64;
     let elr: u64;
@@ -633,28 +644,32 @@ pub unsafe extern "C" fn sync_current_el1() {
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn sync_current_el0() {
     loop {
         asm!("wfi");
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn irq_current() {
     loop {
         asm!("wfi");
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn fiq_current() {
     loop {
         asm!("wfi");
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn serror_current() {
     loop {
         asm!("wfi");

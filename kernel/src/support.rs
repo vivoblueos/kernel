@@ -164,7 +164,7 @@ impl MemoryPartitioner {
     #[inline]
     pub fn new(start: usize, end: usize, n: usize) -> Self {
         let size = end - start;
-        debug_assert!(size % n == 0, "Unable to divide the region evenly");
+        debug_assert!(size.is_multiple_of(n), "Unable to divide the region evenly");
         Self {
             base: start,
             size,
@@ -223,7 +223,7 @@ pub fn nonnull_slice_len<T>(ptr: NonNull<[T]>) -> usize {
     //         pointer and not dereferencing the pointer. We also convert it
     //         to `*mut [MaybeUninit<u8>]` just in case because the slice
     //         might be uninitialized.
-    unsafe { (*(ptr.as_ptr() as *const [MaybeUninit<T>])).len() }
+    unsafe { (&(*(ptr.as_ptr() as *const [MaybeUninit<T>]))).len() }
 }
 
 /// Polyfill for <https://github.com/rust-lang/rust/issues/74265>

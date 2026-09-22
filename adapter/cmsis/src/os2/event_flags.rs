@@ -40,7 +40,8 @@ fn os_event_flags_error(e: Error) -> u32 {
 // \param[in]     attr          event flags attributes; NULL: default values.
 // \return event flags ID for reference by other functions or NULL in case of error.
 // osEventFlagsId_t osEventFlagsNew (const osEventFlagsAttr_t *attr);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsNew(attr: *const osEventFlagsAttr_t) -> osEventFlagsId_t {
     // Check if the current context is an IRQ handler
     if irq::is_in_irq() {
@@ -89,7 +90,8 @@ pub extern "C" fn osEventFlagsNew(attr: *const osEventFlagsAttr_t) -> osEventFla
 // \param[in]     ef_id         event flags ID obtained by \ref osEventFlagsNew.
 // \return name as null-terminated string.
 // const char *osEventFlagsGetName (osEventFlagsId_t ef_id);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsGetName(ef_id: osEventFlagsId_t) -> *const core::ffi::c_char {
     if ef_id.is_null() {
         return ptr::null();
@@ -104,7 +106,8 @@ pub extern "C" fn osEventFlagsGetName(ef_id: osEventFlagsId_t) -> *const core::f
 // \param[in]     flags         specifies the flags that shall be set.
 // \return event flags after setting or error code if highest bit set.
 // uint32_t osEventFlagsSet (osEventFlagsId_t ef_id, uint32_t flags);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsSet(ef_id: osEventFlagsId_t, flags: u32) -> u32 {
     if ef_id.is_null() {
         return osFlagsErrorParameter;
@@ -122,7 +125,8 @@ pub extern "C" fn osEventFlagsSet(ef_id: osEventFlagsId_t, flags: u32) -> u32 {
 // \param[in]     flags         specifies the flags that shall be cleared.
 // \return event flags before clearing or error code if highest bit set.
 // uint32_t osEventFlagsClear (osEventFlagsId_t ef_id, uint32_t flags);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsClear(ef_id: osEventFlagsId_t, flags: u32) -> u32 {
     if ef_id.is_null() {
         return osFlagsErrorParameter;
@@ -136,7 +140,8 @@ pub extern "C" fn osEventFlagsClear(ef_id: osEventFlagsId_t, flags: u32) -> u32 
 // \param[in]     ef_id         event flags ID obtained by \ref osEventFlagsNew.
 // \return current event flags.
 // uint32_t osEventFlagsGet (osEventFlagsId_t ef_id);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsGet(ef_id: osEventFlagsId_t) -> u32 {
     if ef_id.is_null() {
         // Return 0 if ef_id is null, as per CMSIS-RTOS2 specification.
@@ -154,7 +159,8 @@ pub extern "C" fn osEventFlagsGet(ef_id: osEventFlagsId_t) -> u32 {
 // \param[in]     timeout       \ref CMSIS_RTOS_TimeOutValue or 0 in case of no time-out.
 // \return event flags before clearing or error code if highest bit set.
 // uint32_t osEventFlagsWait (osEventFlagsId_t ef_id, uint32_t flags, uint32_t options, uint32_t timeout);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsWait(
     ef_id: osEventFlagsId_t,
     flags: u32,
@@ -195,7 +201,8 @@ pub extern "C" fn osEventFlagsWait(
 // \param[in]     ef_id         event flags ID obtained by \ref osEventFlagsNew.
 // \return status code that indicates the execution status of the function.
 // osStatus_t osEventFlagsDelete (osEventFlagsId_t ef_id);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osEventFlagsDelete(ef_id: osEventFlagsId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;

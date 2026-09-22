@@ -131,7 +131,11 @@ pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
 /// The interrupt vector table must be properly aligned and contain valid function pointers
 /// for all used interrupt vectors. Incorrect configuration may lead to undefined behavior.
 #[used]
-#[link_section = ".interrupt.handlers"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".interrupt.handlers")]
+#[cfg_attr(
+    not(compatible_old_toolchain),
+    unsafe(link_section = ".interrupt.handlers")
+)]
 static mut __INTERRUPT_HANDLERS__: [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize] = [Vector {
     handler: _generic_isr_handler,
 };

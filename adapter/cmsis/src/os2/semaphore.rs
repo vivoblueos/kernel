@@ -30,7 +30,8 @@ const SEM_WAIT_ERROR: i32 = -1;
 // \param[in]     initial_count initial number of available tokens.
 // \param[in]     attr          semaphore attributes; NULL: default values.
 // \return semaphore ID for reference by other functions or NULL in case of error.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreNew(
     max_count: u32,
     initial_count: u32,
@@ -86,7 +87,8 @@ pub extern "C" fn osSemaphoreNew(
 // Get name of a Semaphore object.
 // \param[in]     semaphore_id  semaphore ID obtained by \ref osSemaphoreNew.
 // \return name as null-terminated string.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreGetName(semaphore_id: osSemaphoreId_t) -> *const core::ffi::c_char {
     if semaphore_id.is_null() {
         return ptr::null();
@@ -100,7 +102,8 @@ pub extern "C" fn osSemaphoreGetName(semaphore_id: osSemaphoreId_t) -> *const co
 // \param[in]     semaphore_id  semaphore ID obtained by \ref osSemaphoreNew.
 // \param[in]     timeout       \ref CMSIS_RTOS_TimeOutValue or 0 in case of no time-out.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreAcquire(semaphore_id: osSemaphoreId_t, timeout: u32) -> osStatus_t {
     if irq::is_in_irq() && timeout != 0 {
         return osStatus_t_osErrorISR;
@@ -123,7 +126,8 @@ pub extern "C" fn osSemaphoreAcquire(semaphore_id: osSemaphoreId_t, timeout: u32
 // Release a Semaphore token up to the initial maximum count.
 // \param[in]     semaphore_id  semaphore ID obtained by \ref osSemaphoreNew.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreRelease(semaphore_id: osSemaphoreId_t) -> osStatus_t {
     if semaphore_id.is_null() {
         return osStatus_t_osErrorParameter;
@@ -137,7 +141,8 @@ pub extern "C" fn osSemaphoreRelease(semaphore_id: osSemaphoreId_t) -> osStatus_
 // Get current Semaphore token count.
 // \param[in]     semaphore_id  semaphore ID obtained by \ref osSemaphoreNew.
 // \return number of tokens available.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreGetCount(semaphore_id: osSemaphoreId_t) -> u32 {
     if semaphore_id.is_null() {
         return 0;
@@ -151,7 +156,8 @@ pub extern "C" fn osSemaphoreGetCount(semaphore_id: osSemaphoreId_t) -> u32 {
 // Delete a Semaphore object.
 // \param[in]     semaphore_id  semaphore ID obtained by \ref osSemaphoreNew.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreDelete(semaphore_id: osSemaphoreId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;

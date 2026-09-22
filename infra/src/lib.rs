@@ -22,15 +22,18 @@
 #![feature(c_size_t)]
 #![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
-#![feature(let_chains)]
 #![feature(linkage)]
 #![feature(negative_impls)]
-#![feature(non_null_from_ref)]
 #![feature(pointer_is_aligned_to)]
 #![feature(ptr_as_uninit)]
-#![feature(slice_as_chunks)]
 #![feature(slice_ptr_get)]
-#![feature(strict_provenance_atomic_ptr)]
+// Features below are stable in modern toolchains (version noted); only
+// declare them on old toolchains via `compatible_old_toolchain` so the
+// stable_features lint (deny via -D warnings) doesn't fire on new ones.
+#![cfg_attr(compatible_old_toolchain, feature(let_chains))] // 1.88
+#![cfg_attr(compatible_old_toolchain, feature(non_null_from_ref))] // 1.89
+#![cfg_attr(compatible_old_toolchain, feature(slice_as_chunks))] // 1.88
+#![cfg_attr(compatible_old_toolchain, feature(strict_provenance_atomic_ptr))] // 1.91
 
 pub mod intrusive;
 pub mod lifetime;

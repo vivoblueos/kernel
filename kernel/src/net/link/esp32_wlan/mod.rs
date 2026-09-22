@@ -816,7 +816,8 @@ fn esp_api_adapter_init() -> Result<(), NetError> {
     Ok(())
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_funcs_t {
     _version: ESP_WIFI_OS_ADAPTER_VERSION as i32,
     _env_is_chip: Some(env_is_chip),
@@ -952,7 +953,8 @@ pub(crate) static __ESP_RADIO_G_WIFI_OSI_FUNCS: wifi_osi_funcs_t = wifi_osi_func
     _magic: ESP_WIFI_OS_ADAPTER_MAGIC as i32,
 };
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub(crate) static mut G_WIFI_CONFIG: MaybeUninit<wifi_init_config_t> = MaybeUninit::zeroed();
 
 fn esp_wifi_init() -> Result<(), NetError> {

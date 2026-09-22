@@ -47,10 +47,10 @@ fn handle_expiration(tm: &mut Timer) {
     match &mut tm.mode {
         TimerMode::Repeat(r) => {
             r.elapsed_times += 1;
-            if let Some(total) = r.total_times
-                && r.elapsed_times >= total
-            {
-                tm.expire();
+            if let Some(total) = r.total_times {
+                if r.elapsed_times >= total {
+                    tm.expire();
+                }
             }
         }
         _ => tm.expire(),

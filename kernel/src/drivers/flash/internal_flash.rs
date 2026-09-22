@@ -211,10 +211,10 @@ impl Esp32c3InternalFlash {
 
     /// Erase `len` bytes from `offset`; both must be 4 KB-aligned.
     pub fn erase_region(&mut self, offset: u32, len: u32) -> Result<(), EspFlashError> {
-        if offset % ESP_FLASH_SECTOR_SIZE as u32 != 0 {
+        if !offset.is_multiple_of(ESP_FLASH_SECTOR_SIZE as u32) {
             return Err(EspFlashError::UnalignedErase);
         }
-        if len % ESP_FLASH_SECTOR_SIZE as u32 != 0 {
+        if !len.is_multiple_of(ESP_FLASH_SECTOR_SIZE as u32) {
             return Err(EspFlashError::UnalignedErase);
         }
         self.check_bounds(offset, len as usize)?;
@@ -233,10 +233,10 @@ impl Esp32c3InternalFlash {
     }
 
     pub fn program_aligned(&mut self, offset: u32, data: &[u8]) -> Result<(), EspFlashError> {
-        if offset % ESP_FLASH_WORD_SIZE as u32 != 0 {
+        if !offset.is_multiple_of(ESP_FLASH_WORD_SIZE as u32) {
             return Err(EspFlashError::UnalignedWrite);
         }
-        if data.len() % ESP_FLASH_WORD_SIZE != 0 {
+        if !data.len().is_multiple_of(ESP_FLASH_WORD_SIZE) {
             return Err(EspFlashError::UnalignedWrite);
         }
         self.check_bounds(offset, data.len())?;

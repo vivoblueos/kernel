@@ -15,7 +15,8 @@
 use blueos::{irq, scheduler, time, time::Tick};
 use cmsis_os2::*;
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osDelay(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -24,7 +25,8 @@ pub extern "C" fn osDelay(ticks: u32) -> osStatus_t {
     osStatus_t_osOK
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osDelayUntil(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;

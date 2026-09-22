@@ -112,7 +112,7 @@ impl Stack {
         if base.is_null() {
             return None;
         }
-        if base as usize % ALIGN != 0 {
+        if !(base as usize).is_multiple_of(ALIGN) {
             return None;
         }
         Some(Self(unsafe { Storage::from_raw(base, size) }))
@@ -411,7 +411,7 @@ impl Thread {
     pub fn remove_acquired_mutex(&self, mu: &Arc<Mutex>) -> bool {
         self.acquired_mutexes
             .irqsave_write()
-            .remove_if(|e| Arc::as_ptr(mu) == e as *const _)
+            .remove_if(|e| core::ptr::eq(Arc::as_ptr(mu), e))
             .is_some()
     }
 
@@ -620,7 +620,7 @@ impl Thread {
         // to run the function safely.
         match entry {
             Entry::C(f) => ctx
-                .set_return_address(run_simple_c as usize)
+                .set_return_address(run_simple_c as *const () as usize)
                 .set_arg(0, unsafe { f as usize }),
             Entry::Closure(boxed) => {
                 // FIXME: We need to make a new box to contain Box<dyn
@@ -628,11 +628,11 @@ impl Thread {
                 // FnOnce() + Send + 'static) is 64 bits in 32-bit
                 // platform, aka, it's a fat pointer.
                 let raw = Box::into_raw(Box::new(boxed));
-                ctx.set_return_address(run_closure as usize)
+                ctx.set_return_address(run_closure as *const () as usize)
                     .set_arg(0, raw as *mut Box<dyn FnOnce()> as usize)
             }
             Entry::Posix(f, arg) => ctx
-                .set_return_address(run_posix as usize)
+                .set_return_address(run_posix as *const () as usize)
                 .set_arg(0, unsafe { f as usize })
                 .set_arg(1, unsafe { arg as usize }),
         };

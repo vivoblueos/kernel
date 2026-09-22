@@ -60,16 +60,16 @@ pub fn is_in_irq() -> bool {
 #[inline]
 unsafe fn increment_nesting_count() -> usize {
     let id = arch::current_cpu_id();
-    let old = IRQ_NESTING_COUNT[id];
-    let _ = core::mem::replace(&mut IRQ_NESTING_COUNT[id], old + 1);
+    let old = unsafe { IRQ_NESTING_COUNT[id] };
+    let _ = unsafe { core::mem::replace(&mut IRQ_NESTING_COUNT[id], old + 1) };
     old as usize
 }
 
 #[inline]
 unsafe fn decrement_nesting_count() -> usize {
     let id = arch::current_cpu_id();
-    let old = IRQ_NESTING_COUNT[id];
-    let _ = core::mem::replace(&mut IRQ_NESTING_COUNT[id], old - 1);
+    let old = unsafe { IRQ_NESTING_COUNT[id] };
+    let _ = unsafe { core::mem::replace(&mut IRQ_NESTING_COUNT[id], old - 1) };
     old as usize
 }
 

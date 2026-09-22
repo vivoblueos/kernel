@@ -67,8 +67,13 @@ default_irq_handler!(uartrx4_handler);
 default_irq_handler!(uarttx4_handler);
 
 #[doc(hidden)]
-#[link_section = ".interrupt.handlers"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, link_section = ".interrupt.handlers")]
+#[cfg_attr(
+    not(compatible_old_toolchain),
+    unsafe(link_section = ".interrupt.handlers")
+)]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 static __INTERRUPT_HANDLERS__: InterruptTable = {
     let mut tbl = [Vector { reserved: 0 }; INTERRUPT_TABLE_LEN];
 

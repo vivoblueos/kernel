@@ -47,7 +47,8 @@ impl OsTimer {
 // \param[in]     argument      argument to the timer callback function.
 // \param[in]     attr          timer attributes; NULL: default values.
 // \return timer ID for reference by other functions or NULL in case of error.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osTimerNew(
     func: osTimerFunc_t,
     timer_type: osTimerType_t,
@@ -105,7 +106,8 @@ pub extern "C" fn osTimerNew(
 // Get name of a timer.
 // \param[in]     timer_id      timer ID obtained by \ref osTimerNew.
 // \return name as null-terminated string.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osTimerGetName(timer_id: osTimerId_t) -> *const core::ffi::c_char {
     let Some(ostm) = NonNull::new(timer_id as *mut OsTimer) else {
         return core::ptr::null();
@@ -118,7 +120,8 @@ pub extern "C" fn osTimerGetName(timer_id: osTimerId_t) -> *const core::ffi::c_c
 // \param[in]     timer_id      timer ID obtained by \ref osTimerNew.
 // \param[in]     ticks         \ref CMSIS_RTOS_TimeOutValue "time ticks" value of the timer.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osTimerStart(timer_id: osTimerId_t, ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -146,7 +149,8 @@ pub extern "C" fn osTimerStart(timer_id: osTimerId_t, ticks: u32) -> osStatus_t 
 // Stop a timer.
 // \param[in]     timer_id      timer ID obtained by \ref osTimerNew.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osTimerStop(timer_id: osTimerId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -168,7 +172,8 @@ pub extern "C" fn osTimerStop(timer_id: osTimerId_t) -> osStatus_t {
 // Check if a timer is running.
 // \param[in]     timer_id      timer ID obtained by \ref osTimerNew.
 // \return 0 not running, 1 running.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osTimerIsRunning(timer_id: osTimerId_t) -> u32 {
     if irq::is_in_irq() {
         return 0;
@@ -191,7 +196,8 @@ pub extern "C" fn osTimerIsRunning(timer_id: osTimerId_t) -> u32 {
 // Delete a timer.
 // \param[in]     timer_id      timer ID obtained by \ref osTimerNew.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osTimerDelete(timer_id: osTimerId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
