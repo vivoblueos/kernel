@@ -1,0 +1,7 @@
+org = "vivoblueos"
+upstream-repo = "vivoblueos/blueos"
+upstream-branch = "main"
+
+repo = "kernel"
+path = "kernel"
+filter-version = 2

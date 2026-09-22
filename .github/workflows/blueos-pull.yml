@@ -1,0 +1,31 @@
+name: Pull changes from BlueOS
+on:
+  # Triggered by external events
+  repository_dispatch:
+    types: [blueos-pull]
+  # Allow manual triggering from the web interface
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+# Concurrency control
+concurrency:
+  group: blueos-pull
+  cancel-in-progress: false
+jobs:
+  pull:
+    if: ${{ vars.JOSH_SYNC_ENABLED == 'true' }}
+    uses: vivoblueos/josh-sync/.github/workflows/blueos-pull.yml@6a3edbdf4d9edf7342ad01c65c2eb7a9bb148cac
+    with:
+      # JOSH_SYNC_APP_CLIENT_ID and JOSH_SYNC_APP_PRIVATE_KEY come from organization variables and secrets
+      github-app-client-id: ${{ vars.JOSH_SYNC_APP_CLIENT_ID }}
+      # Replace xxx in xxx[bot] with the GitHub App name
+      pr-author: "blueos-josh-sync[bot]"
+      josh-sync-repository: vivoblueos/josh-sync
+      # Keep this aligned with the reusable workflow revision above
+      josh-sync-revision: 6a3edbdf4d9edf7342ad01c65c2eb7a9bb148cac
+      branch-name: blueos-pull
+      # Set this to the default branch of the current repository; libc is special
+      pr-base-branch: main
+    secrets:
+      github-app-secret: ${{ secrets.JOSH_SYNC_APP_PRIVATE_KEY }}
