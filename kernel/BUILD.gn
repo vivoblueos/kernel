@@ -164,11 +164,7 @@ run_clippy("kernel_integration_test_clippy") {
 build_rust("blueos") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  if (is_rust_toolchain_older_than_1_90) {
-    edition = "2021"
-  } else {
-    edition = "2021"
-  }
+  edition = "2021"
   proc_macro_deps = [
     "//external/vendor/delegate-0.13.4:delegate",
     "//external/vendor/num-derive-0.4.2:num_derive",
