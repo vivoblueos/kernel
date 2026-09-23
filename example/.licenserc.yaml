@@ -64,6 +64,7 @@ header: # `header` section is configurations for source codes license header.
       - "app.conf"
       - "capabilities.json"
       - "blueos-version"
+      - "josh-sync.toml"
     comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
     # license-location-threshold specifies the index threshold where the license header can be located,
     # after all, a "header" cannot be TOO far from the file start.
