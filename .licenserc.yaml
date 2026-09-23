@@ -1,10 +1,11 @@
 header: # `header` section is configurations for source codes license header.
   - paths:
-      - '**'
+      - "**"
     license:
       spdx-id: Apache-2.0 # the spdx id of the license, it's convenient when your license is standard SPDX license.
       copyright-owner: vivo Mobile Communication Co., Ltd # the copyright owner to replace the [owner] in the `spdx-id` template.
-      content: | # `license` will be used as the content when `fix` command needs to insert a license header.
+      content:
+        | # `license` will be used as the content when `fix` command needs to insert a license header.
         Copyright (c) [year] vivo Mobile Communication Co., Ltd.
 
         Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,6 +61,7 @@ header: # `header` section is configurations for source codes license header.
       - "tests/dynamic_scope_bad_test/src/test.rs"
       - "tests/dynamic_scope_test/src/test.rs"
       - "tests/dynamic_sequence_test/src/test.rs"
+      - "tests/dynamic_stack_reclaim_test/src/test.rs"
       - "tests/dynamic_tls_test/src/test.rs"
       - "adapter/rt_thread/include/rt_thread_wrapper.inc"
       - "kernel/src/sync/futex.rs"
