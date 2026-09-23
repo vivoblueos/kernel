@@ -17,7 +17,7 @@ use crate::{arch, arch::irq, error::Error, sync::SpinLock, time};
 use blueos_driver::uart::ns16x50::Ns16x50Isr;
 use blueos_kconfig::CONFIG_NUM_CORES;
 pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
-pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE};
+pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE, TEXT_OFFSET};
 use core::sync::atomic::Ordering;
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::GenericClock;
 use alloc::boxed::Box;
