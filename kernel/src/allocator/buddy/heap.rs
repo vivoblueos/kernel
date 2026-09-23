@@ -20,7 +20,7 @@ use core::{cell::UnsafeCell, ptr::NonNull};
 
 /// Virtual address marking the end of the kernel image, provided by the
 /// linker script. It is typically aligned to `PAGE_SIZE`.
-extern "C" {
+unsafe extern "C" {
     static mut _end: u8;
 }
 
