@@ -53,3 +53,39 @@ config SPI_FLASH_ERASE_CACHE_SLOTS
     default 2
     range 1 4
     depends on ENABLE_BLOCK
+
+config SPI_FLASH_STATUS_POLL_INTERVAL_US
+    int "SPI flash status polling interval in microseconds"
+    default 20
+    range 1 1000000
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_PAGE_PROGRAM_TIMEOUT_MS
+    int "SPI flash page program timeout in milliseconds"
+    default 5
+    range 1 60000
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_SECTOR_ERASE_TIMEOUT_MS
+    int "SPI flash sector erase timeout in milliseconds"
+    default 500
+    range 1 60000
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_BLOCK_ERASE_32K_TIMEOUT_MS
+    int "SPI flash 32 KiB erase timeout in milliseconds"
+    default 2000
+    range 1 60000
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_BLOCK_ERASE_64K_TIMEOUT_MS
+    int "SPI flash 64 KiB erase timeout in milliseconds"
+    default 3000
+    range 1 60000
+    depends on ENABLE_BLOCK
+
+config SPI_FLASH_CHIP_ERASE_TIMEOUT_MS
+    int "SPI flash chip erase timeout in milliseconds"
+    default 200000
+    range 1 600000
+    depends on ENABLE_BLOCK
