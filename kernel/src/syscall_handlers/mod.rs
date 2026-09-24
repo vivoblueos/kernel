@@ -403,7 +403,10 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     // referenced by the global queue. When this thread is retired,
     // it's removed from the global queue.
     debug_assert_eq!(ok, Ok(()));
-    unsafe {core::mem::transmute(handle)}
+    // Same-width integer cast (usize -> c_long): c_long matches the pointer
+    // width on every target of this repo (i64 on LP64, i32 on ILP32/cortex-m),
+    // so it stays value-identical to the previous transmute, but safe.
+    handle as c_long
 });
 
 define_syscall_handler!(

@@ -88,7 +88,8 @@ impl<T: Zero> NulTerminated<'_, T> {
 // used by core/src/slice/cmp.rs
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/memcmp.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn memcmp(s1: *const c_void, s2: *const c_void, n: c_size_t) -> c_int {
     let mut a = s1 as *const u8;
     let mut b = s2 as *const u8;
@@ -104,7 +105,8 @@ pub unsafe extern "C" fn memcmp(s1: *const c_void, s2: *const c_void, n: c_size_
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/memcpy.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn memcpy(s1: *mut c_void, s2: *const c_void, n: c_size_t) -> *mut c_void {
     let mut i = 0;
     while i < n {
@@ -116,7 +118,8 @@ pub unsafe extern "C" fn memcpy(s1: *mut c_void, s2: *const c_void, n: c_size_t)
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/memmove.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn memmove(s1: *mut c_void, s2: *const c_void, n: c_size_t) -> *mut c_void {
     let s1_bytes = s1 as *mut u8;
     let s2_bytes = s2 as *mut u8;
@@ -136,7 +139,8 @@ pub unsafe extern "C" fn memmove(s1: *mut c_void, s2: *const c_void, n: c_size_t
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/memset.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn memset(s: *mut c_void, c: c_int, n: c_size_t) -> *mut c_void {
     for i in 0..n {
         *(s as *mut u8).add(i) = c as u8;
@@ -146,7 +150,8 @@ pub unsafe extern "C" fn memset(s: *mut c_void, c: c_int, n: c_size_t) -> *mut c
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/strncpy.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn stpncpy(
     mut s1: *mut c_char,
     mut s2: *const c_char,
@@ -171,7 +176,8 @@ pub unsafe extern "C" fn stpncpy(
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/strncpy.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn strncpy(s1: *mut c_char, s2: *const c_char, n: c_size_t) -> *mut c_char {
     stpncpy(s1, s2, n);
     s1
@@ -179,21 +185,24 @@ pub unsafe extern "C" fn strncpy(s1: *mut c_char, s2: *const c_char, n: c_size_t
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/strlen.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn strlen(s: *const c_char) -> c_size_t {
     unsafe { NulTerminated::new(s) }.count()
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/strlen.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn strnlen(s: *const c_char, size: c_size_t) -> c_size_t {
     unsafe { NulTerminated::new(s) }.take(size).count()
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/abort.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn abort() -> ! {
     core::intrinsics::abort();
 }

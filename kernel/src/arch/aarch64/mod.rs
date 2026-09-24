@@ -481,7 +481,8 @@ pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHo
     svc_switch_context_with_hook(hook)
 }
 
-#[naked]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 pub(crate) extern "C" fn jump_to_high_va() -> ! {
     unsafe {
         core::arch::naked_asm!(
@@ -494,7 +495,8 @@ pub(crate) extern "C" fn jump_to_high_va() -> ! {
     }
 }
 
-#[naked]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
         core::arch::naked_asm!(concat!(
@@ -514,7 +516,8 @@ pub(crate) extern "C" fn init() -> ! {
     }
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     let current = crate::scheduler::current_thread_ref();
     current.reset_saved_sp();
@@ -597,13 +600,14 @@ pub extern "C" fn pend_switch_context() {}
 
 pub fn secondary_cpu_setup(psci_base: u32) {
     atomic::fence(Ordering::SeqCst);
-    let secondary_entry = mmu::kernel_virt_to_phys(crate::boot::_start as usize);
+    let secondary_entry = mmu::kernel_virt_to_phys(crate::boot::_start as *const () as usize);
     for i in 1..blueos_kconfig::CONFIG_NUM_CORES {
         psci::cpu_on(psci_base, i as usize, secondary_entry, 0);
     }
 }
 
-#[naked]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 pub(crate) extern "C" fn switch_stack(
     to_sp: usize,
     cont: extern "C" fn(sp: usize, old_sp: usize),

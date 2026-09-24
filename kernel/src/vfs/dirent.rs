@@ -138,7 +138,7 @@ impl Dirent {
     /// Get a reference to Dirent from a raw buffer
     pub unsafe fn from_buf_ref(buf: &[u8]) -> &Self {
         let ptr = buf.as_ptr() as *const Self;
-        &*ptr
+        unsafe { &*ptr }
     }
 }
 

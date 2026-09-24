@@ -24,7 +24,8 @@ use cmsis_os2::{
 };
 use core::ffi::c_void;
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolNew(
     block_count: u32,
     block_size: u32,
@@ -64,7 +65,8 @@ pub unsafe extern "C" fn osMemoryPoolNew(
     result as osMemoryPoolId_t
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolAlloc(
     mp_id: osMemoryPoolId_t,
     timeout: u32,
@@ -79,7 +81,8 @@ pub unsafe extern "C" fn osMemoryPoolAlloc(
     mp.get_block_with_timeout(Tick(timeout as usize))
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolFree(
     mp_id: osMemoryPoolId_t,
     block: *mut core::ffi::c_void,
@@ -95,7 +98,8 @@ pub unsafe extern "C" fn osMemoryPoolFree(
     osStatus_t_osOK
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolGetCapacity(mp_id: osMemoryPoolId_t) -> u32 {
     if mp_id.is_null() {
         return 0;
@@ -104,7 +108,8 @@ pub unsafe extern "C" fn osMemoryPoolGetCapacity(mp_id: osMemoryPoolId_t) -> u32
     mp.total_blocks() as u32
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolGetBlockSize(mp_id: osMemoryPoolId_t) -> u32 {
     if mp_id.is_null() {
         return 0;
@@ -113,7 +118,8 @@ pub unsafe extern "C" fn osMemoryPoolGetBlockSize(mp_id: osMemoryPoolId_t) -> u3
     mp.block_size() as u32
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolGetCount(mp_id: osMemoryPoolId_t) -> u32 {
     if mp_id.is_null() {
         return 0;
@@ -122,7 +128,8 @@ pub unsafe extern "C" fn osMemoryPoolGetCount(mp_id: osMemoryPoolId_t) -> u32 {
     (mp.total_blocks() - mp.free_blocks()) as u32
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolGetSpace(mp_id: osMemoryPoolId_t) -> u32 {
     if irq::is_in_irq() {
         return 0;
@@ -134,7 +141,8 @@ pub unsafe extern "C" fn osMemoryPoolGetSpace(mp_id: osMemoryPoolId_t) -> u32 {
     mp.free_blocks() as u32
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn osMemoryPoolDelete(mp_id: osMemoryPoolId_t) -> osStatus_t {
     // FIXME: Check osErrorSafetyClass condition.
     if irq::is_in_irq() {

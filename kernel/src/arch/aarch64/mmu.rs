@@ -68,7 +68,7 @@ pub(crate) const KERNEL_VIRT_START: u64 = crate::mm::KERNEL_VIRT_OFFSET as u64;
 pub use crate::mm::{kernel_phys_to_virt, kernel_virt_to_phys};
 
 // End of the kernel-reserved virtual address range, including the heap.
-extern "C" {
+unsafe extern "C" {
     static mut _end: u8;
 }
 
@@ -268,11 +268,13 @@ impl PageEntry {
 // This page table must be available before `init_runtime()` clears `.bss`,
 // because we may set up EL1 MMU state while still running in EL2.
 #[used]
-#[link_section = ".data"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 static mut TABLE_MANAGER: PageTableManager = PageTableManager::new();
 
 #[used]
-#[link_section = ".data"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 static mut LINEARMAP_MANAGER: PageTableManager = PageTableManager::new();
 
 #[repr(C, align(4096))]

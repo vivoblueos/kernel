@@ -387,7 +387,7 @@ pub fn println_hex(buffer: &[u8], received_size: usize) {
         // Alignment padding for partial lines
         if chunk.len() < 16 {
             let missing = 16 - chunk.len();
-            line.extend(core::iter::repeat(' ').take(missing * 3));
+            line.extend(core::iter::repeat_n(' ', missing * 3));
         }
 
         // ASCII visualization section

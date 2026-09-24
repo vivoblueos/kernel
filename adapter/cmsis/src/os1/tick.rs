@@ -17,13 +17,15 @@ use blueos::{scheduler, time, time::Tick};
 const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;
 // Define constants that will be exported to C
 // These match the extern const declarations in cmsis_os.h
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub static os_tickfreq: u32 = TICKS_PER_SECOND as u32; // System timer frequency in Hz
 
 /// Get the RTOS kernel system timer counter.
 /// \return RTOS kernel system timer as 32-bit value
 /// uint32_t osKernelSysTick (void);
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osKernelSysTick() -> u32 {
     time::Tick::now().0 as u32
 }

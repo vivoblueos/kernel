@@ -30,7 +30,8 @@ use spin::Once;
 // const definitions
 pub const UART0_IRQN: IrqNumber = IrqNumber::new(33);
 
-#[link_section = ".start_block"]
+#[cfg_attr(compatible_old_toolchain, link_section = ".start_block")]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".start_block"))]
 #[used]
 pub static IMAGE_DEF: block::ImageDef = block::ImageDef::secure_exe();
 

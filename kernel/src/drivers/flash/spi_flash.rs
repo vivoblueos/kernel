@@ -52,8 +52,8 @@ const BLOCK_ERASE_32K_SIZE: usize = 32768;
 const BLOCK_ERASE_64K_SIZE: usize = 65536;
 
 const _: () = {
-    assert!(FLASH_ERASE_SIZE % FLASH_PAGE_SIZE == 0);
-    assert!(FLASH_ERASE_SIZE % FLASH_SECTOR_SIZE as usize == 0);
+    assert!(FLASH_ERASE_SIZE.is_multiple_of(FLASH_PAGE_SIZE));
+    assert!(FLASH_ERASE_SIZE.is_multiple_of(FLASH_SECTOR_SIZE as usize));
     assert!(matches!(
         FLASH_ERASE_SIZE,
         SECTOR_ERASE_SIZE | BLOCK_ERASE_32K_SIZE | BLOCK_ERASE_64K_SIZE

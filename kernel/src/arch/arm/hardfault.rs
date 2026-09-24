@@ -228,8 +228,10 @@ pub extern "C" fn panic_on_hardfault(ctx: &IsrContext) {
     );
 }
 
-#[naked]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub(crate) unsafe extern "C" fn handle_hardfault() {
     core::arch::naked_asm!(
         "

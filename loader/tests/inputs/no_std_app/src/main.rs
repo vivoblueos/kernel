@@ -73,8 +73,10 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     loop {}
 }
 
-#[no_mangle]
-#[repr(align(8))]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[cfg_attr(not(compatible_old_toolchain), rustc_align(8))]
+#[cfg_attr(compatible_old_toolchain, repr(align(8)))]
 pub extern "C" fn _start() {
     // FIXME: Generally we need toolchains able to build static-pie,
     // thus we have dynamic relocation entres to relocate .got
@@ -89,7 +91,8 @@ pub extern "C" fn _start() {
     assert_eq!(main(42), 42);
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[inline(never)]
 extern "C" fn main(argc: i32) -> i32 {
     // FIXME: Current librs::stdio::puts impl makes this program hangs forever.

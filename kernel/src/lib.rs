@@ -17,11 +17,13 @@
 #![allow(incomplete_features)]
 #![allow(clippy::crate_in_macro_def)]
 #![allow(clippy::drop_non_drop)]
+#![allow(clippy::collapsible_match)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::while_let_loop)]
+#![cfg_attr(compatible_old_toolchain, allow(clippy::needless_borrow))]
 #![feature(alloc_error_handler)]
-#![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
-#![feature(async_closure)]
 #![feature(box_as_ptr)]
 #![feature(c_size_t)]
 #![feature(c_variadic)]
@@ -29,22 +31,28 @@
 #![feature(core_intrinsics)]
 #![feature(coverage_attribute)]
 #![feature(fn_align)]
-#![feature(generic_arg_infer)]
 #![feature(inherent_associated_types)]
-#![feature(lazy_get)]
-#![feature(let_chains)]
 #![feature(link_llvm_intrinsics)]
 #![feature(linkage)]
 #![feature(macro_metavar_expr)]
-#![feature(map_try_insert)]
-#![feature(naked_functions)]
 #![feature(negative_impls)]
-#![feature(new_zeroed_alloc)]
-#![feature(non_null_from_ref)]
-#![feature(noop_waker)]
 #![feature(pointer_is_aligned_to)]
-#![feature(trait_upcasting)]
 #![feature(trivial_bounds)]
+#![feature(map_try_insert)]
+// Features below are stable in modern toolchains (version noted); only
+// declare them on old toolchains via `compatible_old_toolchain` so the
+// stable_features lint (deny via -D warnings) doesn't fire on new ones.
+#![cfg_attr(compatible_old_toolchain, feature(alloc_layout_extra))] // 1.95
+#![cfg_attr(compatible_old_toolchain, feature(async_closure))] // 1.85
+#![cfg_attr(compatible_old_toolchain, feature(generic_arg_infer))] // 1.89
+#![cfg_attr(compatible_old_toolchain, feature(lazy_get))] // 1.94
+#![cfg_attr(compatible_old_toolchain, feature(let_chains))] // 1.88
+#![cfg_attr(compatible_old_toolchain, feature(naked_functions))] // 1.88
+#![cfg_attr(compatible_old_toolchain, feature(new_zeroed_alloc))] // 1.92
+#![cfg_attr(compatible_old_toolchain, feature(non_null_from_ref))] // 1.89
+#![cfg_attr(compatible_old_toolchain, feature(noop_waker))] // 1.85
+#![cfg_attr(compatible_old_toolchain, feature(trait_upcasting))] // 1.86
+#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
 // Attributes applied when we're testing the kernel.
 #![cfg_attr(test, no_main)]
 #![cfg_attr(test, feature(custom_test_frameworks))]
@@ -144,7 +152,8 @@ mod tests {
     use thread::{Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode};
 
     #[used]
-    #[link_section = ".bk_app_array"]
+    #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
     static INIT_TEST: extern "C" fn() = init_test;
 
     extern "C" fn test_main() {
@@ -331,7 +340,7 @@ mod tests {
         static ARRIVED: AtomicUsize = AtomicUsize::new(0);
 
         let arrived = ARRIVED.fetch_add(1, Ordering::AcqRel) + 1;
-        let target = if arrived % 2 == 0 {
+        let target = if arrived.is_multiple_of(2) {
             arrived
         } else {
             arrived + 1
@@ -387,8 +396,10 @@ mod tests {
     }
 
     #[cfg(mpu_stack_guard)]
-    #[naked]
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, naked)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn handle_memfault() {
         core::arch::naked_asm!(
             "
@@ -614,7 +625,9 @@ mod tests {
             assert_eq!(buffer, [1u8, 1u8, 1u8, 1u8]);
             scheduler::relinquish_me();
         }
-        while TEST_SEND_CNT.load(Ordering::Acquire) != l {}
+        while TEST_SEND_CNT.load(Ordering::Acquire) != l {
+            core::hint::spin_loop()
+        }
     }
 
     static TEST_SWITCH_CONTEXT: AtomicUsize = AtomicUsize::new(0);

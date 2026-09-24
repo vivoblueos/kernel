@@ -76,6 +76,48 @@ pub(crate) extern "C" fn local_irq_enabled() -> bool {
     x & MSTATUS_MIE != 0
 }
 
+// Per-hart system stack size carved out in arch_bootstrap! below. Any value
+// works: the naked bootstrap multiplies hart_id by it with a real mul.
+//
+// FIXME: ".option arch, +zmmul" in arch_bootstrap! is a temporary pass, not
+// a fix. It forces the assembler to accept mul unconditionally, so on a
+// RISC-V core without the M extension the emitted mul traps as an illegal
+// instruction at boot. Every *-vivo-blueos target carries +m today, so this
+// is safe here, but an M-less board would boot straight into a fault with
+// no compile-time warning. Replace (power-of-two size + slli, or
+// linker-provided per-hart stack symbols) before such a board lands.
+//
+// Why the pass is needed: the 1.96 toolchain (rustc 1.96.0-dev, LLVM 22)
+// lowers naked_asm! to module-level assembly — the global_asm! path —
+// instead of an inline-asm call inside the naked function. The integrated
+// assembler validates module-level asm against the baseline ISA, blind to
+// target features: +m is in our target spec, yet bare mul fails with
+// "instruction requires the following: 'Zmmul'", and nothing reaches that
+// validator (-Ctarget-feature=+m and -Cllvm-args=-mattr both fail;
+// #[target_feature] is not allowed on naked functions). The old 1.84
+// toolchain (LLVM 19) lowered naked_asm! to an in-function inline-asm call
+// that inherited the function's target-features="+m,+a,+c" — the only
+// reason mul used to compile there. Regular asm! and compiler-generated
+// mul are unaffected on both. ".option push/pop" scopes the pass to this
+// one mul.
+//
+// Upstream trail: rust-lang/rust#128004 (merged 2024-12-12, first in 1.85)
+// moved naked functions onto the global-asm path; the feature blindness it
+// introduced is rust-lang/rust#136280, and the fix — teaching naked
+// functions their target features again — is rust-lang/rust#137720 (merged
+// 2026-09-01, 13 days after this toolchain's 2026-08-19 snapshot). Once the
+// toolchain rides past #137720, drop the .option pass and retry bare mul
+// (fall back to #[target_feature(enable = "m")] if the target-spec features
+// alone don't reach the validator — verify on the day).
+pub const BOOT_STACK_SIZE: usize = 0x1000;
+
+// Guard for the FIXME above: arch_bootstrap! emits a real mul, so a target
+// without the M extension must fail the build instead of trapping at boot.
+#[cfg(not(target_feature = "m"))]
+compile_error!(
+    "arch_bootstrap! uses mul; this target lacks the M extension (see FIXME at BOOT_STACK_SIZE)"
+);
+
 #[macro_export]
 macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
@@ -84,13 +126,16 @@ macro_rules! arch_bootstrap {
             "la gp, __global_pointer$",
             "la sp, {stack_end}",
             "csrr t0, mhartid",
+            ".option push",
+            ".option arch, +zmmul",
             "li t1, {stack_size}",
             "mul t0, t0, t1",
+            ".option pop",
             "sub sp, sp, t0",
             "call {bootstrap}",
             "la t0, {cont}",
             "jalr x0, t0, 0",
-            stack_size = const 0x1000,
+            stack_size = const $crate::arch::riscv::BOOT_STACK_SIZE,
             stack_end = sym $stack_end,
             bootstrap = sym $crate::arch::riscv::bootstrap,
             cont = sym $cont,
@@ -527,7 +572,8 @@ pub(crate) extern "C" fn current_cpu_id() -> usize {
     id
 }
 
-#[naked]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 pub(crate) extern "C" fn switch_stack(
     to_sp: usize,
     cont: extern "C" fn(sp: usize, old_sp: usize),

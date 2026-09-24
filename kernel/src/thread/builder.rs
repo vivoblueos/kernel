@@ -134,7 +134,7 @@ impl Builder {
         let stack = self
             .stack
             .take()
-            .map_or_else(|| Stack::from_size(DEFAULT_STACK_SIZE).unwrap(), |v| v);
+            .unwrap_or_else(|| Stack::from_size(DEFAULT_STACK_SIZE).unwrap());
         w.init(stack, self.entry);
         w.set_origin_priority(self.priority);
         w.set_priority(self.priority);

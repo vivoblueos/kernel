@@ -65,7 +65,7 @@ vector_table:
 "
 );
 
-extern "C" {
+unsafe extern "C" {
     static vector_table: u8;
 }
 

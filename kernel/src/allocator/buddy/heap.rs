@@ -25,7 +25,7 @@ use crate::scheduler;
 #[cfg(test)]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-extern "C" {
+unsafe extern "C" {
     static mut _end: u8;
 }
 
@@ -176,7 +176,7 @@ impl BuddyAllocatorCore {
             let max_order = MAX_ORDER.min((usize::BITS - 1 - remaining.leading_zeros()) as usize);
             let order = (0..=max_order)
                 .rev()
-                .find(|&o| pfn % (1 << o) == 0)
+                .find(|&o| pfn.is_multiple_of(1 << o))
                 .expect("order 0 must always satisfy buddy block alignment");
 
             let page = &mut *self.pages.add(pfn);
