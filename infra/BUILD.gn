@@ -52,13 +52,7 @@ run_clippy("blueos_infra_clippy") {
 
 miri_test("infra_miri_test") {
   crate = "src/lib.rs"
-
-  # test_name = "test_basic"   # optional
-  extra_miri_flags = [
-    # "-Zmiri-tree-borrows", # use tree borrow model
-    # "-Zmiri-preemption-rate=0.01", # controls how often Miri forces a thread context switch during scheduling.
-    # more miri flags...
-  ]
+  deps = shared_deps
 }
 
 build_rust("infra_unittest") {

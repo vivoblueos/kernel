@@ -191,7 +191,7 @@ impl Heap {
     /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
     /// identical layout. Undefined behavior may occur for invalid arguments.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: &Layout) -> usize {
-        let free_size = self.holes.deallocate(ptr, &layout);
+        let free_size = self.holes.deallocate(ptr, layout);
         self.allocated -= free_size;
         free_size
     }
@@ -223,7 +223,6 @@ impl Heap {
         core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), old_size);
         // Deallocate the old memory block.
         self.deallocate(ptr, layout);
-        self.allocated += new_size - old_size;
 
         Some(new_ptr)
     }
@@ -247,8 +246,7 @@ impl Heap {
         core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), old_size);
 
         // Deallocate the old memory block.
-        let old_size = self.deallocate_unknown_align(ptr);
-        self.allocated += new_size - old_size;
+        self.deallocate_unknown_align(ptr);
 
         Some(new_ptr)
     }
