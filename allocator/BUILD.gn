@@ -15,6 +15,11 @@
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 
+group("check_allocator_by_miri") {
+  testonly = true
+  deps = [ ":allocator_miri_test" ]
+}
+
 build_rust("allocator_crate") {
   crate_type = "rlib"
   crate_name = "allocator_crate"
@@ -28,4 +33,14 @@ build_rust("allocator_crate") {
     "//kernel/kconfig:generate_rustflags_file",
   ]
   configs += [ "//kernel/kconfig:kconfigs" ]
+}
+
+miri_test("allocator_miri_test") {
+  crate = "tests/miri.rs"
+  deps = [
+    ":allocator_crate",
+    "//kernel/kconfig:generate_rustflags_file",
+  ]
+  configs = [ "//kernel/kconfig:kconfigs" ]
+  extra_miri_flags = [ "-Zmiri-tree-borrows" ]
 }
