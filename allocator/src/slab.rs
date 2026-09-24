@@ -311,7 +311,12 @@ impl<
     ) -> Option<NonNull<u8>> {
         let allocator_index = self.ptr_to_allocator(ptr.as_ptr() as usize);
         if allocator_index >= SLAB_ALLOCATOR_COUNT {
-            self.system_allocator.reallocate(ptr, new_layout)
+            let old_size = self.system_allocator.size_of_allocation(ptr)?;
+            let new_ptr = self.system_allocator.reallocate(ptr, new_layout)?;
+            let new_size = self.system_allocator.size_of_allocation(new_ptr)?;
+            self.allocated = self.allocated - old_size + new_size;
+            self.maximum = core::cmp::max(self.maximum, self.allocated);
+            Some(new_ptr)
         } else {
             let block_size = Self::SLAB_SIZES[allocator_index];
             if new_layout.size() <= block_size {
@@ -319,8 +324,7 @@ impl<
             }
             let new_ptr = self.allocate(new_layout)?;
             core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), block_size);
-            let old_size = self.deallocate(ptr, new_layout);
-            self.allocated += new_layout.size() - old_size;
+            self.deallocate(ptr, new_layout);
             Some(new_ptr)
         }
     }
@@ -332,8 +336,14 @@ impl<
     ) -> Option<NonNull<u8>> {
         let allocator_index = self.ptr_to_allocator(ptr.as_ptr() as usize);
         if allocator_index >= SLAB_ALLOCATOR_COUNT {
-            self.system_allocator
-                .reallocate_unknown_align(ptr, new_size)
+            let old_size = self.system_allocator.size_of_allocation(ptr)?;
+            let new_ptr = self
+                .system_allocator
+                .reallocate_unknown_align(ptr, new_size)?;
+            let new_size = self.system_allocator.size_of_allocation(new_ptr)?;
+            self.allocated = self.allocated - old_size + new_size;
+            self.maximum = core::cmp::max(self.maximum, self.allocated);
+            Some(new_ptr)
         } else {
             let block_size = Self::SLAB_SIZES[allocator_index];
             if new_size <= block_size {
@@ -342,8 +352,7 @@ impl<
             let new_layout = Layout::from_size_align_unchecked(new_size, mem::size_of::<usize>());
             let new_ptr = self.allocate(&new_layout)?;
             core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), block_size);
-            let old_size = self.deallocate(ptr, &new_layout);
-            self.allocated += new_size - old_size;
+            self.deallocate(ptr, &new_layout);
             Some(new_ptr)
         }
     }
@@ -1028,6 +1037,7 @@ impl DynamicSlabHeap {
         }
 
         for i in 0..SLAB_ALLOCATOR_COUNT {
+            self.slabs[i].page_list_head = self.max_pages;
             self.slabs[i].set_block_size(Self::SLAB_SIZES[i]);
         }
         self.prewarm_critical_slabs();
