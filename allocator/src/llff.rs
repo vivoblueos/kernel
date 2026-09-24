@@ -191,7 +191,7 @@ impl Heap {
     /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
     /// identical layout. Undefined behavior may occur for invalid arguments.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: &Layout) -> usize {
-        let free_size = self.holes.deallocate(ptr, &layout);
+        let free_size = self.holes.deallocate(ptr, layout);
         self.allocated -= free_size;
         free_size
     }
