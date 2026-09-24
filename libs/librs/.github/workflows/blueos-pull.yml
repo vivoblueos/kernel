@@ -15,7 +15,7 @@ concurrency:
 jobs:
   pull:
     if: ${{ vars.JOSH_SYNC_ENABLED == 'true' }}
-    uses: vivoblueos/josh-sync/.github/workflows/blueos-pull.yml@6a3edbdf4d9edf7342ad01c65c2eb7a9bb148cac
+    uses: vivoblueos/josh-sync/.github/workflows/blueos-pull.yml@0e9e37f4fa9c8f260db26fcae8550a941e9cee5d
     with:
       # JOSH_SYNC_APP_CLIENT_ID and JOSH_SYNC_APP_PRIVATE_KEY come from organization variables and secrets
       github-app-client-id: ${{ vars.JOSH_SYNC_APP_CLIENT_ID }}
@@ -23,9 +23,10 @@ jobs:
       pr-author: "blueos-josh-sync[bot]"
       josh-sync-repository: vivoblueos/josh-sync
       # Keep this aligned with the reusable workflow revision above
-      josh-sync-revision: 6a3edbdf4d9edf7342ad01c65c2eb7a9bb148cac
+      josh-sync-revision: 0e9e37f4fa9c8f260db26fcae8550a941e9cee5d
       branch-name: blueos-pull
       # Set this to the default branch of the current repository; libc is special
       pr-base-branch: main
     secrets:
       github-app-secret: ${{ secrets.JOSH_SYNC_APP_PRIVATE_KEY }}
+      approval-user-token: ${{ secrets.JOSH_SYNC_APPROVAL_USER_TOKEN }}
