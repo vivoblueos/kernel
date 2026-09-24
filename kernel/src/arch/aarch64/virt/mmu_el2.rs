@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::arch::aarch64::registers::{
-    mair_el2::MAIR_EL2, sctlr_el2::SCTLR_EL2, tcr_el2::TCR_EL2, ttbr0_el2::TTBR0_EL2,
-};
+use aarch64_cpu::registers::{MAIR_EL2, SCTLR_EL2, TCR_EL2, TTBR0_EL2};
 use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 
 register_bitfields! {u64,
@@ -78,7 +76,7 @@ pub fn enable_el2_mmu() {
 
     // MAIR_EL2: Attr0=Device nGnRE, Attr1=Normal WB
     MAIR_EL2.write(
-        MAIR_EL2::Attr0_Device::NonGathering_NonReordering_EarlyWriteAck
+        MAIR_EL2::Attr0_Device::nonGathering_nonReordering_EarlyWriteAck
             + MAIR_EL2::Attr1_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc
             + MAIR_EL2::Attr1_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc,
     );

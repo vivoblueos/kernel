@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::arch::registers::vbar_el1::VBAR_EL1;
+use aarch64_cpu::registers::VBAR_EL1;
 use core::ptr::addr_of;
 use tock_registers::interfaces::Writeable;
 // Exception vector table

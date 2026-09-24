@@ -40,13 +40,8 @@
 //
 // ============================================================================
 
-use crate::arch::aarch64::{
-    asm,
-    asm::DsbOptions,
-    registers::{
-        mair_el1::*, sctlr_el1::*, tcr_el1::*, ttbr0_el1::TTBR0_EL1, ttbr1_el1::TTBR1_EL1,
-    },
-};
+use crate::arch::aarch64::{asm, asm::DsbOptions};
+use aarch64_cpu::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1};
 use core::{
     mem, ptr,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -519,14 +514,14 @@ pub fn init_el1_enable_mmu() {
     MAIR_EL1.write(
         MAIR_EL1::Attr1_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc
             + MAIR_EL1::Attr1_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc
-            + MAIR_EL1::Attr0_Device::NonGathering_NonReordering_EarlyWriteAck,
+            + MAIR_EL1::Attr0_Device::nonGathering_nonReordering_EarlyWriteAck,
     );
     // Configure address translation related control information.
     TCR_EL1.write(
         TCR_EL1::TBI0::Used
             + TCR_EL1::IPS::Bits_32
             + TCR_EL1::TG0::KiB_4
-            + TCR_EL1::SH0::InnerShareable
+            + TCR_EL1::SH0::Inner
             + TCR_EL1::ORGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::IRGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::DisableTTBR1Walks
@@ -567,7 +562,7 @@ pub fn init_el1_boot_linearmap() {
 
     TCR_EL1.modify(
         TCR_EL1::TG1::KiB_4
-            + TCR_EL1::SH1::InnerShareable
+            + TCR_EL1::SH1::Inner
             + TCR_EL1::ORGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::IRGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::EnableTTBR1Walks

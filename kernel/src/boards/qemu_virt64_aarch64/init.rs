@@ -19,7 +19,6 @@ use crate::{
         irq,
         irq::{IrqTrigger, Priority},
         mmu,
-        registers::cntfrq_el0::CNTFRQ_EL0,
     },
     error::Error,
     irq::IrqTrace,
@@ -31,7 +30,6 @@ use alloc::boxed::Box;
 use blueos_driver::uart::arm_pl011::ArmPl011Isr;
 use blueos_hal::{isr::IsrDesc, HasInterruptReg};
 use core::sync::atomic::Ordering;
-use tock_registers::interfaces::Readable;
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
