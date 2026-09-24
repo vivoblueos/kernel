@@ -17,11 +17,11 @@ mod exception;
 pub mod irq;
 pub(crate) mod mmu;
 pub(crate) mod psci;
-pub(crate) mod registers;
 pub(crate) mod vector;
 pub(crate) mod virt;
 
-use crate::{arch::registers::mpidr_el1::MPIDR_EL1, scheduler};
+use crate::scheduler;
+use aarch64_cpu::registers::{Readable, MPIDR_EL1};
 use core::{
     fmt,
     mem::offset_of,
@@ -31,7 +31,6 @@ use core::{
     },
 };
 use scheduler::ContextSwitchHookHolder;
-use tock_registers::interfaces::Readable;
 
 pub(crate) const NR_SWITCH: usize = !0;
 
@@ -543,7 +542,7 @@ pub extern "C" fn enable_local_irq() {
 
 #[inline]
 pub extern "C" fn current_cpu_id() -> usize {
-    (MPIDR_EL1.get() & 0xff) as usize
+    MPIDR_EL1.read(MPIDR_EL1::Aff0) as usize
 }
 
 #[inline(always)]
