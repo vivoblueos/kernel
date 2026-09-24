@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::arch::aarch64::{
-    registers::{hcr_el2::HCR_EL2, sctlr_el2::SCTLR_EL2, spsr_el2::SPSR_EL2},
-    virt::{guest, mmu_el2, vector, vgic},
-};
+use crate::arch::aarch64::virt::{guest, mmu_el2, vector, vgic};
+use aarch64_cpu::registers::{HCR_EL2, SCTLR_EL2};
 use tock_registers::interfaces::{Readable, Writeable};
 
 #[inline]
@@ -73,7 +71,7 @@ pub fn read_elr_el2() -> u64 {
 
 #[inline]
 fn configure_hcr_el2() {
-    HCR_EL2.write(HCR_EL2::RW::EL1AArch64);
+    HCR_EL2.write(HCR_EL2::RW::EL1IsAarch64);
 }
 
 #[inline]
@@ -91,11 +89,11 @@ pub fn configure_hcr_el2_for_guest() {
     super::mmu_s2::init_stage2(guest::LINUX_KERNEL_LOAD_ADDR, guest::LINUX_RAM_SIZE);
     HCR_EL2.write(
         HCR_EL2::VM::Enable
-            + HCR_EL2::RW::EL1AArch64
-            + HCR_EL2::IMO::EL2Handled
-            + HCR_EL2::FMO::EL2Handled
-            + HCR_EL2::AMO::EL2Handled
-            + HCR_EL2::TSC::Trap,
+            + HCR_EL2::RW::EL1IsAarch64
+            + HCR_EL2::IMO::EnableVirtualIRQ
+            + HCR_EL2::FMO::EnableVirtualFIQ
+            + HCR_EL2::AMO.val(1)
+            + HCR_EL2::TSC::EnableTrapEl1SmcToEl2,
     );
     unsafe {
         core::arch::asm!("isb");
@@ -142,7 +140,7 @@ unsafe fn deactivate_irq(intid: u64) {
 
 #[inline]
 pub fn shutdown_guest() {
-    HCR_EL2.write(HCR_EL2::RW::EL1AArch64 + HCR_EL2::SWIO::Set);
+    HCR_EL2.write(HCR_EL2::RW::EL1IsAarch64 + HCR_EL2::SWIO.val(1));
     unsafe {
         // Disable vGIC CPU interface
         let mut ich_hcr: u64;
