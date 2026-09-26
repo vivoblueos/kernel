@@ -286,12 +286,21 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
 
 /// Allocates memory for an array of elements and initializes all bytes in this block to zero.
 ///
+/// Returns a null pointer if `count * size` overflows `usize` or the
+/// allocation fails.
+///
 /// # Arguments
 ///
 /// * `count` - Number of elements to allocate space for.
 /// * `size` - Size of each element.
 pub fn calloc(count: usize, size: usize) -> *mut u8 {
-    let required_size = count * size;
+    // `count * size` may overflow `usize` (e.g. 1024 * 800000000 on 32-bit
+    // targets). A wrapping product yields a bogus smaller size, silently
+    // under-allocating the block the caller believes it owns. Follow the C
+    // standard and report failure with a null pointer instead.
+    let Some(required_size) = count.checked_mul(size) else {
+        return ptr::null_mut();
+    };
     const ALIGN: usize = core::mem::size_of::<usize>();
     if let Ok(layout) = Layout::from_size_align(required_size, ALIGN) {
         if let Some(alloc_ptr) = HEAP.alloc(layout) {
@@ -573,5 +582,29 @@ mod tests {
         // Note: size_of_allocation is a method on Heap, not a module function
         // We can verify the allocation worked by checking the pointer is valid
         assert_eq!(boxed.len(), REQUESTED_SIZE, "allocation should succeed");
+    }
+
+    #[test]
+    fn calloc_rejects_size_overflow() {
+        // Regression test for
+        // https://github.com/vivoblueos/kernel/issues/313
+        // `count * size` must never wrap around: on overflow calloc
+        // returns null instead of a bogus smaller block.
+        assert!(calloc(2, usize::MAX / 2 + 1).is_null());
+
+        // The dangerous case on 32-bit targets: the wrapped product
+        // (3 * 0x60000000 -> 0x20000000) still forms a valid layout,
+        // which used to under-allocate silently.
+        assert!(calloc(3, 0x6000_0000).is_null());
+
+        // Sanity check: a normal calloc still succeeds and zeroes.
+        let p = calloc(4, 8);
+        assert!(!p.is_null(), "normal calloc should succeed");
+        unsafe {
+            for i in 0..32 {
+                assert_eq!(*p.add(i), 0, "calloc memory must be zero-initialized");
+            }
+            free(p);
+        }
     }
 }
