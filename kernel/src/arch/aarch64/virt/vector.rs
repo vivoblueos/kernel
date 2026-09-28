@@ -18,12 +18,16 @@ use super::{
     vcpu::Vcpu,
     vgic, VCPU_MANAGER,
 };
-use aarch64_cpu::asm::barrier::{isb, SY};
-use aarch64_cpu::asm::{eret, wfi};
-use aarch64_cpu::registers::{
-    CNTP_CVAL_EL0, CNTP_CTL_EL0, CNTV_CTL_EL0, CPACR_EL1, ELR_EL2, ESR_EL2, FAR_EL2, MAIR_EL1,
-    SCTLR_EL1, SP_EL0, SPSR_EL2, TCR_EL1, TPIDR_EL0, TPIDR_EL1, TPIDRRO_EL0, TTBR0_EL1, TTBR1_EL1,
-    VBAR_EL1,
+use aarch64_cpu::{
+    asm::{
+        barrier::{isb, SY},
+        eret, wfi,
+    },
+    registers::{
+        CNTP_CTL_EL0, CNTP_CVAL_EL0, CNTV_CTL_EL0, CPACR_EL1, ELR_EL2, ESR_EL2, FAR_EL2, MAIR_EL1,
+        SCTLR_EL1, SPSR_EL2, SP_EL0, TCR_EL1, TPIDRRO_EL0, TPIDR_EL0, TPIDR_EL1, TTBR0_EL1,
+        TTBR1_EL1, VBAR_EL1,
+    },
 };
 use tock_registers::interfaces::{Readable, Writeable};
 

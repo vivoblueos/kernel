@@ -13,8 +13,10 @@
 // limitations under the License.
 
 use super::vgic;
-use aarch64_cpu::asm::barrier::{isb, SY};
-use aarch64_cpu::registers::HCR_EL2;
+use aarch64_cpu::{
+    asm::barrier::{isb, SY},
+    registers::HCR_EL2,
+};
 use tock_registers::interfaces::ReadWriteable;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

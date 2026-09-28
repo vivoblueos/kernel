@@ -14,10 +14,12 @@
 
 use super::VCPU_MANAGER;
 use crate::sync::SpinLock;
-use aarch64_cpu::asm::barrier::{isb, SY};
-use aarch64_cpu::registers::{
-    CNTV_CTL_EL0, ICC_SRE_EL2, ICH_HCR_EL2, ICH_LR0_EL2, ICH_LR1_EL2, ICH_LR2_EL2, ICH_LR3_EL2,
-    ICH_VMCR_EL2,
+use aarch64_cpu::{
+    asm::barrier::{isb, SY},
+    registers::{
+        CNTV_CTL_EL0, ICC_SRE_EL2, ICH_HCR_EL2, ICH_LR0_EL2, ICH_LR1_EL2, ICH_LR2_EL2, ICH_LR3_EL2,
+        ICH_VMCR_EL2,
+    },
 };
 use spin::Once;
 use tock_registers::interfaces::{Readable, Writeable};

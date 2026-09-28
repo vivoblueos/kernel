@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use aarch64_cpu::asm::barrier::{dsb, isb, SY};
-use aarch64_cpu::registers::{VTCR_EL2, VTTBR_EL2};
+use aarch64_cpu::{
+    asm::barrier::{dsb, isb, SY},
+    registers::{VTCR_EL2, VTTBR_EL2},
+};
 use tock_registers::interfaces::*;
 
 // Structure of Page Table.
