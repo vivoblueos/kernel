@@ -214,8 +214,14 @@ pub fn sendmsg(socket: c_int, message: *const libc::msghdr, flags: c_int) -> c_s
         return 0;
     };
 
-    // Get packet len
-    let packet_len = msghdr.packet_len();
+    // Get packet len (checked addition to prevent integer overflow)
+    let packet_len = match msghdr.packet_len() {
+        Some(len) => len,
+        None => {
+            log::error!("packet_len overflow: iovec lengths exceed usize::MAX");
+            return -libc::EINVAL as c_ssize_t;
+        }
+    };
 
     let identifier = msghdr.parse_icmp_identifier();
 
