@@ -40,7 +40,9 @@
 //
 // ============================================================================
 
-use crate::arch::aarch64::{asm, asm::DsbOptions};
+use crate::arch::aarch64::asm;
+use aarch64_cpu::asm::barrier::{dsb, isb, SY};
+use aarch64_cpu::asm::{sev, wfe};
 use aarch64_cpu::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1};
 use core::{
     mem, ptr,
@@ -312,8 +314,8 @@ static RUNTIME_LINEARMAP_PHYS: AtomicUsize = AtomicUsize::new(0);
 #[inline]
 fn flush_tlb_all() {
     asm::tlbi_all();
-    asm::dsb(DsbOptions::Sys);
-    asm::isb_sy();
+    dsb(SY);
+    isb(SY);
 }
 
 #[inline]
@@ -489,15 +491,11 @@ pub fn init_el1_enable_mmu() {
         PageTableManager::init();
         PAGETABLE_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
+        sev();
     } else {
         // Wait for CPU0 to finish page table initialization.
         while !PAGETABLE_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
+            wfe();
         }
     }
     // Set physical table base addr.
@@ -537,7 +535,7 @@ pub fn init_el1_enable_mmu() {
             + SCTLR_EL1::I::Cacheable
             + SCTLR_EL1::SA::Enable,
     );
-    asm::isb_sy();
+    isb(SY);
 }
 
 pub fn init_el1_boot_linearmap() {
@@ -546,15 +544,11 @@ pub fn init_el1_boot_linearmap() {
         PageTableManager::init_linearmap();
         LINEARMAP_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
+        sev();
     } else {
         // Wait for CPU0 to finish linearmap table initialization.
         while !LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
+            wfe();
         }
     }
 
@@ -618,27 +612,23 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
             }
         }
 
-        asm::dsb(DsbOptions::Sys);
+        dsb(SY);
 
         let runtime_linearmap_phys = kernel_virt_to_phys(runtime_linearmap as usize);
         RUNTIME_LINEARMAP_PHYS.store(runtime_linearmap_phys, Ordering::Release);
         RUNTIME_LINEARMAP_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
+        sev();
     } else {
         // Wait for CPU0 to finish runtime linearmap table initialization.
         while !RUNTIME_LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
+            wfe();
         }
     }
 
     let runtime_linearmap_phys = RUNTIME_LINEARMAP_PHYS.load(Ordering::Acquire);
 
-    asm::dsb(DsbOptions::Sys);
+    dsb(SY);
     TTBR1_EL1.set(runtime_linearmap_phys as u64);
 
     flush_tlb_all();

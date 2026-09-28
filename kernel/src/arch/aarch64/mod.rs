@@ -21,7 +21,8 @@ pub(crate) mod vector;
 pub(crate) mod virt;
 
 use crate::scheduler;
-use aarch64_cpu::registers::{Readable, MPIDR_EL1};
+use aarch64_cpu::asm::wfi;
+use aarch64_cpu::registers::{Readable, Writeable, DAIF, MPIDR_EL1, SP};
 use core::{
     fmt,
     mem::offset_of,
@@ -33,22 +34,6 @@ use core::{
 use scheduler::ContextSwitchHookHolder;
 
 pub(crate) const NR_SWITCH: usize = !0;
-
-macro_rules! disable_interrupt {
-    () => {
-        "
-        msr daifset, #3
-        "
-    };
-}
-
-macro_rules! enable_interrupt {
-    () => {
-        "
-        msr daifclr, #3
-        "
-    };
-}
 
 // FIXME: After adapting to other AArch64 platforms, the
 // hardcoded board-specific configuration should be removed.
@@ -547,28 +532,18 @@ pub extern "C" fn current_cpu_id() -> usize {
 
 #[inline(always)]
 pub(crate) extern "C" fn idle() {
-    unsafe { core::arch::asm!("wfi", options(nostack)) };
+    wfi();
 }
 
 #[inline]
 pub extern "C" fn current_sp() -> usize {
-    let x: usize;
-    unsafe { core::arch::asm!("mov {}, sp", out(reg) x, options(nostack, nomem)) };
-    x
+    SP.get() as usize
 }
 
 #[inline]
 pub extern "C" fn disable_local_irq_save() -> usize {
-    let old: usize;
-    unsafe {
-        core::arch::asm!(
-            concat!(
-                "mrs {}, daif",
-                disable_interrupt!(),
-            ),
-            out(reg) old, options(nostack)
-        )
-    }
+    let old = DAIF.get() as usize;
+    disable_local_irq();
     atomic::compiler_fence(Ordering::SeqCst);
     old
 }
@@ -576,19 +551,12 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 #[inline]
 pub extern "C" fn enable_local_irq_restore(old: usize) {
     atomic::compiler_fence(Ordering::SeqCst);
-    unsafe { core::arch::asm!("msr daif, {}", in(reg) old, options(nostack)) }
+    DAIF.set(old as u64);
 }
 
 #[inline]
 pub extern "C" fn local_irq_enabled() -> bool {
-    let x: usize;
-    unsafe {
-        core::arch::asm!(
-            "mrs {}, daif",
-            out(reg) x, options(nostack)
-        );
-    };
-    (x & (1 << 7)) == 0
+    DAIF.read(DAIF::I) == 0
 }
 
 #[inline]

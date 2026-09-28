@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use aarch64_cpu::asm::barrier::{dsb, isb, SY};
 use aarch64_cpu::registers::{MAIR_EL2, SCTLR_EL2, TCR_EL2, TTBR0_EL2};
 use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 
@@ -96,14 +97,12 @@ pub fn enable_el2_mmu() {
     );
 
     unsafe {
-        core::arch::asm!("dsb sy", options(nostack, nomem));
+        dsb(SY);
         core::arch::asm!("tlbi alle2", options(nostack, nomem));
-        core::arch::asm!("dsb sy", options(nostack, nomem));
-        core::arch::asm!("isb sy", options(nostack, nomem));
+        dsb(SY);
+        isb(SY);
     }
 
     SCTLR_EL2.modify(SCTLR_EL2::M::Enable + SCTLR_EL2::C::Cacheable + SCTLR_EL2::I::Cacheable);
-    unsafe {
-        core::arch::asm!("isb sy", options(nostack, nomem));
-    }
+    isb(SY);
 }
