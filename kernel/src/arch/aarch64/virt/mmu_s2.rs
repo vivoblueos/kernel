@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use aarch64_cpu::asm::barrier::{dsb, isb, SY};
 use aarch64_cpu::registers::{VTCR_EL2, VTTBR_EL2};
 use tock_registers::interfaces::*;
 
@@ -48,7 +49,7 @@ fn alloc_page_table() -> Option<&'static mut S2PageTable> {
         for addr in (start..start + core::mem::size_of::<S2PageTable>()).step_by(64) {
             core::arch::asm!("dc civac, {}", in(reg) addr);
         }
-        core::arch::asm!("dsb sy", options(nostack, nomem));
+        dsb(SY);
         Some(table)
     }
 }
@@ -95,7 +96,7 @@ fn map_page(ipa: usize, pa: usize, device: bool) {
 
         let addr = &l3_table.0[l3_idx] as *const _ as usize;
         core::arch::asm!("dc civac, {}", in(reg) addr);
-        core::arch::asm!("dsb sy", options(nostack, nomem));
+        dsb(SY);
     }
 }
 
@@ -114,7 +115,7 @@ pub fn init_stage2(ipa_base: usize, size: usize) {
 
     map_range(ipa_base, ipa_base, size, false);
     unsafe {
-        core::arch::asm!("dsb sy", options(nostack, nomem));
+        dsb(SY);
         let start = &S2_L1 as *const _ as usize;
         for addr in (start..start + core::mem::size_of::<S2PageTable>()).step_by(32) {
             core::arch::asm!("dc civac, {}", in(reg) addr);
@@ -124,7 +125,7 @@ pub fn init_stage2(ipa_base: usize, size: usize) {
         for addr in (pool_start..pool_end).step_by(32) {
             core::arch::asm!("dc civac, {}", in(reg) addr);
         }
-        core::arch::asm!("dsb sy", options(nostack, nomem));
+        dsb(SY);
     }
 
     VTCR_EL2.write(
@@ -141,10 +142,10 @@ pub fn init_stage2(ipa_base: usize, size: usize) {
     VTTBR_EL2.set(vttbr);
 
     unsafe {
-        core::arch::asm!("dsb sy", options(nostack, nomem));
+        dsb(SY);
         core::arch::asm!("tlbi vmalls12e1", options(nostack, nomem));
-        core::arch::asm!("dsb sy", options(nostack, nomem));
-        core::arch::asm!("isb sy", options(nostack, nomem));
+        dsb(SY);
+        isb(SY);
     }
 }
 

@@ -14,6 +14,7 @@
 
 use super::{VirtQueue, VirtioDevice, VirtqAvail, VirtqDesc, VirtqUsed};
 use crate::{kearly_println, kprintln};
+use aarch64_cpu::asm::barrier::{dmb, dsb, ISHST};
 use core::sync::atomic::{compiler_fence, Ordering};
 
 pub struct VirtioConsole;
@@ -48,10 +49,10 @@ impl VirtioConsole {
             let u_idx = ((*used).idx % q.num as u16) as usize;
             (*used).ring[u_idx].id = head as u32;
             (*used).ring[u_idx].len = 1;
-            core::arch::asm!("dmb ishst", options(nostack));
+            dmb(ISHST);
             (*used).idx = (*used).idx.wrapping_add(1);
             q.last_idx = q.last_idx.wrapping_add(1);
-            core::arch::asm!("dsb ishst", options(nostack));
+            dsb(ISHST);
         }
         true
     }
@@ -103,10 +104,10 @@ impl VirtioDevice for VirtioConsole {
                 (*used_ring).ring[u_idx].id = head as u32;
                 (*used_ring).ring[u_idx].len = 0;
                 unsafe {
-                    core::arch::asm!("dmb ishst", options(nostack));
+                    dmb(ISHST);
                     (*used_ring).idx = (*used_ring).idx.wrapping_add(1);
                     q.last_idx = q.last_idx.wrapping_add(1);
-                    core::arch::asm!("dsb ishst", options(nostack));
+                    dsb(ISHST);
                 }
             }
         }

@@ -18,7 +18,14 @@ use super::{
     vcpu::Vcpu,
     vgic, VCPU_MANAGER,
 };
-use core::arch::asm;
+use aarch64_cpu::asm::barrier::{isb, SY};
+use aarch64_cpu::asm::{eret, wfi};
+use aarch64_cpu::registers::{
+    CNTP_CVAL_EL0, CNTP_CTL_EL0, CNTV_CTL_EL0, CPACR_EL1, ELR_EL2, ESR_EL2, FAR_EL2, MAIR_EL1,
+    SCTLR_EL1, SP_EL0, SPSR_EL2, TCR_EL1, TPIDR_EL0, TPIDR_EL1, TPIDRRO_EL0, TTBR0_EL1, TTBR1_EL1,
+    VBAR_EL1,
+};
+use tock_registers::interfaces::{Readable, Writeable};
 
 static mut PRINTED_ALIGN: bool = false;
 const VECTOR_TABLE_SIZE: usize = 2048;
@@ -232,77 +239,40 @@ unsafe fn save_host_context(frame: *mut u64) {
         VCPU_MANAGER.0.host_regs[i] = *frame.add(i);
     }
 
-    // A 13-element tuple type would exceed Clippy's complexity threshold.
-    let (vbar, sctlr, ttbr0, ttbr1, tcr, mair, pmr, sre, ctlr): (
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-    );
-    let (tpidr_el0, tpidr_el1, tpidrro_el0, sp_el0): (u64, u64, u64, u64);
+    // ICC_PMR_EL1 / ICC_SRE_EL1 / ICC_CTLR_EL1 are not wrapped by the crate,
+    // so their reads stay raw asm.
+    let (pmr, sre, ctlr): (u64, u64, u64);
     core::arch::asm!(
-        "mrs {vbar}, vbar_el1",
-        "mrs {sctlr}, sctlr_el1",
-        "mrs {ttbr0}, ttbr0_el1",
-        "mrs {ttbr1}, ttbr1_el1",
-        "mrs {tcr}, tcr_el1",
-        "mrs {mair}, mair_el1",
         "mrs {pmr}, ICC_PMR_EL1",
         "mrs {sre}, ICC_SRE_EL1",
         "mrs {ctlr}, ICC_CTLR_EL1",
-        "mrs {tpidr_el0}, tpidr_el0",
-        "mrs {tpidr_el1}, tpidr_el1",
-        "mrs {tpidrro_el0}, tpidrro_el0",
-        "mrs {sp_el0}, sp_el0",
-        vbar = out(reg) vbar,
-        sctlr = out(reg) sctlr,
-        ttbr0 = out(reg) ttbr0,
-        ttbr1 = out(reg) ttbr1,
-        tcr = out(reg) tcr,
-        mair = out(reg) mair,
         pmr = out(reg) pmr,
         sre = out(reg) sre,
         ctlr = out(reg) ctlr,
-        tpidr_el0 = out(reg) tpidr_el0,
-        tpidr_el1 = out(reg) tpidr_el1,
-        tpidrro_el0 = out(reg) tpidrro_el0,
-        sp_el0 = out(reg) sp_el0,
         options(nostack, nomem)
     );
-    VCPU_MANAGER.0.host_vbar = vbar;
-    VCPU_MANAGER.0.host_sctlr = sctlr;
-    VCPU_MANAGER.0.host_ttbr0 = ttbr0;
-    VCPU_MANAGER.0.host_ttbr1 = ttbr1;
-    VCPU_MANAGER.0.host_tcr = tcr;
-    VCPU_MANAGER.0.host_mair = mair;
+    VCPU_MANAGER.0.host_vbar = VBAR_EL1.get();
+    VCPU_MANAGER.0.host_sctlr = SCTLR_EL1.get();
+    VCPU_MANAGER.0.host_ttbr0 = TTBR0_EL1.get();
+    VCPU_MANAGER.0.host_ttbr1 = TTBR1_EL1.get();
+    VCPU_MANAGER.0.host_tcr = TCR_EL1.get();
+    VCPU_MANAGER.0.host_mair = MAIR_EL1.get();
     VCPU_MANAGER.0.host_pmr = pmr;
     VCPU_MANAGER.0.host_sre = sre;
     VCPU_MANAGER.0.host_ctlr = ctlr;
-    VCPU_MANAGER.0.host_tpidr_el0 = tpidr_el0;
-    VCPU_MANAGER.0.host_tpidr_el1 = tpidr_el1;
-    VCPU_MANAGER.0.host_tpidrro_el0 = tpidrro_el0;
-    VCPU_MANAGER.0.host_sp_el0 = sp_el0;
+    VCPU_MANAGER.0.host_tpidr_el0 = TPIDR_EL0.get();
+    VCPU_MANAGER.0.host_tpidr_el1 = TPIDR_EL1.get();
+    VCPU_MANAGER.0.host_tpidrro_el0 = TPIDRRO_EL0.get();
+    VCPU_MANAGER.0.host_sp_el0 = SP_EL0.get();
 
     // Save Host physical timer state (Guest can modify CNTP via direct EL1 access).
-    let (cntp_ctl, cntp_cval): (u64, u64);
-    core::arch::asm!(
-        "mrs {cntp_ctl}, CNTP_CTL_EL0",
-        "mrs {cntp_cval}, CNTP_CVAL_EL0",
-        cntp_ctl = out(reg) cntp_ctl,
-        cntp_cval = out(reg) cntp_cval,
-        options(nostack, nomem)
-    );
+    let cntp_ctl = CNTP_CTL_EL0.get();
+    let cntp_cval = CNTP_CVAL_EL0.get();
     VCPU_MANAGER.0.host_cntp_ctl = cntp_ctl;
     VCPU_MANAGER.0.host_cntp_cval = cntp_cval;
 
     // Diagnostic: print key system registers before Guest runs
-    let cpacr: u64;
-    core::arch::asm!("mrs {}, cpacr_el1", out(reg) cpacr, options(nomem, nostack));
+    let cpacr = CPACR_EL1.get();
 }
 
 unsafe fn restore_host_to_frame(frame: *mut u64) {
@@ -317,20 +287,13 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
     // Pass success code (0) back to host's x0
     *frame.add(0) = 0;
 
-    let vbar = VCPU_MANAGER.0.host_vbar;
-    let sctlr = VCPU_MANAGER.0.host_sctlr;
-    let ttbr0 = VCPU_MANAGER.0.host_ttbr0;
-    let ttbr1 = VCPU_MANAGER.0.host_ttbr1;
-    let tcr = VCPU_MANAGER.0.host_tcr;
-    let mair = VCPU_MANAGER.0.host_mair;
     let sre = VCPU_MANAGER.0.host_sre;
     let ctlr = VCPU_MANAGER.0.host_ctlr;
     let pmr = VCPU_MANAGER.0.host_pmr;
-    let tpidr_el0 = VCPU_MANAGER.0.host_tpidr_el0;
-    let tpidr_el1 = VCPU_MANAGER.0.host_tpidr_el1;
-    let tpidrro_el0 = VCPU_MANAGER.0.host_tpidrro_el0;
-    let sp_el0 = VCPU_MANAGER.0.host_sp_el0;
 
+    // ICC_SRE_EL1 / ICC_CTLR_EL1 / ICC_PMR_EL1 are not wrapped by the crate,
+    // so their writes stay raw asm. VTTBR_EL2 + tlbi sequence has no crate
+    // equivalents either.
     core::arch::asm!(
         // Restore GIC: SRE must come first (enables ICC_* register access)
         "msr ICC_SRE_EL1, {sre}",
@@ -338,67 +301,51 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
         "msr ICC_CTLR_EL1, {ctlr}",
         "msr ICC_PMR_EL1, {pmr}",
         "isb",
-        "msr mair_el1, {mair}",
-        "msr tcr_el1, {tcr}",
-        "msr ttbr0_el1, {ttbr0}",
-        "msr ttbr1_el1, {ttbr1}",
-        "isb",
-        "msr sctlr_el1, {sctlr}",
-        "msr vbar_el1, {vbar}",
-        "msr tpidr_el0, {tpidr_el0}",
-        "msr tpidr_el1, {tpidr_el1}",
-        "msr tpidrro_el0, {tpidrro_el0}",
-        "msr sp_el0, {sp_el0}",
+        sre = in(reg) sre,
+        ctlr = in(reg) ctlr,
+        pmr = in(reg) pmr,
+    );
+
+    MAIR_EL1.set(VCPU_MANAGER.0.host_mair);
+    TCR_EL1.set(VCPU_MANAGER.0.host_tcr);
+    TTBR0_EL1.set(VCPU_MANAGER.0.host_ttbr0);
+    TTBR1_EL1.set(VCPU_MANAGER.0.host_ttbr1);
+    isb(SY);
+    SCTLR_EL1.set(VCPU_MANAGER.0.host_sctlr);
+    VBAR_EL1.set(VCPU_MANAGER.0.host_vbar);
+    TPIDR_EL0.set(VCPU_MANAGER.0.host_tpidr_el0);
+    TPIDR_EL1.set(VCPU_MANAGER.0.host_tpidr_el1);
+    TPIDRRO_EL0.set(VCPU_MANAGER.0.host_tpidrro_el0);
+    SP_EL0.set(VCPU_MANAGER.0.host_sp_el0);
+
+    core::arch::asm!(
         "msr VTTBR_EL2, xzr",
         "isb",
         "tlbi vmalle1is",
         "tlbi alle2is",
         "dsb ish",
         "isb",
-        sre = in(reg) sre,
-        ctlr = in(reg) ctlr,
-        pmr = in(reg) pmr,
-        vbar = in(reg) vbar,
-        sctlr = in(reg) sctlr,
-        ttbr0 = in(reg) ttbr0,
-        ttbr1 = in(reg) ttbr1,
-        tcr = in(reg) tcr,
-        mair = in(reg) mair,
-        tpidr_el0 = in(reg) tpidr_el0,
-        tpidr_el1 = in(reg) tpidr_el1,
-        tpidrro_el0 = in(reg) tpidrro_el0,
-        sp_el0 = in(reg) sp_el0,
     );
 
     let restored_pmr: u64;
     unsafe {
+        // ICC_PMR_EL1 is not wrapped by the crate, so the read stays raw asm.
         core::arch::asm!("mrs {}, ICC_PMR_EL1", out(reg) restored_pmr);
     }
 
     // Diagnostic: print key system registers after restoring Host
-    let cpacr_after: u64;
-    let sctlr_after: u64;
-    let ttbr0_after: u64;
-    let ttbr1_after: u64;
-    let vbar_after: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, cpacr_el1", out(reg) cpacr_after);
-        core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr_after);
-        core::arch::asm!("mrs {}, ttbr0_el1", out(reg) ttbr0_after);
-        core::arch::asm!("mrs {}, ttbr1_el1", out(reg) ttbr1_after);
-        core::arch::asm!("mrs {}, vbar_el1", out(reg) vbar_after);
-    }
+    let cpacr_after = CPACR_EL1.get();
+    let sctlr_after = SCTLR_EL1.get();
+    let ttbr0_after = TTBR0_EL1.get();
+    let ttbr1_after = TTBR1_EL1.get();
+    let vbar_after = VBAR_EL1.get();
 
     // Restore Host physical timer CVAL (compare value).
     // CNTP_CTL is left as-is — shutdown_guest() already set it to Enable=1, IMASK=0.
     let cntp_cval = VCPU_MANAGER.0.host_cntp_cval;
-    core::arch::asm!(
-        "msr CNTP_CVAL_EL0, {cntp_cval}",
-        "isb",
-        cntp_cval = in(reg) cntp_cval,
-        options(nostack)
-    );
-    core::arch::asm!("msr CNTV_CTL_EL0, xzr", options(nostack));
+    CNTP_CVAL_EL0.set(cntp_cval);
+    isb(SY);
+    CNTV_CTL_EL0.set(0);
 }
 
 unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
@@ -409,29 +356,12 @@ unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
     ctx.elr_el2 = *frame.add(31);
     ctx.spsr = *frame.add(32);
     ctx.sp = *frame.add(33);
-    let (sctlr, ttbr0, ttbr1, tcr, mair, vbar): (u64, u64, u64, u64, u64, u64);
-    core::arch::asm!(
-        "mrs {sctlr}, sctlr_el1",
-        "mrs {ttbr0}, ttbr0_el1",
-        "mrs {ttbr1}, ttbr1_el1",
-        "mrs {tcr}, tcr_el1",
-        "mrs {mair}, mair_el1",
-        "mrs {vbar}, vbar_el1",
-        sctlr = out(reg) sctlr,
-        ttbr0 = out(reg) ttbr0,
-        ttbr1 = out(reg) ttbr1,
-        tcr   = out(reg) tcr,
-        mair  = out(reg) mair,
-        vbar  = out(reg) vbar,
-        options(nostack, nomem)
-    );
-
-    ctx.sctlr_el1 = sctlr;
-    ctx.ttbr0_el1 = ttbr0;
-    ctx.ttbr1_el1 = ttbr1;
-    ctx.tcr_el1 = tcr;
-    ctx.mair_el1 = mair;
-    ctx.vbar_el1 = vbar;
+    ctx.sctlr_el1 = SCTLR_EL1.get();
+    ctx.ttbr0_el1 = TTBR0_EL1.get();
+    ctx.ttbr1_el1 = TTBR1_EL1.get();
+    ctx.tcr_el1 = TCR_EL1.get();
+    ctx.mair_el1 = MAIR_EL1.get();
+    ctx.vbar_el1 = VBAR_EL1.get();
 }
 
 unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
@@ -444,27 +374,14 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
     *frame.add(33) = ctx.sp;
 
     // while booting linux, mmu should closed.
-    core::arch::asm!(
-        "msr vbar_el1, {vbar}",
-        "msr ttbr0_el1, {ttbr0}",
-        "msr ttbr1_el1, {ttbr1}",
-        "msr tcr_el1, {tcr}",
-        "msr mair_el1, {mair}",
-        "msr sctlr_el1, {sctlr}",
-        "isb",
-        vbar  = in(reg) ctx.vbar_el1,
-        ttbr0 = in(reg) ctx.ttbr0_el1,
-        ttbr1 = in(reg) ctx.ttbr1_el1,
-        tcr   = in(reg) ctx.tcr_el1,
-        mair  = in(reg) ctx.mair_el1,
-        sctlr = in(reg) ctx.sctlr_el1,
-        options(nostack)
-    );
+    VBAR_EL1.set(ctx.vbar_el1);
+    TTBR0_EL1.set(ctx.ttbr0_el1);
+    TTBR1_EL1.set(ctx.ttbr1_el1);
+    TCR_EL1.set(ctx.tcr_el1);
+    MAIR_EL1.set(ctx.mair_el1);
+    SCTLR_EL1.set(ctx.sctlr_el1);
+    isb(SY);
 }
-
-// Temporary placeholder
-const HCR_EL2_VI: u64 = 1 << 7;
-const HCR_EL2_VF: u64 = 1 << 6;
 
 /// Solve irq from lower el1.
 #[naked]
@@ -585,25 +502,22 @@ pub unsafe extern "C" fn fiq_from_lower_el1() {
 /// Solve serror from lower el1.
 #[no_mangle]
 pub unsafe extern "C" fn serror_from_lower_el1() {
-    asm!("eret", options(noreturn));
+    eret();
 }
 
 /// Solve sync exception from lower el2 sp0.
 #[no_mangle]
 pub unsafe extern "C" fn sync_current_sp0() {
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sync_current_spx() {
-    let esr: u64;
-    let elr: u64;
-    let far: u64;
-    asm!("mrs {}, esr_el2", out(reg) esr, options(nostack));
-    asm!("mrs {}, elr_el2", out(reg) elr, options(nostack));
-    asm!("mrs {}, far_el2", out(reg) far, options(nostack));
+    let esr = ESR_EL2.get();
+    let elr = ELR_EL2.get();
+    let far = FAR_EL2.get();
 
     // Attempt to decode syndrome
     let ec = (esr >> 26) & 0x3F;
@@ -614,49 +528,45 @@ pub unsafe extern "C" fn sync_current_spx() {
     }
 
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sync_current_el1() {
-    let esr: u64;
-    let elr: u64;
-    let far: u64;
-    let spsr: u64;
-    asm!("mrs {}, esr_el2", out(reg) esr, options(nostack));
-    asm!("mrs {}, elr_el2", out(reg) elr, options(nostack));
-    asm!("mrs {}, far_el2", out(reg) far, options(nostack));
-    asm!("mrs {}, spsr_el2", out(reg) spsr, options(nostack));
+    let esr = ESR_EL2.get();
+    let elr = ELR_EL2.get();
+    let far = FAR_EL2.get();
+    let spsr = SPSR_EL2.get();
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sync_current_el0() {
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn irq_current() {
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn fiq_current() {
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn serror_current() {
     loop {
-        asm!("wfi");
+        wfi();
     }
 }
