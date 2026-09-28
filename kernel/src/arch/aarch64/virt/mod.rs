@@ -31,9 +31,11 @@ pub use vcpu::{Vcpu, VcpuManager, VcpuState};
 pub use vgic::init;
 
 use crate::{kearly_println, kprintln};
-use aarch64_cpu::asm::barrier::{isb, SY};
-use aarch64_cpu::registers::{CNTV_CTL_EL0, ICH_HCR_EL2, ICC_CTLR_EL1};
-use tock_registers::interfaces::{Readable, ReadWriteable, Writeable};
+use aarch64_cpu::{
+    asm::barrier::{isb, SY},
+    registers::{CNTV_CTL_EL0, ICC_CTLR_EL1, ICH_HCR_EL2},
+};
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 #[no_mangle]
 pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {

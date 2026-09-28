@@ -14,8 +14,10 @@
 
 use super::{guest, hyper, vcpu::Vcpu, vgic, virtio, vuart};
 use crate::{kearly_println, kprintln};
-use aarch64_cpu::asm::wfe;
-use aarch64_cpu::registers::{ESR_EL2, FAR_EL2, HPFAR_EL2, SPSR_EL2, ELR_EL2};
+use aarch64_cpu::{
+    asm::wfe,
+    registers::{ELR_EL2, ESR_EL2, FAR_EL2, HPFAR_EL2, SPSR_EL2},
+};
 use tock_registers::interfaces::Readable;
 
 static mut GUEST_SHUTDOWN: bool = false;

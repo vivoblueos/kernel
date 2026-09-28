@@ -13,12 +13,14 @@
 // limitations under the License.
 
 use crate::arch::aarch64::virt::{guest, mmu_el2, vector, vgic};
-use aarch64_cpu::asm::barrier::{dsb, isb, SY};
-use aarch64_cpu::registers::{
-    CNTHCTL_EL2, CNTP_CTL_EL0, CNTVOFF_EL2, CurrentEL, ESR_EL2, ELR_EL2, HCR_EL2, ICH_HCR_EL2,
-    SCTLR_EL2, SPSR_EL2, VBAR_EL2,
+use aarch64_cpu::{
+    asm::barrier::{dsb, isb, SY},
+    registers::{
+        CurrentEL, CNTHCTL_EL2, CNTP_CTL_EL0, CNTVOFF_EL2, ELR_EL2, ESR_EL2, HCR_EL2, ICH_HCR_EL2,
+        SCTLR_EL2, SPSR_EL2, VBAR_EL2,
+    },
 };
-use tock_registers::interfaces::{Readable, ReadWriteable, Writeable};
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 #[inline]
 pub fn get_current_el() -> u64 {

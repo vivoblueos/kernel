@@ -41,9 +41,13 @@
 // ============================================================================
 
 use crate::arch::aarch64::asm;
-use aarch64_cpu::asm::barrier::{dsb, isb, SY};
-use aarch64_cpu::asm::{sev, wfe};
-use aarch64_cpu::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1};
+use aarch64_cpu::{
+    asm::{
+        barrier::{dsb, isb, SY},
+        sev, wfe,
+    },
+    registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1},
+};
 use core::{
     mem, ptr,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},

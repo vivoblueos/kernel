@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use aarch64_cpu::asm::barrier::{dsb, isb, SY};
-use aarch64_cpu::registers::{MAIR_EL2, SCTLR_EL2, TCR_EL2, TTBR0_EL2};
+use aarch64_cpu::{
+    asm::barrier::{dsb, isb, SY},
+    registers::{MAIR_EL2, SCTLR_EL2, TCR_EL2, TTBR0_EL2},
+};
 use tock_registers::{interfaces::*, register_bitfields, registers::InMemoryRegister};
 
 register_bitfields! {u64,

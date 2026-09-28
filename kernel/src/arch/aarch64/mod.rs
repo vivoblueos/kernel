@@ -21,8 +21,10 @@ pub(crate) mod vector;
 pub(crate) mod virt;
 
 use crate::scheduler;
-use aarch64_cpu::asm::wfi;
-use aarch64_cpu::registers::{Readable, Writeable, DAIF, MPIDR_EL1, SP};
+use aarch64_cpu::{
+    asm::wfi,
+    registers::{Readable, Writeable, DAIF, MPIDR_EL1, SP},
+};
 use core::{
     fmt,
     mem::offset_of,
