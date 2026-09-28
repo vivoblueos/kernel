@@ -38,6 +38,15 @@ use esp_wifi_sys_esp32c3 as esp_wifi_sys;
 #[cfg(soc_esp32c6)]
 use esp_wifi_sys_esp32c6 as esp_wifi_sys;
 
+#[inline]
+fn osi_ticks_to_timeout_us(block_time_tick: u32) -> Option<u32> {
+    if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
+        None
+    } else {
+        Some(block_time_tick.saturating_mul(1_000))
+    }
+}
+
 // #define ESP_EVENT_DEFINE_BASE(id) esp_event_base_t id = #id
 #[unsafe(no_mangle)]
 static mut __ESP_RADIO_WIFI_EVENT: esp_event_base_t = c"WIFI_EVENT".as_ptr();
@@ -375,11 +384,7 @@ pub unsafe extern "C" fn semphr_take(semphr: *mut c_void, block_time_tick: u32) 
     if !semphr.is_null() {
         let ptr = SemaphorePtr::new(semphr.cast()).expect("invalid semaphore pointer");
         let handle = SemaphoreHandle::ref_from_ptr(&ptr);
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         handle.take(timeout) as i32
     } else {
@@ -494,11 +499,7 @@ pub unsafe extern "C" fn queue_send_to_back(
     if !queue.is_null() {
         let ptr = QueuePtr::new(queue.cast()).expect("invalid queue pointer");
         let handle = unsafe { QueueHandle::ref_from_ptr(&ptr) };
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         let ret = handle.send_to_back(item.cast(), timeout) as i32;
         ret
@@ -515,11 +516,7 @@ pub unsafe extern "C" fn queue_send_to_front(
     if !queue.is_null() {
         let ptr = QueuePtr::new(queue.cast()).expect("invalid queue pointer");
         let handle = unsafe { QueueHandle::ref_from_ptr(&ptr) };
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         handle.send_to_front(item.cast(), timeout) as i32
     } else {
@@ -535,11 +532,7 @@ pub unsafe extern "C" fn queue_recv(
     if !queue.is_null() {
         let ptr = QueuePtr::new(queue.cast()).expect("invalid queue pointer");
         let handle = unsafe { QueueHandle::ref_from_ptr(&ptr) };
-        let timeout = if block_time_tick == OSI_FUNCS_TIME_BLOCKING {
-            None
-        } else {
-            Some(block_time_tick)
-        };
+        let timeout = osi_ticks_to_timeout_us(block_time_tick);
 
         let ret = handle.receive(item.cast(), timeout) as i32;
         ret
@@ -660,11 +653,11 @@ pub unsafe extern "C" fn task_delete(task_handle: *mut c_void) {
 }
 
 pub unsafe extern "C" fn task_delay(tick: u32) {
-    crate::scheduler::suspend_me_for::<()>(Tick(tick as usize), None);
+    crate::scheduler::suspend_me_for::<()>(Tick::from_millis(tick as u64), None);
 }
 
 pub unsafe extern "C" fn task_ms_to_tick(ms: u32) -> i32 {
-    Tick::from_millis(ms as u64).0 as i32
+    ms as i32
 }
 
 pub unsafe extern "C" fn task_get_current_task() -> *mut c_void {
