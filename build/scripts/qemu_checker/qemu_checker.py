@@ -41,6 +41,10 @@ class AssertFailException(Exception):
     pass
 
 
+class GuestPanicException(AssertFailException):
+    pass
+
+
 class AssertSuccNotifier(Exception):
     pass
 
@@ -83,8 +87,8 @@ class AssertSucc(Action):
 class GuestPanic(AssertFail):
 
     def take(self, checker, line):
-        LOGGER.error('Guest panic detected; stopping QEMU check')
-        super().take(checker, line)
+        checker.add_fail_line(line)
+        raise GuestPanicException()
 
 
 class Checker(object):
@@ -170,6 +174,22 @@ class Checker(object):
         os.makedirs(self.test_dir, exist_ok=True)
         return asyncio.run(self.go())
 
+    async def drain_panic_output(self, stream):
+        # PanicInfo prints the location before the message. Give the guest a
+        # bounded interval to finish its diagnostics before killing QEMU.
+        try:
+            async with asyncio.timeout(1):
+                while True:
+                    output_line = await stream.readline()
+                    if not output_line:
+                        break
+                    output_line = output_line.decode(errors='replace')
+                    sys.stdout.write(output_line)
+                    sys.stdout.flush()
+                    self.add_fail_line(output_line)
+        except asyncio.TimeoutError:
+            pass
+
     async def go(self):
         process = await asyncio.create_subprocess_exec(
             self.script,
@@ -189,6 +209,12 @@ class Checker(object):
                     sys.stdout.flush()
                     try:
                         self.check(output_line)
+                    except GuestPanicException:
+                        await self.drain_panic_output(process.stdout)
+                        LOGGER.error(
+                            'Guest panic detected; stopping QEMU check')
+                        succ = False
+                        break
                     except AssertFailException:
                         succ = False
                         break
