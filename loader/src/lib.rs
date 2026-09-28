@@ -22,7 +22,7 @@ use goblin::elf::{
     Elf, Reloc,
 };
 use memory_mapper::MappingModeKind;
-pub use memory_mapper::{MemoryMapper, MemoryPermissions, MemoryRegion};
+pub use memory_mapper::{MemoryMapper, MemoryPermissions, MemoryRegion, MemoryWriter};
 
 pub type Result = core::result::Result<(), &'static str>;
 
