@@ -422,7 +422,13 @@ impl BuddyAllocator {
         #[cfg(test)]
         self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
-        inner.alloc_pages_aligned(order, align_order)
+        inner.alloc_pages_aligned(order, align_order).map(|page| {
+            #[cfg(allocator = "slab_dynamic")]
+            unsafe {
+                (*page).flags.set(PageFlags::ALLOCATED);
+            }
+            page
+        })
     }
 
     /// Allocate pages and return the physical address.
@@ -432,6 +438,10 @@ impl BuddyAllocator {
         let mut inner = self.inner.irqsave_lock();
         inner.alloc_pages(order).map(|p| {
             let pfn = unsafe { (*p).pfn };
+            #[cfg(allocator = "slab_dynamic")]
+            unsafe {
+                (*p).flags.set(PageFlags::ALLOCATED);
+            }
             inner.pfn_to_phys(pfn)
         })
     }
@@ -456,6 +466,8 @@ impl BuddyAllocator {
         self.wait_for_test_access();
         let mut inner = self.inner.irqsave_lock();
         let page = &mut *inner.pfn_to_virt(pfn);
+        #[cfg(allocator = "slab_dynamic")]
+        page.flags.clear(PageFlags::ALLOCATED);
         inner.free_pages(page, order);
     }
 

@@ -175,6 +175,16 @@ impl DynamicSlabHeap {
         }
     }
 
+    pub fn set_page_provider(&self, provider: allocator_crate::slab::PageProvider) {
+        let mut heap = self.heap.irqsave_lock();
+        heap.set_page_provider(provider);
+    }
+
+    pub fn owns_slab_ptr(&self, ptr: usize) -> bool {
+        let heap = self.heap.irqsave_lock();
+        heap.owns_slab_ptr(ptr)
+    }
+
     /// # Safety
     /// `start_addr..start_addr+size` must be valid, exclusively owned, writable memory.
     pub unsafe fn init(&self, start_addr: usize, size: usize) {

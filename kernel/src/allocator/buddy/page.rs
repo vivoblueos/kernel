@@ -28,6 +28,7 @@ impl PageFlags {
     pub const RESERVED: u8 = 1 << 1;
     pub const SLAB: u8 = 1 << 2;
     pub const MAPPED: u8 = 1 << 3;
+    pub const ALLOCATED: u8 = 1 << 4;
 
     pub const fn new() -> Self {
         PageFlags(0)

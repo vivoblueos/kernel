@@ -452,13 +452,27 @@ const MEMORY_PRESSURE_THRESHOLD: usize = 128 * 1024; // 128 KB
 #[cfg(allocator = "slab_dynamic")]
 const DEFAULT_MAX_TOTAL_PAGES: usize = 32;
 
+#[cfg(allocator = "slab_dynamic")]
+const DYNAMIC_SLAB_ALLOCATOR_COUNT: usize = 11;
+#[cfg(allocator = "slab_dynamic")]
+const DYNAMIC_SLAB_MAX_SIZE: usize = 2048;
+
 // ── External Metadata Helper Functions ──────────────────────────────────────
 
 /// Map page address to metadata index
 #[cfg(allocator = "slab_dynamic")]
 #[inline]
-fn page_to_meta_index(page_addr: usize, heap_base: usize) -> usize {
-    (page_addr - heap_base) / PAGE_SIZE
+unsafe fn page_to_meta_index(
+    page_addr: usize,
+    metadata: *mut PageMetadata,
+    max_pages: usize,
+) -> Option<usize> {
+    for i in 0..max_pages {
+        if (*metadata.add(i)).page_addr == page_addr {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Get metadata for a page address
@@ -467,10 +481,29 @@ fn page_to_meta_index(page_addr: usize, heap_base: usize) -> usize {
 unsafe fn get_page_meta(
     page_addr: usize,
     metadata: *mut PageMetadata,
-    heap_base: usize,
+    max_pages: usize,
 ) -> &'static mut PageMetadata {
-    let idx = page_to_meta_index(page_addr, heap_base);
+    let idx = page_to_meta_index(page_addr, metadata, max_pages)
+        .expect("dynamic slab page metadata not found");
     &mut *metadata.add(idx)
+}
+
+#[cfg(allocator = "slab_dynamic")]
+unsafe fn alloc_meta_slot(
+    page_addr: usize,
+    metadata: *mut PageMetadata,
+    max_pages: usize,
+) -> usize {
+    if let Some(idx) = page_to_meta_index(page_addr, metadata, max_pages) {
+        return idx;
+    }
+    for i in 0..max_pages {
+        if (*metadata.add(i)).page_addr == 0 {
+            (*metadata.add(i)).page_addr = page_addr;
+            return i;
+        }
+    }
+    panic!("dynamic slab metadata exhausted")
 }
 
 // ── PageMetadata ─────────────────────────────────────────────────────────────
@@ -489,6 +522,8 @@ unsafe fn get_page_meta(
 #[cfg(allocator = "slab_dynamic")]
 #[repr(C)]
 struct PageMetadata {
+    page_addr: usize,
+    page_token: usize,
     page_magic: u32,
     slab_index: u8,
     _pad: [u8; 3],
@@ -503,6 +538,8 @@ struct PageMetadata {
 impl PageMetadata {
     const fn new() -> Self {
         Self {
+            page_addr: 0,
+            page_token: 0,
             page_magic: 0,
             slab_index: 0,
             _pad: [0; 3],
@@ -513,6 +550,22 @@ impl PageMetadata {
             prev_page: usize::MAX,
         }
     }
+}
+
+/// A page supplied to dynamic slab. `token` is opaque to the allocator crate
+/// and is returned unchanged to the provider on release.
+#[cfg(allocator = "slab_dynamic")]
+#[derive(Clone, Copy)]
+pub struct PageAllocation {
+    pub addr: usize,
+    pub token: usize,
+}
+
+#[cfg(allocator = "slab_dynamic")]
+#[derive(Clone, Copy)]
+pub struct PageProvider {
+    pub alloc: fn() -> Option<PageAllocation>,
+    pub free: unsafe fn(PageAllocation),
 }
 
 // ── Index-based List Operations ──────────────────────────────────────────────
@@ -595,25 +648,12 @@ fn blocks_per_page(block_size: usize) -> usize {
 /// # Safety
 /// The page-aligned address is always readable in kernel context.
 #[cfg(allocator = "slab_dynamic")]
-fn ptr_is_slab(
-    ptr: usize,
-    metadata: *mut PageMetadata,
-    heap_base: usize,
-    max_pages: usize,
-) -> Option<u8> {
+fn ptr_is_slab(ptr: usize, metadata: *mut PageMetadata, max_pages: usize) -> Option<u8> {
     let page_base = ptr & !(PAGE_SIZE - 1);
-    assert!(
-        heap_base != 0 && page_base >= heap_base,
-        "invalid ptr {:#x}, heap_base {:#x} or page_base {:#x}",
-        ptr,
-        heap_base,
-        page_base
-    );
     unsafe {
-        let page_idx = page_to_meta_index(page_base, heap_base);
-        if page_idx >= max_pages {
+        let Some(page_idx) = page_to_meta_index(page_base, metadata, max_pages) else {
             return None;
-        }
+        };
         let meta = &*metadata.add(page_idx);
         if meta.page_magic == PAGE_MAGIC {
             Some(meta.slab_index)
@@ -657,7 +697,6 @@ impl DynamicSlab {
         page_addr: usize,
         slab_index: u8,
         metadata: *mut PageMetadata,
-        heap_base: usize,
         max_pages: usize,
     ) {
         let offset = page_data_offset(self.block_size);
@@ -672,7 +711,8 @@ impl DynamicSlab {
         }
 
         // Get external metadata
-        let meta = get_page_meta(page_addr, metadata, heap_base);
+        let page_idx = alloc_meta_slot(page_addr, metadata, max_pages);
+        let meta = &mut *metadata.add(page_idx);
         meta.page_magic = PAGE_MAGIC;
         meta.slab_index = slab_index;
         meta._pad = [0u8; 3];
@@ -687,13 +727,6 @@ impl DynamicSlab {
         meta.prev_page = max_pages;
 
         // Add to page list
-        let page_idx = page_to_meta_index(page_addr, heap_base);
-        if page_idx >= max_pages {
-            panic!(
-                "init_page: page_idx {} >= max_pages {}, page_addr={:#x}, heap_base={:#x}",
-                page_idx, max_pages, page_addr, heap_base
-            );
-        }
         list_push_front(&mut self.page_list_head, page_idx, metadata, max_pages);
         self.total_blocks += total;
         self.free_blocks += total;
@@ -701,25 +734,14 @@ impl DynamicSlab {
 
     /// Add an already-initialized page back to this slab (from PagePool).
     /// The page must have been previously initialized for this slab type and be fully free.
-    unsafe fn add_page(
-        &mut self,
-        page_addr: usize,
-        metadata: *mut PageMetadata,
-        heap_base: usize,
-        max_pages: usize,
-    ) {
-        let meta = get_page_meta(page_addr, metadata, heap_base);
+    unsafe fn add_page(&mut self, page_addr: usize, metadata: *mut PageMetadata, max_pages: usize) {
+        let page_idx = page_to_meta_index(page_addr, metadata, max_pages)
+            .expect("dynamic slab page metadata not found");
+        let meta = &mut *metadata.add(page_idx);
         debug_assert_eq!(
             meta.free_blocks, meta.total_blocks,
             "Page from pool must be fully free"
         );
-        let page_idx = page_to_meta_index(page_addr, heap_base);
-        if page_idx >= max_pages {
-            panic!(
-                "add_page: page_idx {} >= max_pages {}, page_addr={:#x}, heap_base={:#x}",
-                page_idx, max_pages, page_addr, heap_base
-            );
-        }
         list_push_front(&mut self.page_list_head, page_idx, metadata, max_pages);
         self.total_blocks += meta.total_blocks as usize;
         self.free_blocks += meta.total_blocks as usize;
@@ -730,15 +752,14 @@ impl DynamicSlab {
     unsafe fn allocate_block(
         &mut self,
         metadata: *mut PageMetadata,
-        heap_base: usize,
         max_pages: usize,
     ) -> Option<NonNull<u8>> {
         let mut page_idx = self.page_list_head;
         while page_idx != max_pages {
             let meta = &*metadata.add(page_idx);
             if meta.free_blocks > 0 {
-                let page_addr = heap_base + page_idx * PAGE_SIZE;
-                return Some(self.pop_from_page(page_addr, metadata, heap_base));
+                let page_addr = meta.page_addr;
+                return Some(self.pop_from_page(page_addr, metadata, max_pages));
             }
             page_idx = meta.next_page;
         }
@@ -753,9 +774,9 @@ impl DynamicSlab {
         &mut self,
         page_addr: usize,
         metadata: *mut PageMetadata,
-        heap_base: usize,
+        max_pages: usize,
     ) -> NonNull<u8> {
-        let meta = get_page_meta(page_addr, metadata, heap_base);
+        let meta = get_page_meta(page_addr, metadata, max_pages);
         let block_addr = meta.free_head;
         debug_assert_ne!(block_addr, NULL_PTR, "pop_from_page called on empty page");
 
@@ -777,11 +798,11 @@ impl DynamicSlab {
         &mut self,
         ptr: NonNull<u8>,
         metadata: *mut PageMetadata,
-        heap_base: usize,
+        max_pages: usize,
     ) -> (usize, bool) {
         let ptr_addr = ptr.as_ptr() as usize;
         let page_addr = ptr_addr & !(PAGE_SIZE - 1);
-        let meta = get_page_meta(page_addr, metadata, heap_base);
+        let meta = get_page_meta(page_addr, metadata, max_pages);
 
         debug_assert_eq!(meta.page_magic, PAGE_MAGIC);
         debug_assert!(
@@ -809,14 +830,14 @@ impl DynamicSlab {
         &mut self,
         page_addr: usize,
         metadata: *mut PageMetadata,
-        heap_base: usize,
         max_pages: usize,
     ) {
-        let meta = get_page_meta(page_addr, metadata, heap_base);
+        let meta = get_page_meta(page_addr, metadata, max_pages);
         let total = meta.total_blocks as usize;
 
         // Remove from list
-        let page_idx = page_to_meta_index(page_addr, heap_base);
+        let page_idx = page_to_meta_index(page_addr, metadata, max_pages)
+            .expect("dynamic slab page metadata not found");
         list_remove(&mut self.page_list_head, page_idx, metadata, max_pages);
 
         self.total_blocks -= total;
@@ -831,7 +852,7 @@ impl DynamicSlab {
 /// Uses per-slab intrusive linked lists for O(1) same-type page reuse.
 #[cfg(allocator = "slab_dynamic")]
 struct PagePool {
-    lists: [usize; SLAB_ALLOCATOR_COUNT], // Head indices, MAX_SLAB_PAGES = empty
+    lists: [usize; DYNAMIC_SLAB_ALLOCATOR_COUNT], // Head indices, MAX_SLAB_PAGES = empty
     total_pages: usize,
     max_total_pages: usize,
 }
@@ -840,7 +861,7 @@ struct PagePool {
 impl PagePool {
     const fn new() -> Self {
         PagePool {
-            lists: [usize::MAX; SLAB_ALLOCATOR_COUNT],
+            lists: [usize::MAX; DYNAMIC_SLAB_ALLOCATOR_COUNT],
             total_pages: 0,
             max_total_pages: DEFAULT_MAX_TOTAL_PAGES,
         }
@@ -855,24 +876,36 @@ impl PagePool {
         page_addr: usize,
         slab_index: usize,
         system_allocator: &mut tlsf::TlsfHeap,
+        provider: Option<PageProvider>,
         metadata: *mut PageMetadata,
-        heap_base: usize,
         max_pages: usize,
     ) {
         if self.total_pages >= self.max_total_pages {
             // Pool full - deallocate page back to system
-            system_allocator.deallocate(NonNull::new_unchecked(page_addr as *mut u8), PAGE_SIZE);
+            if let Some(provider) = provider {
+                let meta = get_page_meta(page_addr, metadata, max_pages);
+                (provider.free)(PageAllocation {
+                    addr: page_addr,
+                    token: meta.page_token,
+                });
+                meta.page_addr = 0;
+            } else {
+                system_allocator
+                    .deallocate(NonNull::new_unchecked(page_addr as *mut u8), PAGE_SIZE);
+                get_page_meta(page_addr, metadata, max_pages).page_addr = 0;
+            }
             return;
         }
 
-        let page_idx = page_to_meta_index(page_addr, heap_base);
+        let page_idx = page_to_meta_index(page_addr, metadata, max_pages)
+            .expect("dynamic slab page metadata not found");
         assert!(
             page_idx < max_pages,
             "addr {} page_idx {} out of bounds",
             page_addr,
             page_idx
         );
-        let meta = get_page_meta(page_addr, metadata, heap_base);
+        let meta = get_page_meta(page_addr, metadata, max_pages);
         meta.slab_index = slab_index as u8;
         list_push_front(&mut self.lists[slab_index], page_idx, metadata, max_pages);
         meta.page_magic = PAGE_MAGIC; // Mark as valid slab page for reuse
@@ -888,22 +921,21 @@ impl PagePool {
         &mut self,
         slab_index: usize,
         metadata: *mut PageMetadata,
-        heap_base: usize,
         max_pages: usize,
     ) -> Option<(usize, bool)> {
         // Try same slab_index first - no init needed
         if let Some(page_idx) = list_pop_front(&mut self.lists[slab_index], metadata, max_pages) {
             debug_assert!(page_idx < max_pages, "page_idx out of bounds");
-            let addr = heap_base.checked_add(page_idx.checked_mul(PAGE_SIZE)?)?;
+            let addr = (*metadata.add(page_idx)).page_addr;
             self.total_pages -= 1;
             return Some((addr, false));
         }
 
         // Fallback: take from any other slab - needs reinit
-        for i in 0..SLAB_ALLOCATOR_COUNT {
+        for i in 0..DYNAMIC_SLAB_ALLOCATOR_COUNT {
             if let Some(page_idx) = list_pop_front(&mut self.lists[i], metadata, max_pages) {
                 debug_assert!(page_idx < max_pages, "page_idx out of bounds");
-                let addr = heap_base.checked_add(page_idx.checked_mul(PAGE_SIZE)?)?;
+                let addr = (*metadata.add(page_idx)).page_addr;
                 self.total_pages -= 1;
                 return Some((addr, true));
             }
@@ -919,24 +951,35 @@ impl PagePool {
     unsafe fn reclaim_to_system(
         &mut self,
         system_allocator: &mut tlsf::TlsfHeap,
+        provider: Option<PageProvider>,
         pages_needed: usize,
         metadata: *mut PageMetadata,
-        heap_base: usize,
         max_pages: usize,
     ) -> usize {
         let mut reclaimed = 0;
 
         while reclaimed < pages_needed {
             let mut found = false;
-            for i in 0..SLAB_ALLOCATOR_COUNT {
+            for i in 0..DYNAMIC_SLAB_ALLOCATOR_COUNT {
                 if let Some(page_idx) = list_pop_front(&mut self.lists[i], metadata, max_pages) {
                     debug_assert!(page_idx < max_pages, "page_idx out of bounds");
-                    let page_addr = heap_base + page_idx * PAGE_SIZE;
+                    let page_addr = (*metadata.add(page_idx)).page_addr;
                     unsafe {
                         let meta = &mut *metadata.add(page_idx);
                         meta.page_magic = 0;
-                        system_allocator
-                            .deallocate(NonNull::new_unchecked(page_addr as *mut u8), PAGE_SIZE);
+                        if let Some(provider) = provider {
+                            (provider.free)(PageAllocation {
+                                addr: page_addr,
+                                token: meta.page_token,
+                            });
+                            meta.page_addr = 0;
+                        } else {
+                            system_allocator.deallocate(
+                                NonNull::new_unchecked(page_addr as *mut u8),
+                                PAGE_SIZE,
+                            );
+                            meta.page_addr = 0;
+                        }
                     }
                     self.total_pages -= 1;
                     reclaimed += 1;
@@ -955,11 +998,11 @@ impl PagePool {
 // ── DynamicSlabHeap ───────────────────────────────────────────────────────────
 
 #[cfg(allocator = "slab_dynamic")]
-type SlabStatData = [(usize, usize, usize, usize); SLAB_ALLOCATOR_COUNT];
+type SlabStatData = [(usize, usize, usize, usize); DYNAMIC_SLAB_ALLOCATOR_COUNT];
 
 #[cfg(allocator = "slab_dynamic")]
 pub struct DynamicSlabHeap {
-    slabs: [DynamicSlab; SLAB_ALLOCATOR_COUNT],
+    slabs: [DynamicSlab; DYNAMIC_SLAB_ALLOCATOR_COUNT],
     page_pool: PagePool,
     // TODO: better to use buddy allocator here to reduce fragmentation
     system_allocator: tlsf::TlsfHeap,
@@ -970,15 +1013,17 @@ pub struct DynamicSlabHeap {
     metadata: *mut PageMetadata,
     heap_base: usize,
     max_pages: usize,
+    page_provider: Option<PageProvider>,
 }
 
 #[cfg(allocator = "slab_dynamic")]
 impl DynamicSlabHeap {
-    const SLAB_SIZES: [usize; SLAB_ALLOCATOR_COUNT] = [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024];
+    const SLAB_SIZES: [usize; DYNAMIC_SLAB_ALLOCATOR_COUNT] =
+        [8, 16, 32, 64, 96, 128, 192, 256, 512, 1024, 2048];
 
     pub const fn new() -> Self {
         DynamicSlabHeap {
-            slabs: [const { DynamicSlab::new() }; SLAB_ALLOCATOR_COUNT],
+            slabs: [const { DynamicSlab::new() }; DYNAMIC_SLAB_ALLOCATOR_COUNT],
             page_pool: PagePool::new(),
             system_allocator: tlsf::TlsfHeap::new(),
             allocated: 0,
@@ -987,7 +1032,16 @@ impl DynamicSlabHeap {
             metadata: core::ptr::null_mut(),
             heap_base: 0,
             max_pages: 0,
+            page_provider: None,
         }
+    }
+
+    pub fn set_page_provider(&mut self, provider: PageProvider) {
+        self.page_provider = Some(provider);
+    }
+
+    pub fn owns_slab_ptr(&self, ptr: usize) -> bool {
+        ptr_is_slab(ptr, self.metadata, self.max_pages).is_some()
     }
 
     /// Initialize the heap with the memory range `[start, start+size)`.
@@ -1023,11 +1077,11 @@ impl DynamicSlabHeap {
         }
 
         // Initialize page_pool lists with max_pages as empty sentinel
-        for i in 0..SLAB_ALLOCATOR_COUNT {
+        for i in 0..DYNAMIC_SLAB_ALLOCATOR_COUNT {
             self.page_pool.lists[i] = self.max_pages;
         }
 
-        for i in 0..SLAB_ALLOCATOR_COUNT {
+        for i in 0..DYNAMIC_SLAB_ALLOCATOR_COUNT {
             self.slabs[i].set_block_size(Self::SLAB_SIZES[i]);
         }
         self.prewarm_critical_slabs();
@@ -1038,13 +1092,7 @@ impl DynamicSlabHeap {
         for &(idx, count) in PREWARM {
             for _ in 0..count {
                 if let Some((page, _needs_init)) = self.acquire_page(idx) {
-                    self.slabs[idx].init_page(
-                        page,
-                        idx as u8,
-                        self.metadata,
-                        self.heap_base,
-                        self.max_pages,
-                    );
+                    self.slabs[idx].init_page(page, idx as u8, self.metadata, self.max_pages);
                 } else {
                     return;
                 }
@@ -1055,10 +1103,10 @@ impl DynamicSlabHeap {
     // ── Allocation ─────────────────────────────────────────────────────────
 
     /// Return the slab index for the given `(size, align)`.
-    /// Result is `SLAB_ALLOCATOR_COUNT` when no slab can satisfy the request.
+    /// Result is `DYNAMIC_SLAB_ALLOCATOR_COUNT` when no slab can satisfy the request.
     fn layout_to_slab_index(size: usize, align: usize) -> usize {
         let min_size = core::cmp::max(size, align);
-        // partition_point returns values in 0..=SLAB_ALLOCATOR_COUNT; no clamping needed.
+        // partition_point returns values in 0..=DYNAMIC_SLAB_ALLOCATOR_COUNT; no clamping needed.
         Self::SLAB_SIZES.partition_point(|&s| s < min_size)
     }
 
@@ -1074,7 +1122,7 @@ impl DynamicSlabHeap {
         let mut idx = Self::layout_to_slab_index(layout.size(), layout.align());
 
         // Slab path: try from idx upward (upsearch handles alignment mismatches on small sizes).
-        while idx < SLAB_ALLOCATOR_COUNT {
+        while idx < DYNAMIC_SLAB_ALLOCATOR_COUNT {
             if Self::SLAB_SIZES[idx] % layout.align() != 0 {
                 if Self::SLAB_SIZES[idx] <= SLAB_MAX_UPSEARCH_SIZE {
                     idx += 1;
@@ -1091,16 +1139,10 @@ impl DynamicSlabHeap {
                             page_addr,
                             idx as u8,
                             self.metadata,
-                            self.heap_base,
                             self.max_pages,
                         );
                     } else {
-                        self.slabs[idx].add_page(
-                            page_addr,
-                            self.metadata,
-                            self.heap_base,
-                            self.max_pages,
-                        );
+                        self.slabs[idx].add_page(page_addr, self.metadata, self.max_pages);
                     }
                 } else {
                     // Cannot acquire page, fallback to system for this allocation
@@ -1109,7 +1151,7 @@ impl DynamicSlabHeap {
             }
 
             let ptr = self.slabs[idx]
-                .allocate_block(self.metadata, self.heap_base, self.max_pages)
+                .allocate_block(self.metadata, self.max_pages)
                 .unwrap();
             self.allocated += Self::SLAB_SIZES[idx];
             return Some(ptr);
@@ -1137,11 +1179,18 @@ impl DynamicSlabHeap {
     unsafe fn acquire_page(&mut self, slab_index: usize) -> Option<(usize, bool)> {
         if let Some((page, needs_init)) =
             self.page_pool
-                .take_page(slab_index, self.metadata, self.heap_base, self.max_pages)
+                .take_page(slab_index, self.metadata, self.max_pages)
         {
             return Some((page, needs_init));
         }
         let page_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+        if let Some(provider) = self.page_provider {
+            return (provider.alloc)().map(|allocation| {
+                let idx = alloc_meta_slot(allocation.addr, self.metadata, self.max_pages);
+                (*self.metadata.add(idx)).page_token = allocation.token;
+                (allocation.addr, true)
+            });
+        }
         if let Some(ptr) = self.system_allocator.allocate(&page_layout) {
             return Some((ptr.as_ptr() as usize, true));
         }
@@ -1156,8 +1205,7 @@ impl DynamicSlabHeap {
 
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: &Layout) -> usize {
         let ptr_addr = ptr.as_ptr() as usize;
-        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.heap_base, self.max_pages)
-        {
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.max_pages) {
             self.free_slab_block(ptr, slab_idx as usize)
         } else {
             let size = self.system_allocator.deallocate(ptr, layout.align());
@@ -1168,8 +1216,7 @@ impl DynamicSlabHeap {
 
     pub unsafe fn deallocate_unknown_align(&mut self, ptr: NonNull<u8>) -> usize {
         let ptr_addr = ptr.as_ptr() as usize;
-        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.heap_base, self.max_pages)
-        {
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.max_pages) {
             self.free_slab_block(ptr, slab_idx as usize)
         } else {
             let size = self.system_allocator.deallocate_unknown_align(ptr);
@@ -1182,17 +1229,17 @@ impl DynamicSlabHeap {
     /// return the page to TLSF.
     unsafe fn free_slab_block(&mut self, ptr: NonNull<u8>, idx: usize) -> usize {
         let (page_addr, page_empty) =
-            self.slabs[idx].free_block(ptr, self.metadata, self.heap_base);
+            self.slabs[idx].free_block(ptr, self.metadata, self.max_pages);
         self.allocated -= Self::SLAB_SIZES[idx];
 
         if page_empty {
-            self.slabs[idx].remove_page(page_addr, self.metadata, self.heap_base, self.max_pages);
+            self.slabs[idx].remove_page(page_addr, self.metadata, self.max_pages);
             self.page_pool.release_page(
                 page_addr,
                 idx,
                 &mut self.system_allocator,
+                self.page_provider,
                 self.metadata,
-                self.heap_base,
                 self.max_pages,
             );
         }
@@ -1207,8 +1254,7 @@ impl DynamicSlabHeap {
         new_layout: &Layout,
     ) -> Option<NonNull<u8>> {
         let ptr_addr = ptr.as_ptr() as usize;
-        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.heap_base, self.max_pages)
-        {
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.max_pages) {
             let idx = slab_idx as usize;
             if new_layout.size() <= Self::SLAB_SIZES[idx]
                 && Self::SLAB_SIZES[idx] % new_layout.align() == 0
@@ -1246,8 +1292,7 @@ impl DynamicSlabHeap {
         new_size: usize,
     ) -> Option<NonNull<u8>> {
         let ptr_addr = ptr.as_ptr() as usize;
-        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.heap_base, self.max_pages)
-        {
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.max_pages) {
             let idx = slab_idx as usize;
             if new_size <= Self::SLAB_SIZES[idx] {
                 return Some(ptr);
@@ -1293,8 +1338,7 @@ impl DynamicSlabHeap {
 
     pub fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
         let ptr_addr = ptr.as_ptr() as usize;
-        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.heap_base, self.max_pages)
-        {
+        if let Some(slab_idx) = ptr_is_slab(ptr_addr, self.metadata, self.max_pages) {
             Some(Self::SLAB_SIZES[slab_idx as usize])
         } else {
             self.system_allocator.size_of_allocation(ptr)
@@ -1303,7 +1347,7 @@ impl DynamicSlabHeap {
 
     pub fn get_max_free_block_size(&self) -> usize {
         let sys_free = self.system_allocator.get_max_free_block_size();
-        for i in (0..SLAB_ALLOCATOR_COUNT).rev() {
+        for i in (0..DYNAMIC_SLAB_ALLOCATOR_COUNT).rev() {
             if self.slabs[i].free_blocks > 0 {
                 return core::cmp::max(sys_free, Self::SLAB_SIZES[i]);
             }
@@ -1322,9 +1366,9 @@ impl DynamicSlabHeap {
             unsafe {
                 self.page_pool.reclaim_to_system(
                     &mut self.system_allocator,
+                    self.page_provider,
                     pages_needed,
                     self.metadata,
-                    self.heap_base,
                     self.max_pages,
                 );
             }
@@ -1337,16 +1381,16 @@ impl DynamicSlabHeap {
         unsafe {
             self.page_pool.reclaim_to_system(
                 &mut self.system_allocator,
+                self.page_provider,
                 usize::MAX,
                 self.metadata,
-                self.heap_base,
                 self.max_pages,
             );
         }
     }
 
     pub fn get_slab_stat(&self) -> (SlabStatData, usize, usize) {
-        let mut data = [(0usize, 0usize, 0usize, 0usize); SLAB_ALLOCATOR_COUNT];
+        let mut data = [(0usize, 0usize, 0usize, 0usize); DYNAMIC_SLAB_ALLOCATOR_COUNT];
         for (i, item) in data.iter_mut().enumerate() {
             let bpp = blocks_per_page(Self::SLAB_SIZES[i]);
             let pages = self.slabs[i].total_blocks.div_ceil(bpp);
