@@ -30,6 +30,8 @@ pub const MMU_L1_DEVICE_BASES: &[u64] = &[0x0];
 pub const PHYS_DRAM_BASE: u64 = 0x4000_0000;
 pub const PHYS_DRAM_SIZE: u64 = 128 * 1024 * 1024;
 
-// Offset from the 2MiB-aligned base, published in the arm64 Image header.
-pub const TEXT_OFFSET: u64 =
-	blueos_kconfig::CONFIG_KERNEL_PHYS_BASE as u64 % (2 * 1024 * 1024);
+// Offset of the kernel image from its 2MiB-aligned physical base, where the
+// image is linked (0x40280000 = 0x40200000 + 0x80000, see link.x). Published
+// in the arm64 Image header so that loaders keep the image at its linked
+// address instead of relocating it to the base of DRAM.
+pub const TEXT_OFFSET: u64 = 0x80000;

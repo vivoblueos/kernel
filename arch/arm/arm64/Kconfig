@@ -1,9 +1,5 @@
 menu "Aarch64 Configuration"
 
-config KERNEL_PHYS_BASE
-    hex "the physical base address of kernel space"
-    default 0
-
 config NUM_IRQS
     int
 
