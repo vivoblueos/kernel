@@ -98,9 +98,8 @@ macro_rules! enter_el1 {
         // Enable AArch64 in EL1.
         // Calculate per-core stack offset
         // We reserve the top 4KB of each core's 16KB chunk for EL2.
-        ldr x1, ={stack_end}
-        ldr x12, ={kernel_virt_start}
-        sub x1, x1, x12
+        adrp x1, {stack_end}
+        add x1, x1, :lo12:{stack_end}
         mrs x9, mpidr_el1
         and x9, x9, #0xff
         lsl x9, x9, #14
@@ -115,18 +114,24 @@ macro_rules! enter_el1 {
         mov x0, #0x3C5
         msr spsr_el2, x0
         // Enable EL1 MMU while still in EL2.
-        ldr x4, ={tmp_stack}
-        ldr x12, ={kernel_virt_start}
-        sub x4, x4, x12
+        adrp x4, {tmp_stack}
+        add x4, x4, :lo12:{tmp_stack}
         add x4, x4, #0x1000
         mov sp, x4
         bl {init_el1_enable_mmu}
         bl {init_el1_boot_linearmap}
         mov sp, x19
         // Set EL1 entry and enter.
-        ldr x0, ={stack_start}
-        ldr x1, ={stack_end}
-        ldr x2, ={cont}
+        ldr x12, ={kernel_virt_start}
+        adrp x0, {stack_start}
+        add x0, x0, :lo12:{stack_start}
+        add x0, x0, x12
+        adrp x1, {stack_end}
+        add x1, x1, :lo12:{stack_end}
+        add x1, x1, x12
+        adrp x2, {cont}
+        add x2, x2, :lo12:{cont}
+        add x2, x2, x12
         // adr is PC-relative
         adr x3, {entry}
         msr elr_el2, x3
