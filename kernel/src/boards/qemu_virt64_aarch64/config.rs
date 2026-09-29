@@ -31,5 +31,4 @@ pub const PHYS_DRAM_BASE: u64 = 0x4000_0000;
 pub const PHYS_DRAM_SIZE: u64 = 128 * 1024 * 1024;
 
 // Offset from the 2MiB-aligned base, published in the arm64 Image header.
-pub const TEXT_OFFSET: u64 =
-	blueos_kconfig::CONFIG_KERNEL_PHYS_BASE as u64 % (2 * 1024 * 1024);
+pub const TEXT_OFFSET: u64 = blueos_kconfig::CONFIG_KERNEL_PHYS_BASE as u64 % (2 * 1024 * 1024);
