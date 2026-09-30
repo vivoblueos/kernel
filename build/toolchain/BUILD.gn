@@ -30,8 +30,9 @@ blueos_toolchain("blueos_riscv64") {
   }
 }
 
-# We still keep toolchains without the `blueos_` prefix since `blueos_*` toolchains
-# are using different relocation models in their default configuration.
+# We still keep toolchains without the `blueos_` prefix since `blueos_*`
+# toolchains are using different relocation models in their default
+# configuration.
 blueos_toolchain("thumbv7m") {
   target = "thumbv7m-none-eabi"
   cc = "clang --target=${target}"
@@ -174,8 +175,25 @@ blueos_toolchain("host") {
   rustc = "rustc"
   clippy_driver = "clippy-driver"
 
-  # miri only supports few targets (like x86_64 and aarch64).
-  miri_sysroot = getenv("MIRI_SYSROOT")
+  toolchain_args = {
+    current_os = host_os
+    current_cpu = host_cpu
+  }
+}
+
+# Rust dependencies interpreted by Miri must themselves be compiled by the
+# matching Miri driver so their rlibs contain complete MIR. This toolchain uses
+# the host target and is only entered through miri_test targets.
+blueos_toolchain("miri") {
+  cc = "clang"
+  cxx = "clang++"
+  ld = cc
+  ar = "llvm-ar"
+  objcopy = "llvm-objcopy"
+  rustc = miri_path
+  clippy_driver = "clippy-driver"
+  miri_mode = true
+  miri_sysroot_path = miri_sysroot
   toolchain_args = {
     current_os = host_os
     current_cpu = host_cpu
