@@ -315,26 +315,66 @@ impl<const DEVICE_ADDRESS: usize, T: Sync> Esp32UsbSerialIsr<DEVICE_ADDRESS, T> 
             tx_isr,
         }
     }
-}
 
-impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
-    fn service_isr(&self) {
-        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial<DEVICE_ADDRESS>) };
-        let intr = uart.get_interrupt();
+    /// Fans `intr` out to the registered handlers.
+    fn run_handlers(&self, intr: super::InterruptType) {
         match intr {
             super::InterruptType::Rx => {
-                uart.clear_interrupt(intr);
                 if let Some(rx_isr) = self.rx_isr {
                     rx_isr(self.data);
                 }
             }
             super::InterruptType::Tx => {
-                uart.clear_interrupt(intr);
+                if let Some(tx_isr) = self.tx_isr {
+                    tx_isr(self.data);
+                }
+            }
+            super::InterruptType::All => {
+                if let Some(rx_isr) = self.rx_isr {
+                    rx_isr(self.data);
+                }
                 if let Some(tx_isr) = self.tx_isr {
                     tx_isr(self.data);
                 }
             }
             _ => {}
         }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
+    /// Serves the pending sources in one pass, like the upstream drivers of
+    /// this peripheral: ESP-IDF's `usb_serial_jtag_isr_handler_default` reads
+    /// the status mask once and clears each pending source once, and Zephyr's
+    /// `uart_esp32_isr` clears the whole mask in a single write before
+    /// dispatching the handlers.
+    ///
+    /// `get_interrupt` reads INT_ST alone, so the RX and the TX bit can be
+    /// latched together (`All`) even when just one of them raised the line:
+    /// the TX bit re-latches while the shell echoes and `Serial::open` only
+    /// cleared `All` once at boot. `All` used to fall into a `_ => {}` arm
+    /// that acknowledged nothing, leaving INT_ST set for good - the line then
+    /// stayed asserted and re-entered this ISR forever on a level-triggered
+    /// board, or the RX source never fired again on an edge-triggered one,
+    /// silencing the console.
+    ///
+    /// The clear runs before the handlers, so a source that latches while a
+    /// handler runs survives it, re-asserts the interrupt line and is served
+    /// by the next ISR entry - clearing afterwards would wipe it. No re-check
+    /// loop is needed for that: the level-triggered line re-enters this ISR on
+    /// its own, and the TX source cannot spin it because `Serial` disables
+    /// `InterruptType::Tx` once the software ring drains, the same way
+    /// ESP-IDF disables the source when its TX ring is empty.
+    fn service_isr(&self) {
+        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial<DEVICE_ADDRESS>) };
+        let intr = uart.get_interrupt();
+        match intr {
+            super::InterruptType::Rx => uart.clear_interrupt(super::InterruptType::Rx),
+            super::InterruptType::Tx => uart.clear_interrupt(super::InterruptType::Tx),
+            super::InterruptType::All => uart.clear_interrupt(super::InterruptType::All),
+            // Nothing pending that this ISR serves.
+            _ => return,
+        }
+        self.run_handlers(intr);
     }
 }
