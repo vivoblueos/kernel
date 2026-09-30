@@ -834,9 +834,29 @@ define_syscall_handler!(
     }
 );
 
+define_syscall_handler!(
+meminfo(info: *mut crate::allocator::MemoryInfo) -> c_long {
+    // 出参指针模式：内核把统计结果写进用户态缓冲区（本系统用户/内核同地址空间）
+    // 注意：MemoryInfo 是 3 个 usize 的普通 struct，同 target 编译布局一致；
+    // 生产代码应使用 #[repr(C)] 或共享的类型定义来保证 ABI。
+    if info.is_null() {
+        return -(EINVAL as c_long);
+    }
+    let mi = crate::allocator::memory_info();
+    unsafe {
+        (*info).total = mi.total;
+        (*info).used = mi.used;
+        (*info).max_used = mi.max_used;
+    }
+    0
+});
+
 #[cfg(enable_syscall)]
 syscall_table! {
     (Echo, echo),
+    (Magic, magic),
+    (Uptime, uptime),
+    (MemInfo, meminfo),
     (Nop, nop),
     (GetTid, get_tid),
     (GetSchedParam, get_sched_param),
@@ -917,5 +937,7 @@ pub fn dispatch_syscall(ctx: &Context) -> usize {
 
 // Begin syscall modules.
 pub mod echo;
+pub mod magic;
 pub mod posix_timers;
+pub mod uptime;
 // End syscall modules.

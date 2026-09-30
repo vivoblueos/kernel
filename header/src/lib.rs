@@ -91,6 +91,9 @@ pub mod syscalls {
         TimerSetTime,
         TimerGetOverrun,
         Rename,
+        Magic,
+        Uptime,
+        MemInfo,
         LastNR,
     }
 }
