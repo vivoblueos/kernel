@@ -31,18 +31,23 @@ pub use vcpu::{Vcpu, VcpuManager, VcpuState};
 pub use vgic::init;
 
 use crate::{kearly_println, kprintln};
+use aarch64_cpu::{
+    asm::barrier::{isb, SY},
+    registers::{CNTV_CTL_EL0, ICC_CTLR_EL1, ICH_HCR_EL2},
+};
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 #[cfg_attr(compatible_old_toolchain, no_mangle)]
 #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
     unsafe {
-        let mut ctlr: u64;
-        core::arch::asm!("mrs {}, ICC_CTLR_EL1", out(reg) ctlr);
+        let mut ctlr = ICC_CTLR_EL1.get();
         if (ctlr & (1 << 1)) == 0 {
             // set EOImode.
             ctlr |= 1 << 1;
+            // ICC_CTLR_EL1: the crate only wraps it as Readable, so the write stays raw asm.
             core::arch::asm!("msr ICC_CTLR_EL1, {}", in(reg) ctlr);
-            core::arch::asm!("isb");
+            isb(SY);
         }
     }
 
@@ -79,10 +84,9 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
 
         if !is_enabled {
             unsafe {
-                let mut ctl: u64;
-                core::arch::asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
+                let mut ctl = CNTV_CTL_EL0.get();
                 ctl |= 1 << 1;
-                core::arch::asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
+                CNTV_CTL_EL0.set(ctl);
                 core::arch::asm!("msr ICC_EOIR1_EL1, {}", in(reg) iar);
                 core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) iar);
             }
@@ -137,13 +141,8 @@ pub fn virt_boot_linux() {
     unsafe {
         let current_el = hyper::get_current_el();
         if current_el == 2 {
-            let mut ich_hcr: u64;
-            core::arch::asm!("mrs {}, ich_hcr_el2", out(reg) ich_hcr);
-            if (ich_hcr & 1) == 0 {
-                ich_hcr |= 1;
-                core::arch::asm!("msr ich_hcr_el2, {}", in(reg) ich_hcr);
-                core::arch::asm!("isb");
-            }
+            ICH_HCR_EL2.modify(ICH_HCR_EL2::En.val(1));
+            isb(SY);
         }
     }
 

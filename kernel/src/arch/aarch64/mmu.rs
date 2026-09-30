@@ -40,12 +40,13 @@
 //
 // ============================================================================
 
-use crate::arch::aarch64::{
-    asm,
-    asm::DsbOptions,
-    registers::{
-        mair_el1::*, sctlr_el1::*, tcr_el1::*, ttbr0_el1::TTBR0_EL1, ttbr1_el1::TTBR1_EL1,
+use crate::arch::aarch64::asm;
+use aarch64_cpu::{
+    asm::{
+        barrier::{dsb, isb, SY},
+        sev, wfe,
     },
+    registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1},
 };
 use core::{
     mem, ptr,
@@ -319,8 +320,8 @@ static RUNTIME_LINEARMAP_PHYS: AtomicUsize = AtomicUsize::new(0);
 #[inline]
 fn flush_tlb_all() {
     asm::tlbi_all();
-    asm::dsb(DsbOptions::Sys);
-    asm::isb_sy();
+    dsb(SY);
+    isb(SY);
 }
 
 #[inline]
@@ -496,15 +497,11 @@ pub fn init_el1_enable_mmu() {
         PageTableManager::init();
         PAGETABLE_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
+        sev();
     } else {
         // Wait for CPU0 to finish page table initialization.
         while !PAGETABLE_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
+            wfe();
         }
     }
     // Set physical table base addr.
@@ -521,14 +518,14 @@ pub fn init_el1_enable_mmu() {
     MAIR_EL1.write(
         MAIR_EL1::Attr1_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc
             + MAIR_EL1::Attr1_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc
-            + MAIR_EL1::Attr0_Device::NonGathering_NonReordering_EarlyWriteAck,
+            + MAIR_EL1::Attr0_Device::nonGathering_nonReordering_EarlyWriteAck,
     );
     // Configure address translation related control information.
     TCR_EL1.write(
         TCR_EL1::TBI0::Used
             + TCR_EL1::IPS::Bits_32
             + TCR_EL1::TG0::KiB_4
-            + TCR_EL1::SH0::InnerShareable
+            + TCR_EL1::SH0::Inner
             + TCR_EL1::ORGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::IRGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::DisableTTBR1Walks
@@ -544,7 +541,7 @@ pub fn init_el1_enable_mmu() {
             + SCTLR_EL1::I::Cacheable
             + SCTLR_EL1::SA::Enable,
     );
-    asm::isb_sy();
+    isb(SY);
 }
 
 pub fn init_el1_boot_linearmap() {
@@ -553,15 +550,11 @@ pub fn init_el1_boot_linearmap() {
         PageTableManager::init_linearmap();
         LINEARMAP_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
+        sev();
     } else {
         // Wait for CPU0 to finish linearmap table initialization.
         while !LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
+            wfe();
         }
     }
 
@@ -569,7 +562,7 @@ pub fn init_el1_boot_linearmap() {
 
     TCR_EL1.modify(
         TCR_EL1::TG1::KiB_4
-            + TCR_EL1::SH1::InnerShareable
+            + TCR_EL1::SH1::Inner
             + TCR_EL1::ORGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::IRGN1::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL1::EPD1::EnableTTBR1Walks
@@ -625,27 +618,23 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
             }
         }
 
-        asm::dsb(DsbOptions::Sys);
+        dsb(SY);
 
         let runtime_linearmap_phys = kernel_virt_to_phys(runtime_linearmap as usize);
         RUNTIME_LINEARMAP_PHYS.store(runtime_linearmap_phys, Ordering::Release);
         RUNTIME_LINEARMAP_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe
-        unsafe {
-            core::arch::asm!("sev", options(nostack, nomem));
-        }
+        sev();
     } else {
         // Wait for CPU0 to finish runtime linearmap table initialization.
         while !RUNTIME_LINEARMAP_INIT_DONE.load(Ordering::Acquire) {
-            unsafe {
-                core::arch::asm!("wfe", options(nostack, nomem));
-            }
+            wfe();
         }
     }
 
     let runtime_linearmap_phys = RUNTIME_LINEARMAP_PHYS.load(Ordering::Acquire);
 
-    asm::dsb(DsbOptions::Sys);
+    dsb(SY);
     TTBR1_EL1.set(runtime_linearmap_phys as u64);
 
     flush_tlb_all();

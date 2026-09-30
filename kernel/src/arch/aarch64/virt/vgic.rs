@@ -14,8 +14,15 @@
 
 use super::VCPU_MANAGER;
 use crate::sync::SpinLock;
-use core::arch::asm;
+use aarch64_cpu::{
+    asm::barrier::{isb, SY},
+    registers::{
+        CNTV_CTL_EL0, ICC_SRE_EL2, ICH_HCR_EL2, ICH_LR0_EL2, ICH_LR1_EL2, ICH_LR2_EL2, ICH_LR3_EL2,
+        ICH_VMCR_EL2,
+    },
+};
 use spin::Once;
+use tock_registers::interfaces::{Readable, Writeable};
 
 const MAX_LR: usize = 4;
 const MAX_PENDING: usize = 64;
@@ -273,11 +280,10 @@ fn handle_gicr_write(vcpu_id: usize, offset: u64, val: u32) {
             // silent — no timer ticks → Guest scheduler can't wake processes.
             if (newly_enabled & (1 << 27)) != 0 {
                 unsafe {
-                    let mut ctl: u64;
-                    asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
+                    let mut ctl = CNTV_CTL_EL0.get();
                     ctl &= !(1u64 << 1);
-                    asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
-                    asm!("isb", options(nostack));
+                    CNTV_CTL_EL0.set(ctl);
+                    isb(SY);
                 }
             }
         }
@@ -339,21 +345,18 @@ fn handle_gicr_read(vcpu_id: usize, offset: u64) -> u32 {
 pub fn cpu_init(vcpu_id: usize) {
     unsafe {
         // 1. Enable System Register access for EL2 (ICC_SRE_EL2)
-        let mut sre: u64;
-        asm!("mrs {}, ICC_SRE_EL2", out(reg) sre);
+        let mut sre = ICC_SRE_EL2.get();
         if (sre & 0x9) != 0x9 {
             sre |= 0x9;
-            asm!("msr ICC_SRE_EL2, {}", in(reg) sre);
-            asm!("isb");
+            ICC_SRE_EL2.set(sre);
+            isb(SY);
         }
 
         // 2. Enable vGIC
-        let hcr: u64 = 1;
-        asm!("msr ICH_HCR_EL2, {}", in(reg) hcr);
+        ICH_HCR_EL2.set(1);
 
         // 3. Configure VMCR (Group 0/1 Enable)
-        let vmcr: u64 = 0x3;
-        asm!("msr ICH_VMCR_EL2, {}", in(reg) vmcr);
+        ICH_VMCR_EL2.set(0x3);
 
         // Clear all LRs
         for i in 0..MAX_LR {
@@ -554,8 +557,9 @@ pub fn sync(vcpu_id: usize) {
             // DIR on an Inactive interrupt is a safe no-op per GICv3 spec.
             if hw != 0 && state != 0 {
                 let p_intid = (lr_val & 0x3FF) as u64;
+                // ICC_DIR_EL1 is not wrapped by the crate, so the write stays raw asm.
                 core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) p_intid, options(nostack));
-                core::arch::asm!("isb", options(nostack));
+                isb(SY);
             }
 
             if state == 0 {
@@ -602,15 +606,13 @@ unsafe fn read_lr(index: usize) -> u64 {
 
     #[cfg(not(test))]
     {
-        let val: u64;
         match index {
-            0 => asm!("mrs {}, ICH_LR0_EL2", out(reg) val),
-            1 => asm!("mrs {}, ICH_LR1_EL2", out(reg) val),
-            2 => asm!("mrs {}, ICH_LR2_EL2", out(reg) val),
-            3 => asm!("mrs {}, ICH_LR3_EL2", out(reg) val),
-            _ => val = 0,
+            0 => ICH_LR0_EL2.get(),
+            1 => ICH_LR1_EL2.get(),
+            2 => ICH_LR2_EL2.get(),
+            3 => ICH_LR3_EL2.get(),
+            _ => 0,
         }
-        val
     }
 }
 
@@ -624,10 +626,10 @@ unsafe fn write_lr(index: usize, val: u64) {
     #[cfg(not(test))]
     {
         match index {
-            0 => asm!("msr ICH_LR0_EL2, {}", in(reg) val),
-            1 => asm!("msr ICH_LR1_EL2, {}", in(reg) val),
-            2 => asm!("msr ICH_LR2_EL2, {}", in(reg) val),
-            3 => asm!("msr ICH_LR3_EL2, {}", in(reg) val),
+            0 => ICH_LR0_EL2.set(val),
+            1 => ICH_LR1_EL2.set(val),
+            2 => ICH_LR2_EL2.set(val),
+            3 => ICH_LR3_EL2.set(val),
             _ => (),
         }
     }

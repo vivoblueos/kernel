@@ -12,75 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::arch::{asm, naked_asm};
-
-/// Represents different DSB options for the AArch64 architecture
-#[derive(Debug, Clone, Copy)]
-pub enum DsbOptions {
-    InnerShareable,
-    OuterShareable,
-    NonShareable,
-    Sys,
-}
-
-#[inline]
-pub fn wait_for_interrupt() {
-    // SAFETY: This doesn't access memory in any way.
-    unsafe {
-        asm!("wfi", options(nomem, nostack));
-    }
-}
-
-#[inline]
-pub fn signal_event() {
-    // SAFETY: This doesn't access memory in any way.
-    unsafe {
-        asm!("sev", options(nomem, nostack));
-    }
-}
-
-#[inline]
-pub fn wait_for_event() {
-    // SAFETY: This doesn't access memory in any way.
-    unsafe {
-        asm!("wfe", options(nomem, nostack));
-    }
-}
-
-#[inline]
-pub fn isb() {
-    // SAFETY: This doesn't access memory in any way.
-    unsafe {
-        asm!("isb", options(nostack, nomem, preserves_flags));
-    }
-}
-
-#[inline]
-pub fn isb_sy() {
-    // SAFETY: This doesn't access memory in any way.
-    unsafe {
-        asm!("isb sy", options(nostack, nomem, preserves_flags));
-    }
-}
-
-/// Execute a DSB instruction with the given option
-pub fn dsb(option: DsbOptions) {
-    // SAFETY: This doesn't access memory in any way.
-    unsafe {
-        match option {
-            DsbOptions::InnerShareable => {
-                asm!("dsb ish", options(nostack, nomem, preserves_flags))
-            }
-            DsbOptions::OuterShareable => {
-                asm!("dsb osh", options(nostack, nomem, preserves_flags))
-            }
-            DsbOptions::NonShareable => {
-                asm!("dsb nsh", options(nostack, nomem, preserves_flags))
-            }
-            DsbOptions::Sys => asm!("dsb sy", options(nostack, nomem, preserves_flags)),
-        }
-    }
-}
+use core::arch::asm;
 
 // clear tlb
 pub fn tlbi_all() {
