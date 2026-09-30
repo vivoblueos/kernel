@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    hyper::{read_hcr_el2, write_hcr_el2},
-    vgic,
+use super::vgic;
+use aarch64_cpu::{
+    asm::barrier::{isb, SY},
+    registers::HCR_EL2,
 };
-use core::arch::asm;
-
-/// HCR_EL2_VI: Enable virtual IRQ.
-const HCR_EL2_VI: u64 = 1 << 7;
-/// HCR_EL2_VF: Enable virtual FIQ.
-const HCR_EL2_VF: u64 = 1 << 6;
+use tock_registers::interfaces::ReadWriteable;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VcpuState {
@@ -225,22 +221,16 @@ impl Vcpu {
 
     pub fn inject_irq(&mut self) {
         self.pending_irq = true;
-        let hcr = read_hcr_el2();
-        write_hcr_el2(hcr | HCR_EL2_VI);
+        HCR_EL2.modify(HCR_EL2::VI.val(1));
 
-        unsafe {
-            core::arch::asm!("isb", options(nomem, nostack));
-        }
+        isb(SY);
     }
 
     pub fn inject_fiq(&mut self) {
         self.pending_fiq = true;
-        let hcr = read_hcr_el2();
-        write_hcr_el2(hcr | HCR_EL2_VF);
+        HCR_EL2.modify(HCR_EL2::VF.val(1));
 
-        unsafe {
-            core::arch::asm!("isb", options(nomem, nostack));
-        }
+        isb(SY);
     }
 
     #[inline]

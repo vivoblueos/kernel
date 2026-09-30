@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::arch::aarch64::{
-    registers::{hcr_el2::HCR_EL2, sctlr_el2::SCTLR_EL2, spsr_el2::SPSR_EL2},
-    virt::{guest, mmu_el2, vector, vgic},
+use crate::arch::aarch64::virt::{guest, mmu_el2, vector, vgic};
+use aarch64_cpu::{
+    asm::barrier::{dsb, isb, SY},
+    registers::{
+        CurrentEL, CNTHCTL_EL2, CNTP_CTL_EL0, CNTVOFF_EL2, ELR_EL2, ESR_EL2, HCR_EL2, ICH_HCR_EL2,
+        SCTLR_EL2, SPSR_EL2, VBAR_EL2,
+    },
 };
-use tock_registers::interfaces::{Readable, Writeable};
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 #[inline]
 pub fn get_current_el() -> u64 {
-    let current_el: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, currentel", out(reg) current_el);
-    }
-    (current_el >> 2) & 0x3
+    CurrentEL.read(CurrentEL::EL)
 }
 
 #[inline]
@@ -39,50 +39,32 @@ pub fn write_hcr_el2(val: u64) {
 
 #[inline]
 pub fn read_vbar_el2() -> u64 {
-    let vbar: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, vbar_el2", out(reg) vbar);
-    }
-    vbar
+    VBAR_EL2.get()
 }
 
 #[inline]
 pub fn write_vbar_el2(val: u64) {
-    unsafe {
-        core::arch::asm!("msr vbar_el2, {}", in(reg) val);
-    }
+    VBAR_EL2.set(val);
 }
 
 #[inline]
 pub fn read_esr_el2() -> u64 {
-    let esr: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, esr_el2", out(reg) esr);
-    }
-    esr
+    ESR_EL2.get()
 }
 
 #[inline]
 pub fn read_elr_el2() -> u64 {
-    let elr: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, elr_el2", out(reg) elr);
-    }
-    elr
+    ELR_EL2.get()
 }
 
 #[inline]
 fn configure_hcr_el2() {
-    HCR_EL2.write(HCR_EL2::RW::EL1AArch64);
+    HCR_EL2.write(HCR_EL2::RW::EL1IsAarch64);
 }
 
 #[inline]
 pub fn read_spsr_el2() -> u64 {
-    let spsr: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, spsr_el2", out(reg) spsr);
-    }
-    spsr
+    SPSR_EL2.get()
 }
 
 #[inline]
@@ -91,26 +73,18 @@ pub fn configure_hcr_el2_for_guest() {
     super::mmu_s2::init_stage2(guest::LINUX_KERNEL_LOAD_ADDR, guest::LINUX_RAM_SIZE);
     HCR_EL2.write(
         HCR_EL2::VM::Enable
-            + HCR_EL2::RW::EL1AArch64
-            + HCR_EL2::IMO::EL2Handled
-            + HCR_EL2::FMO::EL2Handled
-            + HCR_EL2::AMO::EL2Handled
-            + HCR_EL2::TSC::Trap,
+            + HCR_EL2::RW::EL1IsAarch64
+            + HCR_EL2::IMO::EnableVirtualIRQ
+            + HCR_EL2::FMO::EnableVirtualFIQ
+            + HCR_EL2::AMO.val(1)
+            + HCR_EL2::TSC::EnableTrapEl1SmcToEl2,
     );
-    unsafe {
-        core::arch::asm!("isb");
-    }
+    isb(SY);
 }
 
 #[inline]
 fn configure_vector_table(vector_base: usize) {
-    unsafe {
-        core::arch::asm!(
-            "msr vbar_el2, {}",
-            in(reg) vector_base as u64,
-            options(nostack)
-        );
-    }
+    VBAR_EL2.set(vector_base as u64);
 }
 
 #[inline]
@@ -123,16 +97,10 @@ fn configure_timer_el2() {
     // CNTHCTL_EL2: control register for EL2 access to the physical timer and counter registers
     // Bit 0: EL1PCTEN (don't trap EL1 access to the physical counter)
     // Bit 1: EL1PCEN (don't trap EL1 access to the physical timer)
-    let cnthctl: u64 = 0x3;
-    unsafe {
-        core::arch::asm!("msr CNTHCTL_EL2, {}", in(reg) cnthctl);
-    }
+    CNTHCTL_EL2.set(0x3);
 
     // CNTVOFF_EL2: virtual timer offset register
-    let cntvoff: u64 = 0;
-    unsafe {
-        core::arch::asm!("msr CNTVOFF_EL2, {}", in(reg) cntvoff);
-    }
+    CNTVOFF_EL2.set(0);
 }
 
 #[inline]
@@ -142,23 +110,17 @@ unsafe fn deactivate_irq(intid: u64) {
 
 #[inline]
 pub fn shutdown_guest() {
-    HCR_EL2.write(HCR_EL2::RW::EL1AArch64 + HCR_EL2::SWIO::Set);
+    HCR_EL2.write(HCR_EL2::RW::EL1IsAarch64 + HCR_EL2::SWIO.val(1));
     unsafe {
         // Disable vGIC CPU interface
-        let mut ich_hcr: u64;
-        core::arch::asm!(
-            "mrs {tmp}, ich_hcr_el2",
-            "bic {tmp}, {tmp}, #1",
-            "msr ich_hcr_el2, {tmp}",
-            "isb",
-            tmp = out(reg) ich_hcr,
-            options(nostack)
-        );
+        ICH_HCR_EL2.modify(ICH_HCR_EL2::En.val(0));
+        isb(SY);
 
         // Clear all List Registers to invalidate pending/active virtual interrupts
         vgic::clear_all_lrs();
 
         // Immediately restore EOImode=0 so EOI both drops priority AND deactivates.
+        // ICC_CTLR_EL1: the crate only wraps it as Readable, so the write stays raw asm.
         let mut ctlr: u64;
         core::arch::asm!(
             "mrs {tmp2}, ICC_CTLR_EL1",
@@ -183,9 +145,8 @@ pub fn shutdown_guest() {
 
         // Re-enable Host physical timer (Guest may have disabled CNTP_CTL_EL0).
         // Enable=1, IMASK=0 so IRQ 30 fires for Host scheduler.
-        let cntp_ctl: u64 = 1;
-        core::arch::asm!("msr CNTP_CTL_EL0, {}", in(reg) cntp_ctl, options(nostack));
-        core::arch::asm!("isb", options(nostack));
+        CNTP_CTL_EL0.set(1);
+        isb(SY);
     }
 }
 
@@ -195,10 +156,8 @@ pub fn hyp_init() {
     configure_hcr_el2();
     configure_timer_el2();
     mmu_el2::enable_el2_mmu();
-    unsafe {
-        core::arch::asm!("dsb sy", options(nostack));
-        core::arch::asm!("isb sy", options(nostack));
-    }
+    dsb(SY);
+    isb(SY);
 
     let vector_base = vector::get_vector_table_addr();
     configure_vector_table(vector_base);
@@ -209,8 +168,6 @@ pub fn hyp_init() {
     let hcr_val: u64 = (1 << 31) | (1 << 1);
     write_hcr_el2(hcr_val);
 
-    unsafe {
-        core::arch::asm!("dsb sy", options(nostack));
-        core::arch::asm!("isb sy", options(nostack));
-    }
+    dsb(SY);
+    isb(SY);
 }

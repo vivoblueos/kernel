@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{irq, registers::esr_el1::ESR_EL1, Context, NR_SWITCH};
+use super::{irq, Context, NR_SWITCH};
 use crate::{
     arch::aarch64::{disable_local_irq, enable_local_irq},
     scheduler::{self, ContextSwitchHookHolder},
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
 };
+use aarch64_cpu::registers::ESR_EL1;
 use core::{
     arch::{asm, naked_asm},
     mem::offset_of,
