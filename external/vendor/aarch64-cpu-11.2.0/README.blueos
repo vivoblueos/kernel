@@ -1,0 +1,10 @@
+Name: aarch64-cpu
+URL: https://crates.io/crates/aarch64-cpu
+Version: 11.2.0
+Revision: 2a0512591970e019c86f0e2572d4f327a5c8bf47
+License: Apache-2.0
+License File: //external/vendor/aarch64-cpu-11.2.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Low level access to processors using the AArch64 execution state
