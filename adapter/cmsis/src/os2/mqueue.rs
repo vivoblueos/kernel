@@ -65,7 +65,21 @@ pub extern "C" fn osMessageQueueNew(
             core::ptr::null_mut(),
         ))
     } else {
-        if attr_ref.mq_size < ((msg_size + core::mem::size_of::<usize>() as u32) * msg_count) {
+        // The kernel lays the ring buffer out as
+        // `(align_up_size(msg_size, size_of::<usize>()) + size_of::<usize>()) * msg_count`
+        // bytes, so the check must mirror that layout exactly. All operands
+        // are C ABI u32 values: the old
+        // `(msg_size + size_of::<usize>()) * msg_count` skipped the alignment
+        // padding and could wrap around (for example msg_size 0xffff_fff8
+        // with msg_count 2), letting an undersized `mq_mem` pass and turning
+        // the queue into an out-of-bounds access on the caller's buffer.
+        // Compute in u64 and reject on overflow instead.
+        const ALIGN: u64 = core::mem::size_of::<usize>() as u64;
+        let node_size = ((u64::from(msg_size) + ALIGN - 1) & !(ALIGN - 1)) + ALIGN;
+        let Some(need) = node_size.checked_mul(u64::from(msg_count)) else {
+            return ptr::null_mut();
+        };
+        if u64::from(attr_ref.mq_size) < need {
             return ptr::null_mut();
         }
         Arc::new(MessageQueue::new(
@@ -395,6 +409,56 @@ mod tests {
             ),
             (count as u32, node_size as u32)
         );
+    }
+
+    #[test]
+    fn test_os_queue_new_rejects_mq_size_overflow() {
+        let mut attr = osMessageQueueAttr_t {
+            name: ptr::null(),
+            attr_bits: 0,
+            cb_mem: ptr::null_mut(),
+            cb_size: 0,
+            mq_mem: ptr::null_mut(),
+            mq_size: 0,
+        };
+        let mut mq_mem = [0u8; 64];
+        attr.mq_mem = mq_mem.as_mut_ptr() as *mut core::ffi::c_void;
+        attr.mq_size = 64;
+        // The kernel needs
+        // `(align_up_size(msg_size, size_of::<usize>()) + size_of::<usize>()) * msg_count`
+        // bytes for the ring buffer. (0xffff_fff8 + 8) * 2 wraps to 0 in u32
+        // and used to pass the check, laying an 8 GiB ring buffer on top of a
+        // 64 byte buffer.
+        assert!(osMessageQueueNew(2, 0xffff_fff8, &attr).is_null());
+        // The alignment padding must be counted too: 64 messages of 5 bytes
+        // need (align_up(5, align) + align) * 64 bytes, which does not fit
+        // into 64 bytes, while the old check only required (5 + align) * 64.
+        assert!(osMessageQueueNew(64, 5, &attr).is_null());
+        // A queue that fits into the provided memory is still accepted and
+        // stays usable.
+        let queue_id = osMessageQueueNew(4, 8, &attr);
+        assert!(!queue_id.is_null());
+        assert_eq!(
+            (
+                osMessageQueueGetCapacity(queue_id),
+                osMessageQueueGetMsgSize(queue_id)
+            ),
+            (4, 8)
+        );
+        let msg = [0xa5u8; 8];
+        let result = osMessageQueuePut(queue_id, msg.as_ptr() as *const core::ffi::c_void, 0, 0);
+        assert_eq!(result, osStatus_t_osOK);
+        let mut out = [0u8; 8];
+        let result = osMessageQueueGet(
+            queue_id,
+            out.as_mut_ptr() as *mut core::ffi::c_void,
+            core::ptr::null_mut(),
+            0,
+        );
+        assert_eq!(result, osStatus_t_osOK);
+        assert_eq!(out, msg);
+        let result = osMessageQueueDelete(queue_id);
+        assert_eq!(result, osStatus_t_osOK);
     }
 
     #[test]
