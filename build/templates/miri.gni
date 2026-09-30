@@ -12,56 +12,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This template offers syntactic sugar for rust_library, rust_proc_macro target.
+import("//build/templates/rust.gni")
+
+# Build and interpret a Rust test through the dedicated Miri toolchain.
+#
+# The default-toolchain target is a forwarding group. The actual Rust target is
+# instantiated under //build/toolchain:miri, so all of its Rust dependencies
+# are rebuilt by Miri with complete MIR instead of reusing normal target rlibs.
 
 template("miri_test") {
-  action(target_name) {
-    testonly = true
-    script = "//build/scripts/miri/run_miri.py"
-    outputs = [ "$target_gen_dir/miri_test.stamp" ]
-
-    deps = []
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
+  if (current_toolchain == default_toolchain) {
+    not_needed(invoker, "*")
+    group(target_name) {
+      testonly = true
+      deps = [ ":${target_name}(//build/toolchain:miri)" ]
     }
+  } else {
+    assert(current_toolchain == "//build/toolchain:miri",
+           "miri_test may only use the default or Miri toolchain")
 
-    meta_args = []
-    meta_label = get_label_info(":$target_name", "label_no_toolchain")
-    meta_args += [ meta_label ]  # target label
-    meta_args += [ rebase_path(root_build_dir, "//") ]  # output dir
-    meta_args += [ rebase_path("//") ]  # fixed cwd in .py
+    build_rust(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "crate_name",
+                               "deps",
+                               "inputs",
+                               "rustenv",
+                             ])
 
-    miri_flags = []
-    if (defined(invoker.extra_miri_flags)) {
-      miri_flags += invoker.extra_miri_flags
+      crate_type = "bin"
+      testonly = true
+      sources = [ invoker.crate ]
+      rustflags = [ "--test" ]
+      if (defined(invoker.extra_miri_flags)) {
+        rustflags += invoker.extra_miri_flags
+      }
+      if (defined(invoker.configs)) {
+        configs += invoker.configs
+      }
+      if (defined(invoker.public_configs)) {
+        public_configs += invoker.public_configs
+      }
     }
-
-    test_args = []
-    if (defined(invoker.test_name) && invoker.test_name != "") {
-      test_args += [ invoker.test_name ]
-    }
-
-    miri_args = []
-    miri_sysroot =
-        getenv("MIRI_SYSROOT")  # need to set this env on your own. note: miri
-                                # needs std with full MIR which can be compiled
-                                # with -Zalways-encode-mir flag
-    if (miri_sysroot != "") {
-      miri_args += [
-        "--sysroot",
-        miri_sysroot,
-      ]
-    }
-
-    args = []
-    args += meta_args
-    args += miri_flags
-    args += [ rebase_path(invoker.crate, "//") ]
-    args += miri_args
-    args += [
-      "--",
-      "--nocapture",
-    ]
-    args += test_args
   }
 }

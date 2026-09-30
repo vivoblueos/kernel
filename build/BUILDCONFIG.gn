@@ -15,6 +15,12 @@
 declare_args() {
   build_type = "debug"
 
+  # Host Miri used by the dedicated Miri toolchain. Keep these empty/defaulted
+  # for ordinary builds; they are only consumed when a miri_test target is
+  # requested.
+  miri_path = "miri"
+  miri_sysroot = getenv("MIRI_SYSROOT")
+
   # We are using "board" to determine which toolchain to use, so we
   # don't rely on target_cpu & target_os to make build decision. For
   # this reason, we don't set target_cpu & target_os. However, we

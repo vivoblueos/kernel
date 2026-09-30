@@ -14,88 +14,77 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
+from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import sys
 
 
-def get_all_deps(target, out_dir, cur_cwd):
-
-    command_and_args = ["gn", "desc", out_dir, target, "deps", "--all"]
-    result = subprocess.run(
-        command_and_args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=cur_cwd
-    )  # collect all deps' lib.rs path (including direct deps and indirect deps)
-    if result.returncode != 0:
-        sys.stderr.write(
-            f"gn desc failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}\n"
-        )
-        sys.exit(result.returncode)
-
-    deps = [
-        line.strip() for line in result.stdout.splitlines()
-        if line.strip().startswith("//")
-    ]
-    return deps
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Compile a Miri dependency or interpret a Miri test")
+    parser.add_argument("--mode", choices=("compile", "test"), required=True)
+    parser.add_argument("--miri", required=True)
+    parser.add_argument("--sysroot", required=True)
+    parser.add_argument("--stamp")
+    parser.add_argument("--aux-output", action="append", default=[])
+    parser.add_argument("rustc_args", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if args.rustc_args and args.rustc_args[0] == "--":
+        args.rustc_args.pop(0)
+    return args
 
 
-def deps_to_extern_flags(deps, out_dir):
-    flags = []
-    for dep in deps:
-
-        crate_name = dep.split(":")[-1]
-        rlib_path = os.path.join(out_dir, "obj",
-                                 dep.strip("//").replace(":", "/"),
-                                 f"lib{crate_name}.rlib"
-                                 )  # same as in blueos.gni toolchain template
-
-        flags.extend(["--extern", f"{crate_name}={rlib_path}"])
-    return flags
+def fail(message):
+    print(f"Miri GN error: {message}", file=sys.stderr)
+    return 1
 
 
 def main():
-    if len(sys.argv) < 5:
-        sys.stderr.write(
-            "Usage: script.py <target> <outdir> <project_root> <path_to_lib.rs> [extra miri args]\n"
-        )
-        return 1
+    args = parse_args()
+    if not args.sysroot:
+        return fail(
+            "miri_sysroot is empty; set MIRI_SYSROOT before gn gen or pass "
+            "miri_sysroot=\"...\" in GN args")
+    if not Path(args.sysroot).is_dir():
+        return fail(f"Miri sysroot does not exist: {args.sysroot}")
+    if shutil.which(args.miri) is None:
+        return fail(f"Miri executable was not found: {args.miri}")
+    if args.mode == "test" and not args.stamp:
+        return fail("--stamp is required in test mode")
 
-    target = sys.argv[1]
-    out_dir = sys.argv[2]
-    project_root = sys.argv[3]
-    lib_path = sys.argv[4]
+    command = [args.miri, "--sysroot", args.sysroot, *args.rustc_args]
+    if args.mode == "test":
+        command.extend(("--", "--nocapture"))
 
+    env = os.environ.copy()
+    if args.mode == "compile":
+        env["MIRI_BE_RUSTC"] = "target"
+    else:
+        env.pop("MIRI_BE_RUSTC", None)
+
+    print(f"Executing command: {shlex.join(command)}", flush=True)
     try:
-        deps = get_all_deps(target, out_dir, project_root)
+        result = subprocess.run(command, env=env, check=False)
+    except OSError as error:
+        return fail(str(error))
+    if result.returncode != 0:
+        return result.returncode
 
-        extern_flags = deps_to_extern_flags(deps, out_dir)
-
-        command_and_args = ["miri", "--edition=2021", "--test", lib_path
-                            ] + extern_flags + sys.argv[5:]
-
-        print(f"Executing command: {' '.join(command_and_args)}")
-
-        process = subprocess.Popen(command_and_args,
-                                   env=os.environ,
-                                   cwd=project_root)
-        process.wait()
-
-        if process.returncode != 0:
-            sys.stderr.write(
-                f"\nCommand failed with exit code {process.returncode}\n")
-            sys.exit(process.returncode)
-
-    except FileNotFoundError:
-        sys.stderr.write(
-            "Error: 'miri' command not found. Please ensure it's in your PATH.\n"
-        )
-        sys.exit(1)
-    except Exception as e:
-        sys.stderr.write(f"An unexpected error occurred: {e}\n")
-        sys.exit(1)
+    if args.mode == "test":
+        stamp = Path(args.stamp)
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        temporary_stamp = stamp.with_suffix(stamp.suffix + ".tmp")
+        temporary_stamp.write_text("Miri test passed\n", encoding="utf-8")
+        temporary_stamp.replace(stamp)
+    for output_name in args.aux_output:
+        output = Path(output_name)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.touch()
+    return 0
 
 
 if __name__ == '__main__':

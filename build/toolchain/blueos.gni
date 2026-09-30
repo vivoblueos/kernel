@@ -368,31 +368,43 @@ template("blueos_toolchain") {
     # {{target_output_name}}/lib{{crate_name}}.{{output_extension}}.
     tool("rust_bin") {
       depfile = "{{target_out_dir}}/{{target_output_name}}.d"
-      mapfile = "{{target_out_dir}}/{{target_output_name}}.map"
-      clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
-      binfile = "{{output_dir}}/{{target_output_name}}.bin"
       outfile = "{{output_dir}}/{{target_output_name}}"
 
-      clippy_command = "{{rustenv}} ${clippy_driver} --crate-name {{crate_name}} --crate-type {{crate_type}} {{rustflags}} ${clippy_lint_flags} {{source}} {{externs}} {{rustdeps}} -o ${outfile}.clippy"
+      if (defined(miri_mode) && miri_mode) {
+        clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
+        miri_runner = rebase_path("//build/scripts/miri/run_miri.py")
+        command = "{{rustenv}} python3 ${miri_runner} --mode test --miri ${rustc} --sysroot '${miri_sysroot_path}' --stamp ${outfile} --aux-output ${clippy_rspfile} -- --crate-name {{crate_name}} --crate-type {{crate_type}} --emit=dep-info=$depfile,link {{rustflags}} -Copt-level=0 -Cdebuginfo=0 -o ${outfile} {{source}} {{externs}} {{rustdeps}}"
+        description = "MIRI ${outfile}"
+        outputs = [
+          outfile,
+          clippy_rspfile,
+        ]
+      } else {
+        mapfile = "{{target_out_dir}}/{{target_output_name}}.map"
+        clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
+        binfile = "{{output_dir}}/{{target_output_name}}.bin"
 
-      # Use echo '...' here so that we can keep escape chars, i.e., keep the
-      # verbatim clippy_command. Then we can just use the shell to run the `*.clippy_rsp`
-      # file.
-      gen_clippy_rspfile_command =
-          " && echo '${clippy_command}' > ${clippy_rspfile}"
+        clippy_command = "{{rustenv}} ${clippy_driver} --crate-name {{crate_name}} --crate-type {{crate_type}} {{rustflags}} ${clippy_lint_flags} {{source}} {{externs}} {{rustdeps}} -o ${outfile}.clippy"
 
-      objcopy_command = "&& $objcopy -O binary ${outfile} ${binfile}"
-      rustc_command = "{{rustenv}} ${rustc} --crate-name {{crate_name}} --crate-type {{crate_type}} --emit=dep-info=$depfile,link {{rustflags}} -o ${outfile} {{source}} {{externs}} {{rustdeps}} -Clink-arg=${link_map_opt}${mapfile}"
+        # Use echo '...' here so that we can keep escape chars, i.e., keep the
+        # verbatim clippy_command. Then we can just use the shell to run the
+        # `*.clippy_rsp` file.
+        gen_clippy_rspfile_command =
+            " && echo '${clippy_command}' > ${clippy_rspfile}"
 
-      command =
-          "${rustc_command} ${objcopy_command} ${gen_clippy_rspfile_command}"
-      description = "RUST ${outfile}"
-      outputs = [
-        outfile,
-        mapfile,
-        binfile,
-        clippy_rspfile,
-      ]
+        objcopy_command = "&& $objcopy -O binary ${outfile} ${binfile}"
+        rustc_command = "{{rustenv}} ${rustc} --crate-name {{crate_name}} --crate-type {{crate_type}} --emit=dep-info=$depfile,link {{rustflags}} -o ${outfile} {{source}} {{externs}} {{rustdeps}} -Clink-arg=${link_map_opt}${mapfile}"
+
+        command =
+            "${rustc_command} ${objcopy_command} ${gen_clippy_rspfile_command}"
+        description = "RUST ${outfile}"
+        outputs = [
+          outfile,
+          mapfile,
+          binfile,
+          clippy_rspfile,
+        ]
+      }
       default_output_dir = "{{root_out_dir}}/bin"
     }
 
@@ -463,33 +475,29 @@ template("blueos_toolchain") {
       depfile = "{{target_out_dir}}/{{target_output_name}}/{{crate_name}}.d"
       outfile =
           "{{target_out_dir}}/{{target_output_name}}/lib{{crate_name}}.rlib"
-      clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
 
-      base_clippy_command = "{{rustenv}} ${clippy_driver} --crate-name {{crate_name}} {{source}} --crate-type {{crate_type}} {{rustflags}} ${clippy_lint_flags} {{rustdeps}} {{externs}} -o ${outfile}.clippy"
-      base_rustc_command = "{{rustenv}} $rustc --crate-name {{crate_name}} {{source}} --crate-type {{crate_type}} --emit=dep-info=$depfile,link {{rustflags}} -o ${outfile} {{rustdeps}} {{externs}}"
-      if (defined(miri_sysroot) &&
-          miri_sysroot != "") {  # if MIRI_SYSROOT is defined, use std with full
-                                 # MIR(but not all rlib if sysroot is generated
-                                 # by "cargo miri setup", because miri doesn't
-                                 # need all rlib, in other words, normal
-                                 # unittest can not run with this sysroot) by
-                                 # adding --sysroot, should unset this env if
-                                 # miri is not used elsewise normal unittest
-                                 # will fail
-        sysroot_arg = " --sysroot " + miri_sysroot
+      if (defined(miri_mode) && miri_mode) {
+        clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
+        miri_runner = rebase_path("//build/scripts/miri/run_miri.py")
+        command = "{{rustenv}} python3 ${miri_runner} --mode compile --miri ${rustc} --sysroot '${miri_sysroot_path}' --aux-output ${clippy_rspfile} -- --crate-name {{crate_name}} {{source}} --crate-type {{crate_type}} --emit=dep-info=$depfile,link {{rustflags}} -Copt-level=0 -Cdebuginfo=0 -o ${outfile} {{rustdeps}} {{externs}}"
+        description = "MIRI RLIB ${outfile}"
+        outputs = [
+          outfile,
+          clippy_rspfile,
+        ]
       } else {
-        sysroot_arg = ""
+        clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
+        clippy_command = "{{rustenv}} ${clippy_driver} --crate-name {{crate_name}} {{source}} --crate-type {{crate_type}} {{rustflags}} ${clippy_lint_flags} {{rustdeps}} {{externs}} -o ${outfile}.clippy"
+        rustc_command = "{{rustenv}} $rustc --crate-name {{crate_name}} {{source}} --crate-type {{crate_type}} --emit=dep-info=$depfile,link {{rustflags}} -o ${outfile} {{rustdeps}} {{externs}}"
+        gen_clippy_rspfile_command =
+            " && echo '${clippy_command}' > ${clippy_rspfile}"
+        command = "${rustc_command} ${gen_clippy_rspfile_command}"
+        description = "RUST ${outfile}"
+        outputs = [
+          outfile,
+          clippy_rspfile,
+        ]
       }
-      rustc_command = base_rustc_command + sysroot_arg
-      clippy_command = base_clippy_command
-      gen_clippy_rspfile_command =
-          " && echo '${clippy_command}' > ${clippy_rspfile}"
-      command = "${rustc_command} ${gen_clippy_rspfile_command}"
-      description = "RUST ${outfile}"
-      outputs = [
-        outfile,
-        clippy_rspfile,
-      ]
     }
 
     tool("rust_macro") {
