@@ -14,6 +14,13 @@
 
 import("//build/default_targets.gni")
 import("//build/templates/board.gni")
+import("//build/templates/linker_script.gni")
+
+generate_linker_script("default_linker_script") {
+  preprocessor = "aarch64-none-elf-cpp"
+  template = "//kernel/arch/arm/arm64/link.x"
+  output = "${root_gen_dir}/link.pre.ld"
+}
 
 blueos_board("qemu_virt64_aarch64") {
   kernel_config = {
