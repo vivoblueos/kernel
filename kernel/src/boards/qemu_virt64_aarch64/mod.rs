@@ -16,5 +16,5 @@ pub mod init;
 pub use init::*;
 pub mod config;
 pub(crate) use config::{MMU_L1_DEVICE_BASES, MMU_L1_NORMAL_BASES};
-pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE};
+pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE, TEXT_OFFSET};
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::QemuGtClk;

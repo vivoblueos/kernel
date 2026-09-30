@@ -17,9 +17,10 @@ use crate::arch::aarch64::{
     current_cpu_id,
     irq::{self, IrqNumber, Priority},
 };
+use aarch64_cpu::registers::CNTV_CTL_EL0;
 use alloc::boxed::Box;
 use blueos_hal::isr::IsrDesc;
-use core::arch::asm;
+use tock_registers::interfaces::{Readable, Writeable};
 
 pub struct VirtualTimerHandler;
 
@@ -47,19 +48,13 @@ pub fn init_vcpu_timer() {
 #[cfg(not(test))]
 #[inline]
 fn read_cntv_ctl() -> u64 {
-    let ctl: u64;
-    unsafe {
-        asm!("mrs {}, CNTV_CTL_EL0", out(reg) ctl);
-    }
-    ctl
+    CNTV_CTL_EL0.get()
 }
 
 #[cfg(not(test))]
 #[inline]
 fn write_cntv_ctl(ctl: u64) {
-    unsafe {
-        asm!("msr CNTV_CTL_EL0, {}", in(reg) ctl);
-    }
+    CNTV_CTL_EL0.set(ctl)
 }
 
 #[cfg(test)]

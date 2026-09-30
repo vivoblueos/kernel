@@ -14,7 +14,11 @@
 
 use super::{guest, hyper, vcpu::Vcpu, vgic, virtio, vuart};
 use crate::{kearly_println, kprintln};
-use core::arch::asm;
+use aarch64_cpu::{
+    asm::wfe,
+    registers::{ELR_EL2, ESR_EL2, FAR_EL2, HPFAR_EL2, SPSR_EL2},
+};
+use tock_registers::interfaces::Readable;
 
 static mut GUEST_SHUTDOWN: bool = false;
 
@@ -107,17 +111,12 @@ pub fn handle_vm_exit(vcpu: &mut Vcpu) -> bool {
 
     if !result {
         if let VmExitReason::DataAbortLowerEL = reason {
-            let far: u64;
-            unsafe {
-                core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
-            }
+            let far = FAR_EL2.get();
             kearly_println!("  Faulting IPA / FAR: {:#018x}", far);
         }
 
         loop {
-            unsafe {
-                core::arch::asm!("wfe");
-            }
+            wfe();
         }
     }
 
@@ -218,10 +217,8 @@ fn handle_data_abort(vcpu: &mut Vcpu, exit_info: &VmExitInfo) -> bool {
 
     if (dfsc & 0x3C) == 0x04 || (dfsc & 0x3C) == 0x08 || (dfsc & 0x3C) == 0x0C {
         unsafe {
-            let far: u64;
-            core::arch::asm!("mrs {}, far_el2", out(reg) far, options(nostack));
-            let hpfar_el2: u64;
-            core::arch::asm!("mrs {}, hpfar_el2", out(reg) hpfar_el2, options(nostack));
+            let far = FAR_EL2.get();
+            let hpfar_el2 = HPFAR_EL2.get();
             //Caculate exact PA for vGIC and vUart.
             let fault_ipa_base = (hpfar_el2 & 0x0000_00FF_FFFF_FFF0) << 8;
             let exact_ipa = fault_ipa_base | (far & 0xFFF);
@@ -321,29 +318,17 @@ pub fn clear_guest_shutdown() {
 
 #[inline]
 fn read_esr_el2() -> u64 {
-    let esr: u64;
-    unsafe {
-        asm!("mrs {}, esr_el2", out(reg) esr, options(nostack));
-    }
-    esr
+    ESR_EL2.get()
 }
 
 #[inline]
 fn read_elr_el2() -> usize {
-    let elr: usize;
-    unsafe {
-        asm!("mrs {}, elr_el2", out(reg) elr, options(nostack));
-    }
-    elr
+    ELR_EL2.get() as usize
 }
 
 #[inline]
 fn read_spsr_el2() -> u64 {
-    let spsr: u64;
-    unsafe {
-        asm!("mrs {}, spsr_el2", out(reg) spsr, options(nostack));
-    }
-    spsr
+    SPSR_EL2.get()
 }
 
 #[cfg(test)]

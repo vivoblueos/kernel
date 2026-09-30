@@ -17,11 +17,14 @@ mod exception;
 pub mod irq;
 pub(crate) mod mmu;
 pub(crate) mod psci;
-pub(crate) mod registers;
 pub(crate) mod vector;
 pub(crate) mod virt;
 
-use crate::{arch::registers::mpidr_el1::MPIDR_EL1, scheduler};
+use crate::scheduler;
+use aarch64_cpu::{
+    asm::wfi,
+    registers::{Readable, Writeable, DAIF, MPIDR_EL1, SP},
+};
 use core::{
     fmt,
     mem::offset_of,
@@ -31,25 +34,8 @@ use core::{
     },
 };
 use scheduler::ContextSwitchHookHolder;
-use tock_registers::interfaces::Readable;
 
 pub(crate) const NR_SWITCH: usize = !0;
-
-macro_rules! disable_interrupt {
-    () => {
-        "
-        msr daifset, #3
-        "
-    };
-}
-
-macro_rules! enable_interrupt {
-    () => {
-        "
-        msr daifclr, #3
-        "
-    };
-}
 
 // FIXME: After adapting to other AArch64 platforms, the
 // hardcoded board-specific configuration should be removed.
@@ -98,9 +84,8 @@ macro_rules! enter_el1 {
         // Enable AArch64 in EL1.
         // Calculate per-core stack offset
         // We reserve the top 4KB of each core's 16KB chunk for EL2.
-        ldr x1, ={stack_end}
-        ldr x12, ={kernel_virt_start}
-        sub x1, x1, x12
+        adrp x1, {stack_end}
+        add x1, x1, :lo12:{stack_end}
         mrs x9, mpidr_el1
         and x9, x9, #0xff
         lsl x9, x9, #14
@@ -115,18 +100,24 @@ macro_rules! enter_el1 {
         mov x0, #0x3C5
         msr spsr_el2, x0
         // Enable EL1 MMU while still in EL2.
-        ldr x4, ={tmp_stack}
-        ldr x12, ={kernel_virt_start}
-        sub x4, x4, x12
+        adrp x4, {tmp_stack}
+        add x4, x4, :lo12:{tmp_stack}
         add x4, x4, #0x1000
         mov sp, x4
         bl {init_el1_enable_mmu}
         bl {init_el1_boot_linearmap}
         mov sp, x19
         // Set EL1 entry and enter.
-        ldr x0, ={stack_start}
-        ldr x1, ={stack_end}
-        ldr x2, ={cont}
+        ldr x12, ={kernel_virt_start}
+        adrp x0, {stack_start}
+        add x0, x0, :lo12:{stack_start}
+        add x0, x0, x12
+        adrp x1, {stack_end}
+        add x1, x1, :lo12:{stack_end}
+        add x1, x1, x12
+        adrp x2, {cont}
+        add x2, x2, :lo12:{cont}
+        add x2, x2, x12
         // adr is PC-relative
         adr x3, {entry}
         msr elr_el2, x3
@@ -139,7 +130,27 @@ macro_rules! enter_el1 {
 macro_rules! arch_bootstrap {
     ($stack_start:path, $stack_end:path, $cont: path) => {
         core::arch::naked_asm!(
+            "
+            // The 64-byte arm64 Image header, described in the Linux kernel
+            // Documentation/arch/arm64/booting.rst. Boot loaders such as
+            // U-Boot's `booti` validate and parse this header before
+            // entering the image.
+            add     x13, x18, #0x16        // 0x00 code0: \"MZ\"
+            b       1f                      // 0x04 code1: branch over the header
+            .quad   {text_offset}           // 0x08 text_offset
+            .quad   {image_end} - {image_start} // 0x10 image_size
+            .quad   0x8                     // 0x18 flags: bit3, keep placement
+            .quad   0                       // 0x20 reserved
+            .quad   0                       // 0x28 reserved
+            .quad   0                       // 0x30 reserved
+            .word   0x644d5241              // 0x38 magic \"ARM\\x64\"
+            .word   0                       // 0x3C res5
+            1:
+            ",
             $crate::enter_el1!(),
+            text_offset = const $crate::boards::TEXT_OFFSET,
+            image_start = sym $crate::boot::_start,
+            image_end = sym $crate::boot::_end,
             entry = sym $crate::arch::aarch64::jump_to_high_va,
             virt_init = sym $crate::arch::aarch64::virt::virt_init,
             init_el1_enable_mmu = sym $crate::arch::aarch64::mmu::init_el1_enable_mmu,
@@ -543,33 +554,23 @@ pub extern "C" fn enable_local_irq() {
 
 #[inline]
 pub extern "C" fn current_cpu_id() -> usize {
-    (MPIDR_EL1.get() & 0xff) as usize
+    MPIDR_EL1.read(MPIDR_EL1::Aff0) as usize
 }
 
 #[inline(always)]
 pub(crate) extern "C" fn idle() {
-    unsafe { core::arch::asm!("wfi", options(nostack)) };
+    wfi();
 }
 
 #[inline]
 pub extern "C" fn current_sp() -> usize {
-    let x: usize;
-    unsafe { core::arch::asm!("mov {}, sp", out(reg) x, options(nostack, nomem)) };
-    x
+    SP.get() as usize
 }
 
 #[inline]
 pub extern "C" fn disable_local_irq_save() -> usize {
-    let old: usize;
-    unsafe {
-        core::arch::asm!(
-            concat!(
-                "mrs {}, daif",
-                disable_interrupt!(),
-            ),
-            out(reg) old, options(nostack)
-        )
-    }
+    let old = DAIF.get() as usize;
+    disable_local_irq();
     atomic::compiler_fence(Ordering::SeqCst);
     old
 }
@@ -577,19 +578,12 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 #[inline]
 pub extern "C" fn enable_local_irq_restore(old: usize) {
     atomic::compiler_fence(Ordering::SeqCst);
-    unsafe { core::arch::asm!("msr daif, {}", in(reg) old, options(nostack)) }
+    DAIF.set(old as u64);
 }
 
 #[inline]
 pub extern "C" fn local_irq_enabled() -> bool {
-    let x: usize;
-    unsafe {
-        core::arch::asm!(
-            "mrs {}, daif",
-            out(reg) x, options(nostack)
-        );
-    };
-    (x & (1 << 7)) == 0
+    DAIF.read(DAIF::I) == 0
 }
 
 #[inline]
