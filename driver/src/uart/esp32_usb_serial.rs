@@ -301,6 +301,29 @@ impl<const BASE: usize> Uart<super::UartConfig, (), super::InterruptType, super:
 {
 }
 
+/// Upper bound on how many pending sources one ISR visit drains, mirroring
+/// `Ns16x50Isr::service_isr`: a source that re-latches instantly (a live
+/// level, e.g. `SERIAL_IN_EMPTY` while the TX FIFO stays empty) must not spin
+/// here forever.
+const MAX_PENDING_INTERRUPTS_TO_CLEAR: usize = 8;
+
+/// The interrupt sources an `Esp32UsbSerialIsr` serves. Implemented for the
+/// register block so the drain loop can also run against a mock in tests.
+trait InterruptSource {
+    fn pending(&self) -> super::InterruptType;
+    fn clear(&self, intr: super::InterruptType);
+}
+
+impl<const BASE: usize> InterruptSource for Esp32UsbSerial<BASE> {
+    fn pending(&self) -> super::InterruptType {
+        self.get_interrupt()
+    }
+
+    fn clear(&self, intr: super::InterruptType) {
+        self.clear_interrupt(intr)
+    }
+}
+
 pub struct Esp32UsbSerialIsr<const DEVICE_ADDRESS: usize, T: Sync + 'static> {
     pub data: &'static T,
     pub rx_isr: Option<fn(&T)>,
@@ -315,26 +338,234 @@ impl<const DEVICE_ADDRESS: usize, T: Sync> Esp32UsbSerialIsr<DEVICE_ADDRESS, T> 
             tx_isr,
         }
     }
-}
 
-impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
-    fn service_isr(&self) {
-        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial<DEVICE_ADDRESS>) };
-        let intr = uart.get_interrupt();
+    /// Fans `intr` out to the registered handlers.
+    fn run_handlers(&self, intr: super::InterruptType) {
         match intr {
             super::InterruptType::Rx => {
-                uart.clear_interrupt(intr);
                 if let Some(rx_isr) = self.rx_isr {
                     rx_isr(self.data);
                 }
             }
             super::InterruptType::Tx => {
-                uart.clear_interrupt(intr);
+                if let Some(tx_isr) = self.tx_isr {
+                    tx_isr(self.data);
+                }
+            }
+            super::InterruptType::All => {
+                if let Some(rx_isr) = self.rx_isr {
+                    rx_isr(self.data);
+                }
                 if let Some(tx_isr) = self.tx_isr {
                     tx_isr(self.data);
                 }
             }
             _ => {}
         }
+    }
+
+    /// Acknowledges every pending interrupt source on `src` and runs the
+    /// matching handlers.
+    ///
+    /// `get_interrupt` reads INT_ST alone, so the RX and the TX bit can be
+    /// latched together (`All`) even when just one of them raised the line:
+    /// the TX bit re-latches while the shell echoes and `Serial::open` only
+    /// cleared `All` once at boot. `All` used to fall into a `_ => {}` arm
+    /// that acknowledged nothing, leaving INT_ST set for good - the line then
+    /// stayed asserted and re-entered this ISR forever on a level-triggered
+    /// board, or the RX source never fired again on an edge-triggered one,
+    /// silencing the console. Acknowledge all of them, then re-check the
+    /// status so a source latched while a handler ran is drained in the same
+    /// visit.
+    fn drain<S: InterruptSource>(&self, src: &S) {
+        for _ in 0..MAX_PENDING_INTERRUPTS_TO_CLEAR {
+            let intr = src.pending();
+            match intr {
+                super::InterruptType::Rx => src.clear(super::InterruptType::Rx),
+                super::InterruptType::Tx => src.clear(super::InterruptType::Tx),
+                super::InterruptType::All => {
+                    src.clear(super::InterruptType::Rx);
+                    src.clear(super::InterruptType::Tx);
+                }
+                // Nothing pending that this ISR serves.
+                _ => break,
+            }
+            self.run_handlers(intr);
+        }
+    }
+}
+
+impl<const DEVICE_ADDRESS: usize, T: Sync> IsrDesc for Esp32UsbSerialIsr<DEVICE_ADDRESS, T> {
+    fn service_isr(&self) {
+        let uart = unsafe { &*(DEVICE_ADDRESS as *const Esp32UsbSerial<DEVICE_ADDRESS>) };
+        self.drain(uart);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+    use core::{
+        cell::Cell,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    // INT_ST bit positions of the two sources this driver enables.
+    const SERIAL_OUT_RECV_PKT: u32 = 1 << 2;
+    const SERIAL_IN_EMPTY: u32 = 1 << 3;
+
+    static RX_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static TX_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn rx_isr(_data: &()) {
+        RX_CALLS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn tx_isr(_data: &()) {
+        TX_CALLS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn calls() -> (usize, usize) {
+        (
+            RX_CALLS.swap(0, Ordering::Relaxed),
+            TX_CALLS.swap(0, Ordering::Relaxed),
+        )
+    }
+
+    fn isr(rx_isr: Option<fn(&())>, tx_isr: Option<fn(&())>) -> Esp32UsbSerialIsr<0x6004_3000, ()> {
+        static DATA: () = ();
+        Esp32UsbSerialIsr::<0x6004_3000, ()>::new(&DATA, rx_isr, tx_isr)
+    }
+
+    /// Stands in for the INT_ST/INT_CLR register pair: `int_st` holds the
+    /// latched status, `int_clr` records what the ISR wrote to clear it, and
+    /// `latch_tx` models `SERIAL_IN_EMPTY` as a live level that re-latches as
+    /// soon as it is cleared.
+    struct MockSource {
+        int_st: Cell<u32>,
+        int_clr: Cell<u32>,
+        latch_tx: bool,
+    }
+
+    impl MockSource {
+        fn new(int_st: u32, latch_tx: bool) -> Self {
+            Self {
+                int_st: Cell::new(int_st),
+                int_clr: Cell::new(0),
+                latch_tx,
+            }
+        }
+    }
+
+    impl InterruptSource for MockSource {
+        fn pending(&self) -> super::InterruptType {
+            let int_st = self.int_st.get();
+            match (
+                int_st & SERIAL_OUT_RECV_PKT != 0,
+                int_st & SERIAL_IN_EMPTY != 0,
+            ) {
+                (true, true) => super::InterruptType::All,
+                (true, false) => super::InterruptType::Rx,
+                (false, true) => super::InterruptType::Tx,
+                _ => super::InterruptType::Unknown,
+            }
+        }
+
+        fn clear(&self, intr: super::InterruptType) {
+            let mask = match intr {
+                super::InterruptType::Rx => SERIAL_OUT_RECV_PKT,
+                super::InterruptType::Tx => SERIAL_IN_EMPTY,
+                super::InterruptType::All => SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY,
+                _ => 0,
+            };
+            self.int_clr.set(self.int_clr.get() | mask);
+            let int_st = self.int_st.get() & !mask;
+            self.int_st.set(if self.latch_tx {
+                int_st | SERIAL_IN_EMPTY
+            } else {
+                int_st
+            });
+        }
+    }
+
+    // Both sources latched at once - the state the old ISR dropped. It must
+    // acknowledge both and run both handlers, otherwise INT_ST keeps the
+    // interrupt line asserted (level-triggered: the ISR re-enters until the
+    // board hangs) or loses the RX source for good (edge-triggered: the
+    // console goes silent).
+    #[test]
+    fn test_drain_all_clears_both_sources_and_runs_both_handlers() {
+        calls();
+        let mock = MockSource::new(SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY, false);
+        isr(Some(rx_isr), Some(tx_isr)).drain(&mock);
+        assert_eq!(mock.int_clr.get(), SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY);
+        assert_eq!(mock.int_st.get(), 0);
+        assert_eq!(calls(), (1, 1));
+    }
+
+    // An RX packet arriving while the TX bit is still latched from an earlier
+    // echo burst is judged `All`: the RX handler must still run, otherwise
+    // the data waits in the EP1 FIFO with nobody reading it.
+    #[test]
+    fn test_drain_all_keeps_rx_alive() {
+        calls();
+        let mock = MockSource::new(SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY, false);
+        isr(Some(rx_isr), None).drain(&mock);
+        assert_eq!(mock.int_st.get(), 0);
+        assert_eq!(calls(), (1, 0));
+    }
+
+    // Even with no handler registered the sources must be acknowledged, or
+    // the interrupt line stays asserted forever.
+    #[test]
+    fn test_drain_all_without_handlers_still_clears() {
+        let mock = MockSource::new(SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY, false);
+        isr(None, None).drain(&mock);
+        assert_eq!(mock.int_clr.get(), SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY);
+        assert_eq!(mock.int_st.get(), 0);
+        assert_eq!(calls(), (0, 0));
+    }
+
+    #[test]
+    fn test_drain_rx_only() {
+        calls();
+        let mock = MockSource::new(SERIAL_OUT_RECV_PKT, false);
+        isr(Some(rx_isr), Some(tx_isr)).drain(&mock);
+        assert_eq!(mock.int_clr.get(), SERIAL_OUT_RECV_PKT);
+        assert_eq!(mock.int_st.get(), 0);
+        assert_eq!(calls(), (1, 0));
+    }
+
+    #[test]
+    fn test_drain_tx_only() {
+        calls();
+        let mock = MockSource::new(SERIAL_IN_EMPTY, false);
+        isr(Some(rx_isr), Some(tx_isr)).drain(&mock);
+        assert_eq!(mock.int_clr.get(), SERIAL_IN_EMPTY);
+        assert_eq!(mock.int_st.get(), 0);
+        assert_eq!(calls(), (0, 1));
+    }
+
+    #[test]
+    fn test_drain_unknown_is_a_noop() {
+        calls();
+        let mock = MockSource::new(0, false);
+        isr(Some(rx_isr), Some(tx_isr)).drain(&mock);
+        assert_eq!(mock.int_clr.get(), 0);
+        assert_eq!(mock.int_st.get(), 0);
+        assert_eq!(calls(), (0, 0));
+    }
+
+    // A source that re-latches the instant it is cleared must not spin the
+    // ISR forever: the drain is bounded and still returns.
+    #[test]
+    fn test_drain_is_bounded_when_a_source_relatches() {
+        calls();
+        let mock = MockSource::new(SERIAL_OUT_RECV_PKT | SERIAL_IN_EMPTY, true);
+        isr(Some(rx_isr), Some(tx_isr)).drain(&mock);
+        let (rx, tx) = calls();
+        assert_eq!(rx, 1);
+        assert!(tx <= MAX_PENDING_INTERRUPTS_TO_CLEAR);
     }
 }
