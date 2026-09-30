@@ -33,6 +33,7 @@ bme280 = "0.5.1"
 embedded-tls = "0.16.3"
 ft6336u-driver = "1.0.0"
 max7219 = "0.5.0"
+aarch64-cpu = "11.2.0"
 
 [dependencies.embedded-websocket]
 version = "0.9.5"

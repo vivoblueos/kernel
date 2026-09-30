@@ -27,8 +27,8 @@ cargo_crate("embassy_sync") {
     "//external/vendor/cfg-if-1.0.4:cfg_if",
     "//external/vendor/critical-section-1.2.0:critical_section",
     "//external/vendor/embedded-io-async-0.7.0:embedded_io_async",
-    "//external/vendor/futures-core-0.3.32:futures_core",
-    "//external/vendor/futures-sink-0.3.32:futures_sink",
+    "//external/vendor/futures-core-0.3.34:futures_core",
+    "//external/vendor/futures-sink-0.3.34:futures_sink",
     "//external/vendor/heapless-0.9.3:heapless",
   ]
 

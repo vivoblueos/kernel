@@ -1,7 +1,6 @@
 Name: maybe-async-cfg
 URL: https://crates.io/crates/maybe-async-cfg
 Version: 0.2.5
-Revision: 532a1587c951cd63b8718e7f59a951b0ab482e64
 License: MIT
 License File: //external/vendor/maybe-async-cfg-0.2.5/LICENSE
 Shipped: yes
