@@ -50,7 +50,8 @@ mod tests {
     static ALLOCATOR: KernelAllocator = KernelAllocator;
 
     #[used]
-    #[link_section = ".bk_app_array"]
+    #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
     static INIT_TEST: extern "C" fn() = init_test;
 
     #[inline(never)]
@@ -62,7 +63,8 @@ mod tests {
         semihosting::println!("cmsis_rv2 unittest finished");
     }
     // wrapper functions for cmsis_rv2, avoid rc count problem
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn report_before_rv2() {
         let t = scheduler::current_thread();
         semihosting::println!(
@@ -74,7 +76,8 @@ mod tests {
         );
     }
     // wrapper functions for cmsis_rv2, avoid rc count problem
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn report_after_rv2() {
         let t = scheduler::current_thread();
         semihosting::println!(
@@ -86,7 +89,8 @@ mod tests {
         );
     }
     // copy from librs, cmsis_rv2 need an c library in fact
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     unsafe extern "C" fn strncmp(
         s1: *const core::ffi::c_char,
         s2: *const core::ffi::c_char,
@@ -126,33 +130,39 @@ mod tests {
         }
     }
 
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn NVIC_SetPriority(irq: u16, priority: u8) {
         cortex_m::Peripherals::steal()
             .NVIC
             .set_priority(IrqNumber::new(irq), priority);
     }
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn NVIC_EnableIRQ(irq: u16) {
         cortex_m::peripheral::NVIC::unmask(IrqNumber::new(irq));
     }
 
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn NVIC_DisableIRQ(irq: u16) {
         cortex_m::peripheral::NVIC::mask(IrqNumber::new(irq));
     }
 
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn NVIC_GetPendingIRQ(irq: u16) -> bool {
         cortex_m::peripheral::NVIC::is_pending(IrqNumber::new(irq))
     }
 
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn NVIC_SetPendingIRQ(irq: u16) {
         cortex_m::peripheral::NVIC::pend(IrqNumber::new(irq));
     }
 
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     pub unsafe extern "C" fn strcmp(
         s1: *const core::ffi::c_char,
         s2: *const core::ffi::c_char,
@@ -162,13 +172,15 @@ mod tests {
 
     unsafe extern "C" {
         #[link_name = "cmsis_rv2"]
-        #[no_mangle]
+        #[cfg_attr(compatible_old_toolchain, no_mangle)]
+        #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
         fn cmsis_rv2();
     }
     extern "C" fn init_test() {
         validation_test_main();
     }
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     extern "C" fn stdout_putchar(c: i32) {
         use semihosting::io::Write;
         semihosting::io::stdout()
@@ -176,7 +188,8 @@ mod tests {
             .write_all(&[c as u8]);
     }
 
-    #[no_mangle]
+    #[cfg_attr(compatible_old_toolchain, no_mangle)]
+    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
     extern "C" fn stdout_flush() {
         use semihosting::io::Write;
         semihosting::io::stdout()

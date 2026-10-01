@@ -42,7 +42,8 @@ use esp_wifi_sys_esp32c6 as esp_wifi_sys;
 #[unsafe(no_mangle)]
 static mut __ESP_RADIO_WIFI_EVENT: esp_event_base_t = c"WIFI_EVENT".as_ptr();
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub(crate) unsafe extern "C" fn sleep(seconds: c_uint) -> c_uint {
     let target = Tick::after(Tick::from_millis(seconds as u64 * 1000));
     crate::scheduler::suspend_me_until::<()>(target, None);
@@ -80,7 +81,8 @@ pub unsafe extern "C" fn gettimeofday(tv: *mut timeval, _tz: *mut ()) -> i32 {
     0
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn esp_fill_random(dst: *mut u8, len: u32) {
     unsafe {
         let dst = core::slice::from_raw_parts_mut(dst, len as usize);
@@ -679,7 +681,8 @@ pub unsafe extern "C" fn task_get_max_priority() -> i32 {
 
 /// Rust-side log output function called from C bridge (log_bridge.c).
 /// Receives the fully formatted message string and prints via kernel log.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn blueos_wifi_log_output(
     level: c_uint,
     tag: *const c_char,
@@ -782,7 +785,8 @@ pub unsafe extern "C" fn event_post(
     0
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn get_free_internal_heap_size() -> usize {
     let memory_info = crate::allocator::memory_info();
     (memory_info.total - memory_info.used) as usize
@@ -1106,22 +1110,26 @@ pub unsafe extern "C" fn log_timestamp() -> u32 {
     crate::time::Tick::now().as_millis() as u32
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn malloc_internal(size: usize) -> *mut c_void {
     crate::allocator::malloc(size) as *mut c_void
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn free_internal(ptr: *mut c_void) {
     crate::allocator::free(ptr as *mut u8);
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn realloc_internal(ptr: *mut c_void, size: usize) -> *mut c_void {
     crate::allocator::realloc(ptr as *mut u8, size) as *mut c_void
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn calloc_internal(n: usize, size: usize) -> *mut c_void {
     crate::allocator::calloc(n, size) as *mut c_void
 }
