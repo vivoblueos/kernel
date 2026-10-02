@@ -73,7 +73,8 @@ _shared_deps = [
   "//libc",
 ]
 
-# GCC provides __atomic builtins natively; skip the clang-derived libatomic for GCC toolchains.
+# GCC provides __atomic builtins natively; skip the clang-derived libatomic for
+# GCC toolchains.
 if (current_toolchain != "//build/toolchain:gcc_fv_thumbv8m") {
   _shared_deps += [ ":atomic" ]
 }
@@ -135,6 +136,7 @@ build_rust("kernel_integration_test") {
            ":blueos",
            "//external/vendor/byteorder-1.5.0:byteorder",
            "//external/vendor/semihosting-0.1.20:semihosting",
+           "//kernel/infra:blueos_infra",
            "//kernel/rsrt",
            "//kernel/scal:blueos_scal",
            "//libc",

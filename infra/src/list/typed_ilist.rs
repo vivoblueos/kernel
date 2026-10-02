@@ -18,7 +18,7 @@
 // ListHead should be used with smart pointers. It's **NOT**
 // concurrent safe.
 
-use crate::{intrusive::Adapter, lifetime::IouMut};
+use crate::{intrusive::Adapter, lifetime::IouMut, no_let_underscore::IgnoreAny};
 use core::{marker::PhantomData, ptr::NonNull};
 
 #[derive(Default)]
@@ -148,12 +148,12 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
                 return false;
             }
             let next = core::mem::replace(&mut head.next, Some(NonNull::from_mut(me)));
-            let _ = core::mem::replace(&mut me.next, next);
+            core::mem::replace(&mut me.next, next).ignore_old_value();
             let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
                 core::mem::replace(&mut v.as_mut().prev, Some(NonNull::from_mut(me)))
             });
             debug_assert_eq!(prev, Some(NonNull::from_mut(head)));
-            let _ = core::mem::replace(&mut me.prev, prev);
+            core::mem::replace(&mut me.prev, prev).ignore_old_value();
             true
         }
     }
@@ -174,11 +174,11 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
                 return false;
             }
             let prev = core::mem::replace(&mut tail.prev, Some(NonNull::from_mut(me)));
-            let _ = core::mem::replace(&mut me.prev, prev);
+            core::mem::replace(&mut me.prev, prev).ignore_old_value();
             let next = prev.map_or(Some(NonNull::from_mut(tail)), |mut v| {
                 core::mem::replace(&mut v.as_mut().next, Some(NonNull::from_mut(me)))
             });
-            let _ = core::mem::replace(&mut me.next, next);
+            core::mem::replace(&mut me.next, next).ignore_old_value();
             true
         }
     }
@@ -211,10 +211,10 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
                 return false;
             }
             if let Some(mut prev) = me.prev {
-                let _ = core::mem::replace(&mut prev.as_mut().next, me.next);
+                core::mem::replace(&mut prev.as_mut().next, me.next).ignore_old_value();
             };
             if let Some(mut next) = me.next {
-                let _ = core::mem::replace(&mut next.as_mut().prev, me.prev);
+                core::mem::replace(&mut next.as_mut().prev, me.prev).ignore_old_value();
             };
             me.prev = None;
             me.next = None;

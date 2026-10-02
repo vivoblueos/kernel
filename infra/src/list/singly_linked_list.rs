@@ -318,9 +318,7 @@ mod tests {
             }
 
             while let Some(ptr) = l.pop() {
-                unsafe {
-                    let _ = Box::from_raw(ptr.as_ptr());
-                }
+                unsafe { drop(Box::from_raw(ptr.as_ptr())) }
             }
         });
     }
@@ -341,7 +339,7 @@ mod tests {
             // Pop and Free
             while let Some(ptr) = l.pop() {
                 unsafe {
-                    let _ = Box::from_raw(ptr.as_ptr());
+                    drop(Box::from_raw(ptr.as_ptr()));
                 }
             }
         });
@@ -368,8 +366,8 @@ mod tests {
         assert!(list.pop().is_none());
         // clear memory
         unsafe {
-            let _ = Box::from_raw(p1.as_ptr());
-            let _ = Box::from_raw(p2.as_ptr());
+            drop(Box::from_raw(p1.as_ptr()));
+            drop(Box::from_raw(p2.as_ptr()));
         }
     }
     #[test]
@@ -401,7 +399,7 @@ mod tests {
 
             let popped_ptr = node2.pop();
             unsafe {
-                let _ = Box::from_raw(popped_ptr.as_ptr());
+                drop(Box::from_raw(popped_ptr.as_ptr()));
             }
         }
 
@@ -411,8 +409,8 @@ mod tests {
         let p1 = list.pop().unwrap();
         assert_eq!(unsafe { p1.as_ref().data }, 1);
         unsafe {
-            let _ = Box::from_raw(p3.as_ptr());
-            let _ = Box::from_raw(p1.as_ptr());
+            drop(Box::from_raw(p3.as_ptr()));
+            drop(Box::from_raw(p1.as_ptr()));
         }
     }
 
@@ -562,8 +560,8 @@ mod tests {
         assert!(iter.next().is_none());
 
         unsafe {
-            let _ = Box::from_raw(ptr1.as_ptr());
-            let _ = Box::from_raw(ptr2.as_ptr());
+            drop(Box::from_raw(ptr1.as_ptr()));
+            drop(Box::from_raw(ptr2.as_ptr()));
         }
     }
 
@@ -600,8 +598,8 @@ mod tests {
             assert_eq!(node1_next, expected_next);
 
             // Clean up
-            let _ = Box::from_raw(ptr1.as_ptr());
-            let _ = Box::from_raw(ptr2.as_ptr());
+            drop(Box::from_raw(ptr1.as_ptr()));
+            drop(Box::from_raw(ptr2.as_ptr()));
         }
     }
 }

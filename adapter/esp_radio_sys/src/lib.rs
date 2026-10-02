@@ -189,7 +189,7 @@ impl WaitQueueImplementation for EspWaitQueue {
 
     unsafe fn delete(queue: WaitQueuePtr) {
         let ptr = queue.as_ptr() as *mut EspWaitQueue;
-        let _ = Box::from_raw(ptr);
+        drop(Box::from_raw(ptr));
     }
 
     #[allow(clippy::drop_non_drop)]

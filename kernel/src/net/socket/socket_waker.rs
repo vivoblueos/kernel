@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use alloc::{rc::Rc, string::String};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     cell::{Cell, RefCell},
     task::{RawWaker, RawWakerVTable, Waker},
@@ -47,12 +48,13 @@ impl SocketWaker {
         }
 
         if let Some(socket_operation) = self.socket_operation.borrow_mut().take() {
-            let _ = NETSTACK_QUEUE
+            NETSTACK_QUEUE
                 .enqueue(socket_operation)
                 .map_err(|socket_operation| {
                     log::warn!("[SockerWaker] enqueue fail");
                     // TODO retry or release socket futex to unblock user thread
-                });
+                })
+                .ignore_result();
             log::debug!(
                 "[SocketWaker] enqueue {} socket_operation success!",
                 self.name

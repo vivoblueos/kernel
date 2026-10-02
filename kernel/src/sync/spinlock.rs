@@ -36,6 +36,7 @@ pub type SpinLockWriteGuard<'a, T> = SpinLockGuard<'a, T>;
 // See https://doc.rust-lang.org/reference/destructors.html#r-destructors.operation for dropping orders.
 #[derive(Debug)]
 #[repr(C)]
+#[must_use]
 pub struct SpinLockGuard<'a, T: ?Sized> {
     #[cfg(smp)]
     lock_guard: RwLockWriteGuard<'a, T>,
@@ -68,6 +69,7 @@ impl<'a, T: 'a + ?Sized> DerefMut for SpinLockGuard<'a, T> {
 
 #[derive(Debug)]
 #[repr(C)]
+#[must_use]
 pub struct SpinLockReadGuard<'a, T: ?Sized> {
     #[cfg(smp)]
     lock_guard: RwLockReadGuard<'a, T>,

@@ -154,6 +154,7 @@ fn generate_test_case(attr: TokenStream, item: TokenStream) -> TokenStream {
         let build_threaded_test_body = || {
             quote! {
                 {
+                    #[must_use]
                     struct __BlueOSTestDoneGuard {
                         done: blueos::types::Arc<core::sync::atomic::AtomicUsize>,
                     }
