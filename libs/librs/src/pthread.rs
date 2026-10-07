@@ -38,7 +38,6 @@ use core::{
     alloc::Layout,
     cell::SyncUnsafeCell,
     ffi::{c_int, c_size_t, c_uint, c_void},
-    intrinsics::transmute,
     num::{NonZero, NonZeroU32},
     sync::atomic::{AtomicBool, AtomicI32, AtomicI8, AtomicUsize, Ordering},
 };
@@ -316,7 +315,10 @@ pub extern "C" fn register_my_posix_tcb() {
 }
 
 extern "C" fn register_posix_tcb(tid: usize, _spawn_args_ptr: *mut SpawnArgs) {
-    let tid: pthread_t = unsafe { core::mem::transmute(tid) };
+    // Same-width integer cast (usize -> pthread_t): newlib's pthread_t follows
+    // the pointer width (c_ulonglong on LP64, c_ulong on ILP32/cortex-m), as
+    // does usize — value-identical to the previous transmute, but safe.
+    let tid: pthread_t = tid as pthread_t;
     {
         let tcb = Arc::new(PthreadTcb {
             kv: RwLock::new(BTreeMap::new()),

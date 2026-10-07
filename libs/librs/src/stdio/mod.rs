@@ -52,6 +52,25 @@ mod lookaheadreader;
 use lookaheadreader::LookAheadReader;
 mod printf;
 mod scanf;
+
+// In `extern "C"` functions the `...` parameter is `VaListImpl` on older
+// toolchains (requiring an explicit `as_va_list()` conversion, removed in
+// rustc 1.93) and `VaList` directly on newer ones. Select the spelling via
+// the build-wide `compatible_old_toolchain` cfg (build/config/BUILD.gn)
+// so both toolchains compile.
+#[cfg(compatible_old_toolchain)]
+macro_rules! as_va_list {
+    ($valist:expr) => {
+        $valist.as_va_list()
+    };
+}
+#[cfg(not(compatible_old_toolchain))]
+macro_rules! as_va_list {
+    ($valist:expr) => {
+        $valist
+    };
+}
+
 enum Buffer<'a> {
     Borrowed(&'a mut [u8]),
     Owned(Vec<u8>),
@@ -219,7 +238,7 @@ impl WriteByte for FILE {
     }
 }
 impl FILE {
-    pub fn lock(&mut self) -> LockGuard {
+    pub fn lock(&mut self) -> LockGuard<'_> {
         unsafe {
             flockfile(self);
         }
@@ -768,7 +787,7 @@ pub unsafe extern "C" fn fprintf(
     format: *const c_char,
     mut __valist: ...
 ) -> c_int {
-    vfprintf(file, format, __valist.as_va_list())
+    vfprintf(file, format, as_va_list!(__valist))
 }
 
 #[no_mangle]
@@ -778,7 +797,7 @@ pub unsafe extern "C" fn vprintf(format: *const c_char, ap: va_list) -> c_int {
 
 #[no_mangle]
 pub unsafe extern "C" fn printf(format: *const c_char, mut __valist: ...) -> c_int {
-    vfprintf(&mut *stdout, format, __valist.as_va_list())
+    vfprintf(&mut *stdout, format, as_va_list!(__valist))
 }
 
 #[no_mangle]
@@ -801,7 +820,7 @@ pub unsafe extern "C" fn snprintf(
     printf::printf(
         &mut StringWriter(s as *mut u8, n),
         format,
-        __valist.as_va_list(),
+        as_va_list!(__valist),
     )
 }
 
@@ -818,7 +837,7 @@ pub unsafe extern "C" fn sprintf(
     printf::printf(
         &mut UnsafeStringWriter(s as *mut u8),
         format,
-        __valist.as_va_list(),
+        as_va_list!(__valist),
     )
 }
 
@@ -843,7 +862,7 @@ pub unsafe extern "C" fn fscanf(
     format: *const c_char,
     mut __valist: ...
 ) -> c_int {
-    vfscanf(file, format, __valist.as_va_list())
+    vfscanf(file, format, as_va_list!(__valist))
 }
 
 #[no_mangle]
@@ -852,7 +871,7 @@ pub unsafe extern "C" fn vscanf(format: *const c_char, ap: va_list) -> c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn scanf(format: *const c_char, mut __valist: ...) -> c_int {
-    vfscanf(&mut *stdin, format, __valist.as_va_list())
+    vfscanf(&mut *stdin, format, as_va_list!(__valist))
 }
 
 #[no_mangle]
@@ -867,7 +886,7 @@ pub unsafe extern "C" fn sscanf(
     mut __valist: ...
 ) -> c_int {
     let reader = (s as *const u8).into();
-    scanf::scanf(reader, format, __valist.as_va_list())
+    scanf::scanf(reader, format, as_va_list!(__valist))
 }
 
 pub fn init() {
