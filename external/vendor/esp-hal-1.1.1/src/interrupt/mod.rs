@@ -530,11 +530,12 @@ pub(crate) fn setup_interrupts() {
 #[inline(always)]
 #[cfg(feature = "rt")]
 fn should_handle(core: Cpu, interrupt_nr: u32, level: u32) -> bool {
-    if let Some(cpu_interrupt) = crate::interrupt::mapped_to_raw(core, interrupt_nr)
-        && cpu_interrupt.is_vectored()
-        && cpu_interrupt.level() == level
-    {
-        true
+    if let Some(cpu_interrupt) = crate::interrupt::mapped_to_raw(core, interrupt_nr) {
+        if cpu_interrupt.is_vectored() && cpu_interrupt.level() == level {
+            true
+        } else {
+            false
+        }
     } else {
         false
     }

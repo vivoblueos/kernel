@@ -457,12 +457,7 @@ mod implementation {
 
     use super::*;
     use crate::{
-        ThreadPtr,
-        current_task,
-        now,
-        set_task_priority,
-        task_priority,
-        wait_queue::WaitQueueHandle,
+        current_task, now, set_task_priority, task_priority, wait_queue::WaitQueueHandle, ThreadPtr,
     };
 
     enum SemaphoreInner {
@@ -578,10 +573,10 @@ mod implementation {
 
                     if *owner == Some(current) && *lock_counter > 0 {
                         *lock_counter -= 1;
-                        if *lock_counter == 0
-                            && let Some(owner) = owner.take()
-                        {
-                            unsafe { set_task_priority(owner, *original_priority) };
+                        if *lock_counter == 0 {
+                            if let Some(owner) = owner.take() {
+                                unsafe { set_task_priority(owner, *original_priority) };
+                            }
                         }
                         true
                     } else {

@@ -75,9 +75,9 @@ use crate::peripherals::PCR;
 #[instability::unstable]
 pub use crate::soc::clocks::ClockConfig;
 pub use crate::soc::clocks::CpuClock;
-use crate::{ESP_HAL_LOCK, soc::clocks, time::Rate};
 #[cfg(soc_has_clock_node_timg_calibration_clock)]
 use crate::{peripherals::TIMG0, soc::clocks::ClockTree};
+use crate::{soc::clocks, time::Rate, ESP_HAL_LOCK};
 
 impl CpuClock {
     #[procmacros::doc_replace]
@@ -452,19 +452,19 @@ impl Clocks {
                 .modify(|_, w| w.tick_enable().clear_bit());
         }
 
-        if let Some(calib_clock) = current_calib_clock
-            && calib_clock != rtc_clock
-        {
-            clocks::configure_timg_calibration_clock(clocks, calib_clock);
+        if let Some(calib_clock) = current_calib_clock {
+            if calib_clock != rtc_clock {
+                clocks::configure_timg_calibration_clock(clocks, calib_clock);
+            }
         }
         clocks::release_timg_calibration_clock(clocks);
 
         #[cfg(soc_has_clock_node_timg_function_clock)]
         {
-            if let Some(func_clock) = current_function_clock
-                && func_clock != function_clock
-            {
-                clocks::TimgInstance::Timg0.configure_function_clock(clocks, func_clock);
+            if let Some(func_clock) = current_function_clock {
+                if func_clock != function_clock {
+                    clocks::TimgInstance::Timg0.configure_function_clock(clocks, func_clock);
+                }
             }
             clocks::TimgInstance::Timg0.release_function_clock(clocks);
         }
