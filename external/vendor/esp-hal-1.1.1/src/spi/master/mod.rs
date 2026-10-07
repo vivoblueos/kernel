@@ -53,25 +53,16 @@ mod dma;
 pub use dma::*;
 use embedded_hal::spi::SpiBus;
 use embedded_hal_async::spi::SpiBus as SpiBusAsync;
-use enumset::{EnumSet, EnumSetType, enum_set};
+use enumset::{enum_set, EnumSet, EnumSetType};
 use procmacros::doc_replace;
 
 use super::{BitOrder, Error, Mode};
 use crate::{
-    Async,
-    Blocking,
-    DriverMode,
-    RegisterToggle,
     asynch::AtomicWaker,
     clock::Clocks,
     gpio::{
-        InputConfig,
-        InputSignal,
-        NoPin,
-        OutputConfig,
-        OutputSignal,
-        PinGuard,
         interconnect::{self, PeripheralInput, PeripheralOutput},
+        InputConfig, InputSignal, NoPin, OutputConfig, OutputSignal, PinGuard,
     },
     handler,
     interrupt::InterruptHandler,
@@ -80,6 +71,7 @@ use crate::{
     ram,
     system::PeripheralGuard,
     time::Rate,
+    Async, Blocking, DriverMode, RegisterToggle,
 };
 
 /// Enumeration of possible SPI interrupt events.
@@ -2015,16 +2007,16 @@ impl Driver {
             }
         }
         let rem = c_iter.remainder();
-        if !rem.is_empty()
-            && let Some(w_reg) = w_iter.next()
-        {
-            let word = match rem.len() {
-                3 => (rem[0] as u32) | ((rem[1] as u32) << 8) | ((rem[2] as u32) << 16),
-                2 => (rem[0] as u32) | ((rem[1] as u32) << 8),
-                1 => rem[0] as u32,
-                _ => unreachable!(),
-            };
-            w_reg.write(|w| w.buf().set(word));
+        if !rem.is_empty() {
+            if let Some(w_reg) = w_iter.next() {
+                let word = match rem.len() {
+                    3 => (rem[0] as u32) | ((rem[1] as u32) << 8) | ((rem[2] as u32) << 16),
+                    2 => (rem[0] as u32) | ((rem[1] as u32) << 8),
+                    1 => rem[0] as u32,
+                    _ => unreachable!(),
+                };
+                w_reg.write(|w| w.buf().set(word));
+            }
         }
     }
 

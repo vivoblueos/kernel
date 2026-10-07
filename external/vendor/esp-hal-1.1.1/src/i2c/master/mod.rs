@@ -125,26 +125,18 @@ use embedded_hal::i2c::Operation as EhalOperation;
 use enumset::{EnumSet, EnumSetType};
 
 use crate::{
-    Async,
-    Blocking,
-    DriverMode,
     asynch::AtomicWaker,
     gpio::{
-        DriveMode,
-        InputSignal,
-        OutputConfig,
-        OutputSignal,
-        PinGuard,
-        Pull,
         interconnect::{self, PeripheralInput, PeripheralOutput},
+        DriveMode, InputSignal, OutputConfig, OutputSignal, PinGuard, Pull,
     },
     handler,
     interrupt::InterruptHandler,
-    pac::i2c0::{COMD, RegisterBlock},
-    private,
-    ram,
+    pac::i2c0::{RegisterBlock, COMD},
+    private, ram,
     system::PeripheralGuard,
     time::{Duration, Instant, Rate},
+    Async, Blocking, DriverMode,
 };
 
 const I2C_FIFO_SIZE: usize = property!("i2c_master.fifo_size");
@@ -245,7 +237,11 @@ impl BusTimeout {
                     let to_peri = (cycles * 2 * half_bus_cycle).max(1);
                     let log2 = to_peri.ilog2();
                     // If not a power of 2, round up so that we don't shorten timeouts.
-                    if to_peri != 1 << log2 { log2 + 1 } else { log2 }
+                    if to_peri != 1 << log2 {
+                        log2 + 1
+                    } else {
+                        log2
+                    }
                 } else {
                     cycles * 2 * half_bus_cycle
                 };
@@ -563,12 +559,12 @@ enum Command {
 
 enum OperationType {
     Write = 0,
-    Read  = 1,
+    Read = 1,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 enum Ack {
-    Ack  = 0,
+    Ack = 0,
     Nack = 1,
 }
 
@@ -905,11 +901,13 @@ impl<'a> I2cFuture<'a> {
             Poll::Ready(result)
         } else if error.is_err() {
             Poll::Ready(error)
-        } else if let Some(deadline) = self.deadline
-            && now > deadline
-        {
-            // If the deadline is reached, we return an error.
-            Poll::Ready(Err(Error::Timeout))
+        } else if let Some(deadline) = self.deadline {
+            if now > deadline {
+                // If the deadline is reached, we return an error.
+                Poll::Ready(Err(Error::Timeout))
+            } else {
+                Poll::Pending
+            }
         } else {
             Poll::Pending
         };
@@ -2328,10 +2326,10 @@ impl Driver<'_> {
             // if there is a valid command which is not END, check if it's marked as done
             if cmd.bits() != 0x0 && !cmd.opcode().is_end() && !cmd.command_done().bit_is_set() {
                 // Let's retry
-                if let Some(deadline) = deadline
-                    && now > deadline
-                {
-                    return Err(Error::ExecutionIncomplete);
+                if let Some(deadline) = deadline {
+                    if now > deadline {
+                        return Err(Error::ExecutionIncomplete);
+                    }
                 }
 
                 return Ok(false);

@@ -22,7 +22,11 @@ cargo_crate("esp_hal_procmacros") {
   crate_type = "proc-macro"
   sources = [ "//external/vendor/esp-hal-procmacros-0.22.0/src/lib.rs" ]
   inputs = []
-  edition = "2021"
+  if (is_rust_toolchain_older_than_1_90) {
+    edition = "2021"
+  } else {
+    edition = "2024"
+  }
   deps = [
     "//external/vendor/proc-macro-crate-3.5.0:proc_macro_crate",
     "//external/vendor/proc-macro2-1.0.103:proc_macro2",
