@@ -61,6 +61,12 @@ blueos_board("gd32e507_eval") {
     }
   }
   app_config = {
+    rustflags = [
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=thumbv8m.main-none-eabihf",
+      "-Clink-arg=-Wl,-z,norelro",
+    ]
   }
 
   if (debug) {
