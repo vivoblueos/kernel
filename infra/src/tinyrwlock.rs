@@ -230,7 +230,7 @@ impl<T: ?Sized> RwLock<T> {
     /// }
     /// ```
     #[inline]
-    pub fn read(&self) -> RwLockReadGuard<T> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T> {
         loop {
             match self.try_read() {
                 Some(guard) => return guard,
@@ -258,7 +258,7 @@ impl<T: ?Sized> RwLock<T> {
     /// }
     /// ```
     #[inline]
-    pub fn write(&self) -> RwLockWriteGuard<T> {
+    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
         loop {
             match self.try_write_internal(false) {
                 Some(guard) => return guard,
@@ -270,7 +270,7 @@ impl<T: ?Sized> RwLock<T> {
     /// Obtain a readable lock guard that can later be upgraded to a writable lock guard.
     /// Upgrades can be done through the [`RwLockUpgradableGuard::upgrade`](RwLockUpgradableGuard::upgrade) method.
     #[inline]
-    pub fn upgradeable_read(&self) -> RwLockUpgradableGuard<T> {
+    pub fn upgradeable_read(&self) -> RwLockUpgradableGuard<'_, T> {
         loop {
             match self.try_upgradeable_read() {
                 Some(guard) => return guard,
@@ -323,7 +323,7 @@ impl<T: ?Sized> RwLock<T> {
     /// }
     /// ```
     #[inline]
-    pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
+    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
         let value = self.acquire_reader();
 
         // We check the UPGRADED bit here so that new readers are prevented when an UPGRADED lock is held.
@@ -392,7 +392,7 @@ impl<T: ?Sized> RwLock<T> {
     }
 
     #[inline(always)]
-    fn try_write_internal(&self, strong: bool) -> Option<RwLockWriteGuard<T>> {
+    fn try_write_internal(&self, strong: bool) -> Option<RwLockWriteGuard<'_, T>> {
         if compare_exchange(
             &self.lock,
             0,
@@ -432,13 +432,13 @@ impl<T: ?Sized> RwLock<T> {
     /// }
     /// ```
     #[inline]
-    pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
+    pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
         self.try_write_internal(true)
     }
 
     /// Tries to obtain an upgradeable lock guard.
     #[inline]
-    pub fn try_upgradeable_read(&self) -> Option<RwLockUpgradableGuard<T>> {
+    pub fn try_upgradeable_read(&self) -> Option<RwLockUpgradableGuard<'_, T>> {
         if self.lock.fetch_or(UPGRADED, Ordering::Acquire) & (WRITER | UPGRADED) == 0 {
             Some(RwLockUpgradableGuard {
                 lock: &self.lock,
@@ -847,7 +847,7 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
     }
 
     #[inline]
-    pub fn read(&self) -> RwLockReadGuard<T> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T> {
         let g = self.rwlock.read();
         let lock = g.lock;
         let data = self.this() as *const T;

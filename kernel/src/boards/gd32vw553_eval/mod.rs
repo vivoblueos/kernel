@@ -161,7 +161,8 @@ crate::define_pin_states!(
 );
 
 // Used by many drivers in gd32's SDK.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn delay_1ms(millis: u32) {
     let ticks = Tick::from_millis(millis as u64);
     if ticks == Tick(0) {

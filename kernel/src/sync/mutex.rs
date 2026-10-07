@@ -739,20 +739,20 @@ mod tests {
                 wake(&clock);
                 // Wait t2 blocking at mu[0].
                 loop {
-                    if let Some(mutex) = t2.pending_on_mutex()
-                        && Arc::is(&mutex, &mu[0])
-                    {
-                        break;
-                    };
+                    if let Some(mutex) = t2.pending_on_mutex() {
+                        if Arc::is(&mutex, &mu[0]) {
+                            break;
+                        }
+                    }
                     scheduler::yield_me();
                 }
                 // Wait t0 blocking at mu[1].
                 loop {
-                    if let Some(mutex) = t0.pending_on_mutex()
-                        && Arc::is(&mutex, &mu[1])
-                    {
-                        break;
-                    };
+                    if let Some(mutex) = t0.pending_on_mutex() {
+                        if Arc::is(&mutex, &mu[1]) {
+                            break;
+                        }
+                    }
                     scheduler::yield_me();
                 }
                 // PI successfully performed.
