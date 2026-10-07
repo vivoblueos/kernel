@@ -113,8 +113,8 @@ impl VaArg {
         // less than that of an int for integers and double for floats
         // is invalid. As a result any arguments smaller than an int or
         // double passed to a function will be promoted to the smallest
-        // possible size. The VaList::arg function will handle this
-        // automagically.
+        // possible size. Read the promoted type (c_int) and narrow
+        // manually: core's VaArgSafe no longer covers sub-int types.
 
         match (fmtkind, intkind) {
             (FmtKind::Percent, _) => panic!("Can't call arg_from on %"),
@@ -125,9 +125,9 @@ impl VaArg {
 
             (FmtKind::Char, _)
             | (FmtKind::Unsigned, IntKind::Byte)
-            | (FmtKind::Signed, IntKind::Byte) => VaArg::c_char(ap.arg::<c_char>()),
+            | (FmtKind::Signed, IntKind::Byte) => VaArg::c_char(ap.arg::<c_int>() as c_char),
             (FmtKind::Unsigned, IntKind::Short) | (FmtKind::Signed, IntKind::Short) => {
-                VaArg::c_short(ap.arg::<c_short>())
+                VaArg::c_short(ap.arg::<c_int>() as c_short)
             }
             (FmtKind::Unsigned, IntKind::Int) | (FmtKind::Signed, IntKind::Int) => {
                 VaArg::c_int(ap.arg::<c_int>())

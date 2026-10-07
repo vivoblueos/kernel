@@ -262,7 +262,7 @@ impl<T> GenericMutex<T> {
 
     /// Tries to lock the mutex and returns a guard that automatically unlocks
     /// the mutex when it falls out of scope.
-    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         unsafe {
             self.manual_try_lock().ok().map(|content| MutexGuard {
                 mutex: self,
@@ -272,7 +272,7 @@ impl<T> GenericMutex<T> {
     }
     /// Locks the mutex and returns a guard that automatically unlocks the
     /// mutex when it falls out of scope.
-    pub fn lock(&self) -> MutexGuard<T> {
+    pub fn lock(&self) -> MutexGuard<'_, T> {
         MutexGuard {
             mutex: self,
             content: unsafe { self.manual_lock() },

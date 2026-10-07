@@ -17,7 +17,8 @@
 #![cfg_attr(test, test_runner(librs_test_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "librs_test_main")]
 #![cfg_attr(test, no_main)]
-#![allow(internal_features)]
+#![feature(array_ptr_get)]
+#![feature(atomic_from_mut)]
 #![feature(c_size_t)]
 #![feature(slice_internals)]
 #![feature(ptr_as_uninit)]
@@ -25,11 +26,10 @@
 #![feature(lang_items)]
 #![feature(thread_local)]
 #![feature(box_as_ptr)]
-#![feature(atomic_from_mut)]
 #![feature(c_variadic)]
-#![feature(array_ptr_get)]
 #![feature(sync_unsafe_cell)]
-
+#![allow(internal_features)]
+#![allow(clippy::match_overlapping_arm)]
 #[macro_use]
 extern crate alloc;
 

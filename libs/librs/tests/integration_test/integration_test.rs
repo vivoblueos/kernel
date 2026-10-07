@@ -20,6 +20,7 @@
 #![feature(c_size_t)]
 #![feature(thread_local)]
 #![feature(c_variadic)]
+#![allow(deprecated)]
 
 extern crate rsrt;
 

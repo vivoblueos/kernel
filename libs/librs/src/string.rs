@@ -306,7 +306,7 @@ pub unsafe extern "C" fn strcspn(s1: *const c_char, s2: *const c_char) -> c_size
     let s2 = slice::from_raw_parts(s2 as *const u8, strlen(s2) as usize);
 
     for (i, &c) in s1.iter().enumerate() {
-        if s2.iter().any(|&x| x == c) {
+        if s2.contains(&c) {
             return i as c_size_t;
         }
     }
@@ -376,7 +376,7 @@ pub unsafe extern "C" fn strspn(s1: *const c_char, s2: *const c_char) -> c_size_
     let s2 = slice::from_raw_parts(s2 as *const u8, strlen(s2) as usize);
 
     for (i, &c) in s1.iter().enumerate() {
-        if !s2.iter().any(|&x| x == c) {
+        if !s2.contains(&c) {
             return i as c_size_t;
         }
     }
