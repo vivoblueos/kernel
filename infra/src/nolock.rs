@@ -142,7 +142,7 @@ impl<T: Sized, A: Adapter<T>> INoLock<T, A> {
     }
 
     #[inline]
-    pub fn read(&self) -> NoLockReadGuard<T> {
+    pub fn read(&self) -> NoLockReadGuard<'_, T> {
         let inner = self.this() as *const T;
         NoLockReadGuard {
             inner,

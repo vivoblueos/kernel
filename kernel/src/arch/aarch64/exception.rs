@@ -29,8 +29,10 @@ use tock_registers::interfaces::Readable;
 
 macro_rules! exception_handler {
     ($name:ident, $cont:path) => {
-        #[no_mangle]
-        #[naked]
+        #[cfg_attr(compatible_old_toolchain, no_mangle)]
+        #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+        #[cfg_attr(compatible_old_toolchain, naked)]
+        #[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
         unsafe extern "C" fn $name() -> ! {
             naked_asm!(
                 concat!(
@@ -103,7 +105,8 @@ exception_handler!(el1_error, trap_exception);
 
 macro_rules! unsupported_handler {
     ($name:ident, $msg:expr) => {
-        #[no_mangle]
+        #[cfg_attr(compatible_old_toolchain, no_mangle)]
+        #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
         unsafe extern "C" fn $name() {
             panic!($msg);
             asm!("b .");
@@ -115,7 +118,8 @@ unsupported_handler!(el0_not_supported, "el0 is not supported.");
 
 unsupported_handler!(lowerel_not_supported, "lowerel is not supported.");
 
-#[naked]
+#[cfg_attr(compatible_old_toolchain, naked)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 unsafe extern "C" fn trap_sync() -> ! {
     naked_asm!(
         "

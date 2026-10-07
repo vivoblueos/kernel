@@ -16,19 +16,22 @@ use crate::allocator;
 use core::ffi::c_int;
 
 #[coverage(off)]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn disable_local_irq_save() -> usize {
     crate::arch::disable_local_irq_save()
 }
 
 #[coverage(off)]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn enable_local_irq_restore(val: usize) {
     crate::arch::enable_local_irq_restore(val)
 }
 
 #[coverage(off)]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub unsafe extern "C" fn __aeabi_memclr8(s: *mut u8, n: usize) -> *mut u8 {
     let mut i = 0;
@@ -40,11 +43,13 @@ pub unsafe extern "C" fn __aeabi_memclr8(s: *mut u8, n: usize) -> *mut u8 {
 
 // TODO: Implement an edidx unwinder for BlueOS.
 #[coverage(off)]
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub unsafe extern "C" fn __aeabi_unwind_cpp_pr0() {}
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub extern "C" fn posix_memalign(ptr: *mut *mut u8, align: usize, size: usize) -> c_int {
     let addr = allocator::malloc_align(size, align);
@@ -55,31 +60,36 @@ pub extern "C" fn posix_memalign(ptr: *mut *mut u8, align: usize, size: usize) -
     0
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub extern "C" fn free(ptr: *mut u8) {
     allocator::free(ptr)
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub extern "C" fn malloc(size: usize) -> *mut u8 {
     allocator::malloc(size)
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub extern "C" fn memalign(align: usize, size: usize) -> *mut u8 {
     allocator::malloc_align(size, align)
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub extern "C" fn calloc(count: usize, size: usize) -> *mut u8 {
     allocator::calloc(count, size)
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[linkage = "weak"]
 pub extern "C" fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
     allocator::realloc(ptr, newsize)

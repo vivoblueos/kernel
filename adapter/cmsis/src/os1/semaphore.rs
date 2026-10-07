@@ -26,7 +26,8 @@ const SEM_WAIT_ERROR: i32 = -1;
 // \param[in]     semaphore_def semaphore definition referenced with \ref osSemaphore.
 // \param[in]     count         number of available resources.
 // \return semaphore ID for reference by other functions or NULL in case of error.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreCreate(
     semaphore_def: *const osSemaphoreDef_t,
     count: i32,
@@ -56,7 +57,8 @@ fn __osSemaphoreGetCount(semaphore_id: osSemaphoreId) -> i32 {
 // \param[in]     semaphore_id  semaphore object referenced with \ref osSemaphoreCreate.
 // \param[in]     millis      \ref CMSIS_RTOS_TimeOutValue or 0 in case of no time-out.
 // \return number of available tokens, or -1 in case of incorrect parameters.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 #[allow(clippy::collapsible_else_if)]
 pub extern "C" fn osSemaphoreWait(semaphore_id: osSemaphoreId, millis: u32) -> i32 {
     if semaphore_id.is_null() {
@@ -78,7 +80,8 @@ pub extern "C" fn osSemaphoreWait(semaphore_id: osSemaphoreId, millis: u32) -> i
 // Release a Semaphore token.
 // \param[in]     semaphore_id  semaphore object referenced with \ref osSemaphoreCreate.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreRelease(semaphore_id: osSemaphoreId) -> osStatus {
     if semaphore_id.is_null() {
         return osStatus_osErrorParameter;
@@ -91,7 +94,8 @@ pub extern "C" fn osSemaphoreRelease(semaphore_id: osSemaphoreId) -> osStatus {
 // Delete a Semaphore that was created by \ref osSemaphoreCreate.
 // \param[in]     semaphore_id  semaphore object referenced with \ref osSemaphoreCreate.
 // \return status code that indicates the execution status of the function.
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn osSemaphoreDelete(semaphore_id: osSemaphoreId) -> osStatus {
     if semaphore_id.is_null() {
         return osStatus_osErrorParameter;

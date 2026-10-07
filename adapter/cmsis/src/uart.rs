@@ -20,14 +20,16 @@ extern "C" {
 }
 
 // only used for CMSIS-RTOS2 validation, so an disable guard is enough
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn uart1rx_handler() {
     let _trace = IrqTrace::new(config::UART1RX_IRQn);
     let _dig = DisableInterruptGuard::new();
     Interrupt2_Handler()
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub unsafe extern "C" fn uart1tx_handler() {
     let _trace = IrqTrace::new(config::UART1TX_IRQn);
     let _dig = DisableInterruptGuard::new();

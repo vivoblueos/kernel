@@ -23,7 +23,8 @@ extern "C" {
     fn tm_main();
 }
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn main() -> i32 {
     librs::stdio::init();
     librs::pthread::register_my_posix_tcb();

@@ -25,7 +25,8 @@ static mut INITIALIZED: u32 = INITIAL_VALUE;
 #[used]
 static mut ZEROED: u32 = 0;
 
-#[no_mangle]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
 pub extern "C" fn _start() -> u32 {
     unsafe {
         let initialized = addr_of!(INITIALIZED).read_volatile();

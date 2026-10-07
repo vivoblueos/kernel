@@ -83,13 +83,13 @@ impl<T, A: const Adapter<T>> MinHeapNode<T, A> {
 
     fn node_of_link_mut(link: &mut LinkType<T, A>) -> &mut Self {
         let ptr = link as *mut _ as *mut u8;
-        let node_ptr = unsafe { ptr.sub(Link::offset()) } as *mut Self;
+        let node_ptr = unsafe { ptr.sub(Link::<T, A>::offset()) } as *mut Self;
         unsafe { &mut *node_ptr }
     }
 
     fn node_of_link(link: &LinkType<T, A>) -> &Self {
         let ptr = link as *const _ as *const u8;
-        let node_ptr = unsafe { ptr.sub(Link::offset()) } as *const Self;
+        let node_ptr = unsafe { ptr.sub(Link::<T, A>::offset()) } as *const Self;
         unsafe { &*node_ptr }
     }
 
@@ -372,16 +372,17 @@ where
         } else {
             let maybe_left = update_parent_child(x, y, px);
             // Sibling case.
-            if let Some((is_left, p)) = maybe_left
-                && px == py
-            {
-                if is_left {
-                    set_right(p, Some(x));
-                } else {
-                    set_left(p, Some(x));
+            match maybe_left {
+                Some((is_left, p)) if px == py => {
+                    if is_left {
+                        set_right(p, Some(x));
+                    } else {
+                        set_left(p, Some(x));
+                    }
                 }
-            } else {
-                update_parent_child(y, x, py);
+                _ => {
+                    update_parent_child(y, x, py);
+                }
             }
 
             x.as_mut().parent = py;

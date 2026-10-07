@@ -48,7 +48,7 @@ pub fn nonnull_slice_from_raw_parts<T>(ptr: NonNull<T>, len: usize) -> NonNull<[
 /// Polyfill for <https://github.com/rust-lang/rust/issues/71146>
 #[inline]
 pub fn nonnull_slice_len<T>(ptr: NonNull<[T]>) -> usize {
-    unsafe { (*(ptr.as_ptr() as *const [MaybeUninit<T>])).len() }
+    unsafe { (&(*(ptr.as_ptr() as *const [MaybeUninit<T>]))).len() }
 }
 
 /// Polyfill for <https://github.com/rust-lang/rust/issues/74265>
