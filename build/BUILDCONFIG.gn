@@ -36,6 +36,9 @@ declare_args() {
       rebase_path("//kernel/kconfig/config/${board}/${build_type}/defconfig")
 }
 
+# Global toolchain capability flags, visible in every scope.
+import("//build/rustc_version.gni")
+
 # Define boolean flags for convenience.
 coverage = "${build_type}" == "coverage"
 profile = "${build_type}" == "profile"

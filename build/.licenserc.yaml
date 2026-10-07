@@ -46,6 +46,7 @@ header: # `header` section is configurations for source codes license header.
       - "CREDITS/**"
       - ".gitignore"
       - ".gitattributes"
+      - "**/.git/**" # .git is a symlink to .repo/projects in repo-tool checkouts, license-eye only skips real .git dirs
       - "**/*.md"
       - "**/*.x" # ld link script
       - "**/qemu_checker_test_fail.txt"

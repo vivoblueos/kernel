@@ -17,6 +17,8 @@ _common_cflags = [
   "-fdata-sections",
 ]
 
+import("//build/rustc_version.gni")
+
 _common_rustflags = [
   "--color=always",
 
@@ -30,6 +32,16 @@ _common_rustflags = [
   "-A",
   "static_mut_refs",
 ]
+
+if (is_rust_toolchain_older_than_1_90) {
+  # Enables `#[cfg(compatible_old_toolchain)]` in all Rust code so it can
+  # provide fallbacks for newer language/library features. Absent on >= 1.90,
+  # so `#[cfg(not(compatible_old_toolchain))]` selects the modern path.
+  _common_rustflags += [
+    "--cfg",
+    "compatible_old_toolchain",
+  ]
+}
 
 config("release") {
   cflags = [
