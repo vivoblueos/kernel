@@ -75,7 +75,8 @@ pub extern "C" fn osMessageQueueNew(
         // the queue into an out-of-bounds access on the caller's buffer.
         // Compute in u64 and reject on overflow instead.
         const ALIGN: u64 = core::mem::size_of::<usize>() as u64;
-        let node_size = ((u64::from(msg_size) + ALIGN - 1) & !(ALIGN - 1)) + ALIGN;
+        let node_size = ((u64::from(msg_size) + ALIGN - 1) & !(ALIGN - 1))
+            + core::mem::size_of::<usize>() as u64;
         let Some(need) = node_size.checked_mul(u64::from(msg_count)) else {
             return ptr::null_mut();
         };
