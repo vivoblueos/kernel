@@ -560,11 +560,11 @@ impl SocketMsghdr {
             .and_then(|addr| addr.create_ip_endpoint())
     }
 
-    pub fn packet_len(&self) -> usize {
+    pub fn packet_len(&self) -> Option<usize> {
         unsafe { core::slice::from_raw_parts(self.msg_iov, self.msg_iovlen as usize) }
             .iter()
             .map(|iov| iov.iov_len)
-            .sum()
+            .try_fold(0usize, |acc, len| acc.checked_add(len))
     }
 
     pub fn parse_icmp_identifier(&self) -> Option<u16> {
