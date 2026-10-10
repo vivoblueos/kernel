@@ -83,6 +83,7 @@ pub mod logger;
 pub mod mm;
 #[cfg(enable_net)]
 pub mod net;
+pub mod process;
 pub mod scheduler;
 pub mod support;
 pub mod sync;
