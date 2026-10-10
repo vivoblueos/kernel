@@ -73,7 +73,7 @@ impl InsertByPrio {
     pub const VALUE: u8 = 0;
 }
 
-/// Const type for InsertToEnd  
+/// Const type for InsertToEnd
 pub struct InsertToEnd;
 impl InsertToEnd {
     pub const MODE: InsertMode = InsertMode::InsertToEnd;
@@ -237,6 +237,9 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         GlobalQueueVisitor::remove(&mut old);
+        if let Some(process) = old.process() {
+            process.remove_thread(&mut old);
+        }
         if ThreadNode::strong_count(&old) != 1 {
             // TODO: Add warning log that there are still references to the old thread.
         }
