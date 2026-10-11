@@ -54,7 +54,12 @@ pub use allocator_crate::MemoryInfo;
 
 pub struct KernelAllocator;
 static_arc! {
-   HEAP(Heap, Heap::new()),
+    HEAP(Heap, Heap::new()),
+}
+
+#[cfg(allocator_buddy)]
+static_arc! {
+    BUDDY_ALLOC(buddy::BuddyHeap, buddy::BuddyHeap::new()),
 }
 
 #[cfg(allocator_buddy)]
@@ -69,7 +74,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             let size = layout.size().max(layout.align());
             if size > BUDDY_THRESHOLD {
                 let order = order_of_size(size);
-                return buddy::BUDDY_ALLOC
+                return BUDDY_ALLOC
                     .alloc_pages_phys_addr(order)
                     .map_or(ptr::null_mut(), |addr| kernel_phys_to_virt(addr) as *mut u8);
             }
@@ -87,7 +92,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             if size > BUDDY_THRESHOLD {
                 let order = order_of_size(size);
                 let phys_addr = kernel_virt_to_phys(ptr as usize);
-                buddy::BUDDY_ALLOC.free_pages_phys_addr(phys_addr, order);
+                BUDDY_ALLOC.free_pages_phys_addr(phys_addr, order);
                 return;
             }
         }
@@ -177,14 +182,14 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         let phys_dram_base = crate::boards::PHYS_DRAM_BASE as usize;
         let phys_dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
         unsafe {
-            buddy::BUDDY_ALLOC.init(phys_dram_base, phys_dram_base + phys_dram_size);
+            BUDDY_ALLOC.init(phys_dram_base, phys_dram_base + phys_dram_size);
         }
 
         // Level 2: Allocate page pool for small-object allocator from buddy.
         assert!(end > start);
         let pool_size = end as usize - start as usize;
         let order = buddy::order_of_size(pool_size);
-        if let Some(pool_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(order) {
+        if let Some(pool_phys_addr) = BUDDY_ALLOC.alloc_pages_phys_addr(order) {
             unsafe {
                 HEAP.init(kernel_phys_to_virt(pool_phys_addr), pool_size);
             }

@@ -16,20 +16,8 @@
 
 mod heap;
 
-use crate::types::{Arc, ArcInner};
 pub(super) use allocator_crate::buddy::{order_of_size, PAGE_SIZE};
-use heap::BuddyHeap;
-
-#[allow(non_snake_case)]
-mod BUDDY_ALLOC {
-    use super::*;
-
-    static CTRL_BLOCK: ArcInner<BuddyHeap> = ArcInner::new(BuddyHeap::new());
-    pub(in crate::allocator) static PTR: Arc<BuddyHeap> =
-        unsafe { Arc::from_static_inner_ref(&CTRL_BLOCK) };
-}
-
-pub(super) use BUDDY_ALLOC::PTR as BUDDY_ALLOC;
+pub(super) use heap::BuddyHeap;
 
 #[cfg(test)]
 mod tests;
