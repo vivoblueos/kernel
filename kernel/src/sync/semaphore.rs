@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::SpinLock;
+use super::{SpinLock, SpinLockGuard};
 use crate::{
     irq, scheduler,
     scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitEntry, WaitQueue},
@@ -75,7 +75,6 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
-        let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
         loop {
             let old = self.counter.get();
@@ -94,6 +93,7 @@ impl Semaphore {
                 return true;
             }
             with_iou!(|borrowed_wait_entry| {
+                let this_thread = scheduler::current_thread();
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
@@ -110,7 +110,6 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
-        let this_thread = scheduler::current_thread();
         let mut w = self.pending.irqsave_lock();
         let mut start = Tick::now();
         loop {
@@ -134,6 +133,7 @@ impl Semaphore {
             }
             let timeout;
             with_iou!(|borrowed_wait_entry| {
+                let this_thread = scheduler::current_thread();
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
@@ -162,8 +162,9 @@ impl Semaphore {
         self.acquire_timeout::<M>(timeout)
     }
 
+    #[inline]
     pub fn release(&self) {
-        let mut w = self.pending.irqsave_lock();
+        let w = self.pending.irqsave_lock();
         let old = self.counter.get();
         #[cfg(debugging_scheduler)]
         {
@@ -175,12 +176,21 @@ impl Semaphore {
             );
         }
         self.counter.set(old + 1);
-        if old > 0 {
+        // A zero count need not have waiters: acquire/release loops hit this path.
+        if old > 0 || w.is_empty() {
             return;
         }
+        Self::wake_waiter(w);
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn wake_waiter(w: SpinLockGuard<'_, WaitQueue>) {
+        let mut woken = false;
         for next in w.iter() {
             let t = next.thread.clone();
             if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
+                woken = true;
                 break;
             }
             #[cfg(debugging_scheduler)]
@@ -195,7 +205,9 @@ impl Semaphore {
             }
         }
         drop(w);
-        scheduler::yield_me_now_or_later();
+        if woken {
+            scheduler::yield_me_now_or_later();
+        }
     }
 
     pub fn reset(&self) -> usize {
@@ -360,6 +372,50 @@ mod tests {
         let result2 = semaphore.try_acquire::<InsertToEnd>();
         assert!(result2);
         assert_eq!(semaphore.counter.get(), 0);
+    }
+
+    #[cfg(cortex_m)]
+    #[test]
+    fn test_semaphore_release_without_waiters_does_not_schedule() {
+        use cortex_m::peripheral::SCB;
+
+        let semaphore = Semaphore::new();
+        semaphore.init(0);
+        let _guard = crate::support::DisableInterruptGuard::new();
+        let was_pending = SCB::is_pendsv_pending();
+        SCB::clear_pendsv();
+        semaphore.release();
+        let scheduled = SCB::is_pendsv_pending();
+        if was_pending {
+            SCB::set_pendsv();
+        }
+        assert!(!scheduled);
+        assert_eq!(semaphore.count(), 1);
+    }
+
+    #[test]
+    fn test_semaphore_release_wakes_waiter() {
+        use crate::types::Arc;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        let semaphore = Arc::new(Semaphore::new());
+        semaphore.init(0);
+        let acquired = Arc::new(AtomicUsize::new(0));
+        let worker_semaphore = semaphore.clone();
+        let worker_acquired = acquired.clone();
+        let worker = thread::spawn(move || {
+            assert!(worker_semaphore.acquire_notimeout::<InsertToEnd>());
+            worker_acquired.store(1, Ordering::Release);
+            crate::sync::wake(&worker_acquired);
+        })
+        .unwrap();
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        assert_eq!(acquired.load(Ordering::Acquire), 0);
+        semaphore.release();
+        crate::sync::wait_until(1, &acquired);
+        assert_eq!(semaphore.count(), 0);
     }
 
     #[test]
