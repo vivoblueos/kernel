@@ -40,6 +40,7 @@ use crate::{
     time::Tick,
 };
 use alloc::sync::Arc as AllocArc;
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     cell::{Cell, UnsafeCell},
     future::Future,
@@ -206,7 +207,7 @@ impl<T, const N: usize> ChanInner<T, N> {
 
         // Wake consumer.
         self.notify.fetch_add(1, Ordering::Release);
-        let _ = atomic_wake(&self.notify, usize::MAX);
+        atomic_wake(&self.notify, usize::MAX).ignore_result();
         if let Some(w) = self.recv_waker.lock().take() {
             w.wake();
         }
@@ -225,7 +226,7 @@ impl<T, const N: usize> ChanInner<T, N> {
 
         // Wake producer.
         self.notify.fetch_add(1, Ordering::Release);
-        let _ = atomic_wake(&self.notify, usize::MAX);
+        atomic_wake(&self.notify, usize::MAX).ignore_result();
         if let Some(w) = self.send_waker.lock().take() {
             w.wake();
         }
@@ -235,7 +236,7 @@ impl<T, const N: usize> ChanInner<T, N> {
     pub(crate) fn disconnect(&self) {
         if self.disconnected.swap(1, Ordering::Release) == 0 {
             self.notify.fetch_add(1, Ordering::Release);
-            let _ = atomic_wake(&self.notify, usize::MAX);
+            atomic_wake(&self.notify, usize::MAX).ignore_result();
             if let Some(w) = self.send_waker.lock().take() {
                 w.wake();
             }

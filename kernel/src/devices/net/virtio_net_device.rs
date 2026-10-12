@@ -16,6 +16,7 @@ use core::cell::RefCell;
 
 use crate::devices::virtio::{self, VirtioHal};
 use alloc::{boxed::Box, vec, vec::Vec};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use smoltcp::{
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
     time::Instant,
@@ -162,7 +163,7 @@ impl TxToken for VirtIONetTxToken {
         with_net_device(self.device_index, |net| {
             let mut tx_buf = net.new_tx_buffer(len);
             let result = f(tx_buf.packet_mut());
-            let _ = net.send(tx_buf);
+            net.send(tx_buf).ignore_result();
             result
         })
         .expect("Found no virtio net device!")

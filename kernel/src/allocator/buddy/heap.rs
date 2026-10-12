@@ -370,6 +370,7 @@ pub struct BuddyAllocator {
 }
 
 #[cfg(test)]
+#[must_use]
 pub struct BuddyTestExclusiveGuard<'a> {
     allocator: &'a BuddyAllocator,
 }

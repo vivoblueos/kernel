@@ -107,6 +107,7 @@ const WRITER: Usize = 1;
 ///
 /// When the guard falls out of scope it will decrement the read count,
 /// potentially releasing the lock.
+#[must_use]
 pub struct RwLockReadGuard<'a, T: 'a + ?Sized> {
     lock: &'a AtomicUsize,
     data: *const T,
@@ -115,6 +116,7 @@ pub struct RwLockReadGuard<'a, T: 'a + ?Sized> {
 /// A guard that provides mutable data access.
 ///
 /// When the guard falls out of scope it will release the lock.
+#[must_use]
 pub struct RwLockWriteGuard<'a, T: 'a + ?Sized> {
     lock: &'a AtomicUsize,
     data: *mut T,
@@ -127,6 +129,7 @@ pub struct RwLockWriteGuard<'a, T: 'a + ?Sized> {
 /// when the lock is acquired.
 ///
 /// When the guard falls out of scope it will release the lock.
+#[must_use]
 pub struct RwLockUpgradableGuard<'a, T: 'a + ?Sized> {
     lock: &'a AtomicUsize,
     data: *const T,
@@ -979,9 +982,11 @@ mod tests {
 
     #[test]
     fn test_rw_access_in_unwind() {
+        use crate::no_let_underscore::IgnoreResult;
+
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
-        let _ = thread::spawn(move || {
+        thread::spawn(move || {
             struct Unwinder {
                 i: Arc<RwLock<isize>>,
             }
@@ -994,7 +999,8 @@ mod tests {
             let _u = Unwinder { i: arc2 };
             panic!();
         })
-        .join();
+        .join()
+        .ignore_result();
         let lock = arc.read();
         assert_eq!(*lock, 2);
     }

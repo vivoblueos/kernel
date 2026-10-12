@@ -21,6 +21,7 @@ use blueos::{
     thread::Builder as ThreadBuilder,
     time::Tick,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use blueos_test_macro::test;
 use core::{
     cmp,
@@ -85,7 +86,7 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
         }),
         Some(Box::new(|| {
             TCP_CLIENT_THREAD_FINISH.store(1, Ordering::Release);
-            let _ = futex::atomic_wake(&TCP_CLIENT_THREAD_FINISH, 1);
+            futex::atomic_wake(&TCP_CLIENT_THREAD_FINISH, 1).ignore_result();
         })),
     );
 
@@ -204,7 +205,7 @@ fn tcp_server_thread(args: Arc<NetTestArgs>) {
     );
 
     TCP_SERVER_THREAD_FINISH.store(1, Ordering::Release);
-    let _ = futex::atomic_wake(&TCP_SERVER_THREAD_FINISH, 1);
+    futex::atomic_wake(&TCP_SERVER_THREAD_FINISH, 1).ignore_result();
     println!("Thread exit:[tcp_server_thread]");
 }
 
@@ -278,7 +279,7 @@ fn tcp_client_thread(args: Arc<NetTestArgs>) {
         "Failed to shutdown tcp client socket."
     );
 
-    let _ = futex::atomic_wait(&TCP_SERVER_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_SERVER_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 
     assert!(bytes_sent > 0, "Test tcp client send fail.");
     println!("Thread exit:[tcp_client_thread]");
@@ -301,7 +302,7 @@ fn test_tcp_ipv4() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -322,7 +323,7 @@ fn test_tcp_ipv4_non_blocking() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -342,7 +343,7 @@ fn test_tcp_ipv6() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
 
 #[test]
@@ -362,5 +363,5 @@ fn test_tcp_ipv6_non_blocking() {
         }),
     );
 
-    let _ = futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX);
+    futex::atomic_wait(&TCP_CLIENT_THREAD_FINISH, 0, Tick::MAX).ignore_result();
 }
