@@ -17,6 +17,7 @@
 //! The `LinkLayer` impl for `VirtioLink` remains in `net::link::virtio`.
 
 use alloc::{string::String, vec};
+use blueos_infra::no_let_underscore::IgnoreResult;
 
 use smoltcp::{
     iface::{Config, Interface, SocketSet},
@@ -121,7 +122,9 @@ impl SmoltcpDevice for VirtioLink {
         match caps.medium {
             smoltcp::phy::Medium::Ethernet => {
                 iface.update_ip_addrs(|addrs| {
-                    let _ = addrs.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24));
+                    addrs
+                        .push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24))
+                        .ignore_result();
                 });
                 iface
                     .routes_mut()
@@ -129,8 +132,12 @@ impl SmoltcpDevice for VirtioLink {
             }
             smoltcp::phy::Medium::Ip => {
                 iface.update_ip_addrs(|addrs| {
-                    let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
-                    let _ = addrs.push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128));
+                    addrs
+                        .push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8))
+                        .ignore_result();
+                    addrs
+                        .push(IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 1), 128))
+                        .ignore_result();
                 });
             }
             smoltcp::phy::Medium::Ieee802154 => {}

@@ -78,7 +78,7 @@ impl MemoryPoolInner {
             let ok = BlockList::insert_after(&mut self.free_list, &mut block.node);
             debug_assert!(ok);
             self.free_blocks += 1;
-            let _ = Box::into_raw(block);
+            core::mem::forget(block);
         }
     }
 }

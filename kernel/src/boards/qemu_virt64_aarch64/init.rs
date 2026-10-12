@@ -29,6 +29,7 @@ use crate::{
 use alloc::boxed::Box;
 use blueos_driver::uart::arm_pl011::ArmPl011Isr;
 use blueos_hal::{isr::IsrDesc, HasInterruptReg};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::sync::atomic::Ordering;
 static STAGING: SmpStagedInit = SmpStagedInit::new();
 
@@ -66,7 +67,7 @@ pub(crate) fn init() {
         arch::current_cpu_id(),
         irq::IrqTrigger::Level,
     );
-    let _ = irq::register_handler(
+    irq::register_handler(
         config::PL011_UART0_IRQNUM,
         Box::new(
             ArmPl011Isr::<{ config::PL011_UART0_BASE as usize }, _>::new(
@@ -75,8 +76,9 @@ pub(crate) fn init() {
                 Some(crate::drivers::serial::Serial::recvchars),
             ),
         ),
-    );
-    let _ = irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {}));
+    )
+    .ignore_result();
+    irq::register_handler(config::GENERIC_TIMER_IRQNUM, Box::new(TimerIrq {})).ignore_result();
 }
 
 crate::define_peripheral! {
