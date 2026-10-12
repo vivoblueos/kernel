@@ -16,6 +16,7 @@
 // https://github.com/redox-os/relibc/blob/master/LICENSE
 // standard MIT license
 
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     ffi::c_int,
     sync::atomic::{AtomicUsize, Ordering},
@@ -111,16 +112,16 @@ impl Cond {
         let current = self.cur.load(Ordering::Relaxed);
         self.prev.store(current, Ordering::Relaxed);
 
-        let _ = unlock();
+        unlock().ignore_result();
 
         match deadline {
             Some(deadline) => {
                 crate::sync::futex_wait(&self.cur, current, Some(deadline));
-                let _ = lock_with_timeout(deadline);
+                lock_with_timeout(deadline).ignore_result();
             }
             None => {
                 crate::sync::futex_wait(&self.cur, current, None);
-                let _ = lock();
+                lock().ignore_result();
             }
         }
         Ok(())

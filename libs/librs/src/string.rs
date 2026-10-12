@@ -25,6 +25,7 @@ use crate::{
     iter::{NullTerminated, NullTerminatedInclusive},
     stdio::StringWriter,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     cmp::Ordering,
     ffi::{c_char, c_int, c_long, c_longlong, c_size_t, c_void},
@@ -145,9 +146,9 @@ pub unsafe extern "C" fn strerror(errnum: c_int) -> *mut c_char {
     let mut w = StringWriter(buf.as_mut_ptr(), 256);
 
     if errnum >= 0 && errnum < STR_ERROR.len() as c_int {
-        let _ = w.write_str(STR_ERROR[errnum as usize]);
+        w.write_str(STR_ERROR[errnum as usize]).ignore_result();
     } else {
-        let _ = w.write_str("Unknown error {}");
+        w.write_str("Unknown error {}").ignore_result();
     }
 
     buf.as_mut_ptr() as *mut c_char
