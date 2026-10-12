@@ -37,6 +37,8 @@ _clippy_lint_flags = [
   "clippy::unnecessary_cast",
   "-A",
   "clippy::arc_with_non_send_sync",
+  "-F",
+  "clippy::let_underscore_must_use",
 ]
 
 clippy_lint_flags = string_join(" ", _clippy_lint_flags)
