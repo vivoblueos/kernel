@@ -48,6 +48,7 @@ use aarch64_cpu::{
     },
     registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1},
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     mem, ptr,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -290,11 +291,15 @@ impl PageTableManager {
         let table = unsafe { &mut TABLE_MANAGER };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set_block(base, MemAttributes::Device);
+            table.0[index]
+                .set_block(base, MemAttributes::Device)
+                .ignore_result();
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set_block(base, MemAttributes::Normal);
+            table.0[index]
+                .set_block(base, MemAttributes::Normal)
+                .ignore_result();
         }
     }
 
@@ -302,11 +307,15 @@ impl PageTableManager {
         let table = unsafe { &mut LINEARMAP_MANAGER };
         for &base in crate::boards::MMU_L1_DEVICE_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set_block(base, MemAttributes::Device);
+            table.0[index]
+                .set_block(base, MemAttributes::Device)
+                .ignore_result();
         }
         for &base in crate::boards::MMU_L1_NORMAL_BASES {
             let index = (base >> 30) as usize;
-            let _ = table.0[index].set_block(base, MemAttributes::Normal);
+            table.0[index]
+                .set_block(base, MemAttributes::Normal)
+                .ignore_result();
         }
     }
 }

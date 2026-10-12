@@ -31,6 +31,7 @@ use alloc::{
     string::String,
     sync::{Arc, Weak},
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     time::Duration,
@@ -785,7 +786,9 @@ impl InodeOps for FatInode {
                             .content = Some(file);
                     }
                     Err(error) => {
-                        let _ = internal_dir.rename(new_name, internal_dir, old_name);
+                        internal_dir
+                            .rename(new_name, internal_dir, old_name)
+                            .ignore_result();
                         child_inner
                             .as_file_mut()
                             .ok_or(code::EIO)?
@@ -841,7 +844,9 @@ impl InodeOps for FatInode {
                         .content = Some(file);
                 }
                 Err(error) => {
-                    let _ = target_internal.rename(new_name, source_internal, old_name);
+                    target_internal
+                        .rename(new_name, source_internal, old_name)
+                        .ignore_result();
                     child_inner
                         .as_file_mut()
                         .ok_or(code::EIO)?
@@ -1186,7 +1191,7 @@ impl Seek for FatStorage {
 impl Drop for FatStorage {
     fn drop(&mut self) {
         trace!("[FatStorage] drop");
-        let _ = self.device.sync();
+        self.device.sync().ignore_result();
     }
 }
 

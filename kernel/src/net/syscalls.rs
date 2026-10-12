@@ -23,6 +23,7 @@ use crate::{
     vfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd},
 };
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     ffi::{c_char, c_int, c_size_t, c_ssize_t, c_void, CStr},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -365,11 +366,12 @@ pub fn recvfrom(
         log::debug!("Received packet from {:?}", endpoint);
 
         if let Some((mut address_ref, mut address_len_ref)) = recv_addr {
-            let _ = net::write_to_sockaddr(
+            net::write_to_sockaddr(
                 endpoint,
                 address_ref as *mut libc::sockaddr,
                 address_len_ref as *mut libc::socklen_t,
-            );
+            )
+            .ignore_result();
         }
 
         let recv_len = core::cmp::min(recv_buffer.len(), length as usize);
@@ -616,26 +618,26 @@ pub fn accept(
 
     let accepted_connection = Arc::new(Connection::new_accepted(accepted_fd, &connection));
     if sock_attach_to_fd(accepted_fd, accepted_connection.clone()).is_err() {
-        let _ = free_sock_fd(accepted_fd);
+        free_sock_fd(accepted_fd).ignore_result();
         return -libc::EMFILE;
     }
 
     let result = connection.accept(accepted_fd, accepted_connection.clone());
     if let Err(error) = result {
-        let _ = free_sock_fd(accepted_fd);
+        free_sock_fd(accepted_fd).ignore_result();
         return error.to_errno();
     }
 
     if !address.is_null() {
         let Some(remote_endpoint) = accepted_connection.remote_endpoint() else {
-            let _ = accepted_connection.shutdown();
-            let _ = free_sock_fd(accepted_fd);
+            accepted_connection.shutdown().ignore_result();
+            free_sock_fd(accepted_fd).ignore_result();
             return -libc::EIO;
         };
 
         if let Err(errno) = net::write_to_sockaddr(remote_endpoint, address, address_len) {
-            let _ = accepted_connection.shutdown();
-            let _ = free_sock_fd(accepted_fd);
+            accepted_connection.shutdown().ignore_result();
+            free_sock_fd(accepted_fd).ignore_result();
             return errno;
         }
     }
@@ -652,7 +654,7 @@ pub fn shutdown(socket: c_int, how: c_int) -> c_int {
     };
     let result = connection.shutdown();
     if result.is_ok() {
-        let _ = free_sock_fd(socket);
+        free_sock_fd(socket).ignore_result();
     }
     result.map(|_| 0).unwrap_or_else(|error| error.to_errno())
 }

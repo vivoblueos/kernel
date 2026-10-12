@@ -125,6 +125,7 @@ pub(crate) unsafe extern "C" fn trap_entry() {
 }
 
 #[derive(Default, Debug)]
+#[must_use]
 struct SyscallGuard {
     isr_ctx: IsrContext,
 }
