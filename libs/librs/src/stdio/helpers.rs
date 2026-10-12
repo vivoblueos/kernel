@@ -17,6 +17,7 @@
 // standard MIT license
 
 use alloc::boxed::Box;
+use blueos_infra::no_let_underscore::IgnoreResult;
 
 use super::{constants::*, Buffer, FILE};
 use crate::{
@@ -332,14 +333,14 @@ impl FileWriter {
 
 impl fmt::Write for FileWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        let _ = self.write(s.as_bytes());
+        self.write(s.as_bytes()).ignore_result();
         Ok(())
     }
 }
 
 impl WriteByte for FileWriter {
     fn write_u8(&mut self, byte: u8) -> fmt::Result {
-        let _ = self.write(&[byte]);
+        self.write(&[byte]).ignore_result();
         Ok(())
     }
 }
