@@ -267,7 +267,6 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
         let p = x.as_ref().parent();
         y.as_mut().set_parent(p);
         if let Some(mut p_node) = p {
-            let mut p_node = p.unwrap();
             if p_node.as_ref().right == Some(x) {
                 p_node.as_mut().right = Some(y);
             } else {

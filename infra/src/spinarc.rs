@@ -198,7 +198,10 @@ impl<T> IlistNode<T> {
                 guard.next.replace(me.clone()).ignore_old_value();
             };
             drop(write_other_guard);
-            write_me_guard.next.replace(other.clone()).ignore_old_value();
+            write_me_guard
+                .next
+                .replace(other.clone())
+                .ignore_old_value();
             write_me_guard.increment_version();
             return true;
         }
@@ -250,7 +253,10 @@ impl<T> IlistNode<T> {
                 guard.prev.replace(me.clone()).ignore_old_value();
             };
             drop(write_other_guard);
-            write_me_guard.prev.replace(other.clone()).ignore_old_value();
+            write_me_guard
+                .prev
+                .replace(other.clone())
+                .ignore_old_value();
             write_me_guard.increment_version();
             return true;
         }
