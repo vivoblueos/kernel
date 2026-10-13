@@ -14,7 +14,7 @@
 
 use super::page::{Page, PageFlags, PageListNodeAdapter, MAX_ORDER, PAGE_SHIFT, PAGE_SIZE};
 use crate::{
-    mm::{kernel_phys_to_virt, kernel_virt_to_phys},
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
     sync::spinlock::SpinLock,
     types::{Ilist, IlistHead},
 };
@@ -136,7 +136,7 @@ impl BuddyAllocatorCore {
         self.end_pfn = self.total_pages; // end_pfn is unavailable as an array index
 
         // Reserve space for struct Page[total_pages] after the kernel image and static heap.
-        let virt_mem_start = kernel_phys_to_virt(phys_mem_start);
+        let virt_mem_start = kernel_phys_to_virt(PhysicalAddress::new(phys_mem_start)).into_raw();
         let mut virt_page_array_start =
             crate::support::align_up_size(unsafe { ptr::addr_of_mut!(_end) as usize }, PAGE_SIZE);
         assert!(virt_page_array_start >= virt_mem_start);
@@ -146,7 +146,8 @@ impl BuddyAllocatorCore {
 
         // Align metadata end up to PAGE_SIZE boundary.
         let virt_metadata_end = crate::support::align_up_size(virt_page_array_end, PAGE_SIZE);
-        let phys_metadata_end = kernel_virt_to_phys(virt_metadata_end);
+        let phys_metadata_end =
+            kernel_virt_to_phys(VirtualAddress::new(virt_metadata_end)).into_raw();
         assert!(phys_metadata_end <= phys_mem_end);
         // start_pfn is the pfn of the first available physical page, right after the metadata.
         self.start_pfn = (phys_metadata_end - phys_mem_start) >> PAGE_SHIFT;

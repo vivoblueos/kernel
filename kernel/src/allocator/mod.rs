@@ -15,7 +15,7 @@
 extern crate alloc;
 
 use crate::{
-    mm::{kernel_phys_to_virt, kernel_virt_to_phys},
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
     static_arc,
 };
 use alloc::alloc::Layout;
@@ -68,7 +68,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 let order = order_of_size(size);
                 return buddy::BUDDY_ALLOC
                     .alloc_pages_phys_addr(order)
-                    .map_or(ptr::null_mut(), |addr| kernel_phys_to_virt(addr) as *mut u8);
+                    .map_or(ptr::null_mut(), |addr| {
+                        kernel_phys_to_virt(PhysicalAddress::new(addr)).into_raw() as *mut u8
+                    });
             }
         }
         HEAP.alloc(layout)
@@ -86,7 +88,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             let size = layout.size().max(layout.align());
             if size >= PAGE_SIZE {
                 let order = order_of_size(size);
-                let phys_addr = kernel_virt_to_phys(ptr as usize);
+                let phys_addr = kernel_virt_to_phys(VirtualAddress::new(ptr as usize)).into_raw();
                 let pfn = (phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
                 buddy::BUDDY_ALLOC.free_pages_pfn(pfn, order);
                 return;
@@ -119,7 +121,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     else {
                         return ptr::null_mut();
                     };
-                    let new_ptr = kernel_phys_to_virt(new_phys_addr) as *mut u8;
+                    let new_ptr = kernel_phys_to_virt(PhysicalAddress::new(new_phys_addr))
+                        .into_raw() as *mut u8;
                     ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
                     HEAP.dealloc(ptr, old_layout);
                     new_ptr
@@ -135,10 +138,12 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     else {
                         return ptr::null_mut();
                     };
-                    let new_ptr = kernel_phys_to_virt(new_phys_addr) as *mut u8;
+                    let new_ptr = kernel_phys_to_virt(PhysicalAddress::new(new_phys_addr))
+                        .into_raw() as *mut u8;
                     ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
 
-                    let old_phys_addr = kernel_virt_to_phys(ptr as usize);
+                    let old_phys_addr =
+                        kernel_virt_to_phys(VirtualAddress::new(ptr as usize)).into_raw();
                     let old_pfn =
                         (old_phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
                     buddy::BUDDY_ALLOC.free_pages_pfn(old_pfn, old_order);
@@ -154,7 +159,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
 
                     let old_order = order_of_size(old_route_size);
-                    let old_phys_addr = kernel_virt_to_phys(ptr as usize);
+                    let old_phys_addr =
+                        kernel_virt_to_phys(VirtualAddress::new(ptr as usize)).into_raw();
                     let old_pfn =
                         (old_phys_addr - crate::boards::PHYS_DRAM_BASE as usize) >> PAGE_SHIFT;
                     buddy::BUDDY_ALLOC.free_pages_pfn(old_pfn, old_order);
@@ -214,7 +220,10 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         let order = buddy::heap::order_of_size(pool_size);
         if let Some(pool_phys_addr) = buddy::BUDDY_ALLOC.alloc_pages_phys_addr(order) {
             unsafe {
-                HEAP.init(kernel_phys_to_virt(pool_phys_addr), pool_size);
+                HEAP.init(
+                    kernel_phys_to_virt(PhysicalAddress::new(pool_phys_addr)).into_raw(),
+                    pool_size,
+                );
             }
         } else {
             // Fallback: use original heap range if buddy allocation fails.
