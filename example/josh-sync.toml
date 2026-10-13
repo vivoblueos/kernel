@@ -1,5 +1,5 @@
 org = "vivoblueos"
-upstream-repo = "vivoblueos/blueos"
+upstream-repo = "vivoblueos/bluekernel"
 upstream-branch = "main"
 
 repo = "apps_example"
