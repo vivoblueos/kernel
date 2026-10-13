@@ -21,7 +21,6 @@ use crate::{
 use alloc::{sync::Arc, vec, vec::Vec};
 use core::ffi::c_int;
 use log::warn;
-use spin::{Mutex as SpinLock, Once};
 
 /// Standard file descriptors
 pub const STDIN_FILENO: c_int = 0;
@@ -156,12 +155,4 @@ impl FdManager {
 
         self.next_fd = next_fd;
     }
-}
-
-// Global file descriptor manager instance
-// TODO: FdManager is used for per process
-static FD_MANAGER: Once<SpinLock<FdManager>> = Once::new();
-/// Get file descriptor manager instance
-pub(crate) fn get_fd_manager() -> &'static SpinLock<FdManager> {
-    FD_MANAGER.call_once(|| SpinLock::new(FdManager::new()))
 }

@@ -219,6 +219,16 @@ mod tests {
             Entry::C(test_main),
             ThreadKind::Normal,
         );
+        // `build_static_thread` does not link the thread to a process, so without
+        // this the test thread's `current_process()` would return `None`. Link it
+        // to the root process (created at boot) so the thread has an owning
+        // process.
+        if !crate::process::ProcessManager::get()
+            .root_process()
+            .add_thread(t)
+        {
+            log::warn!("test thread {} already linked to a process", i);
+        }
     }
 
     extern "C" fn init_test() {
@@ -234,6 +244,12 @@ mod tests {
             Entry::C(test_main),
             ThreadKind::Normal,
         );
+        if !crate::process::ProcessManager::get()
+            .root_process()
+            .add_thread(t.clone())
+        {
+            log::warn!("main test thread already linked to a process");
+        }
         let ok = scheduler::queue_ready_thread(thread::IDLE, t.clone());
         assert_eq!(ok, Ok(()));
     }
