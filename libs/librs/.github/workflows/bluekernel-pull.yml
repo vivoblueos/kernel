@@ -1,8 +1,8 @@
-name: Pull changes from BlueOS
+name: Pull changes from BlueKernel
 on:
   # Triggered by external events
   repository_dispatch:
-    types: [blueos-pull]
+    types: [bluekernel-pull]
   # Allow manual triggering from the web interface
   workflow_dispatch:
 permissions:
@@ -10,12 +10,12 @@ permissions:
   pull-requests: write
 # Concurrency control
 concurrency:
-  group: blueos-pull
+  group: bluekernel-pull
   cancel-in-progress: false
 jobs:
   pull:
     if: ${{ vars.JOSH_SYNC_ENABLED == 'true' }}
-    uses: vivoblueos/josh-sync/.github/workflows/blueos-pull.yml@aad1997d456dc61a03243c7dae748512918472ce
+    uses: vivoblueos/josh-sync/.github/workflows/bluekernel-pull.yml@3e0bfbbfe6825e5e144a4781cfb040a5396eb820
     with:
       # JOSH_SYNC_APP_CLIENT_ID and JOSH_SYNC_APP_PRIVATE_KEY come from organization variables and secrets
       github-app-client-id: ${{ vars.JOSH_SYNC_APP_CLIENT_ID }}
@@ -23,8 +23,8 @@ jobs:
       pr-author: "blueos-josh-sync[bot]"
       josh-sync-repository: vivoblueos/josh-sync
       # Keep this aligned with the reusable workflow revision above
-      josh-sync-revision: aad1997d456dc61a03243c7dae748512918472ce
-      branch-name: blueos-pull
+      josh-sync-revision: 3e0bfbbfe6825e5e144a4781cfb040a5396eb820
+      branch-name: bluekernel-pull
       # Set this to the default branch of the current repository; libc is special
       pr-base-branch: main
     secrets:
