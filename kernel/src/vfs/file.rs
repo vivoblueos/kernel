@@ -35,6 +35,9 @@ use bitflags::bitflags;
 use delegate::delegate;
 use spin::Mutex;
 
+#[cfg(test)]
+mod tests;
+
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
