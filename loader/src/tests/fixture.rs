@@ -31,6 +31,31 @@ pub struct ElfFixtureBuilder {
     bytes: Vec<u8>,
 }
 
+#[derive(Clone, Copy)]
+pub struct ProgramHeaderFixture {
+    pub kind: u32,
+    pub flags: u32,
+    pub offset: u64,
+    pub vaddr: u64,
+    pub filesz: u64,
+    pub memsz: u64,
+    pub align: u64,
+}
+
+impl ProgramHeaderFixture {
+    pub const fn load() -> Self {
+        Self {
+            kind: 1,
+            flags: 5,
+            offset: 0,
+            vaddr: 0x1000,
+            filesz: 4,
+            memsz: 0x100,
+            align: 4,
+        }
+    }
+}
+
 impl ElfFixtureBuilder {
     pub fn elf64(machine: u16, elf_type: u16) -> Self {
         let mut bytes = alloc::vec![0; elf64::header::SIZEOF_EHDR];
@@ -66,6 +91,73 @@ impl ElfFixtureBuilder {
         write_u16(&mut bytes, 46, elf32::section_header::SIZEOF_SHDR as u16); // e_shentsize
 
         Self { bytes }
+    }
+
+    pub fn with_flags(mut self, flags: u32) -> Self {
+        let offset = if self.bytes[EI_CLASS] == ELFCLASS64 {
+            48
+        } else {
+            36
+        };
+        write_u32(&mut self.bytes, offset, flags);
+        self
+    }
+
+    pub fn with_entry(mut self, entry: u64) -> Self {
+        if self.bytes[EI_CLASS] == ELFCLASS64 {
+            write_u64(&mut self.bytes, 24, entry);
+        } else {
+            write_u32(&mut self.bytes, 24, u32::try_from(entry).unwrap());
+        }
+        self
+    }
+
+    /// Append a program header without padding the segment's file range.
+    /// Tests can describe both valid and deliberately truncated segments.
+    pub fn with_program_header(mut self, header: ProgramHeaderFixture) -> Self {
+        let is64 = self.bytes[EI_CLASS] == ELFCLASS64;
+        let count_offset = if is64 { 56 } else { 44 };
+        let count = u16::from_le_bytes(
+            self.bytes[count_offset..count_offset + 2]
+                .try_into()
+                .unwrap(),
+        );
+        let offset = self.bytes.len();
+        if is64 {
+            self.bytes
+                .resize(offset + elf64::program_header::SIZEOF_PHDR, 0);
+            write_u32(&mut self.bytes, offset, header.kind);
+            write_u32(&mut self.bytes, offset + 4, header.flags);
+            for (field, value) in [
+                (8, header.offset),
+                (16, header.vaddr),
+                (32, header.filesz),
+                (40, header.memsz),
+                (48, header.align),
+            ] {
+                write_u64(&mut self.bytes, offset + field, value);
+            }
+        } else {
+            self.bytes
+                .resize(offset + elf32::program_header::SIZEOF_PHDR, 0);
+            write_u32(&mut self.bytes, offset, header.kind);
+            for (field, value) in [
+                (4, header.offset),
+                (8, header.vaddr),
+                (16, header.filesz),
+                (20, header.memsz),
+                (28, header.align),
+            ] {
+                write_u32(
+                    &mut self.bytes,
+                    offset + field,
+                    u32::try_from(value).unwrap(),
+                );
+            }
+            write_u32(&mut self.bytes, offset + 24, header.flags);
+        }
+        write_u16(&mut self.bytes, count_offset, count.checked_add(1).unwrap());
+        self
     }
 
     pub fn build(self) -> Vec<u8> {

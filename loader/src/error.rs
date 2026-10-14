@@ -18,20 +18,60 @@ use core::fmt::Debug;
 
 pub type LoadResult<T> = core::result::Result<T, LoadError>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoadStage {
     Beginning,
     Admit,
+    Inspect,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoadErrorKind {
     BadElf,
     UnsupportedByProfile,
     OutOfBounds,
     IntegerOverflow,
+    ResourceLimit,
+    OutOfMemory,
     Backend,
     Io,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum HeaderField {
+    Magic,
+    Class,
+    Endian,
+    Version,
+    OsAbi,
+    AbiVersion,
+    Type,
+    Machine,
+    Flags,
+    HeaderSize,
+    ProgramHeaderSize,
+    ProgramHeaderCount,
+    ProgramHeaderTable,
+}
+
+#[derive(Debug)]
+pub enum ProgramHeaderField {
+    Type,
+    FileRange,
+    VirtualRange,
+    DuplicateDynamic,
+    DuplicatePhdr,
+    DuplicateRelro,
+    DuplicateStack,
+    UnsupportedInterpreter,
+    UnsupportedTls,
+    ExecutableStack,
+}
+
+#[derive(Debug)]
+pub enum LimitKind {
+    FileLength,
+    ProgramHeaderCount,
 }
 
 #[non_exhaustive]
@@ -42,6 +82,20 @@ pub enum ErrorContext {
         offset: u64,
         len: u64,
         file_len: u64,
+    },
+    HeaderField {
+        field: HeaderField,
+        value: u64,
+    },
+    ProgramHeader {
+        index: u16,
+        field: ProgramHeaderField,
+        value: u64,
+    },
+    Limit {
+        resource: LimitKind,
+        actual: u64,
+        maximum: u64,
     },
 }
 

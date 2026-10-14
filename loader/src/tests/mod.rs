@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Stage-one reader, error and ABI-policy tests.
+//! Reader, ABI-policy and staged ELF-inspection tests.
 
 mod fixture;
+mod image;
 
 use blueos_test_macro::test;
 use goblin::elf::{

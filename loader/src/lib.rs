@@ -19,16 +19,21 @@
 #![cfg_attr(test, test_runner(loader_test_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "loader_test_main")]
 
-//! ELF loader foundations. The legacy `load_elf` entry remains available
-//! while positional reading and staged loading are introduced incrementally.
+//! ELF loader foundations and read-only image inspection.
+//!
+//! `ImageLoader<R: ElfReader>` reads and validates ELF headers through a
+//! source-independent reader. The `elf` and `image` stages stay crate-private
+//! while the legacy [`load_elf`] entry remains available during migration.
 
 pub mod error;
 pub mod profile;
 pub mod reader;
 pub use error::{LoadError, LoadResult};
 
-#[cfg(test)]
 extern crate alloc;
+mod elf;
+mod image;
+
 #[cfg(test)]
 extern crate rsrt;
 #[cfg(test)]
