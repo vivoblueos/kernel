@@ -94,6 +94,11 @@ impl fmt::Display for CpuStat {
     }
 }
 
+#[cfg(thread_stats)]
+fn running_idle_cycles(accumulated: u64, now: u64, start: u64) -> u64 {
+    accumulated.saturating_add(now.saturating_sub(start))
+}
+
 fn format_cpu_time() -> String {
     let mut result = String::with_capacity(100 * (NUM_CORES + 1)); // total + every cpu core
     let mut total_system_time: u64 = 0;
@@ -112,7 +117,11 @@ fn format_cpu_time() -> String {
             let idle_thread = scheduler::get_idle_thread(cpu_id);
             #[cfg(thread_stats)]
             let idle_cycle = if idle_thread.state() == thread::RUNNING {
-                idle_thread.get_cycles() + total_cycle - idle_thread.start_cycles()
+                running_idle_cycles(
+                    idle_thread.get_cycles(),
+                    total_cycle,
+                    idle_thread.start_cycles(),
+                )
             } else {
                 idle_thread.get_cycles()
             };
@@ -170,4 +179,18 @@ fn format_irq_counts() -> String {
         write!(result, " {}", count).unwrap();
     }
     result
+}
+
+#[cfg(all(test, thread_stats))]
+mod tests {
+    use super::*;
+    use blueos_test_macro::test;
+
+    #[test]
+    fn test_running_idle_cycles() {
+        assert_eq!(running_idle_cycles(100, 250, 200), 150);
+        assert_eq!(running_idle_cycles(100, 50, 200), 100);
+        assert_eq!(running_idle_cycles(100, 200, 200), 100);
+        assert_eq!(running_idle_cycles(u64::MAX - 10, 100, 80), u64::MAX);
+    }
 }
