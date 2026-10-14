@@ -740,7 +740,7 @@ pub unsafe extern "C" fn log_writev(
     wifi_log_writev_bridge(level, tag, format, args)
 }
 
-pub unsafe extern "C" fn log_write(level: c_uint, tag: *const c_char, format: *const c_char, ...) {
+pub unsafe extern "C" fn log_write(level: c_uint, tag: *const c_char, format: *const c_char, _: ...) {
     // We can't forward Rust ... to C ... directly.
     // Instead, just call the C bridge which handles varargs natively.
     // Note: wifi_log in libnet80211.a always calls _log_writev first,
