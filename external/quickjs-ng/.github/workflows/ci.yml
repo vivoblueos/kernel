@@ -1,0 +1,866 @@
+name: ci
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - '!.gitignore'
+      - '!LICENSE'
+      - '!README.md'
+      - '!docs/**'
+      - '!examples/**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - '**'
+      - '!.gitignore'
+      - '!LICENSE'
+      - '!README.md'
+      - '!docs/**'
+      - '!examples/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: build
+        run: |
+          make codegen
+      - name: Check if the git repository is clean
+        run: (exit "$(git status --porcelain --untracked-files=no | head -255 | wc -l)") || (echo "Dirty git tree"; git diff; exit 1)
+
+  ci:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (${{ matrix.config.configType }}${{ matrix.config.arch }})
+    env:
+      ASAN_OPTIONS: halt_on_error=1
+      MSAN_OPTIONS: halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1
+    defaults:
+      run:
+        shell: ${{ matrix.config.arch == '' && 'sh' || 'alpine.sh' }} {0}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # see https://github.com/quickjs-ng/quickjs/issues/879 - tl;dr flaky
+          #- { os: ubuntu-24.04-arm, configType: Debug }
+          #- { os: ubuntu-24.04-arm, configType: Release, runTest262: true }
+          - { os: ubuntu-latest, configType: Debug }
+          - { os: ubuntu-latest, configType: Release, runTest262: true }
+          - { os: ubuntu-latest, configType: examples }
+          - { os: ubuntu-latest, configType: shared }
+          - { os: ubuntu-latest, configType: asan+ubsan, runTest262: true }
+          - { os: ubuntu-latest, configType: msan }
+          - { os: ubuntu-latest, configType: tcc }
+          - { os: ubuntu-latest, arch: x86, runTest262: true }
+          - { os: ubuntu-latest, arch: riscv64 }
+
+          - { os: macos-14, configType: Debug }
+          - { os: macos-14, configType: Release }
+          - { os: macos-14, configType: examples }
+          - { os: macos-14, configType: shared }
+          - { os: macos-14, configType: asan+ubsan, runTest262: true }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: install TCC
+        if: ${{ matrix.config.configType == 'tcc' }}
+        run: |
+          pushd /tmp
+          git clone https://repo.or.cz/tinycc.git
+          cd tinycc
+          git checkout c21576f8a32715ab439690d18184b0e02022bbbd
+          ./configure
+          make
+          sudo make install
+          tcc -v
+          popd
+          echo "CC=tcc" >> $GITHUB_ENV;
+
+      - name: Install extra dependencies
+        if: ${{ matrix.config.arch != '' }}
+        shell: 'sh'
+        run: |
+          sudo apt update && sudo apt install -y binfmt-support
+
+      - name: Setup Alpine
+        if: ${{ matrix.config.arch != '' }}
+        uses: quickjs-ng/setup-alpine@master
+        with:
+          arch: ${{ matrix.config.arch }}
+          packages: "build-base make cmake git"
+          apk-tools-url: https://raw.githubusercontent.com/quickjs-ng/apk-for-ci/refs/heads/master/apk.static#!sha256!34bb1a96f0258982377a289392d4ea9f3f4b767a4bb5806b1b87179b79ad8a1c
+
+      - name: uname
+        run: uname -a
+
+      - name: Set build ENV vars
+        run: |
+          if [ "${{ matrix.config.configType }}" = "Debug" ]; then
+            echo "BUILD_TYPE=Debug" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "examples" ]; then
+            echo "QJS_BUILD_EXAMPLES=ON" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "shared" ]; then
+            echo "BUILD_SHARED_LIBS=ON" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "asan+ubsan" ]; then
+            echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV;
+            echo "QJS_ENABLE_ASAN=ON" >> $GITHUB_ENV;
+            echo "QJS_ENABLE_UBSAN=ON" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "msan" ]; then
+            echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV;
+            echo "QJS_ENABLE_MSAN=ON" >> $GITHUB_ENV;
+            echo "CC=clang" >> $GITHUB_ENV;
+          fi
+
+      - name: build
+        run: |
+          make \
+            BUILD_TYPE=$BUILD_TYPE \
+            QJS_BUILD_EXAMPLES=$QJS_BUILD_EXAMPLES \
+            BUILD_SHARED_LIBS=$BUILD_SHARED_LIBS \
+            QJS_ENABLE_ASAN=$QJS_ENABLE_ASAN \
+            QJS_ENABLE_UBSAN=$QJS_ENABLE_UBSAN \
+            QJS_ENABLE_MSAN=$QJS_ENABLE_MSAN
+
+      - name: stats
+        if: ${{ matrix.config.configType != 'examples' }}
+        run: |
+          make stats
+
+      - name: cxxtest
+        run: |
+          make cxxtest
+
+      - name: test
+        if: ${{ matrix.config.configType != 'examples' }}
+        run: |
+          make test
+
+      - name: test examples
+        if: ${{ matrix.config.configType == 'examples' }}
+        run: |
+          cp build/fib.so examples/
+          cp build/point.so examples/
+          ./build/qjs examples/test_fib.js
+          ./build/qjs examples/test_point.js
+          ./build/qjs tests/test_bjson.js
+          ./build/function_source
+
+      - name: test 262
+        if: ${{ matrix.config.runTest262 }}
+        run: |
+          git submodule update --init --checkout --depth 1
+          make test262
+
+      - name: test standalone
+        run: |
+          ./build/qjs -c examples/hello.js -o hello
+          ./hello
+
+      - name: test api
+        run: |
+          ./build/api-test
+
+      - name: test lre
+        run: |
+          ./build/lre-test
+
+  windows-msvc:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { arch: x64, vsArch: x64, buildType: Debug, os: windows-latest, msvc: 18 }
+          - { arch: x64, vsArch: x64, buildType: Release, os: windows-latest, msvc: 18 }
+          - { arch: Win32, vsArch: x86, buildType: Debug, os: windows-latest, msvc: 18 }
+          - { arch: Win32, vsArch: x86, buildType: Release, os: windows-latest, msvc: 18 }
+          - { arch: ARM64, vsArch: arm64, buildType: Debug, os: windows-11-arm, msvc: 17 }
+          - { arch: ARM64, vsArch: arm64, buildType: Release, os: windows-11-arm, msvc: 17 }
+    steps:
+      - uses: actions/checkout@v7
+      - name: build
+        run: |
+          cmake -B build -DQJS_BUILD_WERROR=ON -DQJS_BUILD_EXAMPLES=ON -G "Visual Studio ${{matrix.config.msvc}}" -A ${{matrix.config.arch}}
+          cmake --build build --config ${{matrix.config.buildType}}
+      - name: stats
+        run: |
+          build\${{matrix.config.buildType}}\qjs.exe -qd
+      - name: test
+        run: |
+          cp build\${{matrix.config.buildType}}\fib.dll examples\
+          cp build\${{matrix.config.buildType}}\point.dll examples\
+          build\${{matrix.config.buildType}}\qjs.exe examples\test_fib.js
+          build\${{matrix.config.buildType}}\qjs.exe examples\test_point.js
+          build\${{matrix.config.buildType}}\run-test262.exe -c tests.conf
+          build\${{matrix.config.buildType}}\function_source.exe
+      - name: test standalone
+        run: |
+          build\${{matrix.config.buildType}}\qjs.exe -c examples\hello.js -o hello.exe
+          .\hello.exe
+      - name: test api
+        run: |
+          build\${{matrix.config.buildType}}\api-test.exe
+      - name: test lre
+        run: |
+          build\${{matrix.config.buildType}}\lre-test.exe
+      - name: Set up Visual Studio shell
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: ${{ matrix.config.vsArch }}
+      - name: cxxtest
+        run: |
+          cl.exe /DJS_NAN_BOXING=0 /Zs cxxtest.cc
+          cl.exe /DJS_NAN_BOXING=1 /Zs cxxtest.cc
+
+  windows-clang:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v7
+      - name: install ninja
+        run: |
+          choco install ninja
+          ninja.exe --version
+      - name: build
+        run: |
+          git submodule update --init --checkout --depth 1
+          cmake -B build -DQJS_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=${{matrix.buildType}} -DCMAKE_C_COMPILER=clang.exe -G "Ninja"
+          cmake --build build --config ${{matrix.buildType}}
+      - name: stats
+        run: |
+          build\qjs.exe -qd
+      - name: cxxtest
+        run: |
+          clang.exe -D JS_NAN_BOXING=0 -fsyntax-only cxxtest.cc
+          clang.exe -D JS_NAN_BOXING=1 -fsyntax-only cxxtest.cc
+      - name: test
+        run: |
+          cp build\fib.dll examples\
+          cp build\point.dll examples\
+          build\qjs.exe examples\test_fib.js
+          build\qjs.exe examples\test_point.js
+          build\run-test262.exe -c tests.conf
+          build\function_source.exe
+
+  windows-clang-cl:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v7
+      - name: build
+        run: |
+          git submodule update --init --checkout --depth 1
+          cmake -B build -DQJS_BUILD_WERROR=ON -DQJS_BUILD_EXAMPLES=ON -G "Visual Studio 18" -T ClangCL
+          cmake --build build --config ${{matrix.buildType}}
+      - name: stats
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -qd
+      - name: cxxtest
+        run: |
+          clang-cl.exe /DJS_NAN_BOXING=0 /Zs cxxtest.cc
+          clang-cl.exe /DJS_NAN_BOXING=1 /Zs cxxtest.cc
+      - name: test
+        run: |
+          cp build\${{matrix.buildType}}\fib.dll examples\
+          cp build\${{matrix.buildType}}\point.dll examples\
+          build\${{matrix.buildType}}\qjs.exe examples\test_fib.js
+          build\${{matrix.buildType}}\qjs.exe examples\test_point.js
+          build\${{matrix.buildType}}\run-test262.exe -c tests.conf
+          build\${{matrix.buildType}}\function_source.exe
+      - name: test api
+        run: |
+          build\${{matrix.buildType}}\api-test.exe
+      - name: test lre
+        run: |
+          build\${{matrix.buildType}}\lre-test.exe
+
+  windows-ninja:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v7
+      - name: install ninja
+        run: |
+          choco install ninja
+          ninja.exe --version
+      - name: build
+        run: |
+          git submodule update --init --checkout --depth 1
+          cmake -B build -DQJS_BUILD_WERROR=ON -DQJS_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=${{matrix.buildType}} -G "Ninja"
+          cmake --build build
+      - name: stats
+        run: |
+          build\qjs.exe -qd
+      - name: test
+        run: |
+          cp build\fib.dll examples\
+          cp build\point.dll examples\
+          build\qjs.exe examples\test_fib.js
+          build\qjs.exe examples\test_point.js
+          build\run-test262.exe -c tests.conf
+          build\function_source.exe
+      - name: test api
+        run: |
+          build\api-test.exe
+      - name: test lre
+        run: |
+          build\lre-test.exe
+
+  windows-sdk:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, Win32]
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install windows sdk
+        uses: ChristopheLav/windows-sdk-install@v1
+        with:
+          version-sdk: 26100
+          features: 'OptionId.DesktopCPPx86,OptionId.DesktopCPPx64'
+      - name: build
+        run: |
+          cmake -B build -DQJS_BUILD_WERROR=ON -DQJS_BUILD_EXAMPLES=ON -DCMAKE_SYSTEM_VERSION="10.0.26100.0" -A ${{matrix.arch}}
+          cmake --build build --config ${{matrix.buildType}}
+      - name: stats
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -qd
+      - name: test
+        run: |
+          cp build\${{matrix.buildType}}\fib.dll examples\
+          cp build\${{matrix.buildType}}\point.dll examples\
+          build\${{matrix.buildType}}\qjs.exe examples\test_fib.js
+          build\${{matrix.buildType}}\qjs.exe examples\test_point.js
+          build\${{matrix.buildType}}\run-test262.exe -c tests.conf
+          build\${{matrix.buildType}}\function_source.exe
+      - name: test api
+        run: |
+          build\${{matrix.buildType}}\api-test.exe
+      - name: test lre
+        run: |
+          build\${{matrix.buildType}}\lre-test.exe
+
+  windows-mingw:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+        sys:
+          - mingw32
+          - mingw64
+          - clang64
+          - ucrt64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v7
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        update: true
+        msystem: ${{matrix.sys}}
+        install: >-
+          git
+          make
+        pacboy: >-
+          cmake:p
+          ninja:p
+          toolchain:p
+    - name: build
+      run: |
+        make BUILD_TYPE=${{matrix.buildType}}
+    - name: stats
+      run: |
+        make stats
+        ldd build/qjs
+    - name: cxxtest
+      if: ${{ matrix.sys != 'clang64' }}
+      run: |
+        make cxxtest
+    - name: cxxtest
+      if: ${{ matrix.sys == 'clang64' }}
+      run: |
+        make cxxtest CXX=clang++
+    - name: test
+      run: |
+        make test
+    - name: test standalone
+      run: |
+        ./build/qjs -c examples/hello.js -o hello.exe
+        ./hello
+    - name: test api
+      run: |
+        ./build/api-test
+    - name: test lre
+      run: |
+        ./build/lre-test
+  windows-mingw-shared:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          install: >-
+            git
+            make
+          pacboy: >-
+            cmake:p
+            ninja:p
+            toolchain:p
+      - name: build
+        run: |
+          make BUILD_SHARED_LIBS=ON
+          ldd build/qjs
+      - name: stats
+        run: |
+          make stats
+
+  emscripten:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mymindstorm/setup-emsdk@v16
+      - name: check emsdk
+        run: emcc -v
+      - name: build
+        run: |
+          emcmake cmake -B build -DQJS_BUILD_WERROR=ON -DQJS_BUILD_LIBC=ON
+          emmake make -C build qjs_wasm "-j$(getconf _NPROCESSORS_ONLN)"
+      - name: result
+        run: ls -lh build
+  wasi:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jcbhmr/setup-wasmtime@v2
+      - name: setup wasi-sdk
+        run: |
+          wget -nv https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-linux.deb -P /tmp
+          sudo apt install /tmp/wasi-sdk*.deb
+      - name: test
+        run: |
+          cmake -B build -DQJS_BUILD_WERROR=ON -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake
+          make -C build qjs_exe
+          wasmtime run build/qjs -qd
+          echo "console.log('hello wasi!');" > t.js
+          wasmtime run --dir . build/qjs t.js
+      - name: build wasi reactor
+        run: |
+          cmake -B build -DQJS_BUILD_WERROR=ON -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake -DQJS_WASI_REACTOR=ON
+          make -C build qjs_wasi
+          ls -lh build/qjs.wasm
+
+  cygwin:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+    env:
+      CYGWIN_NOWINPATH: 1
+      CHERE_INVOKING: 1
+    steps:
+      - name: Set up Cygwin
+        uses: cygwin/cygwin-install-action@master
+        with:
+            packages: make cmake gcc-g++ bash
+
+      - uses: actions/checkout@v7
+
+      - name: build
+        run: make
+
+      - name: stats
+        run: make stats
+
+      - name: cxxtest
+        run: |
+          make cxxtest
+
+      - name: test
+        run: make test
+
+      - name: test api
+        run: |
+          ./build/api-test
+
+      - name: test lre
+        run: |
+          ./build/lre-test
+
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: build + test
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg_add cmake gmake
+          run: |
+            gmake
+            gmake stats
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: build + test
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y cmake gmake
+          run: |
+            gmake
+            gmake stats
+
+  android:
+    runs-on: ubuntu-latest
+    container: reactnativecommunity/react-native-android:v13.0
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure android arm64
+        # see build options you can use in https://developer.android.com/ndk/guides/cmake
+        run: |
+          mkdir build
+          cd build
+          "$ANDROID_HOME/cmake/3.22.1/bin/cmake" "-DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/26.0.10792818/build/cmake/android.toolchain.cmake" -DCMAKE_BUILD_TYPE=Release -DANDROID_ABI="arm64-v8a" -DANDROID_PLATFORM=android-24 -DQJS_BUILD_LIBC=ON ..
+      - name: Build android arm64
+        run: |
+          "$ANDROID_HOME/cmake/3.22.1/bin/cmake" --build build --target qjs
+          ls -lh build
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: configure
+        run: |
+          cmake -B build -GXcode -DQJS_BUILD_WERROR=ON -DCMAKE_SYSTEM_NAME:STRING=iOS -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED:BOOL=NO -DQJS_BUILD_LIBC=ON
+      - name: build
+        run: |
+          cmake --build build --config Release --target qjs
+          ls -lh build
+
+  mimalloc-linux:
+    runs-on: ubuntu-24.04
+    env:
+      QJS_BUILD_CLI_WITH_MIMALLOC: ON
+      MIMALLOC_SHOW_STATS: 1
+    steps:
+      - uses: actions/checkout@v7
+      - name: install dependencies
+        run: |
+          sudo apt update && sudo apt -y install libmimalloc-dev
+      - name: build
+        run: |
+          make
+      - name: cxxtest
+        run: |
+          make cxxtest
+      - name: test
+        run: |
+          make test
+
+  mimalloc-macos:
+    runs-on: macos-latest
+    env:
+      QJS_BUILD_CLI_WITH_STATIC_MIMALLOC: ON
+      MIMALLOC_SHOW_STATS: 1
+    steps:
+      - uses: actions/checkout@v7
+      - name: install dependencies
+        run: |
+          brew install mimalloc
+      - name: build
+        run: |
+          make
+      - name: cxxtest
+        run: |
+          make cxxtest
+      - name: test
+        run: |
+          make test
+
+  amalgam:
+    strategy:
+      matrix:
+        # TODO(bnoordhuis) test on windows
+        config:
+          - { os: ubuntu-latest }
+          - { os: macos-latest }
+    runs-on: ${{ matrix.config.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: build
+        run: |
+          make
+      - name: create amalgamation
+        run: |
+          make amalgam
+      - name: build amalgamation
+        run: |
+          unzip -d "$RUNNER_TEMP" build/quickjs-amalgam.zip
+          cc -Wall -I. -o "$RUNNER_TEMP/run-test262.o" -c run-test262.c
+          cc -Wall -I/ -DQJS_BUILD_LIBC -o "$RUNNER_TEMP/quickjs-amalgam.o" -c "$RUNNER_TEMP/quickjs-amalgam.c"
+          cc -o "$RUNNER_TEMP/run-test262" "$RUNNER_TEMP/run-test262.o" "$RUNNER_TEMP/quickjs-amalgam.o" -lm
+      - name: test
+        run: |
+          make test RUN262="$RUNNER_TEMP/run-test262"
+
+  jscheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: jscheck
+        run: |
+          make jscheck
+
+  parserless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: build
+        run: |
+          make QJS_DISABLE_PARSER=ON QJS_BUILD_EXAMPLES=ON
+      - name: test
+        run: |
+          ./build/hello
+          ./build/hello_module
+
+
+  meson:
+    runs-on: ${{ matrix.platform }}
+    name: meson on ${{ matrix.platform }} (${{ matrix.mode.name }} ${{ matrix.flavor }}, ${{ matrix.features.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor:
+          - debug
+          - release
+        features:
+          - name: default
+            args: ""
+          - name: libc
+            args: -Dlibc=true
+          - name: mimalloc
+            args: -Dcli_mimalloc=auto
+        mode:
+          - name: default
+            args: -Dtests=enabled
+            extra_envs: {}
+
+          # Alternative compiler setups
+          - name: gcc
+            args: -Dtests=enabled
+            extra_envs:
+              CC: gcc
+              CXX: g++
+          - name: clang
+            args: -Dtests=enabled
+            extra_envs:
+              CC: clang
+              CXX: clang++
+
+          - name: sanitize
+            args: >-
+              "-Db_sanitize=address,undefined"
+            extra_envs: {}
+
+          # This is for MSVC, which only supports AddressSanitizer.
+          # https://learn.microsoft.com/en-us/cpp/sanitizers/
+          - name: sanitize+asanonly
+            args: -Db_sanitize=address
+            extra_envs:
+              ASAN_OPTIONS: report_globals=0:halt_on_error=1:abort_on_error=1:print_summary=1
+
+          - name: clang+sanitize
+            args: >-
+              "-Db_sanitize=address,undefined"
+              "-Db_lundef=false"
+            extra_envs:
+              CC: clang
+              CXX: clang++
+          - name: clang+msan
+            args: >-
+              "-Db_sanitize=memory"
+              "-Db_lundef=false"
+            extra_envs:
+              CC: clang
+              CXX: clang++
+
+          # default clang on GitHub hosted runners is from MSYS2.
+          # Use Visual Studio supplied clang-cl instead.
+          # clang-cl's AddressSanitizer does not support the debug CRT (/MDd),
+          # so force the release CRT (/MD) for both debug and release builds.
+          - name: clang-cl+sanitize
+            args: >-
+              "-Db_sanitize=address,undefined"
+              "-Db_lundef=false"
+              "-Db_vscrt=md"
+            extra_envs:
+              CC: clang-cl
+              CXX: clang-cl
+              # clang-cl's AddressSanitizer reports false positive
+              # global-buffer-overflows on pooled string literals on Windows,
+              # same as MSVC; disable global checks (covered on Linux).
+              ASAN_OPTIONS: report_globals=0:halt_on_error=1:abort_on_error=1:print_summary=1
+        platform:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+        exclude:
+          # clang-cl only makes sense on windows.
+          - platform: ubuntu-latest
+            mode:
+              name: clang-cl+sanitize
+          - platform: macos-latest
+            mode:
+              name: clang-cl+sanitize
+
+          # Use clang-cl instead of MSYS2 clang.
+          #
+          # we already tested clang+sanitize on linux,
+          # if this doesn't work, it should be an issue for MSYS2 team to consider.
+          - platform: windows-latest
+            mode:
+              name: clang
+          - platform: windows-latest
+            mode:
+              name: clang+sanitize
+          - platform: windows-latest
+            mode:
+              name: clang+msan
+
+          # MSVC-only sanitizers
+          - platform: ubuntu-latest
+            mode:
+              name: sanitize+asanonly
+          - platform: macos-latest
+            mode:
+              name: sanitize+asanonly
+          - platform: windows-latest
+            mode:
+              name: sanitize
+
+          # clang is the default on macos
+          # also gcc is an alias to clang
+          - platform: macos-latest
+            mode:
+              name: clang
+          - platform: macos-latest
+            mode:
+              name: gcc
+
+          # gcc is the default on linux
+          - platform: ubuntu-latest
+            mode:
+              name: gcc
+
+          # only run sanitizer tests on linux
+          #
+          # gcc/clang's codegen shouldn't massively change across platforms,
+          # and linux supports most of the sanitizers.
+          - platform: macos-latest
+            mode:
+              name: clang+sanitize
+          - platform: macos-latest
+            mode:
+              # macos does not support msan
+              name: clang+msan
+          - platform: macos-latest
+            mode:
+              name: sanitize
+
+    steps:
+      - name: Setup meson
+        run: |
+          pipx install meson ninja
+      - name: Install mimalloc
+        if: ${{ matrix.platform == 'ubuntu-latest' && matrix.features.name == 'mimalloc' }}
+        run: sudo apt update && sudo apt -y install libmimalloc-dev
+      - name: Install mimalloc
+        if: ${{ matrix.platform == 'macos-latest' && matrix.features.name == 'mimalloc' }}
+        run: brew install mimalloc
+      # TODO: Install mimalloc on Windows
+      # You need to:
+      # - checkout mimalloc
+      # - `msbuild mimalloc\ide\vs2022\mimalloc.sln`
+      #   - not cmake, because https://github.com/microsoft/mimalloc/issues/575#issuecomment-1112723975
+      #   - it is possible to integrate vcpkg with meson, but:
+      #     - 1. the above issue
+      #     - 2. the vcpkg port of mimalloc is outdated, and still broken on server 2019
+      #   - or maintain a meson port for mimalloc (and ensure it behaves correctly)
+      # - Make it findable with cmake
+      #   - not the simpler pkg-config. although there was pkg-config in PATH,
+      #     but that was from strawberry perl and thus broken
+      # ... good job, microsoft :))))
+
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Activate MSVC and Configure
+        if: ${{ matrix.platform == 'windows-latest' }}
+        env: ${{ matrix.mode.extra_envs }}
+        run: |
+          $extraArgs = @()
+          if ($env:CC -eq 'clang-cl') {
+            # Newer clang-cl no longer emits the asan runtime /defaultlib directives
+            # when -fsanitize is passed through /clang:, and meson links with lld-link
+            # directly (not the clang driver), so the asan/ubsan runtime is never pulled
+            # in. Link it explicitly and make its directory discoverable at link and run
+            # time (the dynamic runtime ships as a DLL).
+            $runtimeDir = (clang -print-runtime-dir).Trim()
+            $env:LIB = "$runtimeDir;$env:LIB"
+            "LIB=$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            $runtimeDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $libs = "clang_rt.asan_dynamic-x86_64.lib clang_rt.asan_dynamic_runtime_thunk-x86_64.lib"
+            $extraArgs = @("-Dc_link_args=$libs", "-Dcpp_link_args=$libs")
+          }
+          meson setup build-${{ matrix.flavor }} --buildtype=${{ matrix.flavor }} ${{ matrix.mode.args }} ${{ matrix.features.args }} --vsenv @extraArgs
+      - name: Configuring
+        if: ${{ matrix.platform != 'windows-latest' }}
+        env: ${{ matrix.mode.extra_envs }}
+        run: |
+          meson setup build-${{ matrix.flavor }} --buildtype=${{ matrix.flavor }} ${{ matrix.mode.args }} ${{ matrix.features.args }}
+      - name: Building
+        run: |
+          meson compile -C build-${{ matrix.flavor }}
+
+      - name: Running tests
+        env: ${{ matrix.mode.extra_envs }}
+        run: |
+          meson test -C build-${{ matrix.flavor }} --timeout-multiplier 5 --print-errorlogs
+          meson test --benchmark -C build-${{ matrix.flavor }} --timeout-multiplier 5 --print-errorlogs
+      - uses: actions/upload-artifact@v7
+        if: ${{ failure() }}
+        with:
+          name: ${{ matrix.platform }}-${{ matrix.mode.name }}-${{ matrix.features.name }}-${{ matrix.flavor }}-logs
+          path: build-${{ matrix.flavor }}/meson-logs

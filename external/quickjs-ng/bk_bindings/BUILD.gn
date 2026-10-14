@@ -1,0 +1,190 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Self-contained build glue for the quickjs-ng flavor. Lives inside the
+# vendored engine dir so the app entry and the newlib C-runtime adapter are
+# co-located with the engine they wrap. The QuickJS app is a plain C
+# `app_entry` executable that consumes the engine's public headers directly
+
+import("//build/boards/${board}.gni")
+import("//build/templates/bindgen.gni")
+import("//build/templates/rust.gni")
+
+# Sysroot of the toolchain; provides the newlib headers (stdio.h, stdint.h,
+# ...) that libclang needs to parse the newlib reentrant-runtime types.
+# Computed the same way the engine build does so headers match the compiled
+# objects byte-for-byte.
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "arm-none-fv-eabi-gcc" ],
+                       "string")
+
+# ---------------------------------------------------------------------------
+# newlib C-runtime adapter (librs compiled from src/newlib.rs) as a staticlib.
+#
+# The QuickJS app is a Rust `bin` that links the toolchain's newlib
+# (libc.a). newlib's reentrant stdio/stdio wrappers call underscore syscall
+# stubs (_read/_write/_fstat/_malloc_r/...) and the engine's 64-bit atomics
+# lower to __atomic_*_8 libcalls; librs's newlib adapter provides all of them.
+# We bindgen the newlib reentrant-runtime types here (like
+# librs/tests/newlib_c_cc does) and compile newlib.rs to a static archive that
+# the app links. The `librs_newlib_runtime` cfg drops newlib.rs's own
+# #[global_allocator]/#[panic_handler] (the app's rsrt_std supplies them), so
+# only the C-runtime adapter symbols are provided.
+# ---------------------------------------------------------------------------
+
+# Sysroot include path for the newlib headers, with a libclang-friendly target.
+config("newlib_reent_config") {
+  cflags = [
+    "--target=$rust_abi_target",
+    "-isystem",
+    "${_sysroot}/include",
+  ]
+}
+
+# Generate the `struct _reent` / `struct __sFILE` / ... bindings newlib.rs needs.
+bindgen("newlib_reent") {
+  bindgen_flags = [
+    "--use-core",
+    "--ctypes-prefix",
+    "core::ffi",
+    "--allowlist-type",
+    "_reent",
+    "--allowlist-type",
+    "_Bigint",
+    "--allowlist-type",
+    "__tm",
+    "--allowlist-type",
+    "_atexit",
+    "--allowlist-type",
+    "_on_exit_args",
+    "--allowlist-type",
+    "_glue",
+    "--allowlist-type",
+    "__sFILE",
+    "--allowlist-type",
+    "__sbuf",
+  ]
+  sources = [ "src/reent_wrapper.h" ]
+  configs += [ ":newlib_reent_config" ]
+}
+
+_reent_out = get_target_outputs(":newlib_reent")
+build_rust("librs_newlib") {
+  crate_type = "staticlib"
+  crate_name = "librs"
+  sources = [ "//librs/src/newlib.rs" ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  deps = [
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/kernel:blueos",
+    "//kernel/scal:blueos_scal",
+    "//libc",
+  ]
+  build_deps = [ ":newlib_reent" ]
+  rustenv = [ "BINDGEN_DIR=" + rebase_path(_reent_out[0]) ]
+}
+
+# ---------------------------------------------------------------------------
+# BlueOS app executables (plain C, linked by the toolchain against newlib +
+# the engine shell + the librs newlib-adapter staticlib — no Rust std/rsrt).
+#
+# src/qjs_entry.c registers an `app_entry` in the kernel's `.bk_app_array` and
+# (in REPL mode) hands control to the engine shell's own `main()`. It is the
+# same model as librs/tests/newlib_c_cc: the toolchain's GCC links the
+# executable directly against the toolchain's newlib. The librs_newlib
+# staticlib above supplies the underscore syscall stubs (_read/_write/
+# _malloc_r/...) and the __atomic_*_8 libcalls the engine lowers to; the kernel
+# is pulled in transitively through that staticlib.
+# ---------------------------------------------------------------------------
+import("//build/templates/quickjs.gni")
+import("//build/toolchain/blueos.gni")
+
+# Interactive QuickJS REPL. After BlueOS boots, this app drops into the
+# engine's read-eval-print loop (repl.js via js_std_eval_binary + js_std_loop).
+executable("quickjs") {
+  sources = [ "src/qjs_entry.c" ]
+
+  deps = [
+    ":librs_newlib",
+    "//external/quickjs-ng:quickjs_shell",
+  ]
+
+  configs += [ "//build/boards/${board}:kernel_config" ]
+
+  # Engine headers (quickjs.h, quickjs-libc.h) for qjs_entry.c.
+  include_dirs = [ "//external/quickjs-ng" ]
+
+  ldflags = [
+    "-Wl,-T",
+    rebase_path(default_linker_script),
+  ]
+
+  # newlib libc/libm/libgcc for this board's ABI (see build/templates/quickjs.gni).
+  libs = quickjs_newlib_libs
+}
+
+gen_qemu_runner("quickjs_runner") {
+  img = ":quickjs"
+  qemu = qemu_exe
+  machine = qemu_machine
+  qemu_args = qemu_extra_args
+  semihosting = true
+}
+
+# Same entry source as the REPL but compiled with QUICKJS_CHECK defined: a
+# non-interactive scripted check run that evaluates a fixed set of JS snippets
+# and prints QUICKJS_CHECK_PASS / QUICKJS_CHECK_FAIL (see src/qjs_entry.c and
+# src/quickjs.checker).
+executable("quickjs_check") {
+  testonly = true
+
+  sources = [ "src/qjs_entry.c" ]
+
+  deps = [
+    ":librs_newlib",
+    "//external/quickjs-ng:quickjs_shell",
+  ]
+
+  configs += [ "//build/boards/${board}:kernel_config" ]
+
+  include_dirs = [ "//external/quickjs-ng" ]
+
+  cflags = [ "-DQUICKJS_CHECK" ]
+
+  ldflags = [
+    "-Wl,-T",
+    rebase_path(default_linker_script),
+  ]
+
+  libs = quickjs_newlib_libs
+}
+
+gen_qemu_runner("quickjs_check_runner") {
+  testonly = true
+  img = ":quickjs_check"
+  qemu = qemu_exe
+  machine = qemu_machine
+  qemu_args = qemu_extra_args
+  semihosting = true
+}
+
+# Non-interactive scripted check run: boots QEMU, evaluates a fixed set of
+# JavaScript snippets, prints QUICKJS_CHECK_PASS and is auto-killed by the
+# checker.
+run_qemu_check("run_quickjs_check") {
+  testonly = true
+  runner = ":quickjs_check_runner"
+  checker = "src/quickjs.checker"
+}
