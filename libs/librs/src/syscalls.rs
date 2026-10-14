@@ -17,35 +17,34 @@
 // We route them through bk_syscall! to the kernel.
 // _malloc_r, _free_r, and _realloc_r are routed to the BlueOS allocator
 // from the linker report we should use _reent(maybe not) ??
+//
+// This file is the generic newlib adapter only. The QuickJS front-end POSIX
+// surface (stat/chdir/poll/termios/ENOSYS stubs/nanosleep/...) lives in
+// qjs_support.rs, which builds on the underscore stubs defined here.
 
 use blueos_header::syscalls::NR::{
-    ClockGetTime, ClockNanoSleep, Close, FStat, Lseek, Open, Read, SchedYield, Write,
+    ClockGetTime, Close, FStat, Lseek, Open, Read, SchedYield, Write,
 };
 use blueos_scal::bk_syscall;
 use core::slice;
-use libc::{c_int, c_void, clockid_t, off_t, size_t, ssize_t, timespec};
+use libc::{c_int, c_void, clockid_t, off_t, size_t, ssize_t};
 
 pub const CLOCK_REALTIME: clockid_t = 0;
 pub const CLOCK_MONOTONIC: clockid_t = 1;
 
-#[no_mangle]
-pub unsafe extern "C" fn posix_memalign(
-    ptr: *mut *mut c_void,
-    align: size_t,
-    size: size_t,
-) -> c_int {
-    let addr = blueos::allocator::malloc_align(size, align);
-    if addr.is_null() {
-        return -1;
-    }
-    unsafe { *ptr = addr as *mut c_void };
-    0
-}
-
-#[linkage = "weak"]
-#[no_mangle]
-pub unsafe extern "C" fn free(ptr: *mut c_void) {
-    blueos::allocator::free(ptr as *mut u8);
+// _malloc_r/_calloc_r/_realloc_r are routed to the BlueOS allocator.
+// Alignment contract: malloc must return storage aligned to at least
+// _Alignof(max_align_t) == 8 bytes on this target. quickjs-ng hard-requires
+// this — its JSMallocBlockHeader is `_Alignas(8)` and every GC/refcount field is
+// read back at a fixed negative offset from the user pointer, and the NAN-boxed
+// JSValue tagging (`JS_VALUE_GET_PTR(v) & ~15`) silently masks a 4-byte-
+// misaligned object pointer while corrupting the embedded double/u64 payload.
+// so allocate 8-aligned and assert it.
+#[inline]
+unsafe fn sys_alloc(size: size_t) -> *mut c_void {
+    let p = blueos::allocator::malloc_align(size, 8);
+    debug_assert!(p.is_null() || (p as usize) % 8 == 0);
+    p as *mut c_void
 }
 
 #[linkage = "weak"]
@@ -57,7 +56,7 @@ pub unsafe extern "C" fn _free_r(_reent: *mut c_void, ptr: *mut c_void) {
 #[linkage = "weak"]
 #[no_mangle]
 pub unsafe extern "C" fn _malloc_r(_reent: *mut c_void, size: size_t) -> *mut c_void {
-    blueos::allocator::malloc(size) as *mut c_void
+    unsafe { sys_alloc(size) }
 }
 
 #[linkage = "weak"]
@@ -67,7 +66,9 @@ pub unsafe extern "C" fn _calloc_r(
     nmemb: size_t,
     size: size_t,
 ) -> *mut c_void {
-    blueos::allocator::calloc(nmemb, size) as *mut c_void
+    let p = blueos::allocator::calloc(nmemb, size);
+    debug_assert!(p.is_null() || (p as usize) % 8 == 0);
+    p as *mut c_void
 }
 
 #[linkage = "weak"]
@@ -77,19 +78,19 @@ pub unsafe extern "C" fn _realloc_r(
     ptr: *mut c_void,
     size: size_t,
 ) -> *mut c_void {
-    blueos::allocator::realloc(ptr as *mut u8, size) as *mut c_void
+    let p = blueos::allocator::realloc(ptr as *mut u8, size);
+    debug_assert!(p.is_null() || (p as usize) % 8 == 0);
+    p as *mut c_void
 }
 
+// malloc_usable_size is a glibc/newlib extension. The Bellard QuickJS default
+// allocator (js_def_*, quickjs.c) calls it unconditionally on non-Apple/
+// non-Windows/non-glibc targets, Provided weak so a C library
+// that does define it wins.
 #[linkage = "weak"]
 #[no_mangle]
-pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
-    blueos::allocator::malloc(size) as *mut c_void
-}
-
-#[linkage = "weak"]
-#[no_mangle]
-pub unsafe extern "C" fn nanosleep(rqtp: *const timespec, rmtp: *mut timespec) -> c_int {
-    bk_syscall!(ClockNanoSleep, CLOCK_MONOTONIC, 0, rqtp, rmtp) as c_int
+pub unsafe extern "C" fn malloc_usable_size(_ptr: *mut c_void) -> size_t {
+    0
 }
 
 #[no_mangle]
@@ -146,8 +147,6 @@ pub extern "C" fn _getpid() -> c_int {
     0
 }
 
-const EPOCH_BASE_SECS: i64 = 1767225600; // 2026-01-01T00:00:00Z
-
 #[no_mangle]
 pub extern "C" fn gettimeofday(tp: *mut libc::timeval, tzp: *mut c_void) -> c_int {
     if !tp.is_null() {
@@ -170,11 +169,6 @@ pub extern "C" fn _gettimeofday(tp: *mut libc::timeval, tzp: *mut c_void) -> c_i
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn clock_gettime(clock_id: clockid_t, tp: *mut timespec) -> c_int {
-    bk_syscall!(ClockGetTime, clock_id, tp) as c_int
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sched_yield() -> c_int {
+pub extern "C" fn sched_yield() -> c_int {
     bk_syscall!(SchedYield) as c_int
 }

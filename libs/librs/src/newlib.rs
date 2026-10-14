@@ -31,6 +31,7 @@ use libc::{c_int, c_void};
 
 #[macro_use]
 extern crate alloc;
+pub mod qjs_support;
 pub mod retarget;
 pub mod syncs;
 pub mod syscalls;
