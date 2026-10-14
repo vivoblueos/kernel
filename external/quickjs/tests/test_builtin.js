@@ -1,0 +1,1193 @@
+"use strict";
+
+var status = 0;
+var throw_errors = true;
+
+function throw_error(msg) {
+    if (throw_errors)
+        throw Error(msg);
+    console.log(msg);
+    status = 1;
+}
+
+function assert(actual, expected, message) {
+    function get_full_type(o) {
+        var type = typeof(o);
+        if (type === 'object') {
+            if (o === null)
+                return 'null';
+            if (o.constructor && o.constructor.name)
+                return o.constructor.name;
+        }
+        return type;
+    }
+
+    if (arguments.length == 1)
+        expected = true;
+
+    if (typeof actual === typeof expected) {
+        if (actual === expected) {
+            if (actual !== 0 || (1 / actual) === (1 / expected))
+                return;
+        }
+        if (typeof actual === 'number') {
+            if (isNaN(actual) && isNaN(expected))
+                return true;
+        }
+        if (typeof actual === 'object') {
+            if (actual !== null && expected !== null
+            &&  actual.constructor === expected.constructor
+            &&  actual.toString() === expected.toString())
+                return;
+        }
+    }
+    // Should output the source file and line number and extract
+    //   the expression from the assert call
+    throw_error("assertion failed: got " +
+                get_full_type(actual) + ":|" + actual + "|, expected " +
+                get_full_type(expected) + ":|" + expected + "|" +
+                (message ? " (" + message + ")" : ""));
+}
+
+function assert_throws(expected_error, func)
+{
+    var err = false;
+    try {
+        func();
+    } catch(e) {
+        err = true;
+        if (!(e instanceof expected_error)) {
+            // Should output the source file and line number and extract
+            //   the expression from the assert_throws() call
+            throw_error("unexpected exception type");
+            return;
+        }
+    }
+    if (!err) {
+        // Should output the source file and line number and extract
+        //   the expression from the assert_throws() call
+        throw_error("expected exception");
+    }
+}
+
+// load more elaborate version of assert if available
+try { __loadScript("test_assert.js"); } catch(e) {}
+
+/*----------------*/
+
+function my_func(a, b)
+{
+    return a + b;
+}
+
+function test_function()
+{
+    function f(a, b) {
+        var i, tab = [];
+        tab.push(this);
+        for(i = 0; i < arguments.length; i++)
+            tab.push(arguments[i]);
+        return tab;
+    }
+    function constructor1(a) {
+        this.x = a;
+    }
+
+    var r, g;
+
+    r = my_func.call(null, 1, 2);
+    assert(r, 3, "call");
+
+    r = my_func.apply(null, [1, 2]);
+    assert(r, 3, "apply");
+
+    r = (function () { return 1; }).apply(null, undefined);
+    assert(r, 1);
+
+    assert_throws(TypeError, (function() {
+        Reflect.apply((function () { return 1; }), null, undefined);
+    }));
+
+    r = new Function("a", "b", "return a + b;");
+    assert(r(2,3), 5, "function");
+
+    g = f.bind(1, 2);
+    assert(g.length, 1);
+    assert(g.name, "bound f");
+    assert(g(3), [1,2,3]);
+
+    g = constructor1.bind(null, 1);
+    r = new g();
+    assert(r.x, 1);
+}
+
+function test()
+{
+    var r, a, b, c, err;
+
+    r = Error("hello");
+    assert(r.message, "hello", "Error");
+
+    a = new Object();
+    a.x = 1;
+    assert(a.x, 1, "Object");
+
+    assert(Object.getPrototypeOf(a), Object.prototype, "getPrototypeOf");
+    Object.defineProperty(a, "y", { value: 3, writable: true, configurable: true, enumerable: true });
+    assert(a.y, 3, "defineProperty");
+
+    Object.defineProperty(a, "z", { get: function () { return 4; }, set: function(val) { this.z_val = val; }, configurable: true, enumerable: true });
+    assert(a.z, 4, "get");
+    a.z = 5;
+    assert(a.z_val, 5, "set");
+
+    a = { get z() { return 4; }, set z(val) { this.z_val = val; } };
+    assert(a.z, 4, "get");
+    a.z = 5;
+    assert(a.z_val, 5, "set");
+
+    b = Object.create(a);
+    assert(Object.getPrototypeOf(b), a, "create");
+    c = {u:2};
+    /* XXX: refcount bug in 'b' instead of 'a' */
+    Object.setPrototypeOf(a, c);
+    assert(Object.getPrototypeOf(a), c, "setPrototypeOf");
+
+    a = {};
+    assert(a.toString(), "[object Object]", "toString");
+
+    a = {x:1};
+    assert(Object.isExtensible(a), true, "extensible");
+    Object.preventExtensions(a);
+
+    err = false;
+    try {
+        a.y = 2;
+    } catch(e) {
+        err = true;
+    }
+    assert(Object.isExtensible(a), false, "extensible");
+    assert(typeof a.y, "undefined", "extensible");
+    assert(err, true, "extensible");
+}
+
+function test_enum()
+{
+    var a, tab;
+    a = {x:1,
+         "18014398509481984": 1,
+         "9007199254740992": 1,
+         "9007199254740991": 1,
+         "4294967296": 1,
+         "4294967295": 1,
+         y:1,
+         "4294967294": 1,
+         "1": 2};
+    tab = Object.keys(a);
+//    console.log("tab=" + tab.toString());
+    assert(tab, ["1","4294967294","x","18014398509481984","9007199254740992","9007199254740991","4294967296","4294967295","y"], "keys");
+}
+
+function test_array()
+{
+    var a, err;
+
+    a = [1, 2, 3];
+    assert(a.length, 3, "array");
+    assert(a[2], 3, "array1");
+
+    a = new Array(10);
+    assert(a.length, 10, "array2");
+
+    a = new Array(1, 2);
+    assert(a.length === 2 && a[0] === 1 && a[1] === 2, true, "array3");
+
+    a = [1, 2, 3];
+    a.length = 2;
+    assert(a.length === 2 && a[0] === 1 && a[1] === 2, true, "array4");
+
+    a = [];
+    a[1] = 10;
+    a[4] = 3;
+    assert(a.length, 5);
+
+    a = [1,2];
+    a.length = 5;
+    a[4] = 1;
+    a.length = 4;
+    assert(a[4] !== 1, true, "array5");
+
+    a = [1,2];
+    a.push(3,4);
+    assert(a.join(), "1,2,3,4", "join");
+
+    a = [1,2,3,4,5];
+    Object.defineProperty(a, "3", { configurable: false });
+    err = false;
+    try {
+        a.length = 2;
+    } catch(e) {
+        err = true;
+    }
+    assert(err && a.toString() === "1,2,3,4");
+}
+
+function test_string()
+{
+    var a;
+    a = String("abc");
+    assert(a.length, 3, "string");
+    assert(a[1], "b", "string");
+    assert(a.charCodeAt(1), 0x62, "string");
+    assert(String.fromCharCode(65), "A", "string");
+    assert(String.fromCharCode.apply(null, [65, 66, 67]), "ABC", "string");
+    assert(a.charAt(1), "b");
+    assert(a.charAt(-1), "");
+    assert(a.charAt(3), "");
+
+    a = "abcd";
+    assert(a.substring(1, 3), "bc", "substring");
+    a = String.fromCharCode(0x20ac);
+    assert(a.charCodeAt(0), 0x20ac, "unicode");
+    assert(a, "€", "unicode");
+    assert(a, "\u20ac", "unicode");
+    assert(a, "\u{20ac}", "unicode");
+    assert("a", "\x61", "unicode");
+
+    a = "\u{10ffff}";
+    assert(a.length, 2, "unicode");
+    assert(a, "\u{dbff}\u{dfff}", "unicode");
+    assert(a.codePointAt(0), 0x10ffff);
+    assert(String.fromCodePoint(0x10ffff), a);
+
+    assert("a".concat("b", "c"), "abc");
+
+    assert("abcabc".indexOf("cab"), 2);
+    assert("abcabc".indexOf("cab2"), -1);
+    assert("abc".indexOf("c"), 2);
+
+    assert("aaa".indexOf("a"), 0);
+    assert("aaa".indexOf("a", NaN), 0);
+    assert("aaa".indexOf("a", -Infinity), 0);
+    assert("aaa".indexOf("a", -1), 0);
+    assert("aaa".indexOf("a", -0), 0);
+    assert("aaa".indexOf("a", 0), 0);
+    assert("aaa".indexOf("a", 1), 1);
+    assert("aaa".indexOf("a", 2), 2);
+    assert("aaa".indexOf("a", 3), -1);
+    assert("aaa".indexOf("a", 4), -1);
+    assert("aaa".indexOf("a", Infinity), -1);
+
+    assert("aaa".indexOf(""), 0);
+    assert("aaa".indexOf("", NaN), 0);
+    assert("aaa".indexOf("", -Infinity), 0);
+    assert("aaa".indexOf("", -1), 0);
+    assert("aaa".indexOf("", -0), 0);
+    assert("aaa".indexOf("", 0), 0);
+    assert("aaa".indexOf("", 1), 1);
+    assert("aaa".indexOf("", 2), 2);
+    assert("aaa".indexOf("", 3), 3);
+    assert("aaa".indexOf("", 4), 3);
+    assert("aaa".indexOf("", Infinity), 3);
+
+    assert("aaa".lastIndexOf("a"), 2);
+    assert("aaa".lastIndexOf("a", NaN), 2);
+    assert("aaa".lastIndexOf("a", -Infinity), 0);
+    assert("aaa".lastIndexOf("a", -1), 0);
+    assert("aaa".lastIndexOf("a", -0), 0);
+    assert("aaa".lastIndexOf("a", 0), 0);
+    assert("aaa".lastIndexOf("a", 1), 1);
+    assert("aaa".lastIndexOf("a", 2), 2);
+    assert("aaa".lastIndexOf("a", 3), 2);
+    assert("aaa".lastIndexOf("a", 4), 2);
+    assert("aaa".lastIndexOf("a", Infinity), 2);
+
+    assert("aaa".lastIndexOf(""), 3);
+    assert("aaa".lastIndexOf("", NaN), 3);
+    assert("aaa".lastIndexOf("", -Infinity), 0);
+    assert("aaa".lastIndexOf("", -1), 0);
+    assert("aaa".lastIndexOf("", -0), 0);
+    assert("aaa".lastIndexOf("", 0), 0);
+    assert("aaa".lastIndexOf("", 1), 1);
+    assert("aaa".lastIndexOf("", 2), 2);
+    assert("aaa".lastIndexOf("", 3), 3);
+    assert("aaa".lastIndexOf("", 4), 3);
+    assert("aaa".lastIndexOf("", Infinity), 3);
+
+    assert("a,b,c".split(","), ["a","b","c"]);
+    assert(",b,c".split(","), ["","b","c"]);
+    assert("a,b,".split(","), ["a","b",""]);
+
+    assert("aaaa".split(), [ "aaaa" ]);
+    assert("aaaa".split(undefined, 0), [ ]);
+    assert("aaaa".split(""), [ "a", "a", "a", "a" ]);
+    assert("aaaa".split("", 0), [ ]);
+    assert("aaaa".split("", 1), [ "a" ]);
+    assert("aaaa".split("", 2), [ "a", "a" ]);
+    assert("aaaa".split("a"), [ "", "", "", "", "" ]);
+    assert("aaaa".split("a", 2), [ "", "" ]);
+    assert("aaaa".split("aa"), [ "", "", "" ]);
+    assert("aaaa".split("aa", 0), [ ]);
+    assert("aaaa".split("aa", 1), [ "" ]);
+    assert("aaaa".split("aa", 2), [ "", "" ]);
+    assert("aaaa".split("aaa"), [ "", "a" ]);
+    assert("aaaa".split("aaaa"), [ "", "" ]);
+    assert("aaaa".split("aaaaa"), [ "aaaa" ]);
+    assert("aaaa".split("aaaaa", 0), [  ]);
+    assert("aaaa".split("aaaaa", 1), [ "aaaa" ]);
+
+    assert(eval('"\0"'), "\0");
+
+    assert("abc".padStart(Infinity, ""), "abc");
+}
+
+function test_math()
+{
+    var a;
+    a = 1.4;
+    assert(Math.floor(a), 1);
+    assert(Math.ceil(a), 2);
+    assert(Math.imul(0x12345678, 123), -1088058456);
+    assert(Math.imul(0xB505, 0xB504), 2147441940);
+    assert(Math.imul(0xB505, 0xB505), -2147479015);
+    assert(Math.imul((-2)**31, (-2)**31), 0);
+    assert(Math.imul(2**31-1, 2**31-1), 1);
+    assert(Math.fround(0.1), 0.10000000149011612);
+    assert(Math.hypot(), 0);
+    assert(Math.hypot(-2), 2);
+    assert(Math.hypot(3, 4), 5);
+    assert(Math.abs(Math.hypot(3, 4, 5) - 7.0710678118654755) <= 1e-15);
+    assert(Math.sumPrecise([1,Number.EPSILON/2,Number.MIN_VALUE]), 1.0000000000000002);
+}
+
+function test_number()
+{
+    assert(parseInt("123"), 123);
+    assert(parseInt("  123r"), 123);
+    assert(parseInt("0x123"), 0x123);
+    assert(parseInt("0o123"), 0);
+    assert(+"  123   ", 123);
+    assert(+"0b111", 7);
+    assert(+"0o123", 83);
+    assert(parseFloat("2147483647"), 2147483647);
+    assert(parseFloat("2147483648"), 2147483648);
+    assert(parseFloat("-2147483647"), -2147483647);
+    assert(parseFloat("-2147483648"), -2147483648);
+    assert(parseFloat("0x1234"), 0);
+    assert(parseFloat("Infinity"), Infinity);
+    assert(parseFloat("-Infinity"), -Infinity);
+    assert(parseFloat("123.2"), 123.2);
+    assert(parseFloat("123.2e3"), 123200);
+    assert(Number.isNaN(Number("+")));
+    assert(Number.isNaN(Number("-")));
+    assert(Number.isNaN(Number("\x00a")));
+
+    assert((1-2**-53).toString(12), "0.bbbbbbbbbbbbbba");
+    assert((1000000000000000128).toString(), "1000000000000000100");
+    assert((1000000000000000128).toFixed(0), "1000000000000000128");
+    assert((25).toExponential(0), "3e+1");
+    assert((-25).toExponential(0), "-3e+1");
+    assert((2.5).toPrecision(1), "3");
+    assert((-2.5).toPrecision(1), "-3");
+    assert((25).toPrecision(1) === "3e+1");
+    assert((1.125).toFixed(2), "1.13");
+    assert((-1.125).toFixed(2), "-1.13");
+    assert((0.5).toFixed(0), "1");
+    assert((-0.5).toFixed(0), "-1");
+    assert((-1e-10).toFixed(0), "-0");
+
+    assert((1.3).toString(7), "1.2046204620462046205");
+    assert((1.3).toString(35), "1.ahhhhhhhhhm");
+}
+
+function test_eval2()
+{
+    var g_call_count = 0;
+    /* force non strict mode for f1 and f2 */
+    var f1 = new Function("eval", "eval(1, 2)");
+    var f2 = new Function("eval", "eval(...[1, 2])");
+    function g(a, b) {
+        assert(a, 1);
+        assert(b, 2);
+        g_call_count++;
+    }
+    f1(g);
+    f2(g);
+    assert(g_call_count, 2);
+}
+
+function test_eval()
+{
+    function f(b) {
+        var x = 1;
+        return eval(b);
+    }
+    var r, a;
+
+    r = eval("1+1;");
+    assert(r, 2, "eval");
+
+    r = eval("var my_var=2; my_var;");
+    assert(r, 2, "eval");
+    assert(typeof my_var, "undefined");
+
+    assert(eval("if (1) 2; else 3;"), 2);
+    assert(eval("if (0) 2; else 3;"), 3);
+
+    assert(f.call(1, "this"), 1);
+
+    a = 2;
+    assert(eval("a"), 2);
+
+    eval("a = 3");
+    assert(a, 3);
+
+    assert(f("arguments.length", 1), 2);
+    assert(f("arguments[1]", 1), 1);
+
+    a = 4;
+    assert(f("a"), 4);
+    f("a=3");
+    assert(a, 3);
+
+    test_eval2();
+}
+
+function test_typed_array()
+{
+    var buffer, a, i, str;
+
+    a = new Uint8Array(4);
+    assert(a.length, 4);
+    for(i = 0; i < a.length; i++)
+        a[i] = i;
+    assert(a.join(","), "0,1,2,3");
+    a[0] = -1;
+    assert(a[0], 255);
+
+    a = new Int8Array(3);
+    a[0] = 255;
+    assert(a[0], -1);
+
+    a = new Int32Array(3);
+    a[0] = Math.pow(2, 32) - 1;
+    assert(a[0], -1);
+    assert(a.BYTES_PER_ELEMENT, 4);
+
+    a = new Uint8ClampedArray(4);
+    a[0] = -100;
+    a[1] = 1.5;
+    a[2] = 0.5;
+    a[3] = 1233.5;
+    assert(a.toString(), "0,2,0,255");
+
+    buffer = new ArrayBuffer(16);
+    assert(buffer.byteLength, 16);
+    a = new Uint32Array(buffer, 12, 1);
+    assert(a.length, 1);
+    a[0] = -1;
+
+    a = new Uint16Array(buffer, 2);
+    a[0] = -1;
+
+    a = new Float16Array(buffer, 8, 1);
+    a[0] = 1;
+
+    a = new Float32Array(buffer, 8, 1);
+    a[0] = 1;
+
+    a = new Uint8Array(buffer);
+
+    str = a.toString();
+    /* test little and big endian cases */
+    if (str !== "0,0,255,255,0,0,0,0,0,0,128,63,255,255,255,255" &&
+        str !== "0,0,255,255,0,0,0,0,63,128,0,0,255,255,255,255") {
+        assert(false);
+    }
+
+    assert(a.buffer, buffer);
+
+    a = new Uint8Array([1, 2, 3, 4]);
+    assert(a.toString(), "1,2,3,4");
+    a.set([10, 11], 2);
+    assert(a.toString(), "1,2,10,11");
+
+    // https://github.com/quickjs-ng/quickjs/issues/1208
+    buffer = new ArrayBuffer(16);
+    a = new Uint8Array(buffer);
+    a.fill(42);
+    assert(a[0], 42);
+    buffer.transfer();
+    assert(a[0], undefined);
+}
+
+/* return [s, line_num, col_num] where line_num and col_num are the
+   position of the '@' character in 'str'. 's' is str without the '@'
+   character */
+function get_string_pos(str)
+{
+    var p, line_num, col_num, s, q, r;
+    p = str.indexOf('@');
+    assert(p >= 0, true);
+    q = 0;
+    line_num = 1;
+    for(;;) {
+        r = str.indexOf('\n', q);
+        if (r < 0 || r >= p)
+            break;
+        q = r + 1;
+        line_num++;
+    }
+    col_num = p - q + 1;
+    s = str.slice(0, p) + str.slice(p + 1);
+    return [s, line_num, col_num];
+}
+
+function check_error_pos(e, expected_error, line_num, col_num, level)
+{
+    var expected_pos, tab, line;
+    level |= 0;
+    expected_pos = ":" + line_num + ":" + col_num;
+    tab = e.stack.split("\n");
+    line = tab[level];
+    if (line.slice(-1) == ')')
+        line = line.slice(0, -1);
+    if (line.indexOf(expected_pos) < 0) {
+        throw_error("unexpected line or column number. error=" + e.message +
+                    ".got |" + line + "|, expected |" + expected_pos + "|");
+    }
+}
+
+function assert_json_error(str, line_num, col_num)
+{
+    var err = false;
+    var expected_pos, tab;
+
+    tab = get_string_pos(str);
+    
+    try {
+        JSON.parse(tab[0]);
+    } catch(e) {
+        err = true;
+        if (!(e instanceof SyntaxError)) {
+            throw_error("unexpected exception type");
+            return;
+        }
+        /* XXX: the way quickjs returns JSON errors is not similar to Node or spiderMonkey */
+        check_error_pos(e, SyntaxError, tab[1], tab[2]);
+    }
+    if (!err) {
+        throw_error("expected exception");
+    }
+}
+
+function test_json()
+{
+    var a, s;
+    s = '{"x":1,"y":true,"z":null,"a":[1,2,3],"s":"str"}';
+    a = JSON.parse(s);
+    assert(a.x, 1);
+    assert(a.y, true);
+    assert(a.z, null);
+    assert(JSON.stringify(a), s);
+
+    /* indentation test */
+    assert(JSON.stringify([[{x:1,y:{},z:[]},2,3]],undefined,1),
+`[
+ [
+  {
+   "x": 1,
+   "y": {},
+   "z": []
+  },
+  2,
+  3
+ ]
+]`);
+
+    assert_json_error('\n"  \\@x"');
+    assert_json_error('\n{ "a": @x }"');
+}
+
+function test_date()
+{
+    // Date Time String format is YYYY-MM-DDTHH:mm:ss.sssZ
+    // accepted date formats are: YYYY, YYYY-MM and YYYY-MM-DD
+    // accepted time formats are: THH:mm, THH:mm:ss, THH:mm:ss.sss
+    // expanded years are represented with 6 digits prefixed by + or -
+    // -000000 is invalid.
+    // A string containing out-of-bounds or nonconforming elements
+    //   is not a valid instance of this format.
+    // Hence the fractional part after . should have 3 digits and how
+    // a different number of digits is handled is implementation defined.
+    assert(Date.parse(""), NaN);
+    assert(Date.parse("2000"), 946684800000);
+    assert(Date.parse("2000-01"), 946684800000);
+    assert(Date.parse("2000-01-01"), 946684800000);
+    //assert(Date.parse("2000-01-01T"), NaN);
+    //assert(Date.parse("2000-01-01T00Z"), NaN);
+    assert(Date.parse("2000-01-01T00:00Z"), 946684800000);
+    assert(Date.parse("2000-01-01T00:00:00Z"), 946684800000);
+    assert(Date.parse("2000-01-01T00:00:00.1Z"), 946684800100);
+    assert(Date.parse("2000-01-01T00:00:00.10Z"), 946684800100);
+    assert(Date.parse("2000-01-01T00:00:00.100Z"), 946684800100);
+    assert(Date.parse("2000-01-01T00:00:00.1000Z"), 946684800100);
+    assert(Date.parse("2000-01-01T00:00:00+00:00"), 946684800000);
+    //assert(Date.parse("2000-01-01T00:00:00+00:30"), 946686600000);
+    var d = new Date("2000T00:00");  // Jan 1st 2000, 0:00:00 local time
+    assert(typeof d === 'object' && d.toString() != 'Invalid Date');
+    assert((new Date('Jan 1 2000')).toISOString(),
+           d.toISOString());
+    assert((new Date('Jan 1 2000 00:00')).toISOString(),
+           d.toISOString());
+    assert((new Date('Jan 1 2000 00:00:00')).toISOString(),
+           d.toISOString());
+    assert((new Date('Jan 1 2000 00:00:00 GMT+0100')).toISOString(),
+           '1999-12-31T23:00:00.000Z');
+    assert((new Date('Jan 1 2000 00:00:00 GMT+0200')).toISOString(),
+           '1999-12-31T22:00:00.000Z');
+    assert((new Date('Sat Jan 1 2000')).toISOString(),
+           d.toISOString());
+    assert((new Date('Sat Jan 1 2000 00:00')).toISOString(),
+           d.toISOString());
+    assert((new Date('Sat Jan 1 2000 00:00:00')).toISOString(),
+           d.toISOString());
+    assert((new Date('Sat Jan 1 2000 00:00:00 GMT+0100')).toISOString(),
+           '1999-12-31T23:00:00.000Z');
+    assert((new Date('Sat Jan 1 2000 00:00:00 GMT+0200')).toISOString(),
+           '1999-12-31T22:00:00.000Z');
+
+    var d = new Date(1506098258091);
+    assert(d.toISOString(), "2017-09-22T16:37:38.091Z");
+    d.setUTCHours(18, 10, 11);
+    assert(d.toISOString(), "2017-09-22T18:10:11.091Z");
+    var a = Date.parse(d.toISOString());
+    assert((new Date(a)).toISOString(), d.toISOString());
+
+    assert((new Date("2020-01-01T01:01:01.123Z")).toISOString(),
+                     "2020-01-01T01:01:01.123Z");
+    /* implementation defined behavior */
+    assert((new Date("2020-01-01T01:01:01.1Z")).toISOString(),
+                     "2020-01-01T01:01:01.100Z");
+    assert((new Date("2020-01-01T01:01:01.12Z")).toISOString(),
+                     "2020-01-01T01:01:01.120Z");
+    assert((new Date("2020-01-01T01:01:01.1234Z")).toISOString(),
+                     "2020-01-01T01:01:01.123Z");
+    assert((new Date("2020-01-01T01:01:01.12345Z")).toISOString(),
+                     "2020-01-01T01:01:01.123Z");
+    assert((new Date("2020-01-01T01:01:01.1235Z")).toISOString(),
+                     "2020-01-01T01:01:01.123Z");
+    assert((new Date("2020-01-01T01:01:01.9999Z")).toISOString(),
+                     "2020-01-01T01:01:01.999Z");
+
+    assert(Date.UTC(2017), 1483228800000);
+    assert(Date.UTC(2017, 9), 1506816000000);
+    assert(Date.UTC(2017, 9, 22), 1508630400000);
+    assert(Date.UTC(2017, 9, 22, 18), 1508695200000);
+    assert(Date.UTC(2017, 9, 22, 18, 10), 1508695800000);
+    assert(Date.UTC(2017, 9, 22, 18, 10, 11), 1508695811000);
+    assert(Date.UTC(2017, 9, 22, 18, 10, 11, 91), 1508695811091);
+
+    assert(Date.UTC(NaN), NaN);
+    assert(Date.UTC(2017, NaN), NaN);
+    assert(Date.UTC(2017, 9, NaN), NaN);
+    assert(Date.UTC(2017, 9, 22, NaN), NaN);
+    assert(Date.UTC(2017, 9, 22, 18, NaN), NaN);
+    assert(Date.UTC(2017, 9, 22, 18, 10, NaN), NaN);
+    assert(Date.UTC(2017, 9, 22, 18, 10, 11, NaN), NaN);
+    assert(Date.UTC(2017, 9, 22, 18, 10, 11, 91, NaN), 1508695811091);
+
+    // TODO: Fix rounding errors on Windows/Cygwin.
+    if (!(typeof os !== 'undefined' && ['win32', 'cygwin'].includes(os.platform))) {
+        // from test262/test/built-ins/Date/UTC/fp-evaluation-order.js
+        assert(Date.UTC(1970, 0, 1, 80063993375, 29, 1, -288230376151711740), 29312,
+               'order of operations / precision in MakeTime');
+        assert(Date.UTC(1970, 0, 213503982336, 0, 0, 0, -18446744073709552000), 34447360,
+               'precision in MakeDate');
+    }
+    //assert(Date.UTC(2017 - 1e9, 9 + 12e9), 1506816000000);  // node fails this
+    assert(Date.UTC(2017, 9, 22 - 1e10, 18 + 24e10), 1508695200000);
+    assert(Date.UTC(2017, 9, 22, 18 - 1e10, 10 + 60e10), 1508695800000);
+    assert(Date.UTC(2017, 9, 22, 18, 10 - 1e10, 11 + 60e10), 1508695811000);
+    assert(Date.UTC(2017, 9, 22, 18, 10, 11 - 1e12, 91 + 1000e12), 1508695811091);
+}
+
+function test_regexp()
+{
+    var a, str;
+    str = "abbbbbc";
+    a = /(b+)c/.exec(str);
+    assert(a[0], "bbbbbc");
+    assert(a[1], "bbbbb");
+    assert(a.index, 1);
+    assert(a.input, str);
+    a = /(b+)c/.test(str);
+    assert(a, true);
+    assert(/\x61/.exec("a")[0], "a");
+    assert(/\u0061/.exec("a")[0], "a");
+    assert(/\ca/.exec("\x01")[0], "\x01");
+    assert(/\\a/.exec("\\a")[0], "\\a");
+    assert(/\c0/.exec("\\c0")[0], "\\c0");
+
+    a = /(\.(?=com|org)|\/)/.exec("ah.com");
+    assert(a.index === 2 && a[0] === ".");
+
+    a = /(\.(?!com|org)|\/)/.exec("ah.com");
+    assert(a, null);
+
+    a = /(?=(a+))/.exec("baaabac");
+    assert(a.index === 1 && a[0] === "" && a[1] === "aaa");
+
+    a = /(z)((a+)?(b+)?(c))*/.exec("zaacbbbcac");
+    assert(a, ["zaacbbbcac","z","ac","a",,"c"]);
+
+    a = eval("/\0a/");
+    assert(a.toString(), "/\0a/");
+    assert(a.exec("\0a")[0], "\0a");
+
+    assert(/{1a}/.toString(), "/{1a}/");
+    a = /a{1+/.exec("a{11");
+    assert(a, ["a{11"]);
+
+    /* test zero length matches */
+    a = /(?:(?=(abc)))a/.exec("abc");
+    assert(a, ["a", "abc"]);
+    a = /(?:(?=(abc)))?a/.exec("abc");
+    assert(a, ["a", undefined]);
+    a = /(?:(?=(abc))){0,2}a/.exec("abc");
+    assert(a, ["a", undefined]);
+    a = /(?:|[\w])+([0-9])/.exec("123a23");
+    assert(a, ["123a23", "3"]);
+    a = /()*?a/.exec(",");
+    assert(a, null);
+
+    /* test \b escape */
+    assert(/[\q{a\b}]/.test("a\b"), true);
+    assert(/[\b]/.test("\b"), true);
+    
+    /* test case insensitive matching (test262 hardly tests it) */
+    assert("aAbBcC#4".replace(/\p{Lower}/gu,"X"), "XAXBXC#4");
+
+    assert("aAbBcC#4".replace(/\p{Lower}/gui,"X"), "XXXXXX#4");
+    assert("aAbBcC#4".replace(/\p{Upper}/gui,"X"), "XXXXXX#4");
+    assert("aAbBcC#4".replace(/\P{Lower}/gui,"X"), "XXXXXXXX");
+    assert("aAbBcC#4".replace(/\P{Upper}/gui,"X"), "XXXXXXXX");
+    assert("aAbBcC".replace(/[^b]/gui, "X"), "XXbBXX");
+    assert("aAbBcC".replace(/[^A-B]/gui, "X"), "aAbBXX");
+
+    assert("aAbBcC#4".replace(/\p{Lower}/gvi,"X"), "XXXXXX#4");
+    assert("aAbBcC#4".replace(/\P{Lower}/gvi,"X"), "aAbBcCXX");
+    assert("aAbBcC#4".replace(/[^\P{Lower}]/gvi,"X"), "XXXXXX#4");
+    assert("aAbBcC#4".replace(/\P{Upper}/gvi,"X"), "aAbBcCXX");
+    assert("aAbBcC".replace(/[^b]/gvi, "X"), "XXbBXX");
+    assert("aAbBcC".replace(/[^A-B]/gvi, "X"), "aAbBXX");
+    assert("aAbBcC".replace(/[[a-c]&&B]/gvi, "X"), "aAXXcC");
+    assert("aAbBcC".replace(/[[a-c]--B]/gvi, "X"), "XXbBXX");
+    
+    assert("abcAbC".replace(/[\q{AbC}]/gvi,"X"), "XX");
+    /* Note: SpiderMonkey and v8 may not be correct */
+    assert("abcAbC".replace(/[\q{BC|A}]/gvi,"X"), "XXXX");
+    assert("abcAbC".replace(/[\q{BC|A}--a]/gvi,"X"), "aXAX");
+
+    /* case where lastIndex points to the second element of a
+       surrogate pair */
+    a = /(?:)/gu;
+    a.lastIndex = 1;
+    a.exec("🐱");
+    assert(a.lastIndex, 0);
+
+    a.lastIndex = 1;
+    a.exec("a\udc00");
+    assert(a.lastIndex, 1);
+
+    a = /\u{10000}/vgd;
+    a.lastIndex = 1;
+    a = a.exec("\u{10000}_\u{10000}");
+    assert(a.indices[0][0], 0);
+    assert(a.indices[0][1], 2);
+}
+
+function test_symbol()
+{
+    var a, b, obj, c;
+    a = Symbol("abc");
+    obj = {};
+    obj[a] = 2;
+    assert(obj[a], 2);
+    assert(typeof obj["abc"], "undefined");
+    assert(String(a), "Symbol(abc)");
+    b = Symbol("abc");
+    assert(a == a);
+    assert(a === a);
+    assert(a != b);
+    assert(a !== b);
+
+    b = Symbol.for("abc");
+    c = Symbol.for("abc");
+    assert(b === c);
+    assert(b !== a);
+
+    assert(Symbol.keyFor(b), "abc");
+    assert(Symbol.keyFor(a), undefined);
+
+    a = Symbol("aaa");
+    assert(a.valueOf(), a);
+    assert(a.toString(), "Symbol(aaa)");
+
+    b = Object(a);
+    assert(b.valueOf(), a);
+    assert(b.toString(), "Symbol(aaa)");
+}
+
+function test_map1(key_type, n)
+{
+    var a, i, tab, o, v;
+    a = new Map();
+    tab = [];
+    for(i = 0; i < n; i++) {
+        v = { };
+        switch(key_type) {
+        case "small_bigint":
+            o = BigInt(i);
+            break;
+        case "bigint":
+            o = BigInt(i) + (1n << 128n);
+            break;
+        case "object":
+            o = { id: i };
+            break;
+        default:
+            assert(false);
+        }
+        tab[i] = [o, v];
+        a.set(o, v);
+    }
+
+    assert(a.size, n);
+    for(i = 0; i < n; i++) {
+        assert(a.get(tab[i][0]), tab[i][1]);
+    }
+
+    i = 0;
+    a.forEach(function (v, o) {
+        assert(o, tab[i++][0]);
+        assert(a.has(o));
+        assert(a.delete(o));
+        assert(!a.has(o));
+    });
+
+    assert(a.size, 0);
+}
+
+function test_map()
+{
+    var a, i, n, tab, o, v;
+    n = 1000;
+
+    a = new Map();
+    for (var i = 0; i < n; i++) {
+        a.set(i, i);
+    }
+    a.set(-2147483648, 1);
+    assert(a.get(-2147483648), 1);
+    assert(a.get(-2147483647 - 1), 1);
+    assert(a.get(-2147483647.5 - 0.5), 1);
+
+    a.set(1n, 1n);
+    assert(a.get(1n), 1n);
+    assert(a.get(2n**1000n - (2n**1000n - 1n)), 1n);
+
+    test_map1("object", n);
+    test_map1("small_bigint", n);
+    test_map1("bigint", n);
+}
+
+function test_weak_map()
+{
+    var a, i, n, tab, o, v, n2;
+    a = new WeakMap();
+    n = 10;
+    tab = [];
+    for(i = 0; i < n; i++) {
+        v = { };
+        if (i & 1)
+            o = Symbol("x" + i);
+        else
+            o = { id: i };
+        tab[i] = [o, v];
+        a.set(o, v);
+    }
+    o = null;
+
+    n2 = 5;
+    for(i = 0; i < n2; i++) {
+        a.delete(tab[i][0]);
+    }
+    for(i = n2; i < n; i++) {
+        tab[i][0] = null; /* should remove the object from the WeakMap too */
+    }
+    std.gc();
+    /* the WeakMap should be empty here */
+}
+
+function test_weak_map_cycles()
+{
+    const weak1 = new WeakMap();
+    const weak2 = new WeakMap();
+    function createCyclicKey() {
+        const parent = {};
+        const child = {parent};
+        parent.child = child;
+        return child;
+    }
+    function testWeakMap() {
+        const cyclicKey = createCyclicKey();
+        const valueOfCyclicKey = {};
+        weak1.set(cyclicKey, valueOfCyclicKey);
+        weak2.set(valueOfCyclicKey, 1);
+    }
+    testWeakMap();
+    // Force to free cyclicKey.
+    std.gc();
+    // Here will cause sigsegv because [cyclicKey] and [valueOfCyclicKey] in [weak1] was free,
+    // but weak2's map record was not removed, and it's key refers [valueOfCyclicKey] which is free.
+    weak2.get({});
+    std.gc();
+}
+
+function test_weak_ref()
+{
+    var w1, w2, o, i;
+
+    for(i = 0; i < 2; i++) {
+        if (i == 0)
+            o = { };
+        else
+            o = Symbol("x");
+        w1 = new WeakRef(o);
+        assert(w1.deref(), o);
+        w2 = new WeakRef(o);
+        assert(w2.deref(), o);
+        
+        o = null;
+        assert(w1.deref(), undefined);
+        assert(w2.deref(), undefined);
+        std.gc();
+        assert(w1.deref(), undefined);
+        assert(w2.deref(), undefined);
+    }
+}
+
+function test_finalization_registry()
+{
+    {
+        let expected = {};
+        let actual;
+        let finrec = new FinalizationRegistry(v => { actual = v });
+        finrec.register({}, expected);
+        os.setTimeout(() => {
+            assert(actual, expected);
+        }, 0);
+    }
+    {
+        let expected = 42;
+        let actual;
+        let finrec = new FinalizationRegistry(v => { actual = v });
+        finrec.register({}, expected);
+        os.setTimeout(() => {
+            assert(actual, expected);
+        }, 0);
+    }
+    std.gc();
+}
+
+function test_generator()
+{
+    function *f() {
+        var ret;
+        yield 1;
+        ret = yield 2;
+        assert(ret, "next_arg");
+        return 3;
+    }
+    function *f2() {
+        yield 1;
+        yield 2;
+        return "ret_val";
+    }
+    function *f1() {
+        var ret = yield *f2();
+        assert(ret, "ret_val");
+        return 3;
+    }
+    function *f3() {
+        var ret;
+        /* test stack consistency with nip_n to handle yield return +
+         * finally clause */
+        try {
+            ret = 2 + (yield 1);
+        } catch(e) {
+        } finally {
+            ret++;
+        }
+        return ret;
+    }
+    var g, v;
+    g = f();
+    v = g.next();
+    assert(v.value === 1 && v.done === false);
+    v = g.next();
+    assert(v.value === 2 && v.done === false);
+    v = g.next("next_arg");
+    assert(v.value === 3 && v.done === true);
+    v = g.next();
+    assert(v.value === undefined && v.done === true);
+
+    g = f1();
+    v = g.next();
+    assert(v.value === 1 && v.done === false);
+    v = g.next();
+    assert(v.value === 2 && v.done === false);
+    v = g.next();
+    assert(v.value === 3 && v.done === true);
+    v = g.next();
+    assert(v.value === undefined && v.done === true);
+
+    g = f3();
+    v = g.next();
+    assert(v.value === 1 && v.done === false);
+    v = g.next(3);
+    assert(v.value === 6 && v.done === true);
+}
+
+function rope_concat(n, dir)
+{
+    var i, s;
+    s = "";
+    if (dir > 0) {
+        for(i = 0; i < n; i++)
+            s += String.fromCharCode(i & 0xffff);
+    } else {
+        for(i = n - 1; i >= 0; i--)
+            s = String.fromCharCode(i & 0xffff) + s;
+    }
+    
+    for(i = 0; i < n; i++) {
+        /* test before the assert to go faster */
+        if (s.charCodeAt(i) != (i & 0xffff)) {
+            assert(s.charCodeAt(i), i & 0xffff);
+        }
+    }
+}
+
+function test_rope()
+{
+    rope_concat(100000, 1);
+    rope_concat(100000, -1);
+}
+
+function eval_error(eval_str, expected_error, level)
+{
+    var err = false;
+    var expected_pos, tab;
+
+    tab = get_string_pos(eval_str);
+    
+    try {
+        eval(tab[0]);
+    } catch(e) {
+        err = true;
+        if (!(e instanceof expected_error)) {
+            throw_error("unexpected exception type");
+            return;
+        }
+        check_error_pos(e, expected_error, tab[1], tab[2], level);
+    }
+    if (!err) {
+        throw_error("expected exception");
+    }
+}
+
+var poisoned_number = {
+    valueOf: function() { throw Error("poisoned number") },
+};
+
+function test_line_column_numbers()
+{
+    var f, e, tab;
+
+    /* The '@' character provides the expected position of the
+       error. It is removed before evaluating the string. */
+    
+    /* parsing */
+    eval_error("\n 123 @a ", SyntaxError);
+    eval_error("\n  @/*  ", SyntaxError);
+    eval_error("function f  @a", SyntaxError);
+    /* currently regexp syntax errors point to the start of the regexp */
+    eval_error("\n  @/aaa]/u", SyntaxError); 
+
+    /* function definitions */
+    
+    tab = get_string_pos("\n   @function f() { }; f;");
+    e = eval(tab[0]);
+    assert(e.lineNumber, tab[1]);
+    assert(e.columnNumber, tab[2]);
+
+    /* errors */
+    tab = get_string_pos('\n  Error@("hello");');
+    e = eval(tab[0]);
+    check_error_pos(e, Error, tab[1], tab[2]);
+    
+    eval_error('\n  throw Error@("hello");', Error);
+
+    /* operators */
+    eval_error('\n  1 + 2 @* poisoned_number;', Error, 1);
+    eval_error('\n  1 + "café" @* poisoned_number;', Error, 1);
+    eval_error('\n  1 + 2 @** poisoned_number;', Error, 1);
+    eval_error('\n  2 * @+ poisoned_number;', Error, 1);
+    eval_error('\n  2 * @- poisoned_number;', Error, 1);
+    eval_error('\n  2 * @~ poisoned_number;', Error, 1);
+    eval_error('\n  2 * @++ poisoned_number;', Error, 1);
+    eval_error('\n  2 * @-- poisoned_number;', Error, 1);
+    eval_error('\n  2 * poisoned_number @++;', Error, 1);
+    eval_error('\n  2 * poisoned_number @--;', Error, 1);
+
+    /* accessors */
+    eval_error('\n 1 + null@[0];', TypeError); 
+    eval_error('\n 1 + null @. abcd;', TypeError); 
+    eval_error('\n 1 + null @( 1234 );', TypeError);
+    eval_error('var obj = { get a() { throw Error("test"); } }\n 1 + obj @. a;',
+               Error, 1);
+    eval_error('var obj = { set a(b) { throw Error("test"); } }\n obj @. a = 1;',
+               Error, 1);
+
+    /* variables reference */
+    eval_error('\n  1 + @not_def', ReferenceError, 0);
+
+    /* assignments */
+    eval_error('1 + (@not_def = 1)', ReferenceError, 0);
+    eval_error('1 + (@not_def += 2)', ReferenceError, 0);
+    eval_error('var a;\n 1 + (a @+= poisoned_number);', Error, 1);
+}
+
+test();
+test_function();
+test_enum();
+test_array();
+test_string();
+test_math();
+test_number();
+test_eval();
+test_typed_array();
+test_json();
+test_date();
+test_regexp();
+test_symbol();
+test_map();
+test_weak_map();
+test_weak_map_cycles();
+test_weak_ref();
+test_finalization_registry();
+test_generator();
+test_rope();
+test_line_column_numbers();
