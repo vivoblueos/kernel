@@ -45,7 +45,8 @@ pub struct ListHeadIterator<T, A: const Adapter<T>> {
 impl<T, A: const Adapter<T>> ListHeadIterator<T, A> {
     pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
-            next: head.next,
+            // Reload the link after mutations through intrusive node pointers.
+            next: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(head.next)) },
             tail,
         }
     }
