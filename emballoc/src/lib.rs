@@ -223,6 +223,7 @@
 //! [codecov]: https://codecov.io/gh/jfrimmel/emballoc
 //! [ci-logs]: https://app.circleci.com/pipelines/github/jfrimmel/emballoc
 #![cfg_attr(not(test), no_std)]
+#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
 #![warn(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks)]
 

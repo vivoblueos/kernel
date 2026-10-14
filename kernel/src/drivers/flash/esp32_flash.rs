@@ -195,8 +195,10 @@ impl Esp32FlashDevice {
             core::mem::size_of::<EraseRangeRequest>() as u32,
         )?;
         if req.length == 0
-            || req.region_offset % ESP_FLASH_SECTOR_SIZE as u32 != 0
-            || req.length % ESP_FLASH_SECTOR_SIZE as u32 != 0
+            || !req
+                .region_offset
+                .is_multiple_of(ESP_FLASH_SECTOR_SIZE as u32)
+            || !req.length.is_multiple_of(ESP_FLASH_SECTOR_SIZE as u32)
         {
             return Err(ErrorKind::InvalidInput);
         }

@@ -236,7 +236,7 @@ impl<
         while ptr.is_none() {
             if allocator_index < SLAB_ALLOCATOR_COUNT {
                 if self.slab_allocator[allocator_index].len > 0
-                    && Self::SLAB_SIZES[allocator_index] % layout.align() == 0
+                    && Self::SLAB_SIZES[allocator_index].is_multiple_of(layout.align())
                 {
                     ptr = self.slab_allocator[allocator_index].allocate(layout);
                     if ptr.is_some() {
@@ -1085,7 +1085,7 @@ impl DynamicSlabHeap {
 
         // Slab path: try from idx upward (upsearch handles alignment mismatches on small sizes).
         while idx < SLAB_ALLOCATOR_COUNT {
-            if Self::SLAB_SIZES[idx] % layout.align() != 0 {
+            if !Self::SLAB_SIZES[idx].is_multiple_of(layout.align()) {
                 if Self::SLAB_SIZES[idx] <= SLAB_MAX_UPSEARCH_SIZE {
                     idx += 1;
                     continue;
@@ -1221,7 +1221,7 @@ impl DynamicSlabHeap {
         {
             let idx = slab_idx as usize;
             if new_layout.size() <= Self::SLAB_SIZES[idx]
-                && Self::SLAB_SIZES[idx] % new_layout.align() == 0
+                && Self::SLAB_SIZES[idx].is_multiple_of(new_layout.align())
             {
                 return Some(ptr); // fits in existing block
             }

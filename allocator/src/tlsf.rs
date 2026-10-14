@@ -212,7 +212,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     #[inline]
     fn map_floor(size: usize) -> Option<(usize, usize)> {
         debug_assert!(size >= GRANULARITY);
-        debug_assert!(size % GRANULARITY == 0);
+        debug_assert!(size.is_multiple_of(GRANULARITY));
         let fl = usize::BITS - GRANULARITY_LOG2 - 1 - size.leading_zeros();
 
         // The shift amount can be negative, and rotation lets us handle both
@@ -236,7 +236,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     #[inline]
     fn map_ceil(size: usize) -> Option<(usize, usize)> {
         debug_assert!(size >= GRANULARITY);
-        debug_assert!(size % GRANULARITY == 0);
+        debug_assert!(size.is_multiple_of(GRANULARITY));
         let mut fl = usize::BITS - GRANULARITY_LOG2 - 1 - size.leading_zeros();
 
         // The shift amount can be negative, and rotation lets us handle both
@@ -281,7 +281,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
     #[inline]
     fn map_ceil_and_unmap(size: usize) -> Option<usize> {
         debug_assert!(size >= GRANULARITY);
-        debug_assert!(size % GRANULARITY == 0);
+        debug_assert!(size.is_multiple_of(GRANULARITY));
 
         if size > Self::MAX_MAP_CEIL_AND_UNMAP_INPUT {
             return None;
