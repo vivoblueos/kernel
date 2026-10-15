@@ -14,6 +14,7 @@
 
 #![no_std]
 #![feature(const_trait_impl)]
+#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
 
 extern crate alloc;
 
