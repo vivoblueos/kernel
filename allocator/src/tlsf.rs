@@ -469,11 +469,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
             block.as_mut().common = BlockHdr::new(chunk_size - GRANULARITY, None);
 
             // Cap the end with a sentinel block (a permanently-used block)
-            let mut sentinel_block = block
-                .as_ref()
-                .common
-                .next_phys_block()
-                .cast::<UsedBlockHdr>();
+            let mut sentinel_block = BlockHdr::next_phys_block(block.cast()).cast::<UsedBlockHdr>();
 
             sentinel_block.as_mut().common =
                 BlockHdr::new(GRANULARITY | SIZE_USED | SIZE_SENTINEL, Some(block.cast()));
@@ -734,7 +730,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
                 unreachable_unchecked()
             });
 
-            let mut next_phys_block = block.as_ref().common.next_phys_block();
+            let mut next_phys_block = BlockHdr::next_phys_block(block.cast());
             let size_and_flags = block.as_ref().common.size;
             let size = size_and_flags /* size_and_flags & SIZE_SIZE_MASK */;
             debug_assert_eq!(size, size_and_flags & SIZE_SIZE_MASK);
@@ -917,7 +913,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         // Merge the created hole with the next block if the next block is a
         // free block
         // Safety: `block.common` should be fully up-to-date and valid
-        let next_phys_block = block.as_ref().next_phys_block();
+        let next_phys_block = BlockHdr::next_phys_block(block);
         let next_phys_block_size_and_flags = next_phys_block.as_ref().size;
         if (next_phys_block_size_and_flags & SIZE_USED) == 0 {
             let next_phys_block_size = next_phys_block_size_and_flags;
@@ -933,7 +929,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
 
             // Safety: `next_phys_block` is a free block and therefore is not a
             // sentinel block
-            new_next_phys_block = next_phys_block.as_ref().next_phys_block();
+            new_next_phys_block = BlockHdr::next_phys_block(next_phys_block);
 
             // Unlink `next_phys_block`.
             self.unlink_free_block(next_phys_block.cast(), next_phys_block_size);
@@ -974,7 +970,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         self.link_free_block(block, size);
 
         // Link `new_next_phys_block.prev_phys_block` to `block`
-        debug_assert_eq!(new_next_phys_block, block.as_ref().common.next_phys_block());
+        debug_assert_eq!(new_next_phys_block, BlockHdr::next_phys_block(block.cast()));
         new_next_phys_block.as_mut().prev_phys_block = Some(block.cast());
         deallocated_size
     }
@@ -1101,7 +1097,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
                 let mut new_free_block_size = shrink_by;
 
                 // If the next block is a free block...
-                let mut next_phys_block = block.as_ref().common.next_phys_block();
+                let mut next_phys_block = BlockHdr::next_phys_block(block.cast());
                 let next_phys_block_size_and_flags = next_phys_block.as_ref().size;
                 if (next_phys_block_size_and_flags & SIZE_USED) == 0 {
                     let next_phys_block_size = next_phys_block_size_and_flags;
@@ -1115,7 +1111,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
                     self.unlink_free_block(next_phys_block.cast(), next_phys_block_size);
                     new_free_block_size += next_phys_block_size;
 
-                    let mut next_next_phys_block = next_phys_block.as_ref().next_phys_block();
+                    let mut next_next_phys_block = BlockHdr::next_phys_block(next_phys_block);
                     next_next_phys_block.as_mut().prev_phys_block = Some(new_free_block.cast());
                 } else {
                     // We can't merge a used block (`next_phys_block`) and
@@ -1141,7 +1137,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
         debug_assert!(new_size > old_size);
 
         let grow_by = new_size - old_size;
-        let next_phys_block = block.as_ref().common.next_phys_block();
+        let next_phys_block = BlockHdr::next_phys_block(block.cast());
 
         // If we removed this block, there would be a continuous free space of
         // `moving_clearance` bytes, which is followed by `moving_clearance_end`
@@ -1166,7 +1162,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
 
             // Now we know it's really a free block.
             let mut next_phys_block = next_phys_block.cast::<FreeBlockHdr>();
-            let mut next_next_phys_block = next_phys_block.as_ref().common.next_phys_block();
+            let mut next_next_phys_block = BlockHdr::next_phys_block(next_phys_block.cast());
 
             moving_clearance += next_phys_block_size;
             moving_clearance_end = next_next_phys_block;
@@ -1293,7 +1289,7 @@ impl<'pool, FLBitmap: BinInteger, SLBitmap: BinInteger, const FLLEN: usize, cons
                 self.unlink_free_block(moving_clearance_end.cast(), moving_clearance_end_size);
                 new_free_block_size += moving_clearance_end_size_and_flags;
 
-                let mut next_next_phys_block = moving_clearance_end.as_ref().next_phys_block();
+                let mut next_next_phys_block = BlockHdr::next_phys_block(moving_clearance_end);
                 next_next_phys_block.as_mut().prev_phys_block = Some(new_free_block.cast());
             } else {
                 // We can't merge a used block (`moving_clearance_end`) and

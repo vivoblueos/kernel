@@ -76,18 +76,20 @@ impl BlockHdr {
     ///
     /// # Safety
     ///
-    /// `self` must have a next block (it must not be the sentinel block in a
-    /// pool).
+    /// `block` must point to an initialized header with a next block in the
+    /// same pool (it must not be the sentinel block). Its pointer must permit
+    /// access to that next block, including writes if the result is mutated.
     #[inline]
-    pub unsafe fn next_phys_block(&self) -> NonNull<BlockHdr> {
+    pub unsafe fn next_phys_block(block: NonNull<Self>) -> NonNull<BlockHdr> {
+        let size = (*block.as_ptr()).size;
         debug_assert!(
-            (self.size & SIZE_SENTINEL) == 0,
-            "`self` must not be a sentinel"
+            (size & SIZE_SENTINEL) == 0,
+            "`block` must not be a sentinel"
         );
 
-        // Safety: Since `self.size & SIZE_LAST_IN_POOL` is not lying, the
-        //         next block should exist at a non-null location.
-        NonNull::new_unchecked((self as *const _ as *mut u8).add(self.size & SIZE_SIZE_MASK)).cast()
+        // Derive the next pointer from the pool pointer, not a shared header
+        // reference, so it retains permission to write the next header.
+        NonNull::new_unchecked(block.cast::<u8>().as_ptr().add(size & SIZE_SIZE_MASK)).cast()
     }
 }
 

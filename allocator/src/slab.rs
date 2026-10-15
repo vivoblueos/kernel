@@ -201,8 +201,11 @@ impl<
 
     /// Add a range of memory [start, start+size) to the heap
     pub unsafe fn init(&mut self, start: usize, size: usize) {
-        let block: &[u8] = core::slice::from_raw_parts(start as *const u8, size);
-        self.system_allocator.insert_free_block_ptr(block.into());
+        let block = crate::support::nonnull_slice_from_raw_parts(
+            NonNull::new_unchecked(start as *mut u8),
+            size,
+        );
+        self.system_allocator.insert_free_block_ptr(block);
         self.total = size;
 
         // allocate slabs
@@ -1012,8 +1015,11 @@ impl DynamicSlabHeap {
         self.max_pages = size / PAGE_SIZE;
 
         // Initialize TLSF with full heap
-        let block = core::slice::from_raw_parts(start as *const u8, size);
-        self.system_allocator.insert_free_block_ptr(block.into());
+        let block = crate::support::nonnull_slice_from_raw_parts(
+            NonNull::new_unchecked(start as *mut u8),
+            size,
+        );
+        self.system_allocator.insert_free_block_ptr(block);
         self.total = size;
 
         // Allocate metadata array from TLSF
