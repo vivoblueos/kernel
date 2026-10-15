@@ -434,7 +434,7 @@ mod tests {
         let current = scheduler::current_thread_ref();
         let guard_size = blueos_kconfig::CONFIG_STACK_GUARD_ALIGN_AND_SIZE as usize;
         assert!(
-            guard_size >= MPU_REGION_ALIGN && guard_size % MPU_REGION_ALIGN == 0,
+            guard_size >= MPU_REGION_ALIGN && guard_size.is_multiple_of(MPU_REGION_ALIGN),
             "Invalid stack guard size: {guard_size}"
         );
 

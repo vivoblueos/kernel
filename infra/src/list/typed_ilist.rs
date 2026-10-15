@@ -45,7 +45,8 @@ pub struct ListHeadIterator<T, A: const Adapter<T>> {
 impl<T, A: const Adapter<T>> ListHeadIterator<T, A> {
     pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
-            next: head.next,
+            // Reload the link after mutations through intrusive node pointers.
+            next: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(head.next)) },
             tail,
         }
     }
@@ -147,10 +148,10 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
             if !me.is_detached() {
                 return false;
             }
-            let next = core::mem::replace(&mut head.next, Some(NonNull::from_mut(me)));
+            let next = head.next.replace(NonNull::from_mut(me));
             core::mem::replace(&mut me.next, next).ignore_old_value();
             let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
-                core::mem::replace(&mut v.as_mut().prev, Some(NonNull::from_mut(me)))
+                v.as_mut().prev.replace(NonNull::from_mut(me))
             });
             debug_assert_eq!(prev, Some(NonNull::from_mut(head)));
             core::mem::replace(&mut me.prev, prev).ignore_old_value();
@@ -173,10 +174,10 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
             if !me.is_detached() {
                 return false;
             }
-            let prev = core::mem::replace(&mut tail.prev, Some(NonNull::from_mut(me)));
+            let prev = tail.prev.replace(NonNull::from_mut(me));
             core::mem::replace(&mut me.prev, prev).ignore_old_value();
             let next = prev.map_or(Some(NonNull::from_mut(tail)), |mut v| {
-                core::mem::replace(&mut v.as_mut().next, Some(NonNull::from_mut(me)))
+                v.as_mut().next.replace(NonNull::from_mut(me))
             });
             core::mem::replace(&mut me.next, next).ignore_old_value();
             true
@@ -882,7 +883,7 @@ mod tests {
             if let Some(v) = l.iter_mut().next() {
                 v.val = 73;
             };
-            assert!(l.reorder_chosen_value_by(compare_val, move |v| v as *const A == val0_ptr));
+            assert!(l.reorder_chosen_value_by(compare_val, move |v| core::ptr::eq(v, val0_ptr)));
             let mut index = 0;
             for (index, v) in l.iter().enumerate() {
                 match index {

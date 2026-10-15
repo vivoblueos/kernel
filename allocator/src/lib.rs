@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #![no_std]
+#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
 
 extern crate alloc;
 

@@ -182,10 +182,7 @@ where
     }
 
     fn bottom_up_adjust(&mut self, val: &T, mut nonnull_node: NonNull<MinHeapNode<T, A>>) {
-        loop {
-            let Some(mut parent) = unsafe { nonnull_node.as_mut() }.parent else {
-                break;
-            };
+        while let Some(mut parent) = unsafe { nonnull_node.as_mut() }.parent {
             let parent_val = MinHeapNode::owner(unsafe { parent.as_mut() });
             if (self.compare)(val, parent_val) != core::cmp::Ordering::Less {
                 break;
