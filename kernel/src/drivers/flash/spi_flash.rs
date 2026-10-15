@@ -64,7 +64,7 @@ const _: () = {
 fn capacity_from_jedec_id(jedec_id: u32) -> Result<u64, FlashError> {
     let density = (jedec_id & 0xFF) as u32;
     let capacity = 1u64.checked_shl(density).ok_or(FlashError::NotReady)?;
-    if capacity < FLASH_ERASE_SIZE as u64 || capacity % FLASH_ERASE_SIZE as u64 != 0 {
+    if capacity < FLASH_ERASE_SIZE as u64 || !capacity.is_multiple_of(FLASH_ERASE_SIZE as u64) {
         return Err(FlashError::NotReady);
     }
     if capacity > MAX_24BIT_CAPACITY {

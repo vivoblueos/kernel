@@ -118,8 +118,8 @@ impl<T: Lcd> FramebufferOps for LcdFramebuffer<T> {
     }
 
     fn write_bytes(&mut self, offset: u64, buf: &[u8]) -> Result<usize, embedded_io::ErrorKind> {
-        if offset % u64::from(LCD_BYTES_PER_PIXEL) != 0
-            || buf.len() % LCD_BYTES_PER_PIXEL as usize != 0
+        if !offset.is_multiple_of(u64::from(LCD_BYTES_PER_PIXEL))
+            || !buf.len().is_multiple_of(LCD_BYTES_PER_PIXEL as usize)
         {
             return Err(embedded_io::ErrorKind::InvalidInput);
         }

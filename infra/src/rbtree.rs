@@ -161,10 +161,7 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
             }
 
             new_link.as_mut().set_parent(y);
-            if y.is_none() {
-                self.root = Some(new_link);
-            } else {
-                let mut y_ptr = y.unwrap();
+            if let Some(mut y_ptr) = y {
                 let y_obj = self.get_obj(y_ptr);
                 let y_mut = y_ptr.as_mut();
 
@@ -172,6 +169,8 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
                     Ordering::Less => y_mut.left = Some(new_link),
                     _ => y_mut.right = Some(new_link),
                 }
+            } else {
+                self.root = Some(new_link);
             }
             self.size += 1;
             self.fix_after_insertion(new_link);
@@ -244,15 +243,14 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
 
         let p = x.as_ref().parent();
         y.as_mut().set_parent(p);
-        if p.is_none() {
-            self.root = Some(y);
-        } else {
-            let mut p_node = p.unwrap();
+        if let Some(mut p_node) = p {
             if p_node.as_ref().left == Some(x) {
                 p_node.as_mut().left = Some(y);
             } else {
                 p_node.as_mut().right = Some(y);
             }
+        } else {
+            self.root = Some(y);
         }
         y.as_mut().left = Some(x);
         x.as_mut().set_parent(Some(y));
@@ -268,15 +266,14 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
 
         let p = x.as_ref().parent();
         y.as_mut().set_parent(p);
-        if p.is_none() {
-            self.root = Some(y);
-        } else {
-            let mut p_node = p.unwrap();
+        if let Some(mut p_node) = p {
             if p_node.as_ref().right == Some(x) {
                 p_node.as_mut().right = Some(y);
             } else {
                 p_node.as_mut().left = Some(y);
             }
+        } else {
+            self.root = Some(y);
         }
 
         y.as_mut().right = Some(x);
@@ -396,8 +393,8 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
             // w is Black now.
             let left_child = w_node.as_ref().left;
             let right_child = w_node.as_ref().right;
-            let left_black = left_child.map_or(true, |n| n.as_ref().is_black());
-            let right_black = right_child.map_or(true, |n| n.as_ref().is_black());
+            let left_black = left_child.is_none_or(|n| n.as_ref().is_black());
+            let right_black = right_child.is_none_or(|n| n.as_ref().is_black());
             // Case 2: Sibling w's children are both Black
             if left_black && right_black {
                 w_node.as_mut().set_color(Color::Red);
@@ -451,15 +448,14 @@ impl<T, A: Adapter<T>> RBTree<T, A> {
 
     unsafe fn transplant(&mut self, u: NonNull<RBLink>, v: Option<NonNull<RBLink>>) {
         let p = u.as_ref().parent();
-        if p.is_none() {
-            self.root = v;
-        } else {
-            let mut p_node = p.unwrap();
+        if let Some(mut p_node) = p {
             if Some(u) == p_node.as_ref().left {
                 p_node.as_mut().left = v;
             } else {
                 p_node.as_mut().right = v;
             }
+        } else {
+            self.root = v;
         }
         if let Some(mut v_node) = v {
             v_node.as_mut().set_parent(p);

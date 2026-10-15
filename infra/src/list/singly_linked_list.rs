@@ -264,7 +264,7 @@ impl<T> Node<T> {
         let mut new_node = Box::<Node<T>>::new(Node::<T> { next: None, val });
         mem::swap(&mut new_node.val, &mut self.val);
         mem::swap(&mut new_node.next, &mut self.next);
-        let old_next = mem::replace(&mut self.next, Some(new_node));
+        let old_next = self.next.replace(new_node);
         debug_assert!(old_next.is_none());
         self
     }

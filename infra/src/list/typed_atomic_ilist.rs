@@ -119,7 +119,7 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
             me.unlock();
             return false;
         }
-        let next = core::mem::replace(&mut head.next, Some(NonNull::from_mut(me)));
+        let next = head.next.replace(NonNull::from_mut(me));
         me.next = next;
         let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
             let old = unsafe { v.as_mut().prev.swap(me as *mut _, Ordering::Relaxed) };
