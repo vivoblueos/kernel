@@ -277,7 +277,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     #[inline]
     pub fn list_head_of_mut(this: &mut TinyArc<T>) -> Option<&mut AtomicListHead<T, A>> {
         let this_val = TinyArc::<T>::get_mut(this)?;
-        let ptr = this_val as *mut _ as *mut u8;
+        let ptr = (&raw mut *this_val).cast::<u8>();
         let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut AtomicListHead<T, A> };
         Some(unsafe { &mut *list_head_ptr })
     }
@@ -285,14 +285,14 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     #[inline]
     pub unsafe fn list_head_of_mut_unchecked(this: &mut TinyArc<T>) -> &mut AtomicListHead<T, A> {
         let this_val = unsafe { TinyArc::<T>::get_mut_unchecked(this) };
-        let ptr = this_val as *mut _ as *mut u8;
+        let ptr = (&raw mut *this_val).cast::<u8>();
         let list_head_ptr = unsafe { ptr.add(A::offset()) } as *mut AtomicListHead<T, A>;
         unsafe { &mut *list_head_ptr }
     }
 
     #[inline]
     pub unsafe fn from_mut(node: &mut AtomicListHead<T, A>) -> TinyArc<T> {
-        let ptr = node as *mut _ as *mut u8;
+        let ptr = (&raw mut *node).cast::<u8>();
         let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
         let inner = unsafe { ptr.sub(offset) } as *mut TinyArcInner<T>;
         unsafe { TinyArc::from_inner(NonNull::new_unchecked(inner)) }
@@ -300,7 +300,7 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
 
     #[inline]
     pub unsafe fn clone_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
-        let ptr = node as *const _ as *const u8;
+        let ptr = (&raw const *node).cast::<u8>();
         let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
         let inner = unsafe { ptr.sub(offset) } as *const TinyArcInner<T>;
         // SAFETY: node belongs to a live TinyArc allocation, whose base is non-null.

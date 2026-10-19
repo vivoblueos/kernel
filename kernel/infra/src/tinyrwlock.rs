@@ -837,14 +837,14 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
 
     #[inline]
     fn this(&self) -> &T {
-        let ptr = self as *const _ as *const u8;
+        let ptr = (&raw const *self).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *const T };
         unsafe { &*base }
     }
 
     #[inline]
     fn this_mut(&self) -> &mut T {
-        let ptr = self as *const _ as *mut u8;
+        let ptr = (&raw const *self).cast::<u8>().cast_mut();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
     }

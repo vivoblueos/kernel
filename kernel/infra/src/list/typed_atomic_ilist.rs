@@ -59,32 +59,30 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
 
     #[inline]
     pub fn owner(&self) -> &T {
-        let ptr = self as *const _ as *const u8;
+        let ptr = (&raw const *self).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *const T };
         unsafe { &*base }
     }
 
     #[inline]
     pub unsafe fn owner_mut(&mut self) -> &mut T {
-        let ptr = self as *mut _ as *mut u8;
+        let ptr = (&raw mut *self).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
     }
 
     #[inline]
     pub fn list_head_of_mut(this: &mut T) -> &mut Self {
-        let ptr = this as *mut _ as *mut u8;
+        let ptr = (&raw mut *this).cast::<u8>();
         let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
         unsafe { &mut *list_head_ptr }
     }
 
     #[inline]
     pub unsafe fn list_head_of(this: &T) -> &mut Self {
-        unsafe {
-            let ptr: *mut u8 = core::mem::transmute(this as *const _ as *const u8);
-            let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
-            &mut *list_head_ptr
-        }
+        let ptr = (&raw const *this).cast::<u8>().cast_mut();
+        let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
+        unsafe { &mut *list_head_ptr }
     }
 
     #[inline]
@@ -133,8 +131,8 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
                 NonNull::new_unchecked(&raw mut *head)
             }),
             |mut v| {
-                let old = unsafe { v.as_mut().prev.swap(me as *mut _, Ordering::Relaxed) };
-                debug_assert_eq!(old, head as *mut _);
+                let old = unsafe { v.as_mut().prev.swap(&raw mut *me, Ordering::Relaxed) };
+                debug_assert_eq!(old, &raw mut *head);
                 NonNull::new(old)
             },
         );
@@ -153,7 +151,7 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
             me.unlock();
             return false;
         }
-        let mut prev = NonNull::new(tail.prev.swap(me as *mut _, Ordering::Relaxed));
+        let mut prev = NonNull::new(tail.prev.swap(&raw mut *me, Ordering::Relaxed));
         if let Some(mut v) = prev.as_mut() {
             unsafe {
                 // SAFETY: me is a non-null reference.

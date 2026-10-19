@@ -46,7 +46,7 @@ impl<T, A: const Adapter<T>> ListHeadIterator<T, A> {
     pub fn new(head: &ListHead<T, A>, tail: Option<NonNull<ListHead<T, A>>>) -> Self {
         Self {
             // Reload the link after mutations through intrusive node pointers.
-            next: unsafe { core::ptr::read_volatile(core::ptr::addr_of!(head.next)) },
+            next: unsafe { core::ptr::read_volatile(&raw const head.next) },
             tail,
         }
     }
@@ -128,13 +128,13 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
     }
 
     pub fn owner(&self) -> &T {
-        let ptr = self as *const _ as *const u8;
+        let ptr = (&raw const *self).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *const T };
         unsafe { &*base }
     }
 
     pub unsafe fn owner_mut(&mut self) -> &mut T {
-        let ptr = self as *mut _ as *mut u8;
+        let ptr = (&raw mut *self).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
     }
@@ -332,7 +332,7 @@ impl<T, A: const Adapter<T>> List<T, A> {
 
     #[inline]
     fn list_head_of_mut(this: &mut T) -> &mut ListHead<T, A> {
-        let ptr = this as *mut T as *mut u8;
+        let ptr = (&raw mut *this).cast::<u8>();
         let list_head_ptr = unsafe { ptr.add(A::offset()) } as *mut ListHead<T, A>;
         unsafe { &mut *list_head_ptr }
     }

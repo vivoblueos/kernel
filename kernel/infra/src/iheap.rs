@@ -76,25 +76,25 @@ impl<T, A: const Adapter<T>> MinHeapNode<T, A> {
     }
 
     fn node_of_mut(this: &mut T) -> &mut Self {
-        let ptr = this as *mut T as *mut u8;
+        let ptr = (&raw mut *this).cast::<u8>();
         let node_ptr = unsafe { ptr.add(A::offset()) } as *mut Self;
         unsafe { &mut *node_ptr }
     }
 
     fn node_of_link_mut(link: &mut LinkType<T, A>) -> &mut Self {
-        let ptr = link as *mut _ as *mut u8;
+        let ptr = (&raw mut *link).cast::<u8>();
         let node_ptr = unsafe { ptr.sub(Link::<T, A>::offset()) } as *mut Self;
         unsafe { &mut *node_ptr }
     }
 
     fn node_of_link(link: &LinkType<T, A>) -> &Self {
-        let ptr = link as *const _ as *const u8;
+        let ptr = (&raw const *link).cast::<u8>();
         let node_ptr = unsafe { ptr.sub(Link::<T, A>::offset()) } as *const Self;
         unsafe { &*node_ptr }
     }
 
     fn owner(node: &Self) -> &T {
-        let ptr = node as *const _ as *const u8;
+        let ptr = (&raw const *node).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *const T };
         unsafe { &*base }
     }
