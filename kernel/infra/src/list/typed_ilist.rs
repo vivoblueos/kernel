@@ -143,17 +143,21 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
         self.prev.is_none() && self.next.is_none()
     }
 
+    // Raw borrows avoid reborrowing nodes already referenced by stored links.
     pub fn insert_after(head: &mut ListHead<T, A>, me: &mut ListHead<T, A>) -> bool {
+        // SAFETY: For each new_unchecked below, head and me are non-null references.
         unsafe {
             if !me.is_detached() {
                 return false;
             }
-            let next = head.next.replace(NonNull::from_mut(me));
+            let next = head.next.replace(NonNull::new_unchecked(&raw mut *me));
             core::mem::replace(&mut me.next, next).ignore_old_value();
-            let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
-                v.as_mut().prev.replace(NonNull::from_mut(me))
+            let prev = next.map_or(Some(NonNull::new_unchecked(&raw mut *head)), |mut v| {
+                v.as_mut()
+                    .prev
+                    .replace(NonNull::new_unchecked(&raw mut *me))
             });
-            debug_assert_eq!(prev, Some(NonNull::from_mut(head)));
+            debug_assert_eq!(prev, Some(NonNull::new_unchecked(&raw mut *head)));
             core::mem::replace(&mut me.prev, prev).ignore_old_value();
             true
         }
@@ -169,15 +173,19 @@ impl<T, A: const Adapter<T>> ListHead<T, A> {
         None
     }
 
+    // As in insert_after, preserve existing node pointers when taking addresses.
     pub fn insert_before(tail: &mut ListHead<T, A>, me: &mut ListHead<T, A>) -> bool {
+        // SAFETY: For each new_unchecked below, tail and me are non-null references.
         unsafe {
             if !me.is_detached() {
                 return false;
             }
-            let prev = tail.prev.replace(NonNull::from_mut(me));
+            let prev = tail.prev.replace(NonNull::new_unchecked(&raw mut *me));
             core::mem::replace(&mut me.prev, prev).ignore_old_value();
-            let next = prev.map_or(Some(NonNull::from_mut(tail)), |mut v| {
-                v.as_mut().next.replace(NonNull::from_mut(me))
+            let next = prev.map_or(Some(NonNull::new_unchecked(&raw mut *tail)), |mut v| {
+                v.as_mut()
+                    .next
+                    .replace(NonNull::new_unchecked(&raw mut *me))
             });
             core::mem::replace(&mut me.next, next).ignore_old_value();
             true
@@ -315,7 +323,11 @@ impl<T, A: const Adapter<T>> List<T, A> {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.head.next == Some(NonNull::from_ref(&self.tail))
+        self.head.next
+            == Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.tail).cast_mut())
+            })
     }
 
     #[inline]
@@ -326,11 +338,23 @@ impl<T, A: const Adapter<T>> List<T, A> {
     }
 
     fn iter_inner_mut(&mut self) -> ListHeadIterator<T, A> {
-        ListHeadIterator::new(&self.head, Some(NonNull::from_ref(&self.tail)))
+        ListHeadIterator::new(
+            &self.head,
+            Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.tail).cast_mut())
+            }),
+        )
     }
 
     fn iter_inner(&self) -> ListHeadIterator<T, A> {
-        ListHeadIterator::new(&self.head, Some(NonNull::from_ref(&self.tail)))
+        ListHeadIterator::new(
+            &self.head,
+            Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.tail).cast_mut())
+            }),
+        )
     }
 
     fn find_insert_position_by<'a, 'b, Compare>(
@@ -475,7 +499,7 @@ mod tests {
         let f = Foo::default();
         let t = &f.lh;
         let g = t.owner();
-        assert_eq!(&f as *const _, g as *const _);
+        assert_eq!(&raw const f, g as *const _);
     }
 
     #[test]
@@ -534,7 +558,10 @@ mod tests {
 
         let node1_leaked = Box::leak(node1);
         let node2_leaked = Box::leak(node2);
-        node1_leaked.next = Some(NonNull::from(&mut *node2_leaked));
+        node1_leaked.next = Some(unsafe {
+            // SAFETY: The live referent has a non-null address.
+            NonNull::new_unchecked(&raw mut *node2_leaked)
+        });
 
         let ptr1 = NonNull::from(node1_leaked);
         let ptr2 = NonNull::from(node2_leaked);
@@ -551,7 +578,10 @@ mod tests {
     #[should_panic(expected = "Tail node is specified, but encountered None during iteration")]
     fn test_listiterator_shoild_panic() {
         let mut dummy = ListHead::<Foo, OffsetOfLh>::default();
-        let tail_ptr = NonNull::from(&mut dummy);
+        let tail_ptr = unsafe {
+            // SAFETY: The live field or local has a non-null address.
+            NonNull::new_unchecked(&raw mut dummy)
+        };
         let mut iter = ListHeadIterator::<Foo, OffsetOfLh> {
             next: None,
             tail: Some(tail_ptr),
@@ -581,7 +611,10 @@ mod tests {
         });
         let node1_leaked = Box::leak(node1);
         let node2_leaked = Box::leak(node2);
-        node1_leaked.prev = Some(NonNull::from(&mut *node2_leaked));
+        node1_leaked.prev = Some(unsafe {
+            // SAFETY: The live referent has a non-null address.
+            NonNull::new_unchecked(&raw mut *node2_leaked)
+        });
 
         let ptr1 = NonNull::from(node1_leaked);
         let ptr2 = NonNull::from(node2_leaked);
@@ -873,7 +906,7 @@ mod tests {
                 node: ListHead::new(),
                 val: 42,
             };
-            let val0_ptr = &val0 as *const A;
+            let val0_ptr = &raw const val0;
             let mut val1 = A {
                 node: ListHead::new(),
                 val: 43,

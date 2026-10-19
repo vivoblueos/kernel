@@ -115,19 +115,29 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
 
     // For our use scenarios, we only have to lock `me`. The whole list is
     // expected to be protected by a spin lock.
+    // Raw borrows avoid reborrowing nodes already referenced by stored links.
     pub fn insert_after(head: &mut Self, me: &mut Self) -> bool {
         me.lock();
         if !me.is_detached() {
             me.unlock();
             return false;
         }
-        let next = head.next.replace(NonNull::from_mut(me));
-        me.next = next;
-        let prev = next.map_or(Some(NonNull::from_mut(head)), |mut v| {
-            let old = unsafe { v.as_mut().prev.swap(me as *mut _, Ordering::Relaxed) };
-            debug_assert_eq!(old, head as *mut _);
-            NonNull::new(old)
+        let next = head.next.replace(unsafe {
+            // SAFETY: The reference points to a live value and is non-null.
+            NonNull::new_unchecked(&raw mut *me)
         });
+        me.next = next;
+        let prev = next.map_or(
+            Some(unsafe {
+                // SAFETY: The reference points to a live value and is non-null.
+                NonNull::new_unchecked(&raw mut *head)
+            }),
+            |mut v| {
+                let old = unsafe { v.as_mut().prev.swap(me as *mut _, Ordering::Relaxed) };
+                debug_assert_eq!(old, head as *mut _);
+                NonNull::new(old)
+            },
+        );
         // Unlock simultaneously.
         me.prev.store(
             prev.map_or(core::ptr::null_mut(), |v| v.as_ptr()),
@@ -136,6 +146,7 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
         true
     }
 
+    // As in insert_after, preserve existing node pointers when taking addresses.
     pub fn insert_before(tail: &mut Self, me: &mut Self) -> bool {
         me.lock();
         if !me.is_detached() {
@@ -144,9 +155,15 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
         }
         let mut prev = NonNull::new(tail.prev.swap(me as *mut _, Ordering::Relaxed));
         if let Some(mut v) = prev.as_mut() {
-            unsafe { v.as_mut().next = Some(NonNull::from_mut(me)) };
+            unsafe {
+                // SAFETY: me is a non-null reference.
+                v.as_mut().next = Some(NonNull::new_unchecked(&raw mut *me))
+            };
         };
-        me.next = Some(NonNull::from_mut(tail));
+        me.next = Some(unsafe {
+            // SAFETY: The reference points to a live value and is non-null.
+            NonNull::new_unchecked(&raw mut *tail)
+        });
         // Unlock simultaneously.
         me.prev.store(
             prev.map_or(core::ptr::null_mut(), |v| v.as_ptr()),
@@ -259,7 +276,7 @@ mod tests {
         let f = Foo::default();
         let t = &f.lh;
         let g = t.owner();
-        assert_eq!(&f as *const _, g as *const _);
+        assert_eq!(&raw const f, g as *const _);
         assert!(t.try_lock());
         assert!(!t.try_lock());
         assert!(!t.try_lock());
@@ -287,12 +304,12 @@ mod tests {
         assert!(b.lh.prev_ptr().is_null());
         assert!(Ty::insert_after(&mut a.lh, &mut c.lh));
         assert!(Ty::insert_before(&mut a.lh, &mut b.lh));
-        assert_eq!(a.lh.prev_ptr(), &mut b.lh as *mut _);
-        assert_eq!(a.lh.next_ptr(), &mut c.lh as *mut _);
-        assert_eq!(c.lh.prev_ptr(), &mut a.lh as *mut _);
+        assert_eq!(a.lh.prev_ptr(), &raw mut b.lh);
+        assert_eq!(a.lh.next_ptr(), &raw mut c.lh);
+        assert_eq!(c.lh.prev_ptr(), &raw mut a.lh);
         assert_eq!(c.lh.next_ptr(), core::ptr::null_mut());
         assert_eq!(b.lh.prev_ptr(), core::ptr::null_mut());
-        assert_eq!(b.lh.next_ptr(), &mut a.lh as *mut _);
+        assert_eq!(b.lh.next_ptr(), &raw mut a.lh);
         assert!(b.lh.try_lock());
         assert!(!b.lh.try_lock());
         b.lh.unlock();
