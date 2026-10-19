@@ -20,7 +20,7 @@ pub(crate) mod psci;
 pub(crate) mod vector;
 pub(crate) mod virt;
 
-use crate::scheduler;
+use crate::{mm::VirtualAddress, scheduler};
 use aarch64_cpu::{
     asm::wfi,
     registers::{Readable, Writeable, DAIF, MPIDR_EL1, SP},
@@ -594,7 +594,10 @@ pub extern "C" fn pend_switch_context() {}
 
 pub fn secondary_cpu_setup(psci_base: u32) {
     atomic::fence(Ordering::SeqCst);
-    let secondary_entry = mmu::kernel_virt_to_phys(crate::boot::_start as *const () as usize);
+    let secondary_entry = mmu::kernel_virt_to_phys(VirtualAddress::new(
+        crate::boot::_start as *const () as usize,
+    ))
+    .into_raw();
     for i in 1..blueos_kconfig::CONFIG_NUM_CORES {
         psci::cpu_on(psci_base, i as usize, secondary_entry, 0);
     }
