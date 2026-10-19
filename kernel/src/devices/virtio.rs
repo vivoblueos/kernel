@@ -14,7 +14,7 @@
 
 use crate::{
     devices::block::init_virtio_block,
-    mm::{kernel_phys_to_virt, kernel_virt_to_phys},
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
 };
 use alloc::alloc::{alloc_zeroed, dealloc, handle_alloc_error};
 use core::{alloc::Layout, mem::size_of, ptr::NonNull};
@@ -50,10 +50,13 @@ fn find_virtio_mmio_devices(fdt: &Fdt) {
                             size_of::<VirtIOHeader>()
                         );
                     } else {
-                        let header =
-                            NonNull::new(kernel_phys_to_virt(region.starting_address as usize)
-                                as *mut VirtIOHeader)
-                            .unwrap();
+                        let header = NonNull::new(
+                            kernel_phys_to_virt(PhysicalAddress::new(
+                                region.starting_address as usize,
+                            ))
+                            .into_raw() as *mut VirtIOHeader,
+                        )
+                        .unwrap();
                         // SAFETY: device tree is correct, VirtIO MMIO devices are mapped.
                         match unsafe { MmioTransport::new(header, region_size) } {
                             Err(MmioError::InvalidDeviceID(
@@ -112,7 +115,7 @@ unsafe impl Hal for VirtioHal {
         if vaddr.is_null() {
             handle_alloc_error(layout);
         }
-        let paddr = kernel_virt_to_phys(vaddr as _);
+        let paddr = kernel_virt_to_phys(VirtualAddress::new(vaddr as usize)).into_raw();
         let vaddr = NonNull::new(vaddr).unwrap();
         (paddr, vaddr)
     }
@@ -124,13 +127,14 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: PhysAddr, _size: usize) -> NonNull<u8> {
-        NonNull::new(kernel_phys_to_virt(paddr) as _).unwrap()
+        NonNull::new(kernel_phys_to_virt(PhysicalAddress::new(paddr)).into_raw() as *mut u8)
+            .unwrap()
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> PhysAddr {
         let vaddr = buffer.as_ptr() as *mut u8 as usize;
         // Nothing to do
-        kernel_virt_to_phys(vaddr)
+        kernel_virt_to_phys(VirtualAddress::new(vaddr)).into_raw()
     }
 
     unsafe fn unshare(_paddr: PhysAddr, _buffer: NonNull<[u8]>, _direction: BufferDirection) {
