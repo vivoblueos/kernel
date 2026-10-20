@@ -203,6 +203,21 @@ impl Mutex {
         this_thread: &'a ThreadNode,
         owner_thread: &ThreadNode,
     ) -> (bool, SpinLockGuard<'a, WaitQueue>) {
+        // Publish the wait edge before propagating priority. A concurrent donor
+        // either sees this edge and follows it, or promotes us before we acquire
+        // our thread lock below, so this walk observes the inherited priority.
+        // The mutex's pending lock keeps its owner stable until we suspend.
+        let old = this_thread.replace_pending_on_mutex(Some(this_mutex.clone()));
+        #[cfg(debugging_scheduler)]
+        crate::trace!(
+            "TH:0x{:x} is pending on mutex {:?}",
+            Thread::id(this_thread),
+            this_mutex.deref() as *const _,
+        );
+        if let Some(check) = &old {
+            debug_assert!(Arc::is(check, this_mutex));
+        };
+        drop(old);
         // We walk along the blocking chain to scan no more than
         // CHAIN_LENGTH_LIMIT threads.
         let mut current_len = 0;
@@ -274,20 +289,6 @@ impl Mutex {
         }
         drop(other_lock);
         drop(other_mutex);
-        // FIXME: For current implementation, there is a small time window
-        // that we have seen the pending_on_mutex, however it's not in the
-        // WaitQueue.
-        let old = this_thread.replace_pending_on_mutex(Some(this_mutex.clone()));
-        #[cfg(debugging_scheduler)]
-        crate::trace!(
-            "TH:0x{:x} is pending on mutex {:?}",
-            Thread::id(this_thread),
-            this_mutex.deref() as *const _,
-        );
-        if let Some(check) = &old {
-            debug_assert!(Arc::is(check, this_mutex));
-        };
-        drop(old);
         let timeout;
         with_iou!(|borrowed_wait_entry| {
             let mut wait_entry = WaitEntry::new(this_thread.clone());
@@ -737,23 +738,21 @@ mod tests {
                 assert!(ok);
                 clock.fetch_add(1, Ordering::Relaxed);
                 wake(&clock);
-                // Wait t2 blocking at mu[0].
-                loop {
-                    if let Some(mutex) = t2.pending_on_mutex() {
-                        if Arc::is(&mutex, &mu[0]) {
+                // The wait edge is published before PI propagation. Inspect the
+                // queues under their locks to wait for propagation and enqueueing
+                // to finish before checking the inherited priority.
+                for (mutex, waiter) in [(&mu[0], &t2), (&mu[1], &t0)] {
+                    loop {
+                        let queued = mutex
+                            .pending
+                            .irqsave_lock()
+                            .iter()
+                            .any(|entry| Arc::is(&entry.thread, waiter));
+                        if queued {
                             break;
                         }
+                        scheduler::yield_me();
                     }
-                    scheduler::yield_me();
-                }
-                // Wait t0 blocking at mu[1].
-                loop {
-                    if let Some(mutex) = t0.pending_on_mutex() {
-                        if Arc::is(&mutex, &mu[1]) {
-                            break;
-                        }
-                    }
-                    scheduler::yield_me();
                 }
                 // PI successfully performed.
                 assert_eq!(this_thread.priority(), 0);

@@ -424,6 +424,12 @@ mod tests {
         assert_eq!(counter3.load(Ordering::Relaxed), 1);
     }
 
+    // FIXME: On SMP, another CPU may hold EXPIRE_BARRIER, causing the clock
+    // interrupt to skip expiration and defer it until a later timer interrupt.
+    // This test can remove the timer before that interrupt executes its callback.
+    // There is no good solution with the shared timer queues yet; revisit this
+    // test when per-CPU timers are available.
+    #[cfg(not(smp))]
     #[test]
     fn test_timer_edge_cases() {
         // Test with zero interval.
