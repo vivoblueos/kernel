@@ -232,7 +232,9 @@ class Checker(object):
         except Exception:
             pass
         finally:
-            await process.wait()
+            # Drain piped output so a paused StreamReader cannot prevent the
+            # subprocess transport from closing after QEMU has been killed.
+            await process.communicate()
         LOGGER.info('Successful lines:')
         for line in self.succ_lines:
             LOGGER.info(line.strip())
