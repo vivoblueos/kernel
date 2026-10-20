@@ -1,3 +1,4 @@
-// TOTAL-TIMEOUT: 30
+// TOTAL-TIMEOUT: 60
 // ASSERT-SUCC: Kernel integration test end.
 // ASSERT-FAIL: Backtrace in Panic.*
+// Allow for network polling and slower FATFS I/O on shared QEMU CI hosts.
