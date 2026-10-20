@@ -951,7 +951,7 @@ impl OperationIPCReply {
                 return result.map_err(Into::into);
             }
 
-            if !self.reply_futex.load(Ordering::Acquire) == STATE_WAITING_FOR_CONSUME {
+            if self.reply_futex.load(Ordering::Acquire) != STATE_WAITING_FOR_CONSUME {
                 yield_me();
                 continue;
             }
@@ -983,11 +983,14 @@ impl OperationIPCReply {
     }
 
     fn do_wakeup_client(&self, result: OperationResult) {
-        self.reply_result.lock().replace(result);
-
-        // State
-        self.reply_futex
-            .store(STATE_AFTER_CONSUME, Ordering::Release);
+        {
+            let mut reply_result = self.reply_result.lock();
+            reply_result.replace(result);
+            // Publish completion before the client can consume the result and
+            // reset the state to IDLE for its next request.
+            self.reply_futex
+                .store(STATE_AFTER_CONSUME, Ordering::Release);
+        }
 
         futex::atomic_wake(&self.reply_futex, 1).ignore_result();
     }
