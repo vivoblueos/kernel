@@ -57,7 +57,7 @@ impl<const N: usize> RawAllocator<N> {
     /// useful allocation heap) or if it is not divisible by 4.
     pub const fn new() -> Self {
         debug_assert!(N >= 8, "too small heap memory: minimum size is 8");
-        debug_assert!(N % 4 == 0, "memory size has to be divisible by 4");
+        debug_assert!(N.is_multiple_of(4), "memory size has to be divisible by 4");
 
         let buffer = buffer::Buffer::new();
         Self {

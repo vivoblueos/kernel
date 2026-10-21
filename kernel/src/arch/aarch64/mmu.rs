@@ -40,7 +40,10 @@
 //
 // ============================================================================
 
-use crate::arch::aarch64::asm;
+use crate::{
+    arch::aarch64::asm,
+    mm::{PhysicalAddress, VirtualAddress},
+};
 use aarch64_cpu::{
     asm::{
         barrier::{dsb, isb, SY},
@@ -240,7 +243,7 @@ impl PageEntry {
         if self.is_valid() {
             return Err("page entry is set");
         }
-        let table_phys = kernel_virt_to_phys(table as usize) as u64;
+        let table_phys = kernel_virt_to_phys(VirtualAddress::new(table as usize)).into_raw() as u64;
         let entry = InMemoryRegister::<u64, PAGE_DESCRIPTOR::Register>::new(0);
         entry.write(PAGE_DESCRIPTOR::VALID::Valid + PAGE_DESCRIPTOR::TYPE::Page);
         self.0 = entry.get() | (table_phys & PAGE_DESCRIPTOR_ADDR_MASK);
@@ -263,7 +266,10 @@ impl PageEntry {
             return None;
         }
         let table_phys = self.0 & PAGE_DESCRIPTOR_ADDR_MASK;
-        Some(kernel_phys_to_virt(table_phys as usize) as *mut PageTableManager)
+        Some(
+            kernel_phys_to_virt(PhysicalAddress::new(table_phys as usize)).into_raw()
+                as *mut PageTableManager,
+        )
     }
 }
 
@@ -590,7 +596,7 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
             let aligned_base = align_down(base as usize, L1_BLOCK_SIZE as usize);
             map_range_in_pgtbl(
                 runtime_linearmap_table,
-                kernel_phys_to_virt(aligned_base),
+                kernel_phys_to_virt(PhysicalAddress::new(aligned_base)).into_raw(),
                 aligned_base,
                 L1_BLOCK_SIZE as usize,
                 MemAttributes::Device,
@@ -619,7 +625,7 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
 
                 map_range_in_pgtbl(
                     runtime_linearmap_table,
-                    kernel_phys_to_virt(map_start_aligned),
+                    kernel_phys_to_virt(PhysicalAddress::new(map_start_aligned)).into_raw(),
                     map_start_aligned,
                     map_len,
                     MemAttributes::Normal,
@@ -629,7 +635,8 @@ pub fn init_el1_runtime_linearmap() -> Result<(), &'static str> {
 
         dsb(SY);
 
-        let runtime_linearmap_phys = kernel_virt_to_phys(runtime_linearmap as usize);
+        let runtime_linearmap_phys =
+            kernel_virt_to_phys(VirtualAddress::new(runtime_linearmap as usize)).into_raw();
         RUNTIME_LINEARMAP_PHYS.store(runtime_linearmap_phys, Ordering::Release);
         RUNTIME_LINEARMAP_INIT_DONE.store(true, Ordering::Release);
         // Wake up all cores waiting on wfe

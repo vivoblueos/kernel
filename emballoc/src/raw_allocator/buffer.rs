@@ -47,7 +47,10 @@ impl<const N: usize> Buffer<N> {
     /// `N < 4`.
     pub const fn new() -> Self {
         debug_assert!(N >= HEADER_SIZE, "buffer too small, use N >= 4");
-        debug_assert!(N % HEADER_SIZE == 0, "memory size has to be divisible by 4");
+        debug_assert!(
+            N.is_multiple_of(HEADER_SIZE),
+            "memory size has to be divisible by 4"
+        );
 
         // initialize the header bytes to zero to make sure, that we can check
         // against zero later without undefined behavior.
@@ -100,7 +103,7 @@ impl<const N: usize> Buffer<N> {
     /// This function panics if the offset is not a multiple of 4 or the offset
     /// plus the 4 bytes after it would read past the end of the buffer.
     fn at(&self, offset: usize) -> &MaybeUninit<Entry> {
-        debug_assert!(offset % mem::align_of::<Entry>() == 0);
+        debug_assert!(offset.is_multiple_of(mem::align_of::<Entry>()));
         debug_assert!(offset + HEADER_SIZE <= self.0.len());
 
         // SAFETY: this operation is unsafe for multiple reasons: the alignment
@@ -139,7 +142,7 @@ impl<const N: usize> Buffer<N> {
     /// This function panics if the offset is not a multiple of 4 or the offset
     /// plus the 4 bytes after it would read past the end of the buffer.
     fn at_mut(&mut self, offset: usize) -> &mut MaybeUninit<Entry> {
-        debug_assert!(offset % mem::align_of::<Entry>() == 0);
+        debug_assert!(offset.is_multiple_of(mem::align_of::<Entry>()));
         debug_assert!(offset + HEADER_SIZE <= self.0.len());
 
         // SAFETY: same as `at()`

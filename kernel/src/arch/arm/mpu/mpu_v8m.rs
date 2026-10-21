@@ -87,7 +87,7 @@ pub fn init_sys_stack_guard() {
 #[inline]
 pub fn update_thread_stack_guard(next: &crate::thread::Thread) {
     let guard_size = blueos_kconfig::CONFIG_STACK_GUARD_ALIGN_AND_SIZE as usize;
-    debug_assert!(guard_size % MPU_REGION_ALIGN == 0);
+    debug_assert!(guard_size.is_multiple_of(MPU_REGION_ALIGN));
     debug_assert!(guard_size >= MPU_REGION_ALIGN);
 
     let stack_base = next.stack_base();

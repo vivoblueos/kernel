@@ -192,13 +192,16 @@ impl<T> IlistNode<T> {
                 }
             };
             // Now we have acquired all guards.
-            let prev = core::mem::replace(&mut write_other_guard.prev, Some(me.clone()));
+            let prev = write_other_guard.prev.replace(me.clone());
             core::mem::replace(&mut write_me_guard.prev, prev).ignore_old_value();
             if let Some(mut guard) = write_prev_guard {
-                core::mem::replace(&mut guard.next, Some(me.clone())).ignore_old_value();
+                guard.next.replace(me.clone()).ignore_old_value();
             };
             drop(write_other_guard);
-            core::mem::replace(&mut write_me_guard.next, Some(other.clone())).ignore_old_value();
+            write_me_guard
+                .next
+                .replace(other.clone())
+                .ignore_old_value();
             write_me_guard.increment_version();
             return true;
         }
@@ -244,13 +247,16 @@ impl<T> IlistNode<T> {
                 }
             };
             // Now we have acquired all guards.
-            let next = core::mem::replace(&mut write_other_guard.next, Some(me.clone()));
+            let next = write_other_guard.next.replace(me.clone());
             core::mem::replace(&mut write_me_guard.next, next).ignore_old_value();
             if let Some(mut guard) = write_next_guard {
-                core::mem::replace(&mut guard.prev, Some(me.clone())).ignore_old_value();
+                guard.prev.replace(me.clone()).ignore_old_value();
             };
             drop(write_other_guard);
-            core::mem::replace(&mut write_me_guard.prev, Some(other.clone())).ignore_old_value();
+            write_me_guard
+                .prev
+                .replace(other.clone())
+                .ignore_old_value();
             write_me_guard.increment_version();
             return true;
         }

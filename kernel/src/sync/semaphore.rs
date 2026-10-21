@@ -176,8 +176,7 @@ impl Semaphore {
             );
         }
         self.counter.set(old + 1);
-        // A zero count need not have waiters: acquire/release loops hit this path.
-        if old > 0 || w.is_empty() {
+        if w.is_empty() {
             return;
         }
         Self::wake_waiter(w);
@@ -224,8 +223,13 @@ unsafe impl Sync for Semaphore {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scheduler::{InsertByPrio, InsertMode, InsertToEnd};
+    use crate::{
+        scheduler::{InsertByPrio, InsertMode, InsertToEnd},
+        sync::{wait_until, wake},
+        types::Arc,
+    };
     use blueos_test_macro::test;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_semaphore_init() {
@@ -508,5 +512,57 @@ mod tests {
         // Thread 3: should be able to acquire now
         assert!(semaphore.try_acquire::<InsertToEnd>());
         assert_eq!(semaphore.counter.get(), 0);
+    }
+
+    #[test]
+    fn test_semaphore_consecutive_releases() {
+        // Regression test for a lost wakeup: if two permits are released
+        // before the first woken waiter can consume one, counter is already
+        // nonzero on the second release, but another pending waiter must still
+        // be woken.
+
+        // The first two workers consume the initial permits. The other two
+        // workers then block in the semaphore wait queue.
+        let semaphore = Arc::new(Semaphore::new());
+        assert!(semaphore.init(2));
+
+        let successful_acquires = Arc::new(AtomicUsize::new(0));
+        let finished_workers = Arc::new(AtomicUsize::new(0));
+
+        for _ in 0..4 {
+            let semaphore = semaphore.clone();
+            let successful_acquires = successful_acquires.clone();
+            let finished_workers = finished_workers.clone();
+            crate::thread::spawn(move || {
+                if semaphore.acquire_timeout::<InsertToEnd>(Tick(100)) {
+                    successful_acquires.fetch_add(1, Ordering::Release);
+                }
+                finished_workers.fetch_add(1, Ordering::Release);
+                wake(&finished_workers);
+            })
+            .expect("failed to spawn semaphore waiter");
+        }
+
+        // Make sure two workers consumed the initial permits and the other
+        // two are suspended in the semaphore wait queue.
+        while semaphore.pending.irqsave_lock().iter().count() != 2 {
+            scheduler::yield_me();
+        }
+
+        // Keep the first woken waiter from consuming its permit before the
+        // second release. This deterministically creates the sequence:
+        // counter 0 -> 1 (wake A) -> 2 (must wake B).
+        let preempt_guard = Thread::try_preempt_me();
+        assert!(preempt_guard.preemptable());
+        semaphore.release();
+        semaphore.release();
+        drop(preempt_guard);
+
+        // Wait for every worker to finish before checking the final state.
+        wait_until(4, &finished_workers);
+        // All four workers must acquire a permit: two consume the initial
+        // permits, and both waiters consume the consecutively released ones.
+        assert_eq!(successful_acquires.load(Ordering::Acquire), 4);
+        assert_eq!(semaphore.count(), 0);
     }
 }

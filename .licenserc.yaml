@@ -1,10 +1,10 @@
-header: # `header` section is configurations for source codes license header.
+header:  # `header` section is configurations for source codes license header.
   - paths:
       - '**'
     license:
-      spdx-id: Apache-2.0 # the spdx id of the license, it's convenient when your license is standard SPDX license.
-      copyright-owner: vivo Mobile Communication Co., Ltd # the copyright owner to replace the [owner] in the `spdx-id` template.
-      content: | # `license` will be used as the content when `fix` command needs to insert a license header.
+      spdx-id: Apache-2.0  # the spdx id of the license, it's convenient when your license is standard SPDX license.
+      copyright-owner: vivo Mobile Communication Co., Ltd  # the copyright owner to replace the [owner] in the `spdx-id` template.
+      content: |  # `license` will be used as the content when `fix` command needs to insert a license header.
         Copyright (c) [year] vivo Mobile Communication Co., Ltd.
 
         Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,7 @@ header: # `header` section is configurations for source codes license header.
         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
         See the License for the specific language governing permissions and
         limitations under the License.
-    paths-ignore: # `paths-ignore` are the path list that will be ignored by license-eye.
+    paths-ignore:  # `paths-ignore` are the path list that will be ignored by license-eye.
       - "licenses"
       - "**/cov.rs"
       - "**/Cargo.toml"
@@ -45,10 +45,10 @@ header: # `header` section is configurations for source codes license header.
       - "kconfig/**/defconfig"
       - "LICENSES/**"
       - "CREDITS/**"
-      - "kernel/src/allocator/buddy/**/*.rs" # special process for kernel imported
-      - "kernel/src/allocator/llff/**/*.rs" # special process for kernel imported
-      - "kernel/src/allocator/tlsf/**/*.rs" # special process for kernel imported
-      - "kernel/src/sync/libatomic/**" # special process for kernel imported
+      - "kernel/src/allocator/buddy/**/*.rs"  # special process for kernel imported
+      - "kernel/src/allocator/llff/**/*.rs"  # special process for kernel imported
+      - "kernel/src/allocator/tlsf/**/*.rs"  # special process for kernel imported
+      - "kernel/src/sync/libatomic/**"  # special process for kernel imported
       - "loader/tests/integration_test/src/test.rs"
       - "loader/tests/cov/lib.rs"
       - "adapter/rt_thread/include/rt_thread_wrapper.inc"
@@ -56,14 +56,14 @@ header: # `header` section is configurations for source codes license header.
       - "scal/src/platform/**"
       - ".gitignore"
       - ".gitattributes"
-      - "**/.git/**" # .git is a symlink to .repo/projects in repo-tool checkouts, license-eye only skips real .git dirs
+      - "**/.git/**"  # .git is a symlink to .repo/projects in repo-tool checkouts, license-eye only skips real .git dirs
       - "**/*.md"
-      - "**/*.x" # ld link script
+      - "**/*.x"  # ld link script
       - "**/*.bak"
       - "**/.config"
       - "**/Kconfig"
       - "**/LICENSE_*"
-      - "**/common_checker.test" # qemu checker
+      - "**/common_checker.test"  # qemu checker
       - "**/*.checker"
       - "LICENSE"
       - "NOTICE"
@@ -76,9 +76,9 @@ header: # `header` section is configurations for source codes license header.
       - "adapter/cmsis/cmsis_header/**"
       - "Dockerfile"
       - ".yamlfmt"
-      - "blueos-version"
+      - "bluekernel-version"
       - "josh-sync.toml"
-    comment: on-failure # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
+    comment: on-failure  # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.
     # license-location-threshold specifies the index threshold where the license header can be located,
     # after all, a "header" cannot be TOO far from the file start.
     license-location-threshold: 75

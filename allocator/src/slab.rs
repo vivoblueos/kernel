@@ -201,8 +201,11 @@ impl<
 
     /// Add a range of memory [start, start+size) to the heap
     pub unsafe fn init(&mut self, start: usize, size: usize) {
-        let block: &[u8] = core::slice::from_raw_parts(start as *const u8, size);
-        self.system_allocator.insert_free_block_ptr(block.into());
+        let block = crate::support::nonnull_slice_from_raw_parts(
+            NonNull::new_unchecked(start as *mut u8),
+            size,
+        );
+        self.system_allocator.insert_free_block_ptr(block);
         self.total = size;
 
         // allocate slabs
@@ -236,7 +239,7 @@ impl<
         while ptr.is_none() {
             if allocator_index < SLAB_ALLOCATOR_COUNT {
                 if self.slab_allocator[allocator_index].len > 0
-                    && Self::SLAB_SIZES[allocator_index] % layout.align() == 0
+                    && Self::SLAB_SIZES[allocator_index].is_multiple_of(layout.align())
                 {
                     ptr = self.slab_allocator[allocator_index].allocate(layout);
                     if ptr.is_some() {
@@ -1012,8 +1015,11 @@ impl DynamicSlabHeap {
         self.max_pages = size / PAGE_SIZE;
 
         // Initialize TLSF with full heap
-        let block = core::slice::from_raw_parts(start as *const u8, size);
-        self.system_allocator.insert_free_block_ptr(block.into());
+        let block = crate::support::nonnull_slice_from_raw_parts(
+            NonNull::new_unchecked(start as *mut u8),
+            size,
+        );
+        self.system_allocator.insert_free_block_ptr(block);
         self.total = size;
 
         // Allocate metadata array from TLSF
@@ -1085,7 +1091,7 @@ impl DynamicSlabHeap {
 
         // Slab path: try from idx upward (upsearch handles alignment mismatches on small sizes).
         while idx < SLAB_ALLOCATOR_COUNT {
-            if Self::SLAB_SIZES[idx] % layout.align() != 0 {
+            if !Self::SLAB_SIZES[idx].is_multiple_of(layout.align()) {
                 if Self::SLAB_SIZES[idx] <= SLAB_MAX_UPSEARCH_SIZE {
                     idx += 1;
                     continue;
@@ -1221,7 +1227,7 @@ impl DynamicSlabHeap {
         {
             let idx = slab_idx as usize;
             if new_layout.size() <= Self::SLAB_SIZES[idx]
-                && Self::SLAB_SIZES[idx] % new_layout.align() == 0
+                && Self::SLAB_SIZES[idx].is_multiple_of(new_layout.align())
             {
                 return Some(ptr); // fits in existing block
             }
