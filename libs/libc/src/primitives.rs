@@ -22,6 +22,8 @@ cfg_if! {
         not(windows),
         not(target_vendor = "apple"),
         not(target_os = "vita"),
+        // BlueOS compiles C code with `-fsigned-char`, so c_char is i8.
+        not(target_os = "blueos"),
         any(
             target_arch = "aarch64",
             target_arch = "arm",
@@ -54,7 +56,12 @@ cfg_if! {
 }
 
 cfg_if! {
-    if #[cfg(all(target_pointer_width = "64", not(windows)))] {
+    // BlueOS uses 32-bit `long` on all targets (including 64-bit), matching the
+    // C code compiled with the BlueOS toolchain.
+    if #[cfg(target_os = "blueos")] {
+        pub type c_long = i32;
+        pub type c_ulong = u32;
+    } else if #[cfg(all(target_pointer_width = "64", not(windows)))] {
         pub type c_long = i64;
         pub type c_ulong = u64;
     } else {

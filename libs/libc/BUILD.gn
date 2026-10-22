@@ -1,0 +1,5 @@
+rust_library("libc") {
+  crate_name = "libc"
+  crate_root = "src/lib.rs"
+  rustflags = [ "--edition=2021" ]
+}

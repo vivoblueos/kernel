@@ -1,0 +1,7 @@
+org = "vivoblueos"
+upstream-repo = "vivoblueos/bluekernel"
+upstream-branch = "main"
+
+repo = "libc"
+path = "libc"
+filter-version = 2
