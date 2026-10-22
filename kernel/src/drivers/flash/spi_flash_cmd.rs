@@ -14,6 +14,13 @@
 
 //! JEDEC 25-series SPI NOR Flash command layer.
 
+use core::time::Duration;
+
+use crate::{
+    scheduler,
+    sync::KernelDelay,
+    time::{self, Tick},
+};
 use embedded_hal::{
     delay::DelayNs,
     spi::{ErrorKind, Operation, SpiDevice},
@@ -23,6 +30,10 @@ const FLASH_PAGE_SIZE: usize = blueos_kconfig::CONFIG_SPI_FLASH_PAGE_SIZE as usi
 const INVALID_JEDEC_ID_ZERO: u32 = 0x0000_0000;
 const INVALID_JEDEC_ID_ALL_ONES: u32 = 0x00FF_FFFF;
 const MAX_3BYTE_ADDRESS_EXCLUSIVE: u32 = 0x0100_0000;
+
+pub(crate) const fn configured_poll_interval() -> Duration {
+    Duration::from_micros(blueos_kconfig::CONFIG_SPI_FLASH_STATUS_POLL_INTERVAL_US as u64)
+}
 
 /// SPI NOR Flash command layer error.
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
@@ -43,6 +54,53 @@ pub enum FlashError {
     InvalidParam(&'static str),
 }
 
+#[derive(Clone, Copy)]
+pub struct SpiFlashTimeouts {
+    page_program: Duration,
+    sector_erase: Duration,
+    block_erase_32k: Duration,
+    block_erase_64k: Duration,
+    chip_erase: Duration,
+}
+
+impl SpiFlashTimeouts {
+    pub const fn new(
+        page_program: Duration,
+        sector_erase: Duration,
+        block_erase_32k: Duration,
+        block_erase_64k: Duration,
+        chip_erase: Duration,
+    ) -> Self {
+        Self {
+            page_program,
+            sector_erase,
+            block_erase_32k,
+            block_erase_64k,
+            chip_erase,
+        }
+    }
+
+    pub const fn configured() -> Self {
+        Self::new(
+            Duration::from_millis(blueos_kconfig::CONFIG_SPI_FLASH_PAGE_PROGRAM_TIMEOUT_MS as u64),
+            Duration::from_millis(blueos_kconfig::CONFIG_SPI_FLASH_SECTOR_ERASE_TIMEOUT_MS as u64),
+            Duration::from_millis(
+                blueos_kconfig::CONFIG_SPI_FLASH_BLOCK_ERASE_32K_TIMEOUT_MS as u64,
+            ),
+            Duration::from_millis(
+                blueos_kconfig::CONFIG_SPI_FLASH_BLOCK_ERASE_64K_TIMEOUT_MS as u64,
+            ),
+            Duration::from_millis(blueos_kconfig::CONFIG_SPI_FLASH_CHIP_ERASE_TIMEOUT_MS as u64),
+        )
+    }
+}
+
+impl Default for SpiFlashTimeouts {
+    fn default() -> Self {
+        Self::configured()
+    }
+}
+
 // Inline closure rather than a From impl to avoid coherence issues with the
 // generic SPI::Error type parameter.
 fn spi_err_to_flash<E: embedded_hal::spi::Error>(err: E) -> FlashError {
@@ -52,11 +110,29 @@ fn spi_err_to_flash<E: embedded_hal::spi::Error>(err: E) -> FlashError {
 /// JEDEC 25-series SPI NOR Flash command layer.
 pub struct SpiFlashCmd<SPI: SpiDevice<u8>> {
     spi: SPI,
+    timeouts: SpiFlashTimeouts,
+    poll_interval: Duration,
 }
 
 impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
     pub fn new(spi: SPI) -> Self {
-        SpiFlashCmd { spi }
+        Self::new_with_timeouts(spi, SpiFlashTimeouts::default())
+    }
+
+    pub fn new_with_timeouts(spi: SPI, timeouts: SpiFlashTimeouts) -> Self {
+        Self::new_with_poll_interval(spi, timeouts, configured_poll_interval())
+    }
+
+    pub fn new_with_poll_interval(
+        spi: SPI,
+        timeouts: SpiFlashTimeouts,
+        poll_interval: Duration,
+    ) -> Self {
+        SpiFlashCmd {
+            spi,
+            timeouts,
+            poll_interval,
+        }
     }
 
     /// Read JEDEC manufacturer + device ID (command 0x9F).
@@ -118,7 +194,7 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
                 Operation::Write(data),
             ])
             .map_err(spi_err_to_flash)?;
-        self.wait_busy()?;
+        self.wait_busy_spin(self.timeouts.page_program)?;
         Ok(())
     }
 
@@ -134,7 +210,7 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
                 addr_bytes[2],
             ])])
             .map_err(spi_err_to_flash)?;
-        self.wait_busy()?;
+        self.wait_busy_yield(self.timeouts.sector_erase)?;
         Ok(())
     }
 
@@ -150,7 +226,7 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
                 addr_bytes[2],
             ])])
             .map_err(spi_err_to_flash)?;
-        self.wait_busy()?;
+        self.wait_busy_yield(self.timeouts.block_erase_32k)?;
         Ok(())
     }
 
@@ -166,7 +242,7 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
                 addr_bytes[2],
             ])])
             .map_err(spi_err_to_flash)?;
-        self.wait_busy()?;
+        self.wait_busy_yield(self.timeouts.block_erase_64k)?;
         Ok(())
     }
 
@@ -176,7 +252,7 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
         self.spi
             .transaction(&mut [Operation::Write(&[0xC7])])
             .map_err(spi_err_to_flash)?;
-        self.wait_busy()?;
+        self.wait_busy_yield(self.timeouts.chip_erase)?;
         Ok(())
     }
 
@@ -201,18 +277,49 @@ impl<SPI: SpiDevice<u8>> SpiFlashCmd<SPI> {
         Ok(status_buf[0])
     }
 
-    /// Poll the BUSY bit until clear, or return Timeout after 1000 iterations.
-    pub fn wait_busy(&mut self) -> Result<(), FlashError> {
-        for _ in 0..1000 {
+    fn wait_busy_yield(&mut self, timeout: Duration) -> Result<(), FlashError> {
+        let deadline = time::now().saturating_add(timeout);
+        loop {
             let status = self.read_status()?;
             if status & 0x01 == 0 {
                 return Ok(());
             }
-            self.spi
-                .transaction(&mut [Operation::DelayNs(1_000_000)])
-                .map_err(spi_err_to_flash)?;
+            if time::now() >= deadline {
+                return Err(FlashError::Timeout);
+            }
+            scheduler::suspend_me_for::<()>(Tick(1), None);
         }
-        Err(FlashError::Timeout)
+    }
+
+    fn wait_busy_spin(&mut self, timeout: Duration) -> Result<(), FlashError> {
+        let deadline = time::now().saturating_add(timeout);
+        loop {
+            let status = self.read_status()?;
+            if status & 0x01 == 0 {
+                return Ok(());
+            }
+            if time::now() >= deadline {
+                return Err(FlashError::Timeout);
+            }
+            KernelDelay.delay_ns(self.poll_interval.as_nanos() as u32);
+        }
+    }
+
+    fn wait_busy_with(
+        &mut self,
+        mut timed_out: impl FnMut() -> bool,
+        mut wait: impl FnMut(),
+    ) -> Result<(), FlashError> {
+        loop {
+            let status = self.read_status()?;
+            if status & 0x01 == 0 {
+                return Ok(());
+            }
+            if timed_out() {
+                return Err(FlashError::Timeout);
+            }
+            wait();
+        }
     }
 
     /// Release from deep power-down (command 0xAB).
@@ -649,17 +756,27 @@ mod tests {
     fn test_wait_busy_timeout() {
         let (mut flash_cmd, shared) = create_flash_cmd();
         with_shared(&shared, |s| {
-            s.read_queue = alloc::vec![alloc::vec![0x01]; 1000];
+            s.read_queue = alloc::vec![alloc::vec![0x01]; 3];
         });
 
-        let result = flash_cmd.wait_busy();
+        let waits = core::cell::Cell::new(0);
+        let result = flash_cmd.wait_busy_with(|| waits.get() == 2, || waits.set(waits.get() + 1));
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), FlashError::Timeout);
+        assert_eq!(waits.get(), 2);
 
         with_shared(&shared, |s| {
-            assert_eq!(s.transaction_count, 2000);
-            assert_eq!(s.delays, 1000);
+            assert_eq!(s.transaction_count, 3);
+            assert_eq!(s.delays, 0);
         });
+    }
+
+    #[test]
+    fn test_configured_poll_interval() {
+        assert_eq!(
+            configured_poll_interval(),
+            Duration::from_micros(blueos_kconfig::CONFIG_SPI_FLASH_STATUS_POLL_INTERVAL_US as u64,)
+        );
     }
 
     #[test]
