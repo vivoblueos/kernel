@@ -34,12 +34,22 @@ pub unsafe extern "C" fn osMemoryPoolNew(
     if irq::is_in_irq() {
         return core::ptr::null_mut();
     }
+    // `block_count` and `block_size` arrive as C ABI u32 values and their
+    // product sizes the caller's `mp_mem`. The old u32 multiplication could
+    // wrap around (for example 2 * 0x8000_0000 == 0), letting an undersized
+    // buffer pass the size check and handing out block pointers past its
+    // end. Compute the product in u64 (two u32 factors cannot overflow u64)
+    // and reject zero sized pools as well.
+    if block_count == 0 || block_size == 0 {
+        return core::ptr::null_mut();
+    }
+    let required_size = u64::from(block_count) * u64::from(block_size);
     let mut result = core::ptr::null_mut();
     let attr = if attr.is_null() { None } else { Some(&*attr) };
     let mut data = None;
     if let Some(attr) = attr {
         if !attr.mp_mem.is_null() {
-            if attr.mp_size < block_count * block_size {
+            if u64::from(attr.mp_size) < required_size {
                 return core::ptr::null_mut();
             }
             data = Some(core::slice::from_raw_parts_mut(
@@ -210,6 +220,41 @@ mod tests {
             assert!(!block.is_null());
             assert_eq!(osMemoryPoolDelete(mp_id), osStatus_t_osErrorResource);
             assert_eq!(osMemoryPoolFree(mp_id, block), osStatus_t_osOK);
+        }
+    }
+
+    #[test]
+    fn test_c_mempool_new_rejects_size_overflow() {
+        // Regression test: `block_count * block_size` must not wrap around.
+        // 2 * 0x8000_0000 wraps to 0 in u32 and used to pass the `mp_size`
+        // check with a tiny buffer, handing out block pointers past its end.
+        unsafe {
+            assert!(osMemoryPoolNew(2, 0x8000_0000, core::ptr::null()).is_null());
+            assert!(osMemoryPoolNew(0x1_0000, 0x1_0000, core::ptr::null()).is_null());
+            // Zero sized pools are rejected as well.
+            assert!(osMemoryPoolNew(0, 512, core::ptr::null()).is_null());
+            assert!(osMemoryPoolNew(4, 0, core::ptr::null()).is_null());
+        }
+    }
+
+    #[test]
+    fn test_c_mempool_new_with_given_mp_mem_size_check() {
+        let mut attr: osMemoryPoolAttr_t = unsafe { core::mem::zeroed() };
+        let mut mp_mem = [0u8; 64];
+        attr.mp_mem = mp_mem.as_mut_ptr() as *mut c_void;
+        attr.mp_size = 64;
+        unsafe {
+            // The wrapped product must not pass the `mp_size` check.
+            assert!(osMemoryPoolNew(2, 0x8000_0000, &attr as *const _).is_null());
+            // A pool that fits into the provided memory is still accepted.
+            let mp_id = osMemoryPoolNew(2, 32, &attr as *const _);
+            assert!(!mp_id.is_null());
+            assert_eq!(osMemoryPoolGetCapacity(mp_id), 2);
+            assert_eq!(osMemoryPoolGetBlockSize(mp_id), 32);
+            let block = osMemoryPoolAlloc(mp_id, 1024);
+            assert!(!block.is_null());
+            assert_eq!(osMemoryPoolFree(mp_id, block), osStatus_t_osOK);
+            assert_eq!(osMemoryPoolDelete(mp_id), osStatus_t_osOK);
         }
     }
 }
