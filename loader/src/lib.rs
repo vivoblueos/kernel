@@ -14,6 +14,30 @@
 
 #![no_std]
 #![feature(c_size_t)]
+#![cfg_attr(test, no_main)]
+#![cfg_attr(test, feature(custom_test_frameworks))]
+#![cfg_attr(test, test_runner(loader_test_runner))]
+#![cfg_attr(test, reexport_test_harness_main = "loader_test_main")]
+
+//! ELF loader foundations and read-only image inspection.
+//!
+//! `ImageLoader<R: ElfReader>` reads and validates ELF headers through a
+//! source-independent reader. The `elf` and `image` stages stay crate-private
+//! while the legacy [`load_elf`] entry remains available during migration.
+
+pub mod error;
+pub mod profile;
+pub mod reader;
+pub use error::{LoadError, LoadResult};
+
+extern crate alloc;
+mod elf;
+mod image;
+
+#[cfg(test)]
+extern crate rsrt;
+#[cfg(test)]
+mod tests;
 
 mod memory_mapper;
 use goblin::elf::{
@@ -118,4 +142,23 @@ pub fn load_elf(buffer: &[u8], mapper: &mut MemoryMapper) -> Result {
         ET_EXEC => load_exec_elf(buffer, &binary, mapper),
         _ => Err("Unsupported ELF type"),
     }
+}
+
+#[cfg(test)]
+fn loader_test_runner(tests: &[&dyn Fn()]) {
+    semihosting::println!("Loader unittest started");
+    semihosting::println!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
+    semihosting::println!("Loader unittest ended");
+}
+
+#[cfg(test)]
+#[cfg_attr(compatible_old_toolchain, no_mangle)]
+#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+extern "C" fn main() -> i32 {
+    librs::pthread::register_my_posix_tcb();
+    loader_test_main();
+    0
 }

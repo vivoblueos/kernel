@@ -1,0 +1,4 @@
+// TOTAL-TIMEOUT: 120
+// NEWLINE-TIMEOUT: 30
+// ASSERT-SUCC: Loader unittest ended
+// ASSERT-FAIL: Backtrace in Panic.*
