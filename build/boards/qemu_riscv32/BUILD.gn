@@ -55,4 +55,13 @@ blueos_board("qemu_riscv32") {
                                "//kernel/adapter*",
                                "//kernel/loader*",
                              ])
+
+  if (!coverage && !profile) {
+    # Register the loader foundations before enabling ELF integration on RV32.
+    check_all += [
+      "//kernel/loader:run_loader_unittest",
+      "//kernel/loader:loader_unittest_clippy",
+      "//kernel/loader:blueos_loader_clippy",
+    ]
+  }
 }
