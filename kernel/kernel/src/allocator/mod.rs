@@ -97,12 +97,18 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         let end_addr = start_addr
             .checked_add(size)
             .expect("physical DRAM range overflows usize");
+        let layout = buddy::get_buddy_layout(
+            start_addr,
+            end_addr,
+            (&raw const crate::boot::_end) as usize,
+        )
+        .expect("invalid kernel buddy metadata layout");
 
         // Initialize buddy before dynslab. Buddy remains a standalone
         // allocator so VM syscalls can use it directly later.
         // SAFETY: The caller guarantees mapped writable DRAM containing the
         // kernel and metadata, and one-time initialization before concurrent use.
-        unsafe { BUDDY_ALLOC.init(start_addr, end_addr) };
+        unsafe { BUDDY_ALLOC.init(layout) }.expect("failed to initialize raw buddy allocator");
         kernel_phys_to_virt(PhysicalAddress::new(start_addr)).into_raw()
     };
 
