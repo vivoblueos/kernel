@@ -137,7 +137,7 @@ pub fn start_xosc(crystal_freq: usize) -> Result<(), XoscError> {
     XOSC_BASE
         .startup
         .modify(STARTUP::DELAY.val(startup_delay as u32));
-    XOSC_BASE.ctrl.modify(CTRL::ENABLE::ENABLE);
+    XOSC_BASE.ctrl.modify(freq_range + CTRL::ENABLE::ENABLE);
     while !XOSC_BASE.status.is_set(STATUS::STABLE) {}
 
     Ok(())
