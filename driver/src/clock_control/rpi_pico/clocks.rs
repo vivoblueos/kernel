@@ -20,7 +20,7 @@
 
 use crate::static_ref::StaticRef;
 use tock_registers::{
-    interfaces::{ReadWriteable, Readable},
+    interfaces::{ReadWriteable, Readable, Writeable},
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite},
 };
@@ -279,14 +279,14 @@ pub fn disable_clk_sys_resus() {
 
 pub fn disable_sys_aux() {
     CLOCKS_BASE.clk_sys_ctrl.modify(CLK_SYS_CTRL::SRC::CLK_REF);
-    while !CLOCKS_BASE.clk_sys_selected.is_set(CLK_SYS_SELECTED::VALUE) {}
+    while CLOCKS_BASE.clk_sys_selected.get() != 1 << SystemClockSource::Reference as u32 {}
 }
 
 pub fn disable_ref_aux() {
     CLOCKS_BASE
         .clk_ref_ctrl
         .modify(CLK_REF_CTRL::SRC::ROSC_CLKSRC_PH);
-    while !CLOCKS_BASE.clk_ref_selected.is_set(CLK_REF_SELECTED::VALUE) {}
+    while CLOCKS_BASE.clk_ref_selected.get() != 1 << ReferenceClockSource::Rsoc as u32 {}
 }
 
 pub fn configure_system_clock(
@@ -299,13 +299,19 @@ pub fn configure_system_clock(
     let clk_sys_div = &CLOCKS_BASE.clk_sys_div;
     let clk_sys_selected = &CLOCKS_BASE.clk_sys_selected;
 
-    clk_sys.modify(CLK_SYS_CTRL::SRC.val(src_clk as u32));
+    let div = ((div_int as u32) << 16) | div_frac as u32;
+    // Raise the divider before switching to a faster source to avoid overspeed.
+    if div > clk_sys_div.get() {
+        clk_sys_div.set(div);
+    }
+
+    // AUXSRC is not glitchless: leave it before changing the auxiliary mux.
+    disable_sys_aux();
     clk_sys.modify(CLK_SYS_CTRL::AUXSRC.val(aux_clk as u32));
+    clk_sys.modify(CLK_SYS_CTRL::SRC.val(src_clk as u32));
 
-    clk_sys_div.modify(CLK_SYS_DIV::INT.val(div_int as u32));
-    clk_sys_div.modify(CLK_SYS_DIV::FRAC.val(div_frac as u32));
-
-    while !clk_sys_selected.is_set(CLK_SYS_SELECTED::VALUE) {}
+    while clk_sys_selected.get() != 1 << src_clk as u32 {}
+    clk_sys_div.set(div);
 }
 
 pub fn configure_reference_clock(
@@ -317,11 +323,18 @@ pub fn configure_reference_clock(
     let clk_ref_div = &CLOCKS_BASE.clk_ref_div;
     let clk_ref_selected = &CLOCKS_BASE.clk_ref_selected;
 
-    clk_ref.modify(CLK_REF_CTRL::SRC.val(src_clk as u32));
+    let divider = (div as u32) << 16;
+    if divider > clk_ref_div.get() {
+        clk_ref_div.set(divider);
+    }
+    if src_clk == ReferenceClockSource::Auxiliary {
+        disable_ref_aux();
+    }
     clk_ref.modify(CLK_REF_CTRL::AUXSRC.val(aux_clk as u32));
-    clk_ref_div.modify(CLK_REF_DIV::INT.val(div as u32));
+    clk_ref.modify(CLK_REF_CTRL::SRC.val(src_clk as u32));
 
-    while !clk_ref_selected.is_set(CLK_REF_SELECTED::VALUE) {}
+    while clk_ref_selected.get() != 1 << src_clk as u32 {}
+    clk_ref_div.set(divider);
 }
 
 pub fn configure_peripheral_clock(aux_clk: PeripheralAuxiliaryClockSource) {
@@ -335,6 +348,7 @@ pub fn configure_peripheral_clock(aux_clk: PeripheralAuxiliaryClockSource) {
     }
 
     clk_peri.modify(CLK_PERI_CTRL::AUXSRC.val(aux_clk as u32));
+    CLOCKS_BASE.clk_peri_div.write(CLK_PERI_DIV::INT.val(1));
 
     clk_peri.modify(CLK_PERI_CTRL::ENABLE::SET);
 }
