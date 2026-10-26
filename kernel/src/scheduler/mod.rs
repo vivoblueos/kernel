@@ -192,6 +192,7 @@ pub(crate) extern "C" fn save_context_finish_hook(
 }
 
 fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
+    #[cfg(round_robin)]
     let now = Tick::now();
     #[cfg(round_robin)]
     {
@@ -236,23 +237,31 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
-        GlobalQueueVisitor::remove(&mut old);
-        if let Some(process) = old.process() {
-            process.remove_thread(&mut old);
-        }
-        if ThreadNode::strong_count(&old) != 1 {
-            // TODO: Add warning log that there are still references to the old thread.
-        }
-        if let Some(entry) = old.lock().take_cleanup() {
-            match entry {
-                Entry::C(f) => f(),
-                Entry::Closure(f) => f(),
-                Entry::Posix(f, arg) => f(arg),
-            }
-        };
+        cleanup_retired_thread(&mut old);
     }
     old.set_saved_sp(old_sp);
     next_saved_sp
+}
+
+// Keep exit cleanup out of the hot switch path to reduce its stack usage.
+#[cold]
+#[inline(never)]
+fn cleanup_retired_thread(old: &mut ThreadNode) {
+    // Keep the caller's ownership and finish cleanup before publishing saved_sp.
+    GlobalQueueVisitor::remove(old);
+    if let Some(process) = old.process() {
+        process.remove_thread(old);
+    }
+    if ThreadNode::strong_count(old) != 1 {
+        // TODO: Add warning log that there are still references to the old thread.
+    }
+    if let Some(entry) = old.lock().take_cleanup() {
+        match entry {
+            Entry::C(f) => f(),
+            Entry::Closure(f) => f(),
+            Entry::Posix(f, arg) => f(arg),
+        }
+    };
 }
 
 // It's usually used in cortex-m's pendsv handler.
