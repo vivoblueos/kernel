@@ -220,6 +220,9 @@ register_bitfields![u32,
 const RESETS_BASE: StaticRef<ResetsRegisters> =
     unsafe { StaticRef::new(0x40020000 as *const ResetsRegisters) };
 
+// RP2350 has 29 reset bits, including UART0/1 and USBCTRL at bits 26..28.
+const RESET_BITS: u32 = 0x1FFF_FFFF;
+
 #[allow(clippy::upper_case_acronyms)]
 pub enum Peripheral {
     Adc,
@@ -399,9 +402,9 @@ impl Resets {
     }
 
     pub fn reset_all_except(&self, peripherals: &'static [Peripheral]) {
-        let mut value = 0xFFFFFF;
+        let mut value = RESET_BITS;
         for peripheral in peripherals {
-            value ^= peripheral.get_reset_field_set().value;
+            value &= !peripheral.get_reset_field_set().value;
         }
         self.registers.reset.set(value);
     }
@@ -415,15 +418,15 @@ impl Resets {
         self.registers.reset.set(value);
 
         if wait_for {
-            value = !value & 0xFFFFF;
+            value = !value & RESET_BITS;
             while (self.registers.reset_done.get() & value) != value {}
         }
     }
 
     pub fn watchdog_reset_all_except(&self, peripherals: &'static [Peripheral]) {
-        let mut value = 0xFFFFFF;
+        let mut value = RESET_BITS;
         for peripheral in peripherals {
-            value ^= peripheral.get_reset_field_set().value;
+            value &= !peripheral.get_reset_field_set().value;
         }
         self.registers.wdsel.set(value);
     }
