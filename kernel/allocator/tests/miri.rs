@@ -352,10 +352,12 @@ fn dynamic_slab_heap_small_and_system_allocations() {
     let small = heap
         .allocate(&small_layout)
         .expect("dynamic slab allocation failed");
+    let small_accounted = heap.allocated();
     let large_layout = layout(2049, 64);
     let large = heap
         .allocate(&large_layout)
         .expect("dynamic system allocation failed");
+    assert!(heap.allocated() > small_accounted);
     let live = [
         LiveAllocation {
             ptr: small,
@@ -373,9 +375,39 @@ fn dynamic_slab_heap_small_and_system_allocations() {
     }
     verify_live_allocations(&live);
 
+    // SAFETY: large is a live allocation from heap with the matching large_layout,
+    // and it is not accessed after being freed.
     unsafe {
-        heap.deallocate(small, &small_layout);
         heap.deallocate(large, &large_layout);
     }
+    assert_eq!(heap.allocated(), small_accounted);
+
+    let old_layout = layout(2049, 64);
+    let old_pointer = heap
+        .allocate(&old_layout)
+        .expect("dynamic system allocation failed");
+    let old_allocation = LiveAllocation {
+        ptr: old_pointer,
+        layout: old_layout,
+        tag: 0x3c,
+    };
+    // SAFETY: old_pointer is live and writable for old_layout.size() bytes.
+    unsafe { fill(&old_allocation) };
+    let new_layout = layout(4097, 64);
+    // SAFETY: old_pointer is a live allocation from heap, and new_layout
+    // preserves its alignment while requesting a valid larger size.
+    let new_pointer = unsafe { heap.reallocate(old_pointer, &new_layout) }
+        .expect("dynamic system reallocation failed");
+    for offset in 0..old_layout.size() {
+        // SAFETY: Reallocation preserves the initialized old payload, and
+        // offset is within both the old payload and the new allocation.
+        assert_eq!(unsafe { new_pointer.as_ptr().add(offset).read() }, 0x3c);
+    }
+    // SAFETY: new_pointer is live, belongs to heap, and matches new_layout.
+    unsafe { heap.deallocate(new_pointer, &new_layout) };
+    assert_eq!(heap.allocated(), small_accounted);
+
+    // SAFETY: small is still live in heap and was allocated with small_layout.
+    unsafe { heap.deallocate(small, &small_layout) };
     assert_eq!(heap.allocated(), 0);
 }
