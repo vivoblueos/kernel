@@ -89,7 +89,7 @@ impl<
         layout: Layout,
         new_size: usize,
     ) -> Option<NonNull<u8>> {
-        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
+        let new_layout = Layout::from_size_align(new_size, layout.align()).ok()?;
         let mut heap = self.heap.irqsave_lock();
         heap.reallocate(NonNull::new_unchecked(ptr), &new_layout)
     }
@@ -160,7 +160,58 @@ impl<
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(allocator = "slab_dynamic")]
-use allocator_crate::slab::DynamicSlabHeap as DynHeap;
+use allocator_crate::slab::{DynamicSlabHeap as RawDynHeap, DynamicSlabSystemAllocator};
+
+#[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
+use crate::{
+    allocator::BUDDY_ALLOC,
+    mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
+};
+
+#[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
+struct BuddySystemAllocator;
+
+#[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
+impl DynamicSlabSystemAllocator for BuddySystemAllocator {
+    unsafe fn init(&mut self, _start: usize, _size: usize) {
+        // The kernel initializes BUDDY_ALLOC before initializing dynslab.
+    }
+
+    fn allocate(&mut self, layout: &Layout) -> Option<NonNull<u8>> {
+        let order = allocator_crate::buddy::order_of_size(layout.size().max(layout.align()));
+        BUDDY_ALLOC.alloc_pages_phys_addr(order).map(|addr| unsafe {
+            NonNull::new_unchecked(
+                kernel_phys_to_virt(PhysicalAddress::new(addr)).into_raw() as *mut u8
+            )
+        })
+    }
+
+    unsafe fn deallocate(&mut self, ptr: NonNull<u8>) -> usize {
+        let phys_addr = kernel_virt_to_phys(VirtualAddress::new(ptr.as_ptr() as usize)).into_raw();
+        BUDDY_ALLOC
+            .free_pages_phys_addr_unknown_order(phys_addr)
+            .expect("dynslab passed a non-buddy allocation to buddy")
+    }
+
+    fn size_of_allocation(&self, ptr: NonNull<u8>) -> Option<usize> {
+        let phys_addr = kernel_virt_to_phys(VirtualAddress::new(ptr.as_ptr() as usize)).into_raw();
+        BUDDY_ALLOC.phys_to_size(phys_addr)
+    }
+
+    fn allocation_charge(&self, ptr: NonNull<u8>) -> Option<usize> {
+        self.size_of_allocation(ptr)
+    }
+
+    fn get_max_free_block_size(&self) -> usize {
+        BUDDY_ALLOC.get_max_free_block_size()
+    }
+}
+
+#[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
+type DynHeap = RawDynHeap<BuddySystemAllocator>;
+
+#[cfg(all(allocator = "slab_dynamic", not(allocator_buddy)))]
+type DynHeap = RawDynHeap;
 
 #[cfg(allocator = "slab_dynamic")]
 pub struct DynamicSlabHeap {
@@ -170,13 +221,19 @@ pub struct DynamicSlabHeap {
 #[cfg(allocator = "slab_dynamic")]
 impl DynamicSlabHeap {
     pub const fn new() -> Self {
+        #[cfg(allocator_buddy)]
+        let heap = RawDynHeap::new_with_system_allocator(BuddySystemAllocator);
+        #[cfg(not(allocator_buddy))]
+        let heap = RawDynHeap::new();
+
         DynamicSlabHeap {
-            heap: SpinLock::new(DynHeap::new()),
+            heap: SpinLock::new(heap),
         }
     }
 
     /// # Safety
-    /// `start_addr..start_addr+size` must be valid, exclusively owned, writable memory.
+    /// `start_addr..start_addr+size` must describe valid, exclusively owned,
+    /// writable virtual memory.
     pub unsafe fn init(&self, start_addr: usize, size: usize) {
         let mut heap = self.heap.irqsave_lock();
         heap.init(start_addr, size);
@@ -209,7 +266,7 @@ impl DynamicSlabHeap {
         layout: Layout,
         new_size: usize,
     ) -> Option<NonNull<u8>> {
-        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
+        let new_layout = Layout::from_size_align(new_size, layout.align()).ok()?;
         let mut heap = self.heap.irqsave_lock();
         heap.reallocate(NonNull::new_unchecked(ptr), &new_layout)
     }
@@ -267,7 +324,7 @@ impl DynamicSlabHeap {
         kprintln!("PagePool: {}/{}", pool_total, pool_max);
     }
 
-    /// Reclaim all pages from page pool back to TLSF.
+    /// Reclaim all pages from the page pool back to the system allocator.
     /// Used in tests for accurate memory leak detection.
     #[cfg(allocator = "slab_dynamic")]
     pub fn reclaim_page_pool(&self) {
@@ -275,7 +332,7 @@ impl DynamicSlabHeap {
         heap.reclaim_page_pool();
     }
 
-    /// Reclaim pages from pool to TLSF when memory pressure is detected.
+    /// Reclaim pages from the pool when system memory pressure is detected.
     /// Can be called by idle thread for proactive memory reclaim.
     #[cfg(allocator = "slab_dynamic")]
     pub fn check_memory_pressure(&self) {

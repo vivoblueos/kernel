@@ -235,6 +235,16 @@ pub(crate) fn init_heap() {
         if INIT_HEAP_DONE {
             return;
         }
+
+        #[cfg(allocator_buddy)]
+        allocator::init_heap(
+            crate::boards::PHYS_DRAM_BASE as *mut u8,
+            crate::boards::PHYS_DRAM_BASE
+                .checked_add(crate::boards::PHYS_DRAM_SIZE)
+                .expect("physical DRAM range overflows") as *mut u8,
+        );
+
+        #[cfg(not(allocator_buddy))]
         allocator::init_heap(addr_of_mut!(__heap_start), addr_of_mut!(__heap_end));
         INIT_HEAP_DONE = true;
     }

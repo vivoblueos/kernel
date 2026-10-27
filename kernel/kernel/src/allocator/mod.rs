@@ -14,12 +14,12 @@
 
 extern crate alloc;
 
-use crate::{
-    mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
-    static_arc,
-};
+use crate::static_arc;
 use alloc::alloc::Layout;
 use core::{alloc::GlobalAlloc, ptr};
+
+#[cfg(allocator_buddy)]
+use crate::mm::{kernel_phys_to_virt, PhysicalAddress};
 
 // Raw heap implementations are in the allocator_crate.
 // This module only contains SpinLock wrappers and the GlobalAlloc impl.
@@ -62,91 +62,19 @@ static_arc! {
     BUDDY_ALLOC(buddy::BuddyHeap, buddy::BuddyHeap::new()),
 }
 
-#[cfg(allocator_buddy)]
-const BUDDY_THRESHOLD: usize = buddy::PAGE_SIZE / 2;
-
 unsafe impl GlobalAlloc for KernelAllocator {
-    // TODO: support slab requesting pages from buddy as memory pool
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        #[cfg(allocator_buddy)]
-        {
-            use buddy::order_of_size;
-            let size = layout.size().max(layout.align());
-            if size > BUDDY_THRESHOLD {
-                let order = order_of_size(size);
-                return BUDDY_ALLOC
-                    .alloc_pages_phys_addr(order)
-                    .map_or(ptr::null_mut(), |addr| {
-                        kernel_phys_to_virt(PhysicalAddress::new(addr)).into_raw() as *mut u8
-                    });
-            }
-        }
         HEAP.alloc(layout)
             .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
     }
 
-    // TODO: support slab releasing pages back to buddy memory pool
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        #[cfg(allocator_buddy)]
-        {
-            use buddy::order_of_size;
-            let size = layout.size().max(layout.align());
-            if size > BUDDY_THRESHOLD {
-                let order = order_of_size(size);
-                let phys_addr = kernel_virt_to_phys(VirtualAddress::new(ptr as usize)).into_raw();
-                BUDDY_ALLOC.free_pages_phys_addr(phys_addr, order);
-                return;
-            }
-        }
         HEAP.dealloc(ptr, layout);
     }
 
-    // TODO: support slab reallocating pages from buddy as memory pool
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
-        #[cfg(allocator_buddy)]
-        {
-            let old_route_size = old_layout.size().max(old_layout.align());
-            let new_route_size = new_size.max(old_layout.align());
-            let old_is_buddy = old_route_size > BUDDY_THRESHOLD;
-            let new_is_buddy = new_route_size > BUDDY_THRESHOLD;
-
-            // Both sides stay on the small-object heap: try an in-place realloc.
-            if !old_is_buddy && !new_is_buddy {
-                return HEAP
-                    .realloc(ptr, old_layout, new_size)
-                    .map_or(ptr::null_mut(), |ptr| ptr.as_ptr());
-            }
-            // Both sides stay in the buddy pool: reuse the block when the
-            // order (and thus the page count) is unchanged.
-            if old_is_buddy
-                && new_is_buddy
-                && buddy::order_of_size(old_route_size) == buddy::order_of_size(new_route_size)
-            {
-                return ptr;
-            }
-            // Route changed, or buddy order changed: allocate a fresh block
-            // via the routed `alloc`, copy the data over, then release the
-            // old block via the routed `dealloc`. `self.alloc`/`self.dealloc`
-            // dispatch on the size threshold, so this covers every
-            // combination without special-casing slab vs. buddy.
-
-            let Ok(new_layout) = Layout::from_size_align(new_size, old_layout.align()) else {
-                return ptr::null_mut();
-            };
-            let new_ptr = self.alloc(new_layout);
-            if new_ptr.is_null() {
-                return ptr::null_mut();
-            }
-            ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
-            self.dealloc(ptr, old_layout);
-            new_ptr
-        }
-
-        #[cfg(not(allocator_buddy))]
-        {
-            HEAP.realloc(ptr, old_layout, new_size)
-                .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
-        }
+        HEAP.realloc(ptr, old_layout, new_size)
+            .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
     }
 }
 
@@ -156,63 +84,24 @@ impl KernelAllocator {
     }
 }
 
-/// Initialize the kernel heap.
-///
-/// # Two-Level Architecture (allocator_buddy enabled)
-///
-/// 1. **Level 1 — Physical page management**: The buddy allocator is
-///    initialized with the full physical DRAM range. It manages all
-///    physical pages via split/coalesce, providing page-aligned blocks
-///    of power-of-two sizes.
-///
-/// 2. **Level 2 — Small-object allocation**: The slab allocator (or
-///    tlsf/llff fallback) receives its page pool from the buddy allocator.
-///    This keeps small-object allocation fast while physical memory is
-///    centrally managed. The original `__heap_start..__heap_end` range
-///    is used only as a fallback if buddy allocation fails.
-///
-/// # FDT / DTB Note
-/// The physical memory range is currently hard-coded per board via
-/// `PHYS_DRAM_BASE` and `PHYS_DRAM_SIZE`. This should be replaced with
-/// FDT/DTB dynamic detection in a future update.
-///
-/// TODO: support slab initialization based on buddy allocator
 pub fn init_heap(start: *mut u8, end: *mut u8) {
+    let start_addr = start as usize;
+    let size = unsafe { end.offset_from(start) as usize };
+
     #[cfg(allocator_buddy)]
-    {
-        // Level 1: Initialize buddy allocator to manage all physical memory.
-        let phys_dram_base = crate::boards::PHYS_DRAM_BASE as usize;
-        let phys_dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
-        unsafe {
-            BUDDY_ALLOC.init(phys_dram_base, phys_dram_base + phys_dram_size);
-        }
+    let start_addr = {
+        let end_addr = start_addr
+            .checked_add(size)
+            .expect("physical DRAM range overflows usize");
 
-        // Level 2: Allocate page pool for small-object allocator from buddy.
-        assert!(end > start);
-        let pool_size = end as usize - start as usize;
-        let order = buddy::order_of_size(pool_size);
-        if let Some(pool_phys_addr) = BUDDY_ALLOC.alloc_pages_phys_addr(order) {
-            unsafe {
-                HEAP.init(
-                    kernel_phys_to_virt(PhysicalAddress::new(pool_phys_addr)).into_raw(),
-                    pool_size,
-                );
-            }
-        } else {
-            // Fallback: use original heap range if buddy allocation fails.
-            unsafe {
-                HEAP.init(start as usize, pool_size);
-            }
-        }
-    }
+        // Initialize buddy before dynslab. Buddy remains a standalone
+        // allocator so VM syscalls can use it directly later.
+        unsafe { BUDDY_ALLOC.init(start_addr, end_addr) };
+        kernel_phys_to_virt(PhysicalAddress::new(start_addr)).into_raw()
+    };
 
-    #[cfg(not(allocator_buddy))]
-    {
-        let start_addr = start as usize;
-        let size = unsafe { end.offset_from(start) as usize };
-        unsafe {
-            HEAP.init(start_addr, size);
-        }
+    unsafe {
+        HEAP.init(start_addr, size);
     }
 }
 
@@ -473,7 +362,7 @@ mod tests {
         boxed.resize(smaller_size, 0);
     }
 
-    #[cfg(allocator_buddy)]
+    #[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
     #[test]
     fn realloc_crosses_buddy_threshold() {
         let small_layout = Layout::from_size_align(2048, core::mem::size_of::<usize>()).unwrap();
@@ -501,7 +390,7 @@ mod tests {
         }
     }
 
-    #[cfg(allocator_buddy)]
+    #[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
     #[test]
     fn realloc_shrinks_below_buddy_threshold() {
         let large_layout = Layout::from_size_align(2049, core::mem::size_of::<usize>()).unwrap();
@@ -529,11 +418,12 @@ mod tests {
         }
     }
 
-    #[cfg(allocator_buddy)]
+    #[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
     #[test]
     fn buddy_routing_uses_both_size_and_alignment() {
-        let heap_layout = Layout::from_size_align(BUDDY_THRESHOLD, 8).unwrap();
-        let buddy_layout = Layout::from_size_align(BUDDY_THRESHOLD + 1, 8).unwrap();
+        const DYNSLAB_MAX_SIZE: usize = 2048;
+        let heap_layout = Layout::from_size_align(DYNSLAB_MAX_SIZE, 8).unwrap();
+        let buddy_layout = Layout::from_size_align(DYNSLAB_MAX_SIZE + 1, 8).unwrap();
         let aligned_layout = Layout::from_size_align(1, buddy::PAGE_SIZE).unwrap();
 
         unsafe {
@@ -541,6 +431,13 @@ mod tests {
             assert!(!heap_ptr.is_null());
             heap_ptr.write(0x11);
             assert_eq!(heap_ptr.read(), 0x11);
+            let second_heap_ptr = GlobalAlloc::alloc(&KernelAllocator, heap_layout);
+            assert!(!second_heap_ptr.is_null());
+            assert_eq!(
+                second_heap_ptr as usize & (buddy::PAGE_SIZE - 1),
+                DYNSLAB_MAX_SIZE,
+                "2048-byte requests should stay in dynslab"
+            );
 
             let buddy_ptr = GlobalAlloc::alloc(&KernelAllocator, buddy_layout);
             assert!(!buddy_ptr.is_null());
@@ -560,11 +457,12 @@ mod tests {
 
             GlobalAlloc::dealloc(&KernelAllocator, aligned_ptr, aligned_layout);
             GlobalAlloc::dealloc(&KernelAllocator, buddy_ptr, buddy_layout);
+            GlobalAlloc::dealloc(&KernelAllocator, second_heap_ptr, heap_layout);
             GlobalAlloc::dealloc(&KernelAllocator, heap_ptr, heap_layout);
         }
     }
 
-    #[cfg(allocator_buddy)]
+    #[cfg(all(allocator = "slab_dynamic", allocator_buddy))]
     #[test]
     fn failed_cross_threshold_realloc_keeps_old_block_valid() {
         let old_layout = Layout::from_size_align(128, core::mem::size_of::<usize>()).unwrap();
