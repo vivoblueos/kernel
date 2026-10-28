@@ -18,7 +18,6 @@ use crate::{
     vfs::{
         dcache::Dcache,
         dirent::DirBufferReader,
-        fd_manager::get_fd_manager,
         file::{File, FileAttr, FileOps, OpenFlags},
         fs::FileSystemInfo,
         inode_mode::{InodeFileType, InodeMode},
@@ -35,6 +34,45 @@ use core::{
     time::Duration,
 };
 use log::{debug, error, warn};
+
+/// Acquire the current process's per-process fd table.
+///
+/// Usage (statement form — see the lifetime note below for why this can't be
+/// an expression):
+///
+/// ```ignore
+/// current_fd!(fd_manager, err: -libc::EBADF);
+/// current_fd!(mut fd_manager, err: -libc::EBADF);
+/// ```
+///
+/// `err:` gives the early-return value used when there is no current process
+/// (e.g. an unlinked kernel/idle thread); callers type-match it to their
+/// function's return type (a negative errno, or `Err(code::…)`).
+///
+/// Why a statement macro, not `let g = current_fd!(err: …)`: the guard
+/// borrows from the `Arc<Process>` returned by `current_process()`. An
+/// expression-form macro returning the guard from a block would drop that
+/// `Arc` at the block's end, dangling the borrow — rustc rejects it with
+/// E0597 (verified). Emitting two sibling `let`s in the caller's scope keeps
+/// the `Arc` (`_fd_proc`) alive for the guard's whole scope, so the borrow is
+/// sound.
+macro_rules! current_fd {
+    ($guard:ident, err: $err:expr) => {
+        let _fd_proc = match crate::process::current_process() {
+            Some(p) => p,
+            None => return $err,
+        };
+        let $guard = _fd_proc.fd_manager().irqsave_lock();
+    };
+    (mut $guard:ident, err: $err:expr) => {
+        let _fd_proc = match crate::process::current_process() {
+            Some(p) => p,
+            None => return $err,
+        };
+        let mut $guard = _fd_proc.fd_manager().irqsave_lock();
+    };
+}
+pub(crate) use current_fd;
 
 pub fn mount(
     device_name: *const c_char,
@@ -152,7 +190,7 @@ pub fn open(path: *const c_char, flags: c_int, mode: libc::mode_t) -> c_int {
         }
     };
 
-    let mut fd_manager = get_fd_manager().lock();
+    current_fd!(mut fd_manager, err: -libc::EBADF);
     let fd = fd_manager.alloc_fd(file);
     fd as i32
 }
@@ -165,7 +203,7 @@ pub fn creat(path: *const c_char, mode: libc::mode_t) -> c_int {
 /// Close a file descriptor
 pub fn close(fd: i32) -> i32 {
     let file_ops = {
-        let mut fd_manager = get_fd_manager().lock();
+        current_fd!(mut fd_manager, err: -libc::EBADF);
         let entry = match fd_manager.get_file_ops(fd) {
             Some(entry) => entry,
             None => return -libc::EBADF,
@@ -191,7 +229,7 @@ pub fn read(fd: i32, buf: *mut u8, count: usize) -> isize {
     }
 
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF as isize);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF as isize,
@@ -216,7 +254,7 @@ pub fn write(fd: i32, buf: *const u8, count: usize) -> isize {
     }
 
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF as isize);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF as isize,
@@ -232,7 +270,7 @@ pub fn write(fd: i32, buf: *const u8, count: usize) -> isize {
 
 pub fn ioctl(fd: c_int, request: c_ulong, arg: *mut c_void) -> c_int {
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF,
@@ -261,7 +299,7 @@ pub fn lseek(fd: i32, offset: i64, whence: i32) -> i64 {
     };
 
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF as i64);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF as i64,
@@ -299,7 +337,7 @@ pub fn ftruncate(fd: i32, length: libc::off_t) -> c_int {
     debug!("ftruncate: fd = {}, length = {}", fd, length);
 
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF,
@@ -318,7 +356,7 @@ pub fn fcntl(fd: i32, cmd: c_int, args: usize) -> c_int {
 
     match cmd {
         libc::F_DUPFD => {
-            let mut fd_manager = get_fd_manager().lock();
+            current_fd!(mut fd_manager, err: -libc::EBADF);
             let new_fd = match fd_manager.dup_fd(fd, args as c_int, false) {
                 Ok(fd) => fd,
                 Err(err) => return err.to_errno(),
@@ -326,7 +364,7 @@ pub fn fcntl(fd: i32, cmd: c_int, args: usize) -> c_int {
             new_fd as c_int
         }
         libc::F_DUPFD_CLOEXEC => {
-            let mut fd_manager = get_fd_manager().lock();
+            current_fd!(mut fd_manager, err: -libc::EBADF);
             let new_fd = match fd_manager.dup_fd(fd, args as c_int, true) {
                 Ok(fd) => fd,
                 Err(err) => return err.to_errno(),
@@ -334,7 +372,7 @@ pub fn fcntl(fd: i32, cmd: c_int, args: usize) -> c_int {
             new_fd as c_int
         }
         libc::F_GETFD => {
-            let fd_manager = get_fd_manager().lock();
+            current_fd!(fd_manager, err: -libc::EBADF);
             let fd_entry = match fd_manager.get_file_ops(fd) {
                 Some(entry) => entry,
                 None => return -libc::EBADF,
@@ -353,7 +391,7 @@ pub fn fcntl(fd: i32, cmd: c_int, args: usize) -> c_int {
 
             let is_cloexec = (args as c_int) & FD_CLOEXEC != 0;
 
-            let fd_manager = get_fd_manager().lock();
+            current_fd!(fd_manager, err: -libc::EBADF);
             let fd_entry = match fd_manager.get_file_ops(fd) {
                 Some(entry) => entry,
                 None => return -libc::EBADF,
@@ -366,7 +404,7 @@ pub fn fcntl(fd: i32, cmd: c_int, args: usize) -> c_int {
             0
         }
         libc::F_GETFL => {
-            let fd_manager = get_fd_manager().lock();
+            current_fd!(fd_manager, err: -libc::EBADF);
             let fd_entry = match fd_manager.get_file_ops(fd) {
                 Some(entry) => entry,
                 None => return -libc::EBADF,
@@ -375,7 +413,7 @@ pub fn fcntl(fd: i32, cmd: c_int, args: usize) -> c_int {
         }
         libc::F_SETFL => {
             // this operation can change only O_NONBLOCK for now
-            let fd_manager = get_fd_manager().lock();
+            current_fd!(fd_manager, err: -libc::EBADF);
             let fd_entry = match fd_manager.get_file_ops(fd) {
                 Some(entry) => entry,
                 None => return -libc::EBADF,
@@ -546,7 +584,7 @@ pub fn rmdir(path: *const c_char) -> c_int {
 
 pub fn getdents(fd: i32, buf: *mut u8, buf_len: usize) -> c_int {
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF,
@@ -665,7 +703,7 @@ pub fn fstat(fd: i32, buf: *mut Stat) -> c_int {
     debug!("fstat: fd = {}", fd);
 
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF,
@@ -750,7 +788,7 @@ pub fn fstatfs(fd: i32, buf: *mut Statfs) -> c_int {
     debug!("fstat: fd = {}", fd);
 
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: -libc::EBADF);
         match fd_manager.get_file_ops(fd) {
             Some(ops) => ops,
             None => return -libc::EBADF,

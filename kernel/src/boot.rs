@@ -29,7 +29,7 @@ use crate::{
     sync::SpinLock,
     thread, time,
 };
-use alloc::{string::String, sync::Arc};
+use alloc::string::String;
 use blueos_driver::uart::UartConfig;
 use blueos_hal::{Configuration, PlatPeri};
 use core::ptr::{addr_of, addr_of_mut};
@@ -202,15 +202,28 @@ pub(crate) fn run_init_array() {
 
 #[inline(never)]
 fn init_apps() {
+    let root = crate::process::ProcessManager::get().root_process();
+
     unsafe {
         let mut app = addr_of!(__bk_app_array_start);
         while app < addr_of!(__bk_app_array_end) {
             let stack =
                 thread::Stack::from_size(blueos_kconfig::CONFIG_MAIN_THREAD_STACK_SIZE as usize)
                     .expect("Invalid main thread stack size");
-            thread::Builder::new(thread::Entry::C(*app))
+            let node = thread::Builder::new(thread::Entry::C(*app))
                 .set_stack(stack)
                 .start();
+            let proc = crate::process::ProcessManager::get()
+                .create_process(alloc::sync::Arc::downgrade(root))
+                .unwrap_or_else(|e| {
+                    panic!("failed to create app process. app addr: {:p}: {}", app, e)
+                });
+            if !proc.add_thread(node) {
+                log::warn!(
+                    "app thread already linked to a process. app addr: {:p}",
+                    app
+                );
+            }
             app = app.offset(1);
         }
     }

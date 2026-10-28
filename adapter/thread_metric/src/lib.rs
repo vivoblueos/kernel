@@ -22,6 +22,7 @@ extern crate alloc;
 use alloc::alloc::{alloc as system_alloc, dealloc as system_dealloc};
 use blueos::{
     arch::arm::{self, Context, NR_DEBUG_SYSCALL},
+    process::current_process,
     scheduler,
     scheduler::InsertToEnd,
     sync::semaphore::Semaphore,
@@ -77,6 +78,9 @@ pub extern "C" fn tm_thread_create(
         entry as *mut core::ffi::c_void,
     ));
     let t = builder.set_priority(priority as ThreadPriority).build();
+    if let Some(proc) = current_process() {
+        proc.add_thread(t.clone());
+    }
     unsafe {
         TM_THREADS[thread_id as usize].write(t);
     }

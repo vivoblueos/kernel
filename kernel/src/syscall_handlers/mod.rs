@@ -396,6 +396,24 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     if let Some(cleanup) = spawn_args.cleanup {
         t.lock().set_cleanup(Entry::Posix(cleanup, spawn_args.arg));
     };
+    // Link the new thread to the caller's process so that it shares the
+    // caller's per-process fd table (stdin/stdout/stderr and any open files).
+    // Without this, `current_process()` resolves to `None` on the new thread
+    // and every VFS syscall returns `-EBADF` — i.e. the thread has no I/O.
+    // `add_thread` takes the thread by value, so clone the `Arc` here; the
+    // original `t` is still queued below.
+    match crate::process::current_process() {
+        Some(proc) => {
+            if !proc.add_thread(t.clone()) {
+                log::warn!(
+                    "create_thread: new thread not linked to process"
+                );
+            }
+        }
+        None => {
+            log::warn!("create_thread: caller has no process; new thread will have no fd table");
+        }
+    }
     let handle = Thread::id(&t);
     if let Some(f) = spawn_args.spawn_hook { f(handle, spawn_args_ptr as *mut _); }
     let ok = scheduler::queue_ready_thread(thread::IDLE, t);
