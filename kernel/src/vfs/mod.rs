@@ -16,7 +16,6 @@ use crate::{
     error::Error,
     vfs::{
         dcache::Dcache,
-        fd_manager::get_fd_manager,
         fs::FileSystem,
         inode_mode::{InodeFileType, InodeMode},
         mount::get_mount_manager,
@@ -30,7 +29,7 @@ mod devfs;
 pub mod dirent;
 #[cfg(fatfs)]
 mod fatfs;
-mod fd_manager;
+pub mod fd_manager;
 mod file;
 mod fs;
 mod inode;
@@ -78,9 +77,9 @@ pub fn vfs_init() -> Result<(), Error> {
     debug!("Mounted devfs at '/dev'");
     devfs::init()?;
 
-    debug!("init stdio");
-    let mut fd_manager = get_fd_manager().lock();
-    fd_manager.init_stdio()?;
+    // Stdio (fds 0/1/2 on the root process's fd table) is now initialized in
+    // the boot path after the root process is created, since it requires the
+    // per-process `Process::fd_manager` rather than a global singleton.
 
     #[cfg(fatfs)]
     {

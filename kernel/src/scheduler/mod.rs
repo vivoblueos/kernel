@@ -251,6 +251,9 @@ fn cleanup_retired_thread(old: &mut ThreadNode) {
     GlobalQueueVisitor::remove(old);
     if let Some(process) = old.process() {
         process.remove_thread(old);
+        if process.has_no_threads() {
+            crate::process::ProcessManager::get().destroy_process(process.pid());
+        }
     }
     if ThreadNode::strong_count(old) != 1 {
         // TODO: Add warning log that there are still references to the old thread.
