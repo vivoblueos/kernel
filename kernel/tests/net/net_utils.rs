@@ -17,6 +17,7 @@ use alloc::{boxed::Box, format, string::String, vec::Vec};
 use blueos::{
     allocator,
     net::{self, SocketAddress, SocketDomain},
+    process::ProcessManager,
     scheduler,
     sync::atomic_wait as futex,
     thread::{Builder as ThreadBuilder, Entry, Stack},
@@ -114,6 +115,17 @@ pub fn start_test_thread_with_cleanup(
                 closure();
             }
         })));
+
+    // Link the thread to the root process so `current_process()` resolves
+    // (the per-process fd table lives on the Process). Matches
+    // `init_test_thread` in lib.rs. Without this, `current_fd!()` (used by
+    // socket/connect/... ) returns -EBADF.
+    if !ProcessManager::get().root_process().add_thread(t.clone()) {
+        println!(
+            "start_test_thread [{}] already linked to a process",
+            thread_name
+        );
+    }
 
     scheduler::queue_ready_thread(t.state(), t);
 }

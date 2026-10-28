@@ -20,11 +20,11 @@ use crate::{
         link::wifi_ops::copy_scan_results_to_user,
     },
     vfs::{
-        fd_manager::get_fd_manager,
         file::{FileAttr, FileOps, OpenFlags},
         inode::InodeOps,
         inode_mode::InodeMode,
         path,
+        syscalls::current_fd,
         utils::SeekFrom,
     },
 };
@@ -246,18 +246,18 @@ pub fn alloc_sock_fd(flags: i32) -> i32 {
         }
     };
     let socket_file = Arc::new(SocketFile::new(socket_inode, flags.into()));
-    let mut fd_manager = get_fd_manager().lock();
+    current_fd!(mut fd_manager, err: -libc::EBADF);
     fd_manager.alloc_fd(socket_file)
 }
 
 pub fn free_sock_fd(fd: i32) -> Result<(), Error> {
-    let mut fd_manager = get_fd_manager().lock();
+    current_fd!(mut fd_manager, err: Err(code::EBADF));
     fd_manager.free_fd(fd)
 }
 
 pub fn sock_attach_to_fd(fd: i32, socket: Arc<Connection>) -> Result<i32, Error> {
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: Err(code::EBADF));
         fd_manager.get_file_ops(fd).ok_or(code::EBADF)?
     };
     let file_ops_ptr = Arc::as_ptr(&file_ops) as *const ();
@@ -272,7 +272,7 @@ pub fn sock_attach_to_fd(fd: i32, socket: Arc<Connection>) -> Result<i32, Error>
 
 pub fn get_sock_by_fd(fd: i32) -> Result<Arc<Connection>, Error> {
     let file_ops = {
-        let fd_manager = get_fd_manager().lock();
+        current_fd!(fd_manager, err: Err(code::EBADF));
         fd_manager.get_file_ops(fd).ok_or(code::EBADF)?
     };
     try_get_socket(&file_ops).ok_or_else(|| {
