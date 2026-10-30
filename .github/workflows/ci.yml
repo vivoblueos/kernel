@@ -1,0 +1,162 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+name: BlueKernel CI
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+permissions:
+  contents: read
+concurrency:
+  group: bluekernel-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  static-checks:
+    name: static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/vivoblueos/kernel:latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Trust the Actions workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Check changed files
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python3 tools/ci/check_changes.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA"
+  build-esp32c3:
+    name: ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/vivoblueos/kernel:latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        board: [seeed_xiao_esp32c3]
+        build_type: [debug, release]
+        syscall_mode: [swi, dsc]
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and test profile
+        env:
+          BOARD: ${{ matrix.board }}
+          BUILD_TYPE: ${{ matrix.build_type }}
+          SYSCALL_MODE: ${{ matrix.syscall_mode }}
+        run: |
+          python3 tools/ci/run_profile.py \
+            --board "$BOARD" \
+            --build-type "$BUILD_TYPE" \
+            --syscall-mode "$SYSCALL_MODE"
+  build:
+    name: ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/vivoblueos/kernel:latest
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        board:
+          - qemu_virt64_aarch64
+          - qemu_riscv64
+          - qemu_riscv32
+          - qemu_mps2_an385
+          - qemu_mps3_an547
+          - gd32e507_eval
+          - rk3568
+          - gd32vw553_eval
+          - raspberry_pico2_cortexm
+          - none
+        build_type: [debug, release]
+        syscall_mode: [swi, dsc]
+        exclude:
+          - board: none
+            syscall_mode: dsc
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and test profile
+        env:
+          BOARD: ${{ matrix.board }}
+          BUILD_TYPE: ${{ matrix.build_type }}
+          SYSCALL_MODE: ${{ matrix.syscall_mode }}
+        run: |
+          python3 tools/ci/run_profile.py \
+            --board "$BOARD" \
+            --build-type "$BUILD_TYPE" \
+            --syscall-mode "$SYSCALL_MODE"
+  miri:
+    name: allocator Miri
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/vivoblueos/kernel:latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check allocator with Miri Tree Borrows
+        env:
+          MIRI_PATH: /opt/sysroot/usr/local/bin/miri
+          MIRI_SYSROOT: /opt/sysroot/usr/local/lib/rustlib/x86_64-unknown-linux-gnu/miri-sysroot
+        run: |
+          gn gen out/qemu_mps2_an385.debug.miri \
+            --args="board=\"qemu_mps2_an385\" build_type=\"debug\" miri_path=\"$MIRI_PATH\" miri_sysroot=\"$MIRI_SYSROOT\""
+          ninja -C out/qemu_mps2_an385.debug.miri \
+            kernel/allocator:check_allocator_by_miri
+  gate:
+    name: BlueKernel CI
+    if: ${{ always() }}
+    needs: [static-checks, build-esp32c3, build, miri]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every PR CI job to pass
+        env:
+          STATIC_CHECKS_RESULT: ${{ needs.static-checks.result }}
+          ESP32C3_BUILD_RESULT: ${{ needs.build-esp32c3.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          MIRI_RESULT: ${{ needs.miri.result }}
+        run: |
+          if [[ "$STATIC_CHECKS_RESULT" != "success" || \
+                "$ESP32C3_BUILD_RESULT" != "success" || \
+                "$BUILD_RESULT" != "success" || \
+                "$MIRI_RESULT" != "success" ]]; then
+            echo "static-checks: $STATIC_CHECKS_RESULT"
+            echo "build-esp32c3: $ESP32C3_BUILD_RESULT"
+            echo "build: $BUILD_RESULT"
+            echo "miri: $MIRI_RESULT"
+            exit 1
+          fi

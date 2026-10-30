@@ -1,0 +1,78 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+name: Notify subrepos
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  notify:
+    if: ${{ vars.JOSH_SYNC_ENABLED == 'true' }}
+    name: notify affected subrepos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find affected subrepos
+        id: targets
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python3 tools/ci/affected_subrepos.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Create GitHub App token
+        if: ${{ steps.targets.outputs.has-targets == 'true' }}
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.JOSH_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.JOSH_SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ steps.targets.outputs.owner }}
+          repositories: ${{ steps.targets.outputs.repositories }}
+          permission-contents: write
+      - name: Dispatch pull sync
+        if: ${{ steps.targets.outputs.has-targets == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET_OWNER: ${{ steps.targets.outputs.owner }}
+          TARGET_REPOSITORIES: ${{ steps.targets.outputs.repositories }}
+        run: |
+          payload="$(jq -nc \
+            --arg source_repository "$SOURCE_REPOSITORY" \
+            --arg source_sha "$SOURCE_SHA" \
+            '{
+              event_type: "bluekernel-pull",
+              client_payload: {
+                source_repository: $source_repository,
+                source_sha: $source_sha
+              }
+            }')"
+
+          IFS=',' read -ra repositories <<< "$TARGET_REPOSITORIES"
+          for repository in "${repositories[@]}"; do
+            echo "Dispatching bluekernel-pull to $TARGET_OWNER/$repository"
+            gh api \
+              --method POST \
+              "repos/$TARGET_OWNER/$repository/dispatches" \
+              --input - <<< "$payload"
+          done
