@@ -1,0 +1,80 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+
+build_rust("librs_integration_test_image") {
+  testonly = true
+  crate_type = "bin"
+  sources = [ "integration_test.rs" ]
+  edition = "2021"
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+  deps = [
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/kernel:blueos",
+    "//kernel/rsrt:rsrt",
+    "//kernel/scal:blueos_scal",
+    "//libc:libc",
+    "//librs:librs",
+  ]
+  linker_script = default_linker_script
+  if (coverage || profile) {
+    deps += [
+      "//external/vendor/minicov-0.3.7:minicov",
+      "//external/vendor/semihosting-0.1.20:semihosting",
+    ]
+  }
+  rustflags = [ "--test" ]
+}
+
+if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
+  gen_esp32_qemu_runner("librs_integration_test_runner") {
+    testonly = true
+    elf = ":librs_integration_test_image"
+    chip = "${chip}"
+    bootloader = qemu_esp32_bootloader_bin
+    partition_table = qemu_esp32_partition_table_bin
+    qemu = "$qemu_exe"
+    machine = "$qemu_machine"
+    semihosting = true
+    qemu_args = qemu_extra_args
+    block_args = qemu_block_args
+  }
+} else {
+  gen_qemu_runner("librs_integration_test_runner") {
+    testonly = true
+    img = ":librs_integration_test_image"
+    qemu = "$qemu_exe"
+    machine = "$qemu_machine"
+    semihosting = true
+    qemu_args = qemu_extra_args
+    block_img = "librs_integration_test_block.img"
+    block_args = qemu_block_args
+  }
+}
+
+run_qemu_check("run_librs_integration_test") {
+  testonly = true
+  runner = ":librs_integration_test_runner"
+  if (coverage) {
+    img = ":librs_integration_test_image"
+    checker = "coverage.checker"
+  } else {
+    checker = "integration.checker"
+  }
+}
