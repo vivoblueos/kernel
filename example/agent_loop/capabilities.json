@@ -1,0 +1,71 @@
+{
+    "capabilities": [
+        {
+            "name": "led_program",
+            "description": "Run a programmable LED timeline. Use kind=steps for arbitrary sequences (including colors and durations), or kind=morse for Morse-code text blinking.",
+            "handler": "led_program",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "steps",
+                            "morse"
+                        ],
+                        "description": "Program mode. Use steps for arbitrary timelines, morse for text blinking."
+                    },
+                    "repeat": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Repeat the program this many times."
+                    },
+                    "steps": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "Required when kind=steps.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "state": {
+                                    "type": "string",
+                                    "enum": [
+                                        "on",
+                                        "off"
+                                    ],
+                                    "description": "State to apply for this step"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Color name when state=on, e.g. red/blue/green"
+                                },
+                                "hold_ms": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "description": "How long to keep this step before moving to next"
+                                }
+                            },
+                            "required": [
+                                "state"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Required when kind=morse. Text to represent in Morse code."
+                    },
+                    "unit_ms": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Dot unit duration in milliseconds. Default 200"
+                    }
+                },
+                "required": [
+                    "kind"
+                ],
+                "additionalProperties": false
+            }
+        }
+    ]
+}
