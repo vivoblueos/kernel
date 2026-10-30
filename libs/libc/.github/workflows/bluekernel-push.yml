@@ -1,0 +1,22 @@
+name: Push libc changes to BlueKernel
+on:
+  push:
+    branches: [blueos-dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bluekernel-push-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  push:
+    if: ${{ vars.JOSH_SYNC_ENABLED == 'true' }}
+    uses: vivoblueos/josh-sync/.github/workflows/bluekernel-push.yml@3e0bfbbfe6825e5e144a4781cfb040a5396eb820
+    with:
+      github-app-client-id: ${{ vars.JOSH_SYNC_APP_CLIENT_ID }}
+      pr-author: "blueos-josh-sync[bot]"
+      josh-sync-repository: vivoblueos/josh-sync
+      josh-sync-revision: 3e0bfbbfe6825e5e144a4781cfb040a5396eb820
+    secrets:
+      github-app-secret: ${{ secrets.JOSH_SYNC_APP_PRIVATE_KEY }}
+      approval-user-token: ${{ secrets.JOSH_SYNC_APPROVAL_USER_TOKEN }}

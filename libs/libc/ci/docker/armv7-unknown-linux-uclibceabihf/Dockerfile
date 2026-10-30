@@ -1,0 +1,27 @@
+FROM ubuntu:23.10
+
+# FIXME(time): we are using an EOL release because 24.04 changes to 64-bit time
+RUN sed -i -E 's/(archive|security)\.ubuntu\.com/old-releases.ubuntu.com/g' \
+        /etc/apt/sources.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        file \
+        gcc \
+        libc6-dev \
+        patch \
+        qemu-system-arm \
+        qemu-user \
+        xz-utils
+
+RUN mkdir /toolchain
+
+RUN curl --retry 5 -L https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/armv7-eabihf--uclibc--bleeding-edge-2021.11-1.tar.bz2 | \
+    tar xjf - -C /toolchain --strip-components=1
+RUN /toolchain/relocate-sdk.sh
+
+ENV PATH=$PATH:/rust/bin:/toolchain/bin \
+    STAGING_DIR=/toolchain/armv7-buildroot-linux-uclibceabihf/sysroot \
+    CC_armv7_unknown_linux_uclibceabihf=arm-buildroot-linux-uclibcgnueabihf-gcc \
+    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_UCLIBCEABIHF_LINKER=arm-buildroot-linux-uclibcgnueabihf-gcc \
+    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_UCLIBCEABIHF_RUNNER="qemu-arm -L /toolchain/arm-buildroot-linux-uclibcgnueabihf/sysroot/"

@@ -1,0 +1,133 @@
+[relabel]
+allow-unauthenticated = [
+    "C-*",
+    "O-*",
+    "S-*",
+    "ctest",
+    "stable-nominated",
+]
+
+[assign]
+warn_non_default_branch.enable = true
+contributing_url = "https://github.com/rust-lang/libc/blob/HEAD/CONTRIBUTING.md"
+
+# Ensure issue links link to this repo
+[issue-links]
+check-commits = "uncanonicalized"
+
+# Enable comments linking to triagebot range-diff when a PR is rebased
+# onto a different base commit
+# Documentation at: https://forge.rust-lang.org/triagebot/range-diff.html
+[range-diff]
+
+[autolabel."A-CI"]
+trigger_files = [
+    ".cirrus.yml",
+    ".github",
+    "ci",
+]
+
+[autolabel."S-waiting-on-review"]
+new_pr = true
+
+[autolabel."O-android"]
+trigger_files = ["*{android,bionic}*"]
+
+[autolabel."O-arm"]
+trigger_files = ["*arm*"]
+
+[autolabel."O-bsd"]
+trigger_files = ["*bsd*"]
+
+[autolabel."O-dragonfly"]
+trigger_files = ["*dragonfly*"]
+
+[autolabel."O-freebsd"]
+trigger_files = ["*freebsd*"]
+
+[autolabel."O-gnu"]
+trigger_files = ["*gnu*"]
+
+[autolabel."O-illumos"]
+trigger_files = ["*illumos*"]
+
+[autolabel."O-linux"]
+trigger_files = ["*linux*"]
+
+[autolabel."O-linux-like"]
+trigger_files = ["*linux_like*"]
+
+[autolabel."O-macos"]
+trigger_files = ["*apple*"]
+
+[autolabel."O-mips"]
+trigger_files = ["*mips*"]
+
+[autolabel."O-musl"]
+trigger_files = ["*musl*"]
+
+[autolabel."O-newlib"]
+trigger_files = ["*newlib*"]
+
+[autolabel."O-powerpc"]
+trigger_files = ["*powerpc*"]
+
+[autolabel."O-redox"]
+trigger_files = ["*redox*"]
+
+[autolabel."O-riscv"]
+trigger_files = ["*riscv*"]
+
+[autolabel."O-solarish"]
+trigger_files = ["*solarish*"]
+
+[autolabel."O-sparc"]
+trigger_files = ["*sparc*"]
+
+[autolabel."O-unix"]
+trigger_files = ["*unix*"]
+
+[autolabel."O-wasi"]
+trigger_files = ["*{wasi,wasm}*"]
+
+[autolabel."O-windows"]
+trigger_files = ["*windows*"]
+
+[autolabel."O-x86"]
+trigger_files = ["*{x86,i?86}"]
+
+[autolabel.ctest]
+trigger_files = [
+    "ctest",
+    "ctest-test",
+]
+
+[review-submitted]
+# These labels are removed when a review is submitted.
+review_labels = ["S-waiting-on-review"]
+# This label is added when a review is submitted.
+reviewed_label = "S-waiting-on-author"
+
+[review-requested]
+# Those labels are removed when PR author requests a review from an assignee
+remove_labels = ["S-waiting-on-author"]
+# Those labels are added when PR author requests a review from an assignee
+add_labels = ["S-waiting-on-review"]
+
+[shortcut]
+
+[mentions."*openbsd*"]
+message = "Some changes occurred in an OpenBSD module"
+cc = ["@semarie"]
+
+[mentions."*netbsdlike*"]
+message = "Some changes occurred in a NetBSD-like module"
+cc = ["@semarie"]
+
+[mentions."*solarish*"]
+message = "Some changes occurred in a solarish module"
+cc = ["@jclulow", "@pfmooney"]
+
+[mentions."*android*"]
+message = "Some changes occurred in an Android module"
+cc = ["@maurer"]
