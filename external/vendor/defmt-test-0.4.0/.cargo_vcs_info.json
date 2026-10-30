@@ -1,0 +1,7 @@
+{
+  "git": {
+    "sha1": "f6decae6e09d1216aff052aa0733a6b5e632a100",
+    "dirty": true
+  },
+  "path_in_vcs": "firmware/defmt-test"
+}

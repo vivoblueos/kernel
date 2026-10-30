@@ -1,0 +1,10 @@
+Name: windows-sys
+URL: https://crates.io/crates/windows-sys
+Version: 0.61.2
+Revision: 32c3144490c016fe496a0aed769bce60987a2e9d
+License: Apache-2.0
+License File: //external/vendor/windows-sys-0.61.2/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Rust for Windows

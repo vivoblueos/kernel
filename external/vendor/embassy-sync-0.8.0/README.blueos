@@ -1,0 +1,10 @@
+Name: embassy-sync
+URL: https://crates.io/crates/embassy-sync
+Version: 0.8.0
+Revision: ca966f8ff4ee81c14bccade56b7a52c1fc154e26
+License: Apache-2.0
+License File: //external/vendor/embassy-sync-0.8.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: no-std, no-alloc synchronization primitives with async support

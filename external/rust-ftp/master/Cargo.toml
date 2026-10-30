@@ -1,0 +1,39 @@
+[package]
+name = "ftp"
+version = "3.0.1"
+authors = ["Matt McCoy <mattnenterprise@yahoo.com>"]
+documentation = "https://docs.rs/ftp/"
+repository = "https://github.com/mattnenterprise/rust-ftp"
+description = "FTP client for Rust"
+readme = "README.md"
+license = "Apache-2.0/MIT"
+keywords = ["ftp"]
+categories = ["network-programming"]
+
+[badges]
+travis-ci = { repository = "mattnenterprise/rust-ftp" }
+
+[lib]
+name ="ftp"
+path = "src/lib.rs"
+
+[features]
+# Enable support of FTPS which requires openssl
+secure = ["openssl"]
+
+# Add debug output (to STDOUT) of commands sent to the server
+# and lines read from the server
+debug_print = []
+
+[dependencies]
+lazy_static = "1"
+regex = "1"
+chrono = "0.4"
+openssl = { version = "0.10", optional = true }
+
+[dependencies.native-tls]
+version = "0.2"
+optional = true
+
+[package.metadata.docs.rs]
+rustc-args = ["--cfg", "secure"]

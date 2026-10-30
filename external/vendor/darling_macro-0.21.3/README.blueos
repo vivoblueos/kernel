@@ -1,0 +1,12 @@
+Name: darling_macro
+URL: https://crates.io/crates/darling_macro
+Version: 0.21.3
+Revision: f21aa2c5ccd002f978a18758815bd7e7cdba4741
+License: MIT
+License File: //external/vendor/darling_macro-0.21.3/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Internal support for a proc-macro library for reading attributes into structs when
+implementing custom derives. Use https://crates.io/crates/darling in your code.
+

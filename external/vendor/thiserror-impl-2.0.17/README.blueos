@@ -1,0 +1,10 @@
+Name: thiserror-impl
+URL: https://crates.io/crates/thiserror-impl
+Version: 2.0.17
+Revision: 72ae716e6d6a7f7fdabdc394018c745b4d39ca45
+License: Apache-2.0
+License File: //external/vendor/thiserror-impl-2.0.17/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Implementation detail of the `thiserror` crate

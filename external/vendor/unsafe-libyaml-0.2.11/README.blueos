@@ -1,0 +1,10 @@
+Name: unsafe-libyaml
+URL: https://crates.io/crates/unsafe-libyaml
+Version: 0.2.11
+Revision: a7b8d1fbd93aefbca3003dcb5fcc6a9c2297e968
+License: MIT
+License File: //external/vendor/unsafe-libyaml-0.2.11/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: libyaml transpiled to rust by c2rust

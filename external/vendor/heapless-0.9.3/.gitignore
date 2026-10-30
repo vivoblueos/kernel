@@ -1,0 +1,6 @@
+**/*.rs.bk
+.#*
+Cargo.lock
+target/
+# IDE files
+.idea

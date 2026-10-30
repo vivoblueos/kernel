@@ -1,0 +1,10 @@
+Name: critical-section
+URL: https://crates.io/crates/critical-section
+Version: 1.2.0
+Revision: ed0f84c5ca3697a2166ed76e656c958cd3915b00
+License: Apache-2.0
+License File: //external/vendor/critical-section-1.2.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Cross-platform critical section

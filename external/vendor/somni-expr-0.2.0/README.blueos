@@ -1,0 +1,10 @@
+Name: somni-expr
+URL: https://crates.io/crates/somni-expr
+Version: 0.2.0
+Revision: 7b1768f251f4e3ba9a4947a058a98da48a698389
+License: Apache-2.0
+License File: //external/vendor/somni-expr-0.2.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: An expression evaluation library

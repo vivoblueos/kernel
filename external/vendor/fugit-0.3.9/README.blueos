@@ -1,0 +1,10 @@
+Name: fugit
+URL: https://crates.io/crates/fugit
+Version: 0.3.9
+Revision: ed53bcb806370c8d82a3bbfa893d69e743ef941b
+License: Apache-2.0
+License File: //external/vendor/fugit-0.3.9/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Time library for embedded targets with ease-of-use and performance first.

@@ -1,0 +1,10 @@
+Name: esp-sync
+URL: https://crates.io/crates/esp-sync
+Version: 0.2.1
+Revision: 0cdb14b092aa7a1c463b565e5181850efbd2a6b4
+License: Apache-2.0
+License File: //external/vendor/esp-sync-0.2.1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Synchronization primitives for Espressif devices

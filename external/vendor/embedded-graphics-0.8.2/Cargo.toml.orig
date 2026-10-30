@@ -1,0 +1,81 @@
+[package]
+name = "embedded-graphics"
+description = "Embedded graphics library for small hardware displays"
+version = "0.8.2"
+authors = ["James Waples <james@wapl.es>", "Ralf Fuest <mail@rfuest.de>"]
+repository = "https://github.com/embedded-graphics/embedded-graphics"
+documentation = "https://docs.rs/embedded-graphics"
+categories = ["embedded", "no-std"]
+keywords = ["embedded-graphics", "graphics", "embedded"]
+readme = "./README.md"
+license = "MIT OR Apache-2.0"
+exclude = [
+    "/.circleci/",
+    "/.github/",
+	".gitignore",
+	"convert_1bpp.sh",
+]
+edition = "2021"
+
+[workspace]
+members = ["core"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[badges]
+circle-ci = { repository = "embedded-graphics/embedded-graphics", branch = "master" }
+
+[dependencies]
+az = "~1.2.0"
+fixed = { version = "~1.27.0", optional = true, default-features = false }
+# half is an indirect dependency by fixed. Newer versions don't build on our MSRV.
+half = { version = "~2.4.1", optional = true, default-features = false }
+float-cmp = "0.9.0"
+micromath = { version = "2.0.0", default-features = false }
+embedded-graphics-core = { path = "core", version = "^0.4.1" }
+byteorder = { version = "1.4.3", default-features = false }
+defmt = { version = "0.3.2", optional = true }
+
+[dev-dependencies]
+arrayvec = { version = "0.7.2", default-features = false }
+criterion = { version = "0.4.0", default-features = false, features = [ "html_reports" ] }
+
+[features]
+default = []
+nalgebra_support = [ "embedded-graphics-core/nalgebra_support" ]
+fixed_point = [ "fixed", "half" ]
+defmt = [ "dep:defmt", "embedded-graphics-core/defmt" ]
+
+[[bench]]
+harness = false
+name = "primitives"
+
+[[bench]]
+harness = false
+name = "primitives_fixed_point"
+required-features = ["fixed_point"]
+
+[[bench]]
+harness = false
+name = "fonts"
+
+[[bench]]
+harness = false
+name = "image"
+
+[[bench]]
+harness = false
+name = "contains"
+
+[[bench]]
+harness = false
+name = "raw_data_iter"
+
+[[bench]]
+harness = false
+name = "color_conversion"
+
+[[bench]]
+harness = false
+name = "framebuffer"

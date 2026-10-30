@@ -1,0 +1,10 @@
+Name: serde_core
+URL: https://crates.io/crates/serde_core
+Version: 1.0.228
+Revision: a866b336f14aa57a07f0d0be9f8762746e64ecb4
+License: Apache-2.0
+License File: //external/vendor/serde_core-1.0.228/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Serde traits only, with no support for derive -- use the `serde` crate instead

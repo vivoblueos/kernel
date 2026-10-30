@@ -1,0 +1,19 @@
+[package]
+name = "minicov"
+version = "0.3.7"
+authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
+description = "Code coverage and profile-guided optimization support for no_std and embedded programs"
+license = "Apache-2.0/MIT"
+repository = "https://github.com/Amanieu/minicov"
+readme = "../README.md"
+keywords = ["coverage", "no_std", "llvm-cov", "pgo", "profiling"]
+categories = ["development-tools", "no-std", "embedded"]
+edition = "2018"
+
+[features]
+default = ["alloc"]
+alloc = []
+
+[build-dependencies]
+cc = "1.0.77"
+walkdir = "2.3.2"

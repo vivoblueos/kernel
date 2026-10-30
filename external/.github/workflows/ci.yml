@@ -1,0 +1,75 @@
+name: Run gnrt build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: ["main"]
+jobs:
+  # Build job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Rust
+        uses: actions/checkout@v4
+        with:
+          toolchain: stable
+          override: true
+      - name: Build gnrt
+        working-directory: ./gnrt
+        run: cargo build
+
+      - name: Run tests
+        working-directory: ./gnrt
+        run: cargo test
+  check_gn_format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install gn
+        run: |
+          wget -q https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/latest -O gn.zip
+          unzip -q gn.zip -d /tmp
+          chmod +x /tmp/gn
+          sudo mv /tmp/gn /usr/local/bin/gn
+      - name: Check GN format
+        run: |
+          set -e
+          # Find all GN files
+          gn_files=$(find . \( -name "*.gn" -o -name "*.gni" \) -type f)
+          if [ -z "$gn_files" ]; then
+            echo "ℹ️  No GN files found to check."
+            exit 0
+          fi
+          # Track failures
+          failed_files=()
+          file_count=0
+          echo "🔍 Checking GN file formatting..."
+          echo ""
+          # Check each file
+          while IFS= read -r file; do
+            file_count=$((file_count + 1))
+            echo -n "Checking: $file ... "
+            if gn format --dry-run "$file" > /dev/null 2>&1; then
+              echo "✅ OK"
+            else
+              echo "❌ FAILED"
+              failed_files+=("$file")
+            fi
+          done <<< "$gn_files"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Summary: Checked $file_count file(s)"
+          # Report results
+          if [ ${#failed_files[@]} -eq 0 ]; then
+            echo "✅ All GN files are properly formatted!"
+            exit 0
+          else
+            echo "❌ Found ${#failed_files[@]} file(s) with formatting issues:"
+            for file in "${failed_files[@]}"; do
+              echo "   - $file"
+            done
+            echo ""
+            echo "💡 To fix, run: gn format <file>"
+            exit 1
+          fi

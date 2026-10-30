@@ -1,0 +1,18 @@
+[package]
+authors = ["The Knurling-rs developers"]
+categories = ["embedded", "no-std"]
+description = "Transmit defmt log messages over the RTT (Real-Time Transfer) protocol"
+edition = "2021"
+keywords = ["knurling", "defmt", "defmt-transport"]
+license = "MIT OR Apache-2.0"
+name = "defmt-rtt"
+readme = "README.md"
+repository = "https://github.com/knurling-rs/defmt"
+version = "1.1.0"
+
+[features]
+disable-blocking-mode = []
+
+[dependencies]
+defmt = { version = "1", path = "../../defmt" }
+critical-section = "1.2"

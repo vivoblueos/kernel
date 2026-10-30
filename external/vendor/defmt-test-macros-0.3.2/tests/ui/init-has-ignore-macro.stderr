@@ -1,0 +1,5 @@
+error: `#[ignore]` is not allowed on the `#[init]` function
+ --> tests/ui/init-has-ignore-macro.rs:7:8
+  |
+7 |     fn init() {}
+  |        ^^^^

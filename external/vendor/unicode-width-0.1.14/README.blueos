@@ -1,0 +1,12 @@
+Name: unicode-width
+URL: https://crates.io/crates/unicode-width
+Version: 0.1.14
+Revision: 9eaafa5f91b737bb5958d46f9647aa11104c6f25
+License: Apache-2.0
+License File: //external/vendor/unicode-width-0.1.14/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Determine displayed width of `char` and `str` types
+according to Unicode Standard Annex #11 rules.
+

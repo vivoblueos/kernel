@@ -1,0 +1,10 @@
+Name: manyhow-macros
+URL: https://crates.io/crates/manyhow-macros
+Version: 0.11.4
+Revision: 47e52ac6043a81db7c90ff4021fd700dcf2e8cbf
+License: Apache-2.0
+License File: //external/vendor/manyhow-macros-0.11.4/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Macro for manyhow

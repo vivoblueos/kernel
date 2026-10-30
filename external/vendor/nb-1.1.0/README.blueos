@@ -1,0 +1,10 @@
+Name: nb
+URL: https://crates.io/crates/nb
+Version: 1.1.0
+Revision: 5274a5dd8844a8ca07ee068237e5b85c91ee7e5b
+License: Apache-2.0
+License File: //external/vendor/nb-1.1.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Minimal non-blocking I/O layer

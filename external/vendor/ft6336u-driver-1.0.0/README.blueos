@@ -1,0 +1,10 @@
+Name: ft6336u-driver
+URL: https://crates.io/crates/ft6336u-driver
+Version: 1.0.0
+Revision: 6025bbff0ab26f3244183e602be213910e0f5683
+License: Apache-2.0
+License File: //external/vendor/ft6336u-driver-1.0.0/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: A no_std embedded-hal driver for the FT6336U capacitive touch controller

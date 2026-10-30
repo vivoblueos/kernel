@@ -1,0 +1,10 @@
+Name: embedded-graphics-core
+URL: https://crates.io/crates/embedded-graphics-core
+Version: 0.4.1
+Revision: 3b7458ff9e0e5201191366f442297ba49d1ff2c5
+License: Apache-2.0
+License File: //external/vendor/embedded-graphics-core-0.4.1/README.md
+Shipped: yes
+Security Critical: yes
+
+Description: Core traits and functionality for embedded-graphics

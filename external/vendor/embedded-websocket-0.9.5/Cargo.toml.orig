@@ -1,0 +1,36 @@
+[package]
+name = "embedded-websocket"
+version = "0.9.5"
+authors = ["David Haig"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ninjasource/embedded-websockets.git"
+description = "A lightweight websocket library for embedded systems (no_std)"
+keywords = ["websockets", "websocket", "embedded", "no_std"]
+categories = ["embedded", "no-std", "network-programming"]
+readme = "README.md"
+
+[dependencies]
+sha1 = { version = "0.10.6", default-features = false }
+heapless = { version = "0.7.16", default-features = false }
+byteorder = { version = "1.5.0", default-features = false }
+httparse = { version = "1.9.5", default-features = false }
+rand_core = { version = "0.6.4", default-features = false }
+base64 = { version = "0.13.1", default-features = false }
+futures = { version = "0.3.31", default-features = false }
+
+[dev-dependencies]
+rand = "0.8.5"
+bytes = "1.9.0"
+tokio = { version = "1.42.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "io-util",
+] }
+tokio-util = { version = "0.7.13", features = ["net", "codec"] }
+
+# see readme for no_std support
+[features]
+default = ["std"]
+# default = []
+std = ["httparse/std"]

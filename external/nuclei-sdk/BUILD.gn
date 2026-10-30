@@ -1,0 +1,60 @@
+import("//build/templates/build_template.gni")
+
+static_library("nuclei-sdk") {
+  sources = [
+    "src/gd32vw55x_adc.c",
+    "src/gd32vw55x_cau.c",
+    "src/gd32vw55x_cau_aes.c",
+    "src/gd32vw55x_cau_des.c",
+    "src/gd32vw55x_cau_tdes.c",
+    "src/gd32vw55x_crc.c",
+    "src/gd32vw55x_dbg.c",
+    "src/gd32vw55x_dma.c",
+    "src/gd32vw55x_eclic.c",
+    "src/gd32vw55x_efuse.c",
+    "src/gd32vw55x_exti.c",
+    "src/gd32vw55x_fmc.c",
+    "src/gd32vw55x_fwdgt.c",
+    "src/gd32vw55x_gpio.c",
+    "src/gd32vw55x_hau.c",
+    "src/gd32vw55x_hau_sha_md5.c",
+    "src/gd32vw55x_i2c.c",
+    "src/gd32vw55x_pkcau.c",
+    "src/gd32vw55x_pmu.c",
+    "src/gd32vw55x_qspi.c",
+    "src/gd32vw55x_rcu.c",
+    "src/gd32vw55x_rtc.c",
+    "src/gd32vw55x_spi.c",
+    "src/gd32vw55x_syscfg.c",
+    "src/gd32vw55x_timer.c",
+    "src/gd32vw55x_trng.c",
+    "src/gd32vw55x_usart.c",
+    "src/gd32vw55x_wwdgt.c",
+    "src/mod.c",
+    "src/system_gd32vw55x.c",
+  ]
+  include_dirs = [
+    "include",
+    "include/NMSIS/Core/Include",
+  ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+}
+
+bindgen("nuclei_header") {
+  bindgen_flags = [
+    "--use-core",
+    "--ctypes-prefix",
+    "core::ffi",
+  ]
+  sources = [ "include/nuclei_sdk.h" ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  include_dirs = [ "include/NMSIS/Core/Include" ]
+}
+
+build_rust("nuclei_sdk_rs") {
+  crate_type = "rlib"
+  sources = [ "src/lib.rs" ]
+  deps = [ ":nuclei_header" ]
+  output_file = get_target_outputs(":nuclei_header")
+  rustenv = [ "BINDGEN_DIR=" + rebase_path(output_file[0]) ]
+}

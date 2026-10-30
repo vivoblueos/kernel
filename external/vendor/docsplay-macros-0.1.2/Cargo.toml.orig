@@ -1,0 +1,31 @@
+[package]
+name = "docsplay-macros"
+version = "0.1.2"
+rust-version = "1.56"
+authors = ["Dániel Buga <bugadani@gmail.com>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bugadani/docsplay"
+homepage = "https://github.com/bugadani/docsplay"
+documentation = "https://docs.rs/docsplay"
+keywords = ["display", "derive"]
+description = """
+Implementation details of docsplay
+"""
+
+[features]
+std = []
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+
+[dev-dependencies]
+static_assertions = "1.1"
+rustversion = "1.0.0"
+pretty_assertions = "1.4.0"
+thiserror = "1.0.24"

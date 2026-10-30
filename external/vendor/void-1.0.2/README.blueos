@@ -1,0 +1,9 @@
+Name: void
+URL: https://crates.io/crates/void
+Version: 1.0.2
+License: MIT
+License File: //external/vendor/void-1.0.2/LICENSE-APACHE,//external/vendor/void-1.0.2/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: The uninhabited void type for use in statically impossible cases.

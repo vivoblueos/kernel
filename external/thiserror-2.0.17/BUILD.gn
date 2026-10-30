@@ -1,0 +1,20 @@
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("thiserror") {
+  epoch = "2"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/thiserror-2.0.17/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  proc_macro_deps = [ "//external/vendor/thiserror-impl-2.0.17:thiserror_impl" ]
+  features = [ "std" ]
+  cargo_pkg_name = "thiserror"
+  cargo_pkg_version = "2.0.17"
+  build_root = "//external/vendor/thiserror-2.0.17/build.rs"
+  build_sources = [ "//external/vendor/thiserror-2.0.17/build.rs" ]
+  build_script_outputs = [ "private.rs" ]
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

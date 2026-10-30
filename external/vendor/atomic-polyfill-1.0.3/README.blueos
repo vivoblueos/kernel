@@ -1,0 +1,10 @@
+Name: atomic-polyfill
+URL: https://crates.io/crates/atomic-polyfill
+Version: 1.0.3
+Revision: 48e55c166684f37af0b00fbee5a0809b1a2bae8e
+License: Apache-2.0
+License File: //external/vendor/atomic-polyfill-1.0.3/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Atomic polyfills, for targets where they're not available.

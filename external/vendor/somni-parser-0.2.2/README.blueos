@@ -1,0 +1,10 @@
+Name: somni-parser
+URL: https://crates.io/crates/somni-parser
+Version: 0.2.2
+Revision: 97f36121ebb466586f3df19cdd1d6a7f7caccc73
+License: Apache-2.0
+License File: //external/vendor/somni-parser-0.2.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Grammar parser of the Somni language and VM

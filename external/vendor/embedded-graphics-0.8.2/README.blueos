@@ -1,0 +1,10 @@
+Name: embedded-graphics
+URL: https://crates.io/crates/embedded-graphics
+Version: 0.8.2
+Revision: f785ffab09059a3dc1243cffe8f5c769548dcc69
+License: Apache-2.0
+License File: //external/vendor/embedded-graphics-0.8.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Embedded graphics library for small hardware displays

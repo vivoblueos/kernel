@@ -1,0 +1,10 @@
+Name: unwinding
+URL: https://crates.io/crates/unwinding
+Version: 0.2.4
+Revision: ff0e91b816a112118724797c7affe5da0a47f6aa
+License: Apache-2.0
+License File: //external/vendor/unwinding-0.2.4/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Unwinding library in Rust and for Rust

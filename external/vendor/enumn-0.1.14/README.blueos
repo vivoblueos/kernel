@@ -1,0 +1,10 @@
+Name: enumn
+URL: https://crates.io/crates/enumn
+Version: 0.1.14
+Revision: 06b55bc0990679958d92baec545a6cd79c6e4fa7
+License: Apache-2.0
+License File: //external/vendor/enumn-0.1.14/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Convert number to enum

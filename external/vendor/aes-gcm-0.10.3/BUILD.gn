@@ -1,0 +1,42 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("aes_gcm") {
+  epoch = "0.10"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/aes-gcm-0.10.3/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  deps = [
+    "//external/vendor/aead-0.5.2:aead",
+    "//external/vendor/aes-0.8.4:aes",
+    "//external/vendor/cipher-0.4.4:cipher",
+    "//external/vendor/ctr-0.9.2:ctr",
+    "//external/vendor/ghash-0.5.1:ghash",
+    "//external/vendor/subtle-2.6.1:subtle",
+  ]
+  features = [ "aes" ]
+
+  cargo_pkg_name = "aes-gcm"
+  cargo_pkg_version = "0.10.3"
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

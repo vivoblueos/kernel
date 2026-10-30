@@ -1,0 +1,23 @@
+[package]
+name = "aarch64-cpu"
+version = "11.2.0"
+authors = ["Andre Richter <andre.o.richter@gmail.com>"]
+description = "Low level access to processors using the AArch64 execution state"
+homepage = "https://github.com/rust-embedded/aarch64-cpu"
+repository = "https://github.com/rust-embedded/aarch64-cpu"
+readme = "README.md"
+keywords = ["arm", "aarch64", "cpu", "register"]
+categories = ["embedded", "hardware-support", "no-std"]
+license = "MIT/Apache-2.0"
+edition = "2018"
+exclude = [
+    ".github",
+    ".gitignore",
+    ".rustfmt.toml",
+    ".vscode",
+    ".editorconfig",
+    "Makefile",
+]
+
+[dependencies]
+tock-registers = { version = "0.10.0", default-features = false } # Use it as interface-only library.

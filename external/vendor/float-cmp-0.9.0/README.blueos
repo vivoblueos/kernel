@@ -1,0 +1,10 @@
+Name: float-cmp
+URL: https://crates.io/crates/float-cmp
+Version: 0.9.0
+Revision: 4844daf1ad47c9363a96ba8954d3c30d6a008591
+License: MIT
+License File: //external/vendor/float-cmp-0.9.0/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Floating point approximate comparison traits

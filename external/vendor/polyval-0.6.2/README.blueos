@@ -1,0 +1,12 @@
+Name: polyval
+URL: https://crates.io/crates/polyval
+Version: 0.6.2
+Revision: 4e7d04f7c8e44f634ada8c673c8cb1672a64d374
+License: Apache-2.0
+License File: //external/vendor/polyval-0.6.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: POLYVAL is a GHASH-like universal hash over GF(2^128) useful for constructing
+a Message Authentication Code (MAC)
+

@@ -1,0 +1,5 @@
+error: `#[should_error]` is not allowed on the `#[teardown]` function
+ --> tests/ui/teardown-has-should-error-macro.rs:7:8
+  |
+7 |     fn teardown() {}
+  |        ^^^^^^^^

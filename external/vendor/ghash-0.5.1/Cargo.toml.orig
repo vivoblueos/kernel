@@ -1,0 +1,29 @@
+[package]
+name = "ghash"
+version = "0.5.1"
+authors = ["RustCrypto Developers"]
+license = "Apache-2.0 OR MIT"
+description = """
+Universal hash over GF(2^128) useful for constructing a Message Authentication Code (MAC),
+as in the AES-GCM authenticated encryption cipher.
+"""
+documentation = "https://docs.rs/ghash"
+repository = "https://github.com/RustCrypto/universal-hashes"
+readme = "README.md"
+keywords = ["aes-gcm", "crypto", "universal-hashing"]
+categories = ["cryptography", "no-std"]
+rust-version = "1.56"
+edition = "2021"
+
+[dependencies]
+opaque-debug = "0.3"
+polyval = { version = "0.6.2", path = "../polyval" }
+
+# optional dependencies
+zeroize = { version = "1", optional = true, default-features = false }
+
+[dev-dependencies]
+hex-literal = "0.3"
+
+[features]
+std = ["polyval/std"]

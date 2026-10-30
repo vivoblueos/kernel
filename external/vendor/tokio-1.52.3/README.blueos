@@ -1,0 +1,12 @@
+Name: tokio
+URL: https://crates.io/crates/tokio
+Version: 1.52.3
+Revision: d87569164fb61145e79e7ffe0b25783569cc8f93
+License: MIT
+License File: //external/vendor/tokio-1.52.3/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: An event-driven, non-blocking I/O platform for writing asynchronous I/O
+backed applications.
+

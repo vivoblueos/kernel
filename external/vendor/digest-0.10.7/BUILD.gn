@@ -1,0 +1,44 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("digest") {
+  epoch = "0.10"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/digest-0.10.7/src/lib.rs" ]
+  inputs = []
+  edition = "2018"
+  deps = [
+    "//external/vendor/block-buffer-0.10.4:block_buffer",
+    "//external/vendor/crypto-common-0.1.7:crypto_common",
+    "//external/vendor/subtle-2.6.1:subtle",
+  ]
+  features = [
+    "block-buffer",
+    "core-api",
+    "mac",
+    "subtle",
+  ]
+
+  cargo_pkg_name = "digest"
+  cargo_pkg_version = "0.10.7"
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

@@ -1,0 +1,5 @@
+error: only a single `#[teardown]` function can be defined
+ --> tests/ui/teardown-duplicate.rs:9:8
+  |
+9 |     fn second() {}
+  |        ^^^^^^

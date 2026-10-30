@@ -1,0 +1,4 @@
+.project
+/target
+/Cargo.lock
+*.swp

@@ -1,0 +1,37 @@
+[package]
+name = "enumset"
+version = "1.1.13"
+authors = ["Alissa Rao <aura@aura.moe>"]
+edition = "2021"
+rust-version = "1.71"
+
+description = "A library for creating compact sets of enums."
+keywords = ["enum", "bitset", "flags", "bitflags"]
+categories = ["data-structures"]
+
+documentation = "https://docs.rs/enumset/"
+repository = "https://github.com/Lymia/enumset"
+readme = "README.md"
+
+license = "MIT/Apache-2.0"
+
+[badges]
+travis-ci = { repository = "Lymia/enumset", branch = "master" }
+maintenance = { status = "actively-developed" }
+
+[features]
+alloc = []
+proc-macro-crate = ["enumset_derive/proc-macro-crate"]
+
+# Deprecated features
+std = ["alloc", "enumset_derive/proc-macro-crate", "enumset_derive/std_deprecation_warning"]
+serde2 = ["enumset_derive/serde2_deprecation_warning"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+enumset_derive = { version = "0.15.0", path = "../enumset_derive" }
+defmt = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }

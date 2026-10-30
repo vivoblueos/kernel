@@ -1,0 +1,10 @@
+Name: sha1
+URL: https://crates.io/crates/sha1
+Version: 0.10.7
+Revision: 0b32162344ab2bbc3749889370927ae49137d4ae
+License: Apache-2.0
+License File: //external/vendor/sha1-0.10.7/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: SHA-1 hash function

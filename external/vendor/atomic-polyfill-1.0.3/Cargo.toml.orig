@@ -1,0 +1,18 @@
+[package]
+authors = ["Dario Nieuwenhuis <dirbaio@dirbaio.net>"]
+description = "Atomic polyfills, for targets where they're not available."
+edition = "2021"
+license = "MIT OR Apache-2.0"
+name = "atomic-polyfill"
+readme = "README.md"
+repository = "https://github.com/embassy-rs/atomic-polyfill"
+version = "1.0.3"
+
+categories = [
+  "embedded",
+  "no-std",
+  "concurrency",
+]
+
+[dependencies]
+critical-section = "1.0.0"

@@ -1,0 +1,5 @@
+error: parameter must be a mutable reference (`&mut $Type`)
+ --> tests/ui/after_each-has-immutable-param.rs:6:12
+  |
+6 |     fn say(name: &str) {
+  |            ^^^^

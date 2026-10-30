@@ -1,0 +1,32 @@
+[package]
+name = "riscv"
+version = "0.15.0"
+edition = "2021"
+rust-version = "1.67"
+repository = "https://github.com/rust-embedded/riscv"
+authors = ["The RISC-V Team <risc-v@teams.rust-embedded.org>"]
+categories = ["embedded", "hardware-support", "no-std"]
+description = "Low level access to RISC-V processors"
+documentation = "https://docs.rs/riscv"
+keywords = ["riscv", "register", "peripheral"]
+license = "ISC"
+
+[package.metadata.docs.rs]
+all-features = true
+default-target = "riscv64imac-unknown-none-elf"
+targets = [
+    "riscv32i-unknown-none-elf", "riscv32imc-unknown-none-elf", "riscv32imac-unknown-none-elf",
+    "riscv64imac-unknown-none-elf", "riscv64gc-unknown-none-elf",
+]
+
+[features]
+default = ["riscv-macros"]
+s-mode = []
+critical-section-single-hart = ["critical-section/restore-state-bool"]
+
+[dependencies]
+critical-section = "1.2.0"
+embedded-hal = "1.0.0"
+riscv-pac = { path = "../riscv-pac", version = "0.2.0" }
+riscv-macros = { path = "macros", version = "0.3.0", optional = true }
+paste = "1.0.15"

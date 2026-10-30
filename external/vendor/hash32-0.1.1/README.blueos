@@ -1,0 +1,10 @@
+Name: hash32
+URL: https://crates.io/crates/hash32
+Version: 0.1.1
+Revision: 718182c763db68626a60758c2cabb67e6769e11f
+License: Apache-2.0
+License File: //external/vendor/hash32-0.1.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: 32-bit hashing machinery

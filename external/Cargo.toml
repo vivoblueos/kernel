@@ -1,0 +1,165 @@
+[package]
+name = "bluekernel_crates_io"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arm-gic = "0.4.0"
+bitflags = "2.9.0"
+cfg-if = "1.0.0"
+cortex-m = "0.7.7"
+delegate = "0.13.3"
+embedded-graphics = "0.8.2"
+embedded-io = "0.6.1"
+embedded-hal = "1.0.0"
+embedded-hal-bus = "0.3.0"
+mipidsi = "0.10.0"
+flat_device_tree = "3.1.1"
+heapless = "0.8.0"
+log = "0.4.22"
+memchr = "2.7.4"
+minicov = "0.3.7"
+paste = "1.0.15"
+quote = "1.0.37"
+spin = "0.9.8"
+syn = "2.0.87"
+safe-mmio = "0.2.5"
+tock-registers = "0.9.0"
+virtio-drivers = "0.11.0"
+zerocopy = "0.8.25"
+defmt-rtt = "1.0.0"
+defmt-test = "0.4.0"
+bme280 = "0.5.1"
+embedded-tls = "0.16.3"
+ft6336u-driver = "1.0.0"
+max7219 = "0.5.0"
+aarch64-cpu = "11.2.0"
+
+[dependencies.embedded-websocket]
+version = "0.9.5"
+default-feature = false
+
+[dependencies.esp-radio]
+version = "0.18.0"
+
+[dependencies.esp-sync]
+version = "0.2.1"
+
+[dependencies.esp-metadata-generated]
+version = "0.4.0"
+
+[dependencies.esp-wifi-sys-esp32c3]
+version = "0.2.0"
+
+# C6 WiFi/Bluetooth low-level driver FFI bindings (the C6 counterpart of C3's
+# esp-wifi-sys-esp32c3). Version 0.2.0 cross-verified against both
+# esp-phy-0.2.0/Cargo.toml and esp-radio-0.18.0/Cargo.toml.
+[dependencies.esp-wifi-sys-esp32c6]
+version = "0.2.0"
+
+[dependencies.esp32c3]
+version = "0.32"
+features = ["critical-section"]
+
+# C6 PAC (the C6 counterpart of C3's esp32c3 0.32). Version 0.23 verified against
+# the esp-phy/esp-radio Cargo.toml. The critical-section feature is aligned with
+# C3 (esp-hal relies on it for cross-core critical sections).
+[dependencies.esp32c6]
+version = "0.23"
+features = ["critical-section"]
+
+[dependencies.esp-radio-rtos-driver]
+version = "0.3.0"
+
+[dependencies.const-default]
+version = "1.0.0"
+default-features = false
+
+[dependencies.proc-macro2]
+version = "1.0.89"
+features = ["default", "proc-macro"]
+
+[dependencies.smoltcp]
+version = "0.12.0"
+default-features = false
+features = [
+    "_proto-fragmentation",
+    "alloc",
+    "async",
+    "medium-ethernet",
+    "medium-ieee802154",
+    "medium-ip",
+    "multicast",
+    "packetmeta-id",
+    "proto-dhcpv4",
+    "proto-dns",
+    "proto-ipv4",
+    "proto-ipv4-fragmentation",
+    "proto-ipv6",
+    "proto-sixlowpan",
+    "proto-sixlowpan-fragmentation",
+    "socket",
+    "socket-dhcpv4",
+    "socket-dns",
+    "socket-icmp",
+    "socket-mdns",
+    "socket-raw",
+    "socket-tcp",
+    "socket-udp",
+]
+
+[dependencies.semihosting]
+version = "0.1.20"
+features = [
+    "alloc",
+    "fs",
+    "stdio",
+]
+
+[dependencies.managed]
+version = "0.8.0"
+default-features = false
+features = [
+    "alloc",
+    "map",
+]
+
+[dependencies.byteorder]
+version = "1.5.0"
+default-features = false
+
+[patch.crates-io]
+thiserror = { path = "./thiserror-2.0.17" } 
+
+[dependencies.goblin]
+version = "0.9.3"
+default-features = false
+features = [
+    "alloc",
+    "log",
+    "archive",
+    "elf32",
+    "elf64",
+    "endian_fd",
+]
+
+[dependencies.phf]
+version = "0.12.1"
+default-features = false
+features = [
+    "macros",
+    "phf_macros",
+]
+
+[dependencies.gd32e5]
+version = "0.9.1"
+features = [
+    "gd32e507",
+]
+
+[dependencies.unwinding]
+version = "=0.2.4"
+default-features = false
+features = [
+    "unwinder"
+]

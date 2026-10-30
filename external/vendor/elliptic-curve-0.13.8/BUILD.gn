@@ -1,0 +1,55 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("elliptic_curve") {
+  epoch = "0.13"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/elliptic-curve-0.13.8/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  deps = [
+    "//external/vendor/base16ct-0.2.0:base16ct",
+    "//external/vendor/crypto-bigint-0.5.5:crypto_bigint",
+    "//external/vendor/digest-0.10.7:digest",
+    "//external/vendor/ff-0.13.1:ff",
+    "//external/vendor/generic-array-0.14.7:generic_array",
+    "//external/vendor/group-0.13.0:group",
+    "//external/vendor/hkdf-0.12.4:hkdf",
+    "//external/vendor/rand_core-0.6.4:rand_core",
+    "//external/vendor/sec1-0.7.3:sec1",
+    "//external/vendor/subtle-2.6.1:subtle",
+    "//external/vendor/zeroize-1.9.0:zeroize",
+  ]
+  features = [
+    "arithmetic",
+    "digest",
+    "ecdh",
+    "ff",
+    "group",
+    "hazmat",
+    "sec1",
+  ]
+
+  cargo_pkg_name = "elliptic-curve"
+  cargo_pkg_version = "0.13.8"
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

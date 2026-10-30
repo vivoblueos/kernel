@@ -1,0 +1,10 @@
+Name: esp-rom-sys
+URL: https://crates.io/crates/esp-rom-sys
+Version: 0.1.4
+Revision: 2ce5ce1487a3d4dcb7ec18177c9108b648cc5d1e
+License: Apache-2.0
+License File: //external/vendor/esp-rom-sys-0.1.4/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: ROM code support

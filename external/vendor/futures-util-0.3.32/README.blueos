@@ -1,0 +1,11 @@
+Name: futures-util
+URL: https://crates.io/crates/futures-util
+Version: 0.3.32
+Revision: d9bba94c239daa1175a5bb2958f37a5c72db3f6a
+License: Apache-2.0
+License File: //external/vendor/futures-util-0.3.32/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Common utilities and extension traits for the futures-rs library.
+

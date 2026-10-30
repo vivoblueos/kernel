@@ -1,0 +1,5 @@
+error: no state was initialized by `#[init]`; signature must be `fn()`
+  --> tests/ui/teardown-has-non-empty-signature.rs:11:8
+   |
+11 |     fn teardown(arg: &mut u8) {
+   |        ^^^^^^^^

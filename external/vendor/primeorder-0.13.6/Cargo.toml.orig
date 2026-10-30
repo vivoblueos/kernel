@@ -1,0 +1,34 @@
+[package]
+name = "primeorder"
+version = "0.13.6"
+description = """
+Pure Rust implementation of complete addition formulas for prime order elliptic
+curves (Renes-Costello-Batina 2015). Generic over field elements and curve
+equation coefficients
+"""
+authors = ["RustCrypto Developers"]
+license = "Apache-2.0 OR MIT"
+documentation = "https://docs.rs/primeorder"
+repository = "https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder"
+readme = "README.md"
+categories = ["cryptography", "no-std"]
+keywords = ["crypto", "ecc"]
+edition = "2021"
+rust-version = "1.65"
+
+[dependencies]
+elliptic-curve = { version = "0.13.7", default-features = false, features = ["arithmetic", "sec1"] }
+
+# optional dependencies
+serdect = { version = "0.2", optional = true, default-features = false }
+
+[features]
+alloc = ["elliptic-curve/alloc"]
+std = ["alloc", "elliptic-curve/std"]
+
+dev = []
+serde = ["elliptic-curve/serde", "serdect"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

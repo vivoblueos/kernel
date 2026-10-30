@@ -1,0 +1,11 @@
+Name: same-file
+URL: https://crates.io/crates/same-file
+Version: 1.0.6
+Revision: 5799cd323b8eefd17a089c950dac113f66c89c9e
+License: MIT
+License File: //external/vendor/same-file-1.0.6/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: A simple crate for determining whether two file paths point to the same file.
+

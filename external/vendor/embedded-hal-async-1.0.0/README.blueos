@@ -1,0 +1,10 @@
+Name: embedded-hal-async
+URL: https://crates.io/crates/embedded-hal-async
+Version: 1.0.0
+Revision: f8c79fee1df1900ee59e90160729edfa16a99b63
+License: Apache-2.0
+License File: //external/vendor/embedded-hal-async-1.0.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: An asynchronous Hardware Abstraction Layer (HAL) for embedded systems

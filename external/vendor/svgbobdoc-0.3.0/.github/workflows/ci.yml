@@ -1,0 +1,47 @@
+on: [push, pull_request]
+
+name: CI
+
+jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-20.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v2
+      # - uses: actions-rs/toolchain@v1
+      # "Fully support modern toolchain file #166"
+      # <https://github.com/actions-rs/toolchain/pull/166>
+      - uses: codota/toolchain@00a8bf2bdcfe93aefd70422d3dec07337959d3a4
+        with:
+          profile: minimal
+          components: clippy
+      - name: cargo clippy
+        uses: actions-rs/clippy-check@v1.0.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: -p svgbobdoc --all-features
+
+  test:
+    name: Test
+    runs-on: ubuntu-20.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v2
+      # - uses: actions-rs/toolchain@v1
+      # "Fully support modern toolchain file #166"
+      # <https://github.com/actions-rs/toolchain/pull/166>
+      - uses: codota/toolchain@00a8bf2bdcfe93aefd70422d3dec07337959d3a4
+        with:
+          profile: minimal
+          components: clippy
+      - name: cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p svgbobdoc
+      - name: cargo test with `enable`
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p svgbobdoc --features enable

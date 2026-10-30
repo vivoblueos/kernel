@@ -1,0 +1,10 @@
+Name: embedded-hal
+URL: https://crates.io/crates/embedded-hal
+Version: 1.0.0
+Revision: f8c79fee1df1900ee59e90160729edfa16a99b63
+License: Apache-2.0
+License File: //external/vendor/embedded-hal-1.0.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description:  A Hardware Abstraction Layer (HAL) for embedded systems 

@@ -1,0 +1,31 @@
+[package]
+name = "bme280"
+version = "0.5.1"
+authors = ["Sean Bruton <sean@uberfoo.net>"]
+description = "A rust device driver for the Bosch BME280 temperature, humidity, and atmospheric pressure sensor and the Bosch BMP280 temperature, and atmospheric pressure sensor"
+repository = "https://github.com/VersBinarii/bme280-rs"
+license = "MIT OR Apache-2.0"
+keywords = ["bme280", "bmp280", "temperature", "pressure", "humidity"]
+categories = ["embedded", "no-std", "hardware-support", "embedded-hal"]
+edition = "2018"
+
+[lib]
+name = "bme280"
+
+[dependencies]
+embedded-hal = "1.0.0"
+serde = { version = "1.0", optional = true, features = ["derive"] }
+defmt = { version = "0.3.5", optional = true }
+derive_more = { version = "0.99.17", optional = true}
+embedded-hal-async = { version = "1.0.0", optional = true }
+maybe-async-cfg = "0.2.3"
+
+[features]
+default = ["sync"]
+with_defmt = ["defmt"]
+with_std = ["derive_more"]
+sync = []
+async = ["embedded-hal-async"]
+
+[[example]]
+name = "rtic"

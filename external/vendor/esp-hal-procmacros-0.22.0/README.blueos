@@ -1,0 +1,10 @@
+Name: esp-hal-procmacros
+URL: https://crates.io/crates/esp-hal-procmacros
+Version: 0.22.0
+Revision: 2ce5ce1487a3d4dcb7ec18177c9108b648cc5d1e
+License: Apache-2.0
+License File: //external/vendor/esp-hal-procmacros-0.22.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Procedural macros for esp-hal

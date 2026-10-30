@@ -1,0 +1,10 @@
+Name: rlsf
+URL: https://crates.io/crates/rlsf
+Version: 0.2.2
+Revision: 241794d3e22f1711dcc0415c80f7ece79f586a75
+License: Apache-2.0
+License File: //external/vendor/rlsf-0.2.2/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Real-time dynamic memory allocator based on the TLSF algorithm

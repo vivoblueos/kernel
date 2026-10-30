@@ -1,0 +1,13 @@
+Name: aes-gcm
+URL: https://crates.io/crates/aes-gcm
+Version: 0.10.3
+Revision: fa8197f11d79a079fcb1f6ef67fa9119ce6939b9
+License: Apache-2.0
+License File: //external/vendor/aes-gcm-0.10.3/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Pure Rust implementation of the AES-GCM (Galois/Counter Mode)
+Authenticated Encryption with Associated Data (AEAD) Cipher
+with optional architecture-specific hardware acceleration
+

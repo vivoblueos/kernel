@@ -1,0 +1,10 @@
+Name: enumset
+URL: https://crates.io/crates/enumset
+Version: 1.1.13
+Revision: 3ccc5704ec01c3d269852045577511ac21b06ff4
+License: Apache-2.0
+License File: //external/vendor/enumset-1.1.13/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A library for creating compact sets of enums.

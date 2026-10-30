@@ -1,0 +1,10 @@
+Name: az
+URL: https://crates.io/crates/az
+Version: 1.2.1
+Revision: defb12cccc0a806721fdd091eb724d7227d6b480
+License: Apache-2.0
+License File: //external/vendor/az-1.2.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Casts and checked casts

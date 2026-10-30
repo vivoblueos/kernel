@@ -1,0 +1,55 @@
+[package]
+name = "manyhow"
+version = "0.11.4"
+edition = "2021"
+categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
+description = "proc macro error handling à la anyhow x proc-macro-error"
+keywords = ["proc-macro", "error", "error-handling"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/ModProg/manyhow"
+documentation = "https://docs.rs/manyhow"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = [ "macros", ".", "examples/macro", "examples/no_macro" ]
+
+[dependencies]
+macros = { package = "manyhow-macros", path = "macros", version = "0.11.4", optional = true}
+proc-macro2 = "1.0.60"
+quote = "1"
+syn1 = { package = "syn", version = "1", default-features = false, optional = true, features = ["printing"] }
+syn2 = { package = "syn", version = "2", default-features = false, optional = true, features = ["printing", "parsing"] }
+darling_core = { version = "0.20.1", optional = true }
+
+[features]
+default = ["syn", "macros"]
+syn = ["syn2"]
+darling = ["darling_core"]
+
+[dev-dependencies]
+proc-macro-utils = "0.8.0"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn2 = {package = "syn", version = "2", features = ["full"]}
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '## \[Unreleased\]'
+replace = """
+<!-- ## [Unreleased] -->
+## [{{version}}] - {{date}}\
+"""
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '\[unreleased\]: (.*)/(v.*)\.\.\.HEAD'
+replace = """
+[unreleased]: $1/{{tag_name}}...HEAD
+[{{version}}]: $1/$2...{{tag_name}}\
+"""

@@ -1,0 +1,25 @@
+[package]
+name = "arm-gic"
+version = "0.4.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A driver for the Arm Generic Interrupt Controller version 2, 3 or 4."
+authors = [
+  "Andrew Walbran <qwandor@google.com>",
+  "Fritz Stracke <fritz.stracke@rwth-aachen.de>",
+]
+repository = "https://github.com/google/arm-gic"
+keywords = ["arm", "aarch64", "driver", "gic", "interrupt-controller"]
+categories = ["embedded", "no-std", "hardware-support"]
+
+[dependencies]
+bitflags = "2.9.0"
+safe-mmio = "0.2.5"
+thiserror = { version = "2.0.12", default-features = false }
+zerocopy = { version = "0.8.24", features = ["derive"] }
+
+[features]
+fakes = []
+
+[package.metadata.docs.rs]
+default-target = "aarch64-unknown-none"

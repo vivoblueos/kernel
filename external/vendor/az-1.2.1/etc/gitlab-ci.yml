@@ -1,0 +1,101 @@
+# Copyright © 2019–2021 Trevor Spiteri
+
+# Copying and distribution of this file, with or without modification,
+# are permitted in any medium without royalty provided the copyright
+# notice and this notice are preserved. This file is offered as-is,
+# without any warranty.
+
+x86_64-gnulinux:
+  image: amd64/rust:1
+  variables:
+    TARGET: x86_64
+  script:
+  - rustup self update
+  - rustup toolchain install --profile minimal {beta,stable,nightly,1.31.1}-$TARGET
+  - rustup component add --toolchain beta-$TARGET rustfmt clippy
+  - cargo +beta-$TARGET clippy --all-targets --features fail-on-warnings
+  - cargo +beta-$TARGET test --features fail-on-warnings
+  - cargo +beta-$TARGET test --release --features fail-on-warnings
+  - cargo +beta-$TARGET fmt -- --check
+  - cargo +stable-$TARGET test --features fail-on-warnings
+  - cargo +stable-$TARGET test --release --features fail-on-warnings
+  - cargo +nightly-$TARGET test --features fail-on-warnings
+  - cargo +nightly-$TARGET test --release --features fail-on-warnings
+  - cargo +1.31.1-$TARGET test --features fail-on-warnings
+  - cargo +1.31.1-$TARGET test --release --features fail-on-warnings
+
+i686-gnulinux:
+  image: i386/rust:1
+  variables:
+    TARGET: i686
+  script:
+  - rustup self update
+  - rustup toolchain install --profile minimal {beta,stable,nightly,1.31.1}-$TARGET
+  - rustup component add --toolchain beta-$TARGET rustfmt clippy
+  - cargo +beta-$TARGET clippy --all-targets --features fail-on-warnings
+  - cargo +beta-$TARGET test --features fail-on-warnings
+  - cargo +beta-$TARGET test --release --features fail-on-warnings
+  - cargo +beta-$TARGET fmt -- --check
+  - cargo +stable-$TARGET test --features fail-on-warnings
+  - cargo +stable-$TARGET test --release --features fail-on-warnings
+  - cargo +nightly-$TARGET test --features fail-on-warnings
+  - cargo +nightly-$TARGET test --release --features fail-on-warnings
+  - cargo +1.31.1-$TARGET test --features fail-on-warnings
+  - cargo +1.31.1-$TARGET test --release --features fail-on-warnings
+
+x86_64-gnulinux-tarpaulin:
+  image: amd64/rust:1
+  variables:
+    TOOLCHAIN: stable-x86_64
+    REQ_COVERAGE: "100"
+  cache:
+    key: $CI_JOB_NAME
+    paths:
+    - cargo/
+  before_script:
+  - rustup self update
+  - rustup toolchain install --profile minimal $TOOLCHAIN
+  - if [ -d cargo/registry/cache ]; then rm -rf $CARGO_HOME/registry/cache; mkdir -p $CARGO_HOME/registry; cp -R cargo/registry/cache $CARGO_HOME/registry/; echo Copied registry/cache; fi
+  - if [ -d $CARGO_HOME/registry/src ]; then rm -r $CARGO_HOME/registry/src; fi
+  - if [ -d $CARGO_HOME/registry/cache ]; then (cd $CARGO_HOME/registry; find cache -name \*.crate | sort) fi
+  after_script:
+  - if [ -d $CARGO_HOME/registry/cache ]; then (cd $CARGO_HOME/registry; for c in cache/*/*.crate; do s=src/${c#cache/}; if [ ! -e ${s%.crate} ]; then rm -v $c; fi; done; find cache -name \*.crate | sort) fi
+  - rm -rf cargo
+  - mkdir -p cargo/registry
+  - if [ -d $CARGO_HOME/registry/cache ]; then cp -R $CARGO_HOME/registry/cache cargo/registry/; echo Updated registry/cache; fi
+  script:
+  - cargo +$TOOLCHAIN install --version 0.20.1 --locked cargo-tarpaulin
+  - stdbuf -oL cargo +$TOOLCHAIN tarpaulin -v --ignore-tests | tee tarpaulin.log
+  - echo "Check that coverage not less than $REQ_COVERAGE%"
+  - tail -1 tarpaulin.log | awk '{ if ($1 < '$REQ_COVERAGE') { exit 1 } }'
+
+pages:
+  image: amd64/rust:1
+  variables:
+    TOOLCHAIN: nightly-x86_64
+  cache:
+    key: $CI_JOB_NAME
+    paths:
+    - cargo/
+  before_script:
+  - rustup self update
+  - rustup toolchain install --profile minimal $TOOLCHAIN
+  - if [ -d cargo/registry/cache ]; then rm -rf $CARGO_HOME/registry/cache; mkdir -p $CARGO_HOME/registry; cp -R cargo/registry/cache $CARGO_HOME/registry/; echo Copied registry/cache; fi
+  - if [ -d $CARGO_HOME/registry/src ]; then rm -r $CARGO_HOME/registry/src; fi
+  - if [ -d $CARGO_HOME/registry/cache ]; then (cd $CARGO_HOME/registry; find cache -name \*.crate | sort) fi
+  after_script:
+  - if [ -d $CARGO_HOME/registry/cache ]; then (cd $CARGO_HOME/registry; for c in cache/*/*.crate; do s=src/${c#cache/}; if [ ! -e ${s%.crate} ]; then rm -v $c; fi; done; find cache -name \*.crate | sort) fi
+  - rm -rf cargo
+  - mkdir -p cargo/registry
+  - if [ -d $CARGO_HOME/registry/cache ]; then cp -R $CARGO_HOME/registry/cache cargo/registry/; echo Updated registry/cache; fi
+  script:
+  - rm -rf public
+  - mkdir public
+  - cp etc/index.html public
+  - cargo +$TOOLCHAIN doc
+  - mv target/doc public/dev
+  artifacts:
+    paths:
+    - public
+  only:
+  - master

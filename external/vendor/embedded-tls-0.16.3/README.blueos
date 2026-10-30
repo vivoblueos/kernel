@@ -1,0 +1,10 @@
+Name: embedded-tls
+URL: https://crates.io/crates/embedded-tls
+Version: 0.16.3
+Revision: 66e9093217bd5a6d9548482f9efe848f88b8814c
+License: Apache-2.0
+License File: //external/vendor/embedded-tls-0.16.3/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: TLS 1.3 client with no_std support and no allocator

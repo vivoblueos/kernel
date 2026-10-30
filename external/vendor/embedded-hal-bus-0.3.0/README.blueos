@@ -1,0 +1,10 @@
+Name: embedded-hal-bus
+URL: https://crates.io/crates/embedded-hal-bus
+Version: 0.3.0
+Revision: 055a619547431494a3e59219b2689536160222b3
+License: Apache-2.0
+License File: //external/vendor/embedded-hal-bus-0.3.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Bus/Device connection mechanisms for embedded-hal, a Hardware Abstraction Layer (HAL) for embedded systems

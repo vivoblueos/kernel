@@ -1,0 +1,23 @@
+[package]
+name        = "esp-wifi-sys-esp32c6"
+version     = "0.2.0"
+edition     = "2021"
+description = "Bindings to Espressif's WiFi and Bluetooth low-level drivers for ESP32-C6"
+repository  = "https://github.com/esp-rs/esp-wifi-sys"
+license     = "MIT OR Apache-2.0"
+
+keywords   = ["bluetooth", "esp", "no-std", "wifi"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[dependencies]
+log   = { version = "0.4.25", optional = true }
+defmt = { version = "1.0.1", optional = true }
+
+[features]
+default = []
+
+# Enable log output from binary blobs - requires nightly
+sys-logs = []
+
+[package.metadata.docs.rs]
+features = []

@@ -1,0 +1,10 @@
+Name: bme280
+URL: https://crates.io/crates/bme280
+Version: 0.5.1
+Revision: 4a15261b3df2819b30243a178b8cf2c514608ccf
+License: Apache-2.0
+License File: //external/vendor/bme280-0.5.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A rust device driver for the Bosch BME280 temperature, humidity, and atmospheric pressure sensor and the Bosch BMP280 temperature, and atmospheric pressure sensor

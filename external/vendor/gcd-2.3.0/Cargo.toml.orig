@@ -1,0 +1,22 @@
+[package]
+name = "gcd"
+version = "2.3.0"
+authors = ["Corey Farwell <coreyf@rwell.org>"]
+description = "Calculate the greatest common divisor"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/frewsxcv/rust-gcd"
+documentation = "https://docs.rs/gcd/"
+categories = ["algorithms"]
+edition = "2021"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.7"
+rand_chacha = "0.2"
+
+[[bench]]
+name = "gcd_benchmark"
+harness = false

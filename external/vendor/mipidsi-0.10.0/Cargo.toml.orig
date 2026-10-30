@@ -1,0 +1,32 @@
+[package]
+name = "mipidsi"
+description = "MIPI Display Command Set compatible generic driver"
+version = "0.10.0"
+authors = ["Ales Katona <almindor@gmail.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/almindor/mipidsi"
+keywords = ["embedded-hal-driver", "mipi", "dcs", "display"]
+readme = "README.md"
+documentation = "https://docs.rs/mipidsi"
+rust-version = "1.75"
+
+[dependencies]
+defmt = { version = "1.0.1", optional = true }
+embedded-graphics-core = "0.4.1"
+embedded-hal = "1.0.0"
+
+[dependencies.heapless]
+optional = true
+version = "0.8.0"
+
+[dev-dependencies]
+embedded-graphics = "0.8.2"
+
+[features]
+default = ["batch"]
+batch = ["heapless"]
+defmt = ["dep:defmt", "embedded-hal/defmt-03"]
+
+[workspace]
+members = ["mipidsi-async"]

@@ -1,0 +1,24 @@
+[package]
+authors = ["The Knurling-rs developers"]
+description = "Parsing library for defmt format strings"
+edition = "2021"
+keywords = ["knurling", "defmt"]
+license = "MIT OR Apache-2.0"
+name = "defmt-parser"
+readme = "README.md"
+repository = "https://github.com/knurling-rs/defmt"
+version = "1.0.0"
+
+[dependencies]
+thiserror = "2"
+default-features = false
+
+[dev-dependencies]
+rstest = { version = "0.19", default-features = false }
+
+[features]
+# DEPRECATED: noop, will be removed in 1.0
+unstable = []
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--cfg=docsrs" ]

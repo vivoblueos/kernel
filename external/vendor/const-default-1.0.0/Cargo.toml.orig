@@ -1,0 +1,33 @@
+[package]
+name = "const-default"
+version = "1.0.0"
+edition = "2018"
+authors = ["AerialX"]
+
+categories = ["no-std"]
+
+description = "A const Default trait"
+documentation = "https://docs.rs/const-default"
+repository = "https://github.com/AerialX/const-default.rs"
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+const-default-derive = { path = "derive", version = "0.2.0", optional = true }
+
+[features]
+default = ["enable-atomics"]
+std = ["alloc"]
+alloc = []
+derive = ["const-default-derive"]
+unstable = []
+unstable-docs = []
+enable-atomics = []
+
+[package.metadata.docs.rs]
+all-features = true
+
+[workspace]
+members = [
+	"derive",
+]

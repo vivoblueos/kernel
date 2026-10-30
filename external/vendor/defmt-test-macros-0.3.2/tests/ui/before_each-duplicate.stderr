@@ -1,0 +1,5 @@
+error: only a single `#[before_each]` function can be defined
+ --> tests/ui/before_each-duplicate.rs:9:8
+  |
+9 |     fn second() {}
+  |        ^^^^^^

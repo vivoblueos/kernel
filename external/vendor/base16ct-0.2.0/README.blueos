@@ -1,0 +1,13 @@
+Name: base16ct
+URL: https://crates.io/crates/base16ct
+Version: 0.2.0
+Revision: 1987929403b544d4632121aacff3d28aa09a0771
+License: Apache-2.0
+License File: //external/vendor/base16ct-0.2.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Pure Rust implementation of Base16 a.k.a hexadecimal (RFC 4648) which avoids
+any usages of data-dependent branches/LUTs and thereby provides portable
+"best effort" constant-time operation and embedded-friendly no_std support
+

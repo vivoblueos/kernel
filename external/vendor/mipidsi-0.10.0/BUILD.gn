@@ -1,0 +1,42 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("mipidsi") {
+  epoch = "0.10"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/mipidsi-0.10.0/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  deps = [
+    "//external/vendor/embedded-graphics-core-0.4.1:embedded_graphics_core",
+    "//external/vendor/embedded-hal-1.0.0:embedded_hal",
+    "//external/vendor/heapless-0.8.0:heapless",
+  ]
+  features = [
+    "batch",
+    "heapless",
+  ]
+
+  cargo_pkg_name = "mipidsi"
+  cargo_pkg_version = "0.10.0"
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

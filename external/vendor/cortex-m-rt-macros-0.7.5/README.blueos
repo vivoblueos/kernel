@@ -1,0 +1,10 @@
+Name: cortex-m-rt-macros
+URL: https://crates.io/crates/cortex-m-rt-macros
+Version: 0.7.5
+Revision: 91772718fec2e07b0ccabeb019e509a53d3eecda
+License: Apache-2.0
+License File: //external/vendor/cortex-m-rt-macros-0.7.5/../../LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Attributes re-exported in `cortex-m-rt`

@@ -1,0 +1,5 @@
+error: `#[before_each]` function must have signature `fn()` or `fn(state: &mut T)`
+ --> tests/ui/before_each-has-invalid-function-signature.rs:6:8
+  |
+6 |     fn hello(a: i32, b: i32) -> i32 {
+  |        ^^^^^

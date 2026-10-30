@@ -1,0 +1,17 @@
+[package]
+authors = ["The Knurling-rs developers"]
+categories = ["embedded", "no-std"]
+description = "A test harness for embedded devices"
+edition = "2021"
+keywords = ["knurling", "defmt", "testing"]
+license = "MIT OR Apache-2.0"
+name = "defmt-test"
+readme = "README.md"
+repository = "https://github.com/knurling-rs/defmt"
+version = "0.4.0"
+
+[dependencies]
+cortex-m-rt = "0.7"
+cortex-m-semihosting = "0.5"
+defmt = { version = "1", path = "../../defmt" }
+defmt-test-macros = { version = "=0.3.2", path = "macros" }

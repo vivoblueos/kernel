@@ -1,0 +1,10 @@
+Name: defmt-macros
+URL: https://crates.io/crates/defmt-macros
+Version: 1.0.1
+Revision: 8459657ef6df5e6f3386512744110caef5f0612a
+License: Apache-2.0
+License File: //external/vendor/defmt-macros-1.0.1/LICENSE-APACHE,//external/vendor/defmt-macros-1.0.1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: defmt macros

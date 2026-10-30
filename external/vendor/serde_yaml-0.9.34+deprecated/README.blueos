@@ -1,0 +1,10 @@
+Name: serde_yaml
+URL: https://crates.io/crates/serde_yaml
+Version: 0.9.34+deprecated
+Revision: 2009506d33767dfc88e979d6bc0d53d09f941c94
+License: Apache-2.0
+License File: //external/vendor/serde_yaml-0.9.34+deprecated/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: YAML data format for Serde

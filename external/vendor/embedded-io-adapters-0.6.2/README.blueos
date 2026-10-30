@@ -1,0 +1,10 @@
+Name: embedded-io-adapters
+URL: https://crates.io/crates/embedded-io-adapters
+Version: 0.6.2
+Revision: bba7a6d4c0b01f574aef03742b41b47c0db28cca
+License: Apache-2.0
+License File: //external/vendor/embedded-io-adapters-0.6.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Adapters between the `embedded-io` traits and other I/O traits

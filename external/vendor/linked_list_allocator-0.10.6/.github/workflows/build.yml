@@ -1,0 +1,151 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - 'master'
+    tags:
+      - '*'
+  schedule:
+    - cron: '40 5 * * *'   # every day at 5:40
+  pull_request:
+
+env:
+  # disable incremental compilation.
+  #
+  # incremental compilation is useful as part of an edit-build-test-edit cycle,
+  # as it lets the compiler avoid recompiling code that hasn't changed. however,
+  # on CI, we're not making small edits; we're almost always building the entire
+  # project from scratch. thus, incremental compilation on CI actually
+  # introduces *additional* overhead to support making future builds
+  # faster...but no future builds will ever occur in any given CI environment.
+  #
+  # see https://matklad.github.io/2021/09/04/fast-rust-builds.html#ci-workflow
+  # for details.
+  CARGO_INCREMENTAL: 0
+  # allow more retries for network requests in cargo (downloading crates) and
+  # rustup (installing toolchains). this should help to reduce flaky CI failures
+  # from transient network timeouts or other issues.
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  # don't emit giant backtraces in the CI logs.
+  RUST_BACKTRACE: short
+
+jobs:
+  test:
+    name: "Test"
+
+    strategy:
+      matrix:
+        platform: [
+          ubuntu-latest,
+          macos-latest,
+          windows-latest
+        ]
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 15
+
+    steps:
+    - name: "Checkout Repository"
+      uses: actions/checkout@v1
+
+    - name: "Print Rust Version"
+      run: |
+        rustc -Vv
+        cargo -Vv
+
+    - name: "Run cargo build"
+      run: cargo build
+
+    - name: "Run cargo test"
+      run: cargo test
+
+    - name: 'Deny Warnings'
+      run: cargo rustc -- -D warnings
+
+  test-stable:
+    name: "Test stable without features"
+
+    strategy:
+      matrix:
+        platform: [
+            ubuntu-latest,
+            macos-latest,
+            windows-latest
+        ]
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 15
+
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v1
+
+      - name: "Print Rust Version"
+        run: |
+          rustc -Vv
+          cargo -Vv
+
+      - name: "Build without feature on stable"
+        run: cargo +stable build --no-default-features
+
+      - name: "Run cargo test without features on stable"
+        run: cargo +stable test --no-default-features
+
+      - name: "Build with `use_spin` feature on stable"
+        run: cargo +stable build --no-default-features --features use_spin
+
+      - name: "Run cargo test with `use_spin` feature on stable"
+        run: cargo +stable test --no-default-features --features use_spin
+
+  test-unstable:
+    name: "Test unstable features"
+
+    strategy:
+      matrix:
+        platform: [
+          ubuntu-latest,
+          macos-latest,
+          windows-latest
+        ]
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 15
+
+    steps:
+    - name: "Checkout Repository"
+      uses: actions/checkout@v1
+
+    - name: "Print Rust Version"
+      run: |
+        rustc -Vv
+        cargo -Vv
+
+    - name: "Build with `alloc_ref` feature"
+      run: cargo build --features alloc_ref
+
+    - name: "Run cargo test with `alloc_ref` feature"
+      run: cargo test --features alloc_ref
+
+    - name: "Run cargo test with `use_spin_nightly` feature"
+      run: cargo test --features use_spin_nightly
+
+  test_miri:
+    name: "Miri tests"
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-strict-provenance"
+    steps:
+    - uses: actions/checkout@v1
+    - run: rustup toolchain install nightly --profile minimal --component rust-src --component miri
+    - run: cargo +nightly miri test --all-features
+
+  check_formatting:
+    name: "Check Formatting"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+    - uses: actions/checkout@v1
+    - run: rustup toolchain install nightly --profile minimal --component rustfmt
+    - run: cargo +nightly fmt -- --check

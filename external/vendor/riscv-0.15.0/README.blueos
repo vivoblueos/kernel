@@ -1,0 +1,10 @@
+Name: riscv
+URL: https://crates.io/crates/riscv
+Version: 0.15.0
+Revision: 527f6e23946c090490f41dd9dda25c596ec58522
+License: ISC
+License File: //external/vendor/riscv-0.15.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Low level access to RISC-V processors

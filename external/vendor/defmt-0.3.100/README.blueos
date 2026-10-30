@@ -1,0 +1,10 @@
+Name: defmt
+URL: https://crates.io/crates/defmt
+Version: 0.3.100
+Revision: f6decae6e09d1216aff052aa0733a6b5e632a100
+License: Apache-2.0
+License File: //external/vendor/defmt-0.3.100/LICENSE-APACHE,//external/vendor/defmt-0.3.100/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: A highly efficient logging framework that targets resource-constrained devices, like microcontrollers

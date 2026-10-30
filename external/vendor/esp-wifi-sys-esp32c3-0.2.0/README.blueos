@@ -1,0 +1,10 @@
+Name: esp-wifi-sys-esp32c3
+URL: https://crates.io/crates/esp-wifi-sys-esp32c3
+Version: 0.2.0
+Revision: 1139b322c17c13231e0aac23ab4bc8c7ab6e5628
+License: Apache-2.0
+License File: //external/vendor/esp-wifi-sys-esp32c3-0.2.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Bindings to Espressif's WiFi and Bluetooth low-level drivers for ESP32-C3

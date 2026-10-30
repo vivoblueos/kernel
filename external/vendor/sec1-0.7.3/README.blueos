@@ -1,0 +1,13 @@
+Name: sec1
+URL: https://crates.io/crates/sec1
+Version: 0.7.3
+Revision: c07eecfb9565ae5268ae484f9d6f5e913959c301
+License: Apache-2.0
+License File: //external/vendor/sec1-0.7.3/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Pure Rust implementation of SEC1: Elliptic Curve Cryptography encoding formats
+including ASN.1 DER-serialized private keys as well as the
+Elliptic-Curve-Point-to-Octet-String encoding
+

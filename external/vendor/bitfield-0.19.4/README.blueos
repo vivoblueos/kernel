@@ -1,0 +1,10 @@
+Name: bitfield
+URL: https://crates.io/crates/bitfield
+Version: 0.19.4
+Revision: a459bcfd6f96a2d8e0cba02a69e3f4f9e7384938
+License: Apache-2.0
+License File: //external/vendor/bitfield-0.19.4/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: This crate provides macros to generate bitfield-like struct.

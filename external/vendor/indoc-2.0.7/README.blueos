@@ -1,0 +1,10 @@
+Name: indoc
+URL: https://crates.io/crates/indoc
+Version: 2.0.7
+Revision: 8d78216b3f127f523d198475ea44090f8f6894d5
+License: Apache-2.0
+License File: //external/vendor/indoc-2.0.7/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Indented document literals

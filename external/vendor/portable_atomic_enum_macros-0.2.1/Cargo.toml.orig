@@ -1,0 +1,19 @@
+[package]
+name = "portable_atomic_enum_macros"
+version = "0.2.1"
+authors = ["Thomas Bächler <thomas.baechler@gmx.de>", "Dániel Buga <bugadani@gmail.com>"]
+edition = "2021"
+
+description = "An attribute to create an portable atomic wrapper around a C-style enum"
+repository = "https://github.com/bugadani/portable_atomic_enum"
+keywords = ["atomic", "enum"]
+categories = ["concurrency"]
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0.38", features = ["full"] }
+quote = "1.0.20"
+proc-macro2 = "1.0.41"

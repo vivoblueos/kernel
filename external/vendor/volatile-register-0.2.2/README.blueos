@@ -1,0 +1,10 @@
+Name: volatile-register
+URL: https://crates.io/crates/volatile-register
+Version: 0.2.2
+Revision: 8cdedf8faa7c52f7b7b3e97db62b8a7863062348
+License: Apache-2.0
+License File: //external/vendor/volatile-register-0.2.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Volatile access to memory mapped hardware registers

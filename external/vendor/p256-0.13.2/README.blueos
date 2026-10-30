@@ -1,0 +1,13 @@
+Name: p256
+URL: https://crates.io/crates/p256
+Version: 0.13.2
+Revision: d21a81b2be325db940502fdc5299094b79b450f0
+License: Apache-2.0
+License File: //external/vendor/p256-0.13.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Pure Rust implementation of the NIST P-256 (a.k.a. secp256r1, prime256v1)
+elliptic curve as defined in SP 800-186, with support for ECDH, ECDSA
+signing/verification, and general purpose curve arithmetic
+

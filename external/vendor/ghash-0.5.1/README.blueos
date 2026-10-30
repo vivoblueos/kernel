@@ -1,0 +1,12 @@
+Name: ghash
+URL: https://crates.io/crates/ghash
+Version: 0.5.1
+Revision: 655c6cbef85b0faa7ff24c0686986cf2c27b2c6d
+License: Apache-2.0
+License File: //external/vendor/ghash-0.5.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Universal hash over GF(2^128) useful for constructing a Message Authentication Code (MAC),
+as in the AES-GCM authenticated encryption cipher.
+

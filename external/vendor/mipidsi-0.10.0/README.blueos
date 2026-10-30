@@ -1,0 +1,10 @@
+Name: mipidsi
+URL: https://crates.io/crates/mipidsi
+Version: 0.10.0
+Revision: ae7ec0fa7d838204431a340009c453568d933090
+License: MIT
+License File: //external/vendor/mipidsi-0.10.0/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: MIPI Display Command Set compatible generic driver

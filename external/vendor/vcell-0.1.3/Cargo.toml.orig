@@ -1,0 +1,12 @@
+[package]
+authors = ["Jorge Aparicio <japaricious@gmail.com>"]
+description = "`Cell` with volatile read / write operations"
+documentation = "https://docs.rs/vcell"
+keywords = ["no-std", "volatile", "cell"]
+license = "MIT OR Apache-2.0"
+name = "vcell"
+repository = "https://github.com/japaric/vcell"
+version = "0.1.3"
+
+[features]
+const-fn = [] # Unused, but kept for backwards compatibility

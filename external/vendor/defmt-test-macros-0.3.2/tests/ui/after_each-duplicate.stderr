@@ -1,0 +1,5 @@
+error: only a single `#[after_each]` function can be defined
+ --> tests/ui/after_each-duplicate.rs:9:8
+  |
+9 |     fn second() {}
+  |        ^^^^^^

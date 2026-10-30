@@ -1,0 +1,10 @@
+Name: winnow
+URL: https://crates.io/crates/winnow
+Version: 1.0.3
+Revision: aabae22f0426695f72a89fed1de6174e221100b3
+License: MIT
+License File: //external/vendor/winnow-1.0.3/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: A byte-oriented, zero-copy, parser combinators library

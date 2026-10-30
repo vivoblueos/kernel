@@ -1,0 +1,56 @@
+[package]
+name = "embedded-tls"
+version = "0.16.3"
+edition = "2021"
+description = "TLS 1.3 client with no_std support and no allocator"
+documentation = "https://docs.rs/embedded-tls"
+readme = "README.md"
+homepage = "https://drogue.io"
+repository = "https://github.com/drogue-iot/embedded-tls"
+license = "Apache-2.0"
+keywords = ["embedded", "async", "tls", "no_std", "network"]
+exclude = [".github"]
+
+[dependencies]
+atomic-polyfill = "1"
+p256 = { version = "0.13.2", default-features = false, features = [ "ecdh", "arithmetic" ] }
+rand_core = { version = "0.6.3", default-features = false }
+hkdf = "0.12.3"
+hmac = "0.12.1"
+sha2 = { version = "0.10.2", default-features = false }
+aes-gcm = { version = "0.10.1", default-features = false, features = ["aes"] }
+digest = { version = "0.10.3", default-features = false, features = ["core-api"] }
+typenum = { version = "1.15.0", default-features = false }
+heapless = { version = "0.7", default-features = false }
+heapless_typenum = { package = "heapless", version = "0.6", default-features = false }
+embedded-io = "0.6"
+embedded-io-async = { version = "0.6", optional = true }
+embedded-io-adapters = { version = "0.6", optional = true }
+generic-array = { version = "0.14", default-features = false }
+#webpki = { version = "0.22.0", default-features = false }
+#webpki = { path = "../../webpki", default-features = false }
+webpki = { version = "0.21.4", git = "https://github.com/lulf/webpki", rev = "d5188bd8c0a2c9cb14ec7835e63253e793e720a1", default-features = false, optional = true }
+
+# Logging alternatives
+log = { version = "0.4", optional = true }
+defmt = { version = "0.3", optional = true }
+
+[dev-dependencies]
+env_logger = "0.10"
+tokio = { version = "1.7", features = ["full"] }
+mio = { version = "0.8.3", features = ["os-poll", "net"] }
+rustls = "0.21.6"
+rustls-pemfile = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
+log = "0.4"
+pem-parser = "0.1.1"
+openssl = "0.10.44"
+
+[features]
+default = ["std", "async", "log", "tokio"]
+defmt = ["dep:defmt", "embedded-io/defmt-03", "heapless/defmt-impl"]
+std = ["embedded-io/std", "embedded-io-async/std"]
+tokio = ["embedded-io-adapters/tokio-1"]
+async = ["embedded-io-async"]
+alloc = []

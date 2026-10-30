@@ -1,0 +1,28 @@
+[package]
+name        = "micromath"
+version     = "2.1.0" # Also update html_root_url in lib.rs when bumping this
+description = """
+Embedded-friendly math library featuring fast floating point approximations
+(with small code size) for common arithmetic operations, trigonometry,
+2D/3D vector types, statistical analysis, and quaternions.
+Optimizes for performance and small code size at the cost of precision.
+"""
+authors     = ["Tony Arcieri <bascule@gmail.com>"]
+license     = "Apache-2.0 OR MIT"
+repository  = "https://github.com/tarcieri/micromath"
+readme      = "README.md"
+edition     = "2018"
+categories  = ["embedded", "mathematics", "science", "no-std"]
+keywords    = ["math", "quaternions", "statistics", "trigonometry", "vector"]
+
+[dependencies]
+num-traits = { version = "0.2", optional = true, default-features = false }
+
+[features]
+quaternion = []
+statistics = []
+vector     = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

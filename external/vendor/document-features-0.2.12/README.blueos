@@ -1,0 +1,10 @@
+Name: document-features
+URL: https://crates.io/crates/document-features
+Version: 0.2.12
+Revision: 721e708012254b81760bd2befdae0970e7a2615e
+License: Apache-2.0
+License File: //external/vendor/document-features-0.2.12/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Extract documentation for the feature flags from comments in Cargo.toml

@@ -1,0 +1,115 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+{{#each rules}}
+{{#with this.detail}}
+cargo_crate("{{crate_name}}") {
+  {{#if epoch}}
+  epoch = "{{epoch}}"
+  {{/if}}
+  crate_type = "{{crate_type}}"
+  sources = [
+    "//external/vendor/{{crate_root}}",
+  ]
+  inputs = [
+    {{#each inputs}}
+    "//external/vendor/{{this}}",
+    {{/each}}
+  ]
+  edition = "{{edition}}"
+  {{#each deps}}
+  deps = [
+    {{#each this.packages}}
+    "//external/vendor/{{this.name}}-{{this.epoch}}:{{this.use_name}}",
+    {{/each}}
+  ]
+  {{/each}}
+  {{#each build_deps}}
+  build_deps = [
+    {{#each this.packages}}
+    "//external/vendor/{{this.name}}-{{this.epoch}}:{{this.use_name}}",
+    {{/each}}
+  ]
+  {{/each}}
+  {{#each proc_macro_deps}}
+  proc_macro_deps = [
+    {{#each this.packages}}
+    "//external/vendor/{{this.name}}-{{this.epoch}}:{{this.use_name}}",
+    {{/each}}
+  ]
+  {{/each}}
+  {{#if features}}
+  features = [
+    {{#each features}}
+    "{{this}}",
+    {{/each}}
+  ]
+  {{/if}}
+  {{#if aliased_deps}}
+    aliased_deps = {
+      {{#each aliased_deps}}
+      {{#if (eq this.2 "proc-macro")}}
+      {{this.0}} = "//external/vendor/{{this.1.name}}-{{this.1.epoch}}:{{this.1.use_name}}(//build/toolchain:host)"
+      {{else}}
+      {{this.0}} = "//external/vendor/{{this.1.name}}-{{this.1.epoch}}:{{this.1.use_name}}"
+      {{/if}}
+      {{/each}}
+    }
+  {{/if}}
+  
+  cargo_pkg_name = "{{cargo_pkg_name}}"
+  {{#if cargo_pkg_repository}}
+    {{#with cargo_pkg_repository}}
+      cargo_pkg_repository = "{{this}}"
+    {{/with}}
+  {{/if}}
+  cargo_pkg_version = "{{cargo_pkg_version}}"
+  {{#if build_root}}
+    build_root = "//external/vendor/{{build_root}}"
+    build_sources = [
+      {{#each build_script_sources}}
+        "//external/vendor/{{this}}",
+      {{/each}}
+    ]
+    {{#if build_script_inputs}}
+      build_script_inputs = [
+        {{#each build_script_inputs}}
+          "//external/vendor/{{this}}",
+        {{/each}}
+      ]
+    {{/if}}
+    {{#if build_script_outputs}}
+      build_script_outputs = [
+        {{#each build_script_outputs}}
+          "{{this}}",
+        {{/each}}
+      ]
+    {{/if}}
+  {{/if}}
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+    {{#if (eq crate_type "proc-macro")}}
+    "--extern",
+    "proc_macro",
+    {{/if}}
+  ]
+}
+{{/with}}
+{{/each}}

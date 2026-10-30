@@ -1,0 +1,127 @@
+[package]
+name          = "esp-alloc"
+version       = "0.10.0"
+edition       = "2024"
+rust-version  = "1.88.0"
+description   = "A heap allocator for Espressif devices"
+documentation = "https://docs.espressif.com/projects/rust/esp-alloc/latest/"
+keywords      = ["allocator", "embedded", "esp32", "espressif", "memory"]
+categories    = ["embedded", "memory-management", "no-std"]
+repository    = "https://github.com/esp-rs/esp-hal"
+license       = "MIT OR Apache-2.0"
+
+[package.metadata.espressif]
+doc-config = { features = ["defmt"] }
+check-configs = [
+    { features = [] },
+    { features = ["defmt"] },
+    { features = ["alloc-hooks"] },
+    { features = ["internal-heap-stats"] },
+    { features = ["defmt", "internal-heap-stats"] },
+]
+clippy-configs = [
+    { features = ["defmt", "internal-heap-stats", "alloc-hooks"] },
+]
+
+[package.metadata.docs.rs]
+default-target = "riscv32imc-unknown-none-elf"
+features       = ["nightly"]
+
+[lib]
+bench = false
+test = false
+
+[dependencies]
+allocator-api2        = { version = "0.3.0", default-features = false }
+defmt                 = { version = "1.0.1", optional = true }
+cfg-if                = "1"
+enumset               = "1"
+esp-sync              = { version = "0.2.1", path = "../esp-sync" }
+document-features     = "0.2"
+
+linked_list_allocator = { version = "0.10.5", default-features = false, features = ["const_mut_refs"] }
+rlsf = { version = "0.2", features = ["unstable"] }
+
+[build-dependencies]
+esp-config   = { version = "0.7.0", path = "../esp-config", features = ["build"] }
+
+[features]
+default = ["compat", "global-allocator"]
+
+## Enable nightly rustc-only features, like `feature(allocator_api)`.
+nightly = []
+
+## Implement `defmt::Format` on certain types.
+defmt = ["dep:defmt", "enumset/defmt"]
+
+## Enable this feature if you want to keep stats about the internal heap usage such as:
+## - Max memory usage since initialization of the heap
+## - Total allocated memory since initialization of the heap
+## - Total freed memory since initialization of the heap
+##
+## ⚠️ Note: Enabling this feature will require extra computation every time alloc/dealloc is called.
+internal-heap-stats = []
+
+## Provide C-compatibility functions (malloc, free, ...)
+##
+## Note that allocated memory returned by all these functions is 4-byte aligned.
+## This is in-line with e.g. ESP-IDF and the supported CPU architectures and usually
+## not a problem.
+##
+## Strictly speaking it violates `malloc`s contract saying
+## > "...  functions return a pointer to the allocated memory, which is suitably
+## > aligned for any type that fits into the requested size or less."
+##
+## However this _can_ cause problems when using the allocated memory from Rust
+## where alignment checks are in place. So special caution might be needed in this case.
+compat = []
+
+## Enable the `#[global_allocator]` attribute for `EspHeap`.
+global-allocator = []
+
+## Enable observing allocation events via hook functions.
+##
+## This option requires the following functions to be implemented:
+##
+## ```rust,no_run
+## use esp_alloc::{EspHeap, MemoryCapability};
+## use enumset::EnumSet; // from `enumset = "1"`
+##
+## #[unsafe(no_mangle)]
+## unsafe extern "Rust" fn _esp_alloc_alloc(
+##     _heap: &EspHeap,
+##     _caps: EnumSet<MemoryCapability>,
+##     ptr: usize,
+##     size: usize,
+## ) {
+##     todo!()
+## }
+##
+## #[unsafe(no_mangle)]
+## unsafe extern "Rust" fn _esp_alloc_dealloc(_heap: &EspHeap, ptr: usize, size: usize) {
+##     todo!()
+## }
+## ```
+alloc-hooks = []
+
+#! ### Chip selection
+#! One of the following features must be enabled to select the target chip:
+
+##
+esp32c2   = ["esp-sync/esp32c2"]
+##
+esp32c3   = ["esp-sync/esp32c3"]
+##
+esp32c5   = ["esp-sync/esp32c5"]
+##
+esp32c6   = ["esp-sync/esp32c6"]
+##
+esp32c61  = ["esp-sync/esp32c61"]
+##
+esp32h2   = ["esp-sync/esp32h2"]
+##
+esp32     = ["esp-sync/esp32"]
+##
+esp32s2   = ["esp-sync/esp32s2"]
+##
+esp32s3   = ["esp-sync/esp32s3"]

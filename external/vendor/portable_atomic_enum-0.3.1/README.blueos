@@ -1,0 +1,10 @@
+Name: portable_atomic_enum
+URL: https://crates.io/crates/portable_atomic_enum
+Version: 0.3.1
+Revision: b2c0f653d8f19e3ad499cc251763c214b1fff178
+License: MIT
+License File: //external/vendor/portable_atomic_enum-0.3.1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: An attribute to create an portable atomic wrapper around a C-style enum

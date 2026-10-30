@@ -1,0 +1,16 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+categories = ["embedded", "hardware-support", "no-std"]
+description = "Abstractions common to bare metal systems"
+documentation = "https://docs.rs/bare-metal"
+keywords = ["bare-metal", "register", "peripheral", "interrupt"]
+license = "MIT OR Apache-2.0"
+name = "bare-metal"
+repository = "https://github.com/japaric/bare-metal"
+version = "0.2.5"
+
+[build-dependencies]
+rustc_version = "0.2.3"
+
+[features]
+const-fn = [] # Unused, but kept for backwards compatibility

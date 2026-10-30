@@ -1,0 +1,10 @@
+Name: as-slice
+URL: https://crates.io/crates/as-slice
+Version: 0.1.5
+Revision: e21f5bd9e629f2bf5641b97f64e582ed745e3ab6
+License: Apache-2.0
+License File: //external/vendor/as-slice-0.1.5/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: `AsSlice` and `AsMutSlice` traits

@@ -1,0 +1,40 @@
+[package]
+name = "esp32c3"
+version = "0.32.2"
+edition = "2021"
+rust-version = "1.76"
+description = "Peripheral access crate for the ESP32-C3"
+repository = "https://github.com/esp-rs/esp-pacs"
+license = "MIT OR Apache-2.0"
+keywords = [
+    "no-std",
+    "esp32c3",
+    "wifi",
+    "embedded",
+]
+categories = [
+    "embedded",
+    "hardware-support",
+    "no-std",
+]
+include = [
+    "src/**",
+    "build.rs",
+    "device.x"
+]
+
+[lib]
+bench = false
+test = false
+
+[dependencies]
+vcell = "0.1.3"
+defmt = { version = "1.0.1", optional = true }
+
+[features]
+default = []
+rt = []
+# Remove next minor: https://github.com/esp-rs/esp-pacs/issues/428
+critical-section = []
+impl-register-debug = []
+defmt = ["dep:defmt"]

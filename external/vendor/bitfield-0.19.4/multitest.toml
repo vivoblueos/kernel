@@ -1,0 +1,22 @@
+[[tests]]
+name = "cargo-test-{{toolchain}}"
+command = ["cargo", "+{{toolchain}}", "test", "--all", "--frozen"]
+
+[[tests.env]]
+name = "CARGO_TARGET_DIR"
+value = "target/{{name}}"
+
+[tests.variables]
+toolchain = ["stable", "beta", "nightly", "1.79.0"]
+
+[[tests]]
+name = "cargo-clippy"
+command = ["cargo", "+stable", "clippy", "--all", "--frozen", "--all-targets",  "--", "-D", "warnings"]
+
+[[tests.env]]
+name = "CARGO_TARGET_DIR"
+value = "target/cargo-test-nightly"
+
+[[tests]]
+name = "cargo-fmt"
+command = ["cargo", "fmt", "--all", "--", "--check"]

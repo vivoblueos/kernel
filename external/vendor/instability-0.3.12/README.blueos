@@ -1,0 +1,10 @@
+Name: instability
+URL: https://crates.io/crates/instability
+Version: 0.3.12
+Revision: 11ef7c18b26b7c92220277ff310f96ae5a84cdbe
+License: MIT
+License File: //external/vendor/instability-0.3.12/LICENSE.md
+Shipped: yes
+Security Critical: yes
+
+Description: Rust API stability attributes for the rest of us. A fork of the `stability` crate.

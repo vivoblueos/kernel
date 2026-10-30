@@ -1,0 +1,10 @@
+Name: embedded-io-async
+URL: https://crates.io/crates/embedded-io-async
+Version: 0.7.0
+Revision: a926c2a65948a4f6aeddcd5d7f8f1049c1c54c95
+License: Apache-2.0
+License File: //external/vendor/embedded-io-async-0.7.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Async embedded IO traits

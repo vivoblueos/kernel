@@ -1,0 +1,10 @@
+Name: toml_parser
+URL: https://crates.io/crates/toml_parser
+Version: 1.1.2+spec-1.1.0
+Revision: a3d0047c95dfc6e82997d508dd93c9908650a418
+License: Apache-2.0
+License File: //external/vendor/toml_parser-1.1.2+spec-1.1.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Yet another format-preserving TOML parser.

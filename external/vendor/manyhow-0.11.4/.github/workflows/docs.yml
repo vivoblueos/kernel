@@ -1,0 +1,44 @@
+name: Git Docs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/
+            target/
+          key: docs-${{ hashFiles('Cargo.toml') }}
+          restore-keys: |
+            docs-
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: nightly
+      - name: Generate Docs (reference docs.rs)
+        run:  |
+          cargo rustdoc -- --cfg docsrs -Z unstable-options $(cargo metadata --format-version 1 | jq --raw-output '.packages | map("--extern-html-root-url=\(.name)=https://docs.rs/\(.name)/\(.version)") | join(" ")')
+      - uses: actions/upload-pages-artifact@v1
+        with:
+          path: 'target/doc'
+      - id: deployment
+        uses: actions/deploy-pages@v1

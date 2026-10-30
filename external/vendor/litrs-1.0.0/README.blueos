@@ -1,0 +1,13 @@
+Name: litrs
+URL: https://crates.io/crates/litrs
+Version: 1.0.0
+Revision: 66ceed89adfd30d1fd04fabfdfe436aedc4cadbf
+License: Apache-2.0
+License File: //external/vendor/litrs-1.0.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Parse and inspect Rust literals (i.e. tokens in the Rust programming language
+representing fixed values). Particularly useful for proc macros, but can also
+be used outside of a proc-macro context.
+

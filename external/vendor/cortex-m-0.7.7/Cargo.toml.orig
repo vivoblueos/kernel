@@ -1,0 +1,50 @@
+[package]
+authors = [
+    "The Cortex-M Team <cortex-m@teams.rust-embedded.org>",
+    "Jorge Aparicio <jorge@japaric.io>",
+]
+categories = ["embedded", "hardware-support", "no-std"]
+description = "Low level access to Cortex-M processors"
+documentation = "https://docs.rs/cortex-m"
+keywords = ["arm", "cortex-m", "register", "peripheral"]
+license = "MIT OR Apache-2.0"
+name = "cortex-m"
+readme = "README.md"
+repository = "https://github.com/rust-embedded/cortex-m"
+version = "0.7.7"
+edition = "2018"
+links = "cortex-m"  # prevent multiple versions of this crate to be linked together
+
+[dependencies]
+bare-metal = { version = "0.2.4", features = ["const-fn"] }
+critical-section = { version = "1.0.0", optional = true }
+volatile-register = "0.2.0"
+bitfield = "0.13.2"
+embedded-hal = "0.2.4"
+
+[dependencies.serde]
+version = "1"
+features = [ "derive" ]
+optional = true
+
+[features]
+cm7 = []
+cm7-r0p1 = ["cm7"]
+inline-asm = []
+linker-plugin-lto = []
+std = []
+critical-section-single-core = ["critical-section/restore-state-bool"]
+
+[workspace]
+members = ["xtask", "cortex-m-semihosting", "panic-semihosting", "panic-itm"]
+
+[package.metadata.docs.rs]
+targets = [
+    "thumbv8m.main-none-eabihf",
+    "thumbv6m-none-eabi",
+    "thumbv7em-none-eabi",
+    "thumbv7em-none-eabihf",
+    "thumbv7m-none-eabi",
+    "thumbv8m.base-none-eabi",
+    "thumbv8m.main-none-eabi"
+]

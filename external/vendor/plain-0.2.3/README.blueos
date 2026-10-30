@@ -1,0 +1,9 @@
+Name: plain
+URL: https://crates.io/crates/plain
+Version: 0.2.3
+License: Apache-2.0
+License File: //external/vendor/plain-0.2.3/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A small Rust library that allows users to reinterpret data of certain types safely.

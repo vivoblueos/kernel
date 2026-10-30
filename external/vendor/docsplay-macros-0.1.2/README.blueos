@@ -1,0 +1,11 @@
+Name: docsplay-macros
+URL: https://crates.io/crates/docsplay-macros
+Version: 0.1.2
+Revision: 16329602c0c57ed0d373897b1a62b7304bbd541c
+License: Apache-2.0
+License File: //external/vendor/docsplay-macros-0.1.2/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Implementation details of docsplay
+

@@ -1,0 +1,36 @@
+[package]
+name = "maybe-async-cfg"
+version = "0.2.5"
+authors = [ "Sergey V. Kokorin <nvksv@nvksv.ru>" ]
+edition = "2021"
+readme = "README.md"
+license = "MIT"
+description = "A procedure macro to unify sync and async implementations depending on the features of your crate"
+repository = "https://github.com/nvksv/maybe-async-cfg"
+documentation = "https://docs.rs/maybe-async-cfg"
+keywords = [ "maybe", "async", "futures", "macros", "proc_macro" ]
+
+[lib]
+proc-macro = true
+
+[badges.maintenance]
+status = "actively-developed"
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+manyhow = { version = "0.11", features = ["syn1"] }
+syn = { version = "1.0", features = [ "visit-mut", "full", "extra-traits" ] }
+pulldown-cmark = { version = "0.11", default-features = false, optional = true }
+
+[dev-dependencies]
+async-trait = "0.1"
+trybuild = { version = "1", features = [ "diff" ] }
+async-std = { version = "1", features = [ "attributes" ] }
+tokio = { version = "1", features = [ "macros", "rt-multi-thread" ] }
+
+[features]
+default = ["doctests"]
+debug = []
+no-debug = []
+doctests = ["pulldown-cmark"]

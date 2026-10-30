@@ -1,0 +1,14 @@
+Name: micromath
+URL: https://crates.io/crates/micromath
+Version: 2.1.0
+Revision: fc2df91be41bf204157d24b49b68fd2dedcfff34
+License: Apache-2.0
+License File: //external/vendor/micromath-2.1.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Embedded-friendly math library featuring fast floating point approximations
+(with small code size) for common arithmetic operations, trigonometry,
+2D/3D vector types, statistical analysis, and quaternions.
+Optimizes for performance and small code size at the cost of precision.
+

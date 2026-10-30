@@ -1,0 +1,11 @@
+Name: futures-task
+URL: https://crates.io/crates/futures-task
+Version: 0.3.32
+Revision: d9bba94c239daa1175a5bb2958f37a5c72db3f6a
+License: Apache-2.0
+License File: //external/vendor/futures-task-0.3.32/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Tools for working with tasks.
+

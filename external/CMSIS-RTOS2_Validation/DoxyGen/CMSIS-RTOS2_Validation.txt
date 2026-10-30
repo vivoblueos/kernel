@@ -1,0 +1,246 @@
+/*=======0=========1=========2=========3=========4=========5=========6=========7=========8=========9=========0=========1====*/
+/**
+\mainpage Introduction
+
+This manual explains the scope and the usage of the software pack for \b CMSIS-RTOS2 \b Validation.
+<a href="https://arm-software.github.io/CMSIS_5/RTOS2/html/index.html" target="_blank">CMSIS-RTOS2 API</a> is a generic RTOS2 interface for ARM&reg; Cortex&reg;-M processor-based devices.
+
+The software pack for CMSIS-RTOS2 validation provides:
+  - Configurable validation tests
+
+The CMSIS-RTOS2 validation tests and verifies:
+  - \ref kernel_funcs - Verify kernel information and control calls
+  - \ref thread_funcs - Create multiple threads, terminate, restart, yield, join, detach, change priorities
+  - \ref threadflags_funcs - Verify thread flags
+  - \ref genwait_funcs - Call generic wait functions
+  - \ref timer_func - Create periodic and one-shot timers
+  - \ref eventflags_funcs - Verify event flags
+  - \ref mutex_func - Synchronize resource access
+  - \ref semaphore_funcs - Verify access shared resources
+  - \ref mempool_func - Verify memory pool allocation
+  - \ref msgqueue_funcs - Exchange messages between threads
+
+This manual contains the following chapters:
+  - \ref test_results - Explains how to interpret the test results.
+  - \ref config - Contains information about test suite configuration options
+  - <a class="el" href="./modules.html">Reference</a> - Explains the individual CMSIS-RTOS2 API tests.
+
+This manual assumes that you are familiar with Keil MDK. Refer to
+<a href="http://www2.keil.com/mdk5/install" target="_blank">MDK Version 5 - Getting Started</a> for additional information.
+
+\subpage rev_hist
+
+*/
+
+
+/*=======0=========1=========2=========3=========4=========5=========6=========7=========8=========9=========0=========1====*/
+/**
+\page config Configuration
+
+Validation project can be configured in \c RV2_Config.h header file. It can be opened using the Configuration Wizard view:
+
+\image html RV2_Config_h.png
+*/
+
+/*=======0=========1=========2=========3=========4=========5=========6=========7=========8=========9=========0=========1====*/
+/**
+\page test_results Reading Test Results
+
+The CMSIS-RTOS2 Validation framework outputs the test results as plain text or as an XML formatted report. Alternatively, it
+is possible to examine the results in the \b TestReport buffer structure which is accessible through the \b Watch window.
+
+In case of warnings or a test fail, the name of the test case source file is printed and the line of the failed test is
+reported between brackets (). The source files can be found under the <b>CMSIS RTOS2 Validation</b> group in the Project
+window.
+
+The tests that were excluded from execution are listed as "Not Executed". This enables transparent listing of limitations or
+features unsupported by the CMSIS-RTOS2 implementation.
+
+\b Test \b Report \b Example
+
+\verbatim
+CMSIS-RTOS2 Test Suite   Feb 18 2022   09:21:40 
+
+TEST 01: TC_osKernelInitialize_1          PASSED
+TEST 02: TC_osKernelGetInfo_1             PASSED
+TEST 03: TC_osKernelGetState_1            PASSED
+TEST 04: TC_osKernelGetState_2            NOT EXECUTED
+TEST 05: TC_osKernelStart_1               PASSED
+TEST 06: TC_osKernelLock_1                PASSED
+TEST 07: TC_osKernelLock_2                NOT EXECUTED
+TEST 08: TC_osKernelUnlock_1              PASSED
+TEST 09: TC_osKernelUnlock_2              NOT EXECUTED
+TEST 10: TC_osKernelRestoreLock_1         PASSED
+TEST 11: TC_osKernelSuspend_1             NOT EXECUTED
+TEST 12: TC_osKernelResume_1              NOT EXECUTED
+TEST 13: TC_osKernelGetTickCount_1        PASSED
+TEST 14: TC_osKernelGetTickFreq_1         PASSED
+TEST 15: TC_osKernelGetSysTimerCount_1    PASSED
+TEST 16: TC_osKernelGetSysTimerFreq_1     PASSED
+TEST 17: TC_osThreadNew_1                 PASSED
+TEST 18: TC_osThreadNew_2                 PASSED
+TEST 19: TC_osThreadNew_3                 NOT EXECUTED
+TEST 20: TC_osThreadNew_4                 PASSED
+TEST 21: TC_osThreadNew_5                 PASSED
+TEST 22: TC_osThreadNew_6                 PASSED
+TEST 23: TC_osThreadNew_7                 PASSED
+TEST 24: TC_osThreadGetName_1             
+  RV2_Thread.c (498) [FAILED]
+TEST 25: TC_osThreadGetId_1               PASSED
+TEST 26: TC_osThreadGetState_1            
+  RV2_Thread.c (662) [FAILED]
+TEST 27: TC_osThreadGetState_2            PASSED
+TEST 28: TC_osThreadGetState_3            NOT EXECUTED
+TEST 29: TC_osThreadSetPriority_1         PASSED
+TEST 30: TC_osThreadSetPriority_2         PASSED
+TEST 31: TC_osThreadGetPriority_1         PASSED
+TEST 32: TC_osThreadYield_1               PASSED
+TEST 33: TC_osThreadSuspend_1             PASSED
+TEST 34: TC_osThreadResume_1              PASSED
+TEST 35: TC_osThreadDetach_1              NOT EXECUTED
+TEST 36: TC_osThreadDetach_2              NOT EXECUTED
+TEST 37: TC_osThreadJoin_1                NOT EXECUTED
+TEST 38: TC_osThreadJoin_2                NOT EXECUTED
+TEST 39: TC_osThreadJoin_3                NOT EXECUTED
+TEST 40: TC_osThreadExit_1                
+  RV2_Thread.c (1469) [FAILED]
+TEST 41: TC_osThreadTerminate_1           
+  RV2_Thread.c (1514) [FAILED]
+  RV2_Thread.c (1529) [FAILED]
+TEST 42: TC_osThreadGetStackSize_1        NOT EXECUTED
+TEST 43: TC_osThreadGetStackSpace_1       PASSED
+TEST 44: TC_osThreadGetCount_1            PASSED
+TEST 45: TC_osThreadEnumerate_1           PASSED
+TEST 46: TC_ThreadNew                     PASSED
+TEST 47: TC_ThreadMultiInstance           PASSED
+TEST 48: TC_ThreadTerminate               PASSED
+TEST 49: TC_ThreadRestart                 PASSED
+TEST 50: TC_ThreadPriorityExec            PASSED
+TEST 51: TC_ThreadYield                   PASSED
+TEST 52: TC_ThreadSuspendResume           PASSED
+TEST 53: TC_ThreadReturn                  
+  RV2_Thread.c (2204) [FAILED]
+TEST 54: TC_ThreadAllocation              PASSED
+TEST 55: TC_ThreadFlagsMainThread         PASSED
+TEST 56: TC_ThreadFlagsChildThread        PASSED
+TEST 57: TC_ThreadFlagsChildToParent      PASSED
+TEST 58: TC_ThreadFlagsChildToChild       PASSED
+TEST 59: TC_ThreadFlagsWaitTimeout        PASSED
+TEST 60: TC_ThreadFlagsCheckTimeout       PASSED
+TEST 61: TC_ThreadFlagsParam              PASSED
+TEST 62: TC_ThreadFlagsInterrupts         PASSED
+TEST 63: TC_GenWaitBasic                  PASSED
+TEST 64: TC_GenWaitInterrupts             PASSED
+TEST 65: TC_osTimerNew_1                  PASSED
+TEST 66: TC_osTimerNew_2                  PASSED
+TEST 67: TC_osTimerNew_3                  PASSED
+TEST 68: TC_osTimerGetName_1              PASSED
+TEST 69: TC_osTimerStart_1                
+  RV2_Timer.c (328) [FAILED]
+TEST 70: TC_osTimerStop_1                 PASSED
+TEST 71: TC_osTimerStop_2                 PASSED
+TEST 72: TC_osTimerIsRunning_1            PASSED
+TEST 73: TC_osTimerDelete_1               PASSED
+TEST 74: TC_TimerAllocation               PASSED
+TEST 75: TC_TimerOneShot                  PASSED
+TEST 76: TC_TimerPeriodic                 PASSED
+TEST 77: TC_osEventFlagsNew_1             PASSED
+TEST 78: TC_osEventFlagsNew_2             PASSED
+TEST 79: TC_osEventFlagsNew_3             PASSED
+TEST 80: TC_osEventFlagsSet_1             
+  RV2_EventFlags.c (289) [FAILED]
+  RV2_EventFlags.c (330) [FAILED]
+TEST 81: TC_osEventFlagsClear_1           
+  RV2_EventFlags.c (388) [FAILED]
+  RV2_EventFlags.c (432) [FAILED]
+TEST 82: TC_osEventFlagsGet_1             PASSED
+TEST 83: TC_osEventFlagsWait_1            
+  RV2_EventFlags.c (559) [FAILED]
+  RV2_EventFlags.c (560) [FAILED]
+  RV2_EventFlags.c (616) [FAILED]
+  RV2_EventFlags.c (570) [FAILED]
+TEST 84: TC_osEventFlagsDelete_1          PASSED
+TEST 85: TC_osEventFlagsGetName_1         NOT EXECUTED
+TEST 86: TC_EventFlagsAllocation          PASSED
+TEST 87: TC_EventFlagsInterThreads        PASSED
+TEST 88: TC_EventFlagsCheckTimeout        PASSED
+TEST 89: TC_EventFlagsWaitTimeout         PASSED
+TEST 90: TC_EventFlagsDeleteWaiting       PASSED
+TEST 91: TC_osMutexNew_1                  PASSED
+TEST 92: TC_osMutexNew_2                  PASSED
+TEST 93: TC_osMutexNew_3                  PASSED
+TEST 94: TC_osMutexNew_4                  NOT EXECUTED
+TEST 95: TC_osMutexNew_5                  PASSED
+TEST 96: TC_osMutexNew_6                  PASSED
+TEST 97: TC_osMutexGetName_1              NOT EXECUTED
+TEST 98: TC_osMutexAcquire_1              PASSED
+TEST 99: TC_osMutexAcquire_2              PASSED
+TEST 100: TC_osMutexRelease_1              PASSED
+TEST 101: TC_osMutexGetOwner_1             PASSED
+TEST 102: TC_osMutexDelete_1               PASSED
+TEST 103: TC_MutexAllocation               PASSED
+TEST 104: TC_MutexCheckTimeout             PASSED
+TEST 105: TC_MutexRobust                   NOT EXECUTED
+TEST 106: TC_MutexPrioInherit              
+  RV2_Mutex.c (829) [FAILED]
+  RV2_Mutex.c (832) [FAILED]
+TEST 107: TC_MutexNestedAcquire            PASSED
+TEST 108: TC_MutexPriorityInversion        PASSED
+TEST 109: TC_MutexOwnership                NOT EXECUTED
+TEST 110: TC_osSemaphoreNew_1              PASSED
+TEST 111: TC_osSemaphoreNew_2              PASSED
+TEST 112: TC_osSemaphoreNew_3              PASSED
+TEST 113: TC_osSemaphoreGetName_1          NOT EXECUTED
+TEST 114: TC_osSemaphoreAcquire_1          PASSED
+TEST 115: TC_osSemaphoreRelease_1          PASSED
+TEST 116: TC_osSemaphoreGetCount_1         PASSED
+TEST 117: TC_osSemaphoreDelete_1           PASSED
+TEST 118: TC_SemaphoreAllocation           PASSED
+TEST 119: TC_SemaphoreCreateAndDelete      PASSED
+TEST 120: TC_SemaphoreObtainCounting       PASSED
+TEST 121: TC_SemaphoreObtainBinary         PASSED
+TEST 122: TC_SemaphoreWaitForBinary        PASSED
+TEST 123: TC_SemaphoreWaitForCounting      PASSED
+TEST 124: TC_SemaphoreZeroCount            PASSED
+TEST 125: TC_SemaphoreWaitTimeout          PASSED
+TEST 126: TC_SemaphoreCheckTimeout         PASSED
+TEST 127: TC_osMemoryPoolNew_1             PASSED
+TEST 128: TC_osMemoryPoolNew_2             PASSED
+TEST 129: TC_osMemoryPoolNew_3             PASSED
+TEST 130: TC_osMemoryPoolGetName_1         PASSED
+TEST 131: TC_osMemoryPoolAlloc_1           PASSED
+TEST 132: TC_osMemoryPoolFree_1            PASSED
+TEST 133: TC_osMemoryPoolGetCapacity_1     PASSED
+TEST 134: TC_osMemoryPoolGetBlockSize_1    PASSED
+TEST 135: TC_osMemoryPoolGetCount_1        PASSED
+TEST 136: TC_osMemoryPoolGetSpace_1        PASSED
+TEST 137: TC_osMemoryPoolDelete_1          PASSED
+TEST 138: TC_MemPoolAllocation             PASSED
+TEST 139: TC_MemPoolAllocAndFree           PASSED
+TEST 140: TC_MemPoolAllocAndFreeComb       PASSED
+TEST 141: TC_MemPoolZeroInit               PASSED
+TEST 142: TC_osMessageQueueNew_1           PASSED
+TEST 143: TC_osMessageQueueNew_2           PASSED
+TEST 144: TC_osMessageQueueNew_3           PASSED
+TEST 145: TC_osMessageQueueGetName_1       NOT EXECUTED
+TEST 146: TC_osMessageQueuePut_1           PASSED
+TEST 147: TC_osMessageQueuePut_2           PASSED
+TEST 148: TC_osMessageQueueGet_1           PASSED
+TEST 149: TC_osMessageQueueGet_2           PASSED
+TEST 150: TC_osMessageQueueGetCapacity_1   PASSED
+TEST 151: TC_osMessageQueueGetMsgSize_1    PASSED
+TEST 152: TC_osMessageQueueGetCount_1      PASSED
+TEST 153: TC_osMessageQueueGetSpace_1      PASSED
+TEST 154: TC_osMessageQueueReset_1         PASSED
+TEST 155: TC_osMessageQueueDelete_1        PASSED
+TEST 156: TC_MsgQAllocation                PASSED
+TEST 157: TC_MsgQBasic                     PASSED
+TEST 158: TC_MsgQWait                      PASSED
+TEST 159: TC_MsgQCheckTimeout              PASSED
+
+Test Summary: 159 Tests, 139 Executed, 129 Passed, 10 Failed, 0 Warnings.
+Test Result: FAILED
+
+
+\endverbatim
+*/

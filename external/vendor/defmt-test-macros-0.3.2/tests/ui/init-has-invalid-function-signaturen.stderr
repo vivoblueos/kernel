@@ -1,0 +1,5 @@
+error: `#[init]` function must have signature `fn()` or `fn() -> T`
+ --> tests/ui/init-has-invalid-function-signaturen.rs:6:8
+  |
+6 |     fn hello(a: i32, b: i32) -> i32 {
+  |        ^^^^^

@@ -1,0 +1,10 @@
+Name: httparse
+URL: https://crates.io/crates/httparse
+Version: 1.10.1
+Revision: 9f29e79f9832dbd0ae5220acb17c1866745bdecd
+License: Apache-2.0
+License File: //external/vendor/httparse-1.10.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A tiny, safe, speedy, zero-copy HTTP/1.x parser.

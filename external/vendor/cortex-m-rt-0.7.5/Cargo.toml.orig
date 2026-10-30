@@ -1,0 +1,52 @@
+[package]
+authors = [
+    "The Cortex-M Team <cortex-m@teams.rust-embedded.org>",
+    "Jorge Aparicio <jorge@japaric.io>",
+    "Hideki Sekine <sekineh@me.com>",
+]
+categories = ["embedded", "no-std"]
+description = "Minimal runtime / startup for Cortex-M microcontrollers"
+documentation = "https://docs.rs/cortex-m-rt/"
+keywords = ["arm", "cortex-m", "runtime", "startup"]
+license = "MIT OR Apache-2.0"
+name = "cortex-m-rt"
+readme = "README.md"
+repository = "https://github.com/rust-embedded/cortex-m"
+version = "0.7.5"
+autoexamples = true
+links = "cortex-m-rt" # Prevent multiple versions of cortex-m-rt being linked
+edition = "2021"
+rust-version = "1.61"
+
+[dependencies]
+cortex-m-rt-macros = { path = "macros", version = "=0.7.5" }
+
+[dev-dependencies]
+cortex-m = { version = "0.7.4", path = "../cortex-m" }
+panic-halt = "0.2.0"
+cortex-m-semihosting = { path = "../cortex-m-semihosting" }
+
+[target.'cfg(not(target_os = "none"))'.dev-dependencies]
+compiletest_rs = "0.11"
+
+[[example]]
+name = "device"
+required-features = ["device"]
+
+[[example]]
+name = "warnings"
+required-features = ["device"]
+
+[[test]]
+name = "compiletest"
+required-features = ["device"]
+
+[features]
+device = []
+set-sp = []
+set-vtor = []
+zero-init-ram = []
+paint-stack = []
+
+[package.metadata.docs.rs]
+features = ["device"]

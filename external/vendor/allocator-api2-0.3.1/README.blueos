@@ -1,0 +1,10 @@
+Name: allocator-api2
+URL: https://crates.io/crates/allocator-api2
+Version: 0.3.1
+Revision: d09b68449dcae47b5d026bfa6998cc94648f0198
+License: Apache-2.0
+License File: //external/vendor/allocator-api2-0.3.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Mirror of Rust's allocator API

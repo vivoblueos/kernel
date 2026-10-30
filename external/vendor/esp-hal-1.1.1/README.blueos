@@ -1,0 +1,10 @@
+Name: esp-hal
+URL: https://crates.io/crates/esp-hal
+Version: 1.1.1
+Revision: 976adef27ad9cea952a31aba28ad35fe56073bdf
+License: Apache-2.0
+License File: //external/vendor/esp-hal-1.1.1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Bare-metal HAL for Espressif devices

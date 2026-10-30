@@ -1,0 +1,5 @@
+error: no state was initialized by `#[init]`; signature must be `fn()`
+  --> tests/ui/test-has-non-empty-signature.rs:11:8
+   |
+11 |     fn test(arg: &mut u8) {
+   |        ^^^^

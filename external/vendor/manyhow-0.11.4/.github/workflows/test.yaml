@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  push: null
+  pull_request: null
+  schedule: 
+    - cron: '0 12 * * *'
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        rust:
+          - stable
+          - nightly
+        include:
+          - rust: nightly
+            cargo_flags: -Z minimal-versions
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/
+            target
+          key: ${{ matrix.os }}-${{ matrix.rust }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ matrix.os }}-${{ matrix.rust }}-
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: ${{ matrix.rust }}
+      - uses: bruxisma/setup-cargo-hack@v1
+        with:
+          cargo-hack-version: "0.5"
+      - name: Build
+        run: cargo hack build --feature-powerset ${{ matrix.cargo_flags }}
+      - name: Test
+        run: cargo hack test --feature-powerset --all-targets --no-fail-fast --workspace
+      - name: Doc Test
+        run: cargo test --all-features --doc --no-fail-fast --workspace
+      - name: Build Docs
+        run: cargo doc --all-features --workspace 

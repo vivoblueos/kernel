@@ -1,0 +1,20 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+categories = ["asynchronous", "embedded", "no-std"]
+description = "Minimal non-blocking I/O layer"
+keywords = ["await", "futures", "IO"]
+license = "MIT OR Apache-2.0"
+name = "nb"
+repository = "https://github.com/rust-embedded/nb"
+homepage = "https://github.com/rust-embedded/nb"
+documentation = "https://docs.rs/nb"
+readme = "README.md"
+version = "1.1.0"
+edition = "2018"
+rust-version = "1.60"
+
+[features]
+"defmt-0-3" = ["dep:defmt"]
+
+[dependencies]
+defmt = {version = "0.3", optional = true}

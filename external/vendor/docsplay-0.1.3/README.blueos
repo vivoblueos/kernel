@@ -1,0 +1,11 @@
+Name: docsplay
+URL: https://crates.io/crates/docsplay
+Version: 0.1.3
+Revision: 16329602c0c57ed0d373897b1a62b7304bbd541c
+License: Apache-2.0
+License File: //external/vendor/docsplay-0.1.3/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A derive macro for implementing the display Trait via a doc comment and string interpolation. Fork of displaydoc
+

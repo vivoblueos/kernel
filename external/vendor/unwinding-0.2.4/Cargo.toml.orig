@@ -1,0 +1,57 @@
+[package]
+name = "unwinding"
+version = "0.2.4"
+authors = ["Gary Guo <gary@garyguo.net>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Unwinding library in Rust and for Rust"
+repository = "https://github.com/nbdd0121/unwinding/"
+
+[workspace]
+members = [
+    "cdylib",
+    "test_crates/throw_and_catch",
+    "test_crates/catch_std_exception",
+    "test_crates/std_catch_exception",
+    "test_crates/panic_abort_no_debuginfo",
+]
+
+[dependencies]
+gimli = { version = "0.31", default-features = false, features = ["read-core"] }
+libc = { version = "0.2", optional = true }
+spin = { version = "0.9.8", optional = true, default-features = false, features = ["mutex", "spin_mutex"] }
+core = { version = '1.0.0', optional = true, package = 'rustc-std-workspace-core' }
+compiler_builtins = { version = "0.1.2", optional = true }
+
+[features]
+alloc = []
+unwinder = []
+fde-phdr = ["libc"]
+fde-phdr-dl = ["fde-phdr"]
+fde-phdr-aux = ["fde-phdr"]
+fde-registry = ["alloc"]
+fde-static = []
+fde-gnu-eh-frame-hdr = []
+fde-custom = []
+dwarf-expr = []
+hide-trace = []
+personality = []
+personality-dummy = []
+print = ["libc"]
+panicking = []
+panic = ["panicking", "alloc"]
+panic-handler = ["print", "panic"]
+panic-handler-dummy = []
+system-alloc = []
+default = ["unwinder", "dwarf-expr", "hide-trace", "fde-phdr-dl", "fde-registry"]
+rustc-dep-of-std = ["core", "gimli/rustc-dep-of-std", "compiler_builtins"]
+compiler_builtins = ["dep:compiler_builtins"]
+core = ["dep:core"]
+libc = ["dep:libc"]
+spin = ["dep:spin"]
+
+[profile.release]
+debug = true
+
+[package.metadata.docs.rs]
+features = ["panic-handler"]

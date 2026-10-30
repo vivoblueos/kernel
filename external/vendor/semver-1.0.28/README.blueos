@@ -1,0 +1,10 @@
+Name: semver
+URL: https://crates.io/crates/semver
+Version: 1.0.28
+Revision: 7625c7aa3f0e8ba21e099d1765bcebcb72aa8816
+License: Apache-2.0
+License File: //external/vendor/semver-1.0.28/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Parser and evaluator for Cargo's flavor of Semantic Versioning

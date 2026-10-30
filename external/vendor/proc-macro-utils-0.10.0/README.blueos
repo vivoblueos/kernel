@@ -1,0 +1,10 @@
+Name: proc-macro-utils
+URL: https://crates.io/crates/proc-macro-utils
+Version: 0.10.0
+Revision: a6995bb9ff248b55fcefd1f6842f72676f5dbcf8
+License: Apache-2.0
+License File: //external/vendor/proc-macro-utils-0.10.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: low-level utilities on proc-macro and proc-macro2 types

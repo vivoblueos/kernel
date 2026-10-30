@@ -1,0 +1,17 @@
+[package]
+name = "somni-expr"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.82.0"
+description = "An expression evaluation library"
+keywords = ["expression", "script", "language", "evaluator", "eval"]
+categories = ["compilers"]
+repository = "https://github.com/bugadani/somni"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+somni-parser.workspace = true
+
+[dev-dependencies]
+ansi-parser.workspace = true
+pretty_assertions.workspace = true

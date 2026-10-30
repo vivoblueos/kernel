@@ -1,0 +1,10 @@
+Name: enumset_derive
+URL: https://crates.io/crates/enumset_derive
+Version: 0.15.0
+Revision: 027f63f12e3c9a53d78f85b58a4c9422534fc7d3
+License: Apache-2.0
+License File: //external/vendor/enumset_derive-0.15.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: An internal helper crate for enumset. Not public API.

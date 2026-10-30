@@ -1,0 +1,22 @@
+warning: unused import: `docsplay::Display`
+  --> tests/std/without.rs:14:5
+   |
+14 | use docsplay::Display;
+   |     ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+error[E0277]: `FakeType` doesn't implement `std::fmt::Display`
+  --> tests/std/without.rs:19:37
+   |
+19 | static_assertions::assert_impl_all!(FakeType: core::fmt::Display);
+   |                                     ^^^^^^^^ `FakeType` cannot be formatted with the default formatter
+   |
+   = help: the trait `std::fmt::Display` is not implemented for `FakeType`
+   = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+note: required by a bound in `assert_impl_all`
+  --> tests/std/without.rs:19:1
+   |
+19 | static_assertions::assert_impl_all!(FakeType: core::fmt::Display);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `assert_impl_all`
+   = note: this error originates in the macro `static_assertions::assert_impl_all` (in Nightly builds, run with -Z macro-backtrace for more info)

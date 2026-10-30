@@ -1,0 +1,10 @@
+Name: linked_list_allocator
+URL: https://crates.io/crates/linked_list_allocator
+Version: 0.10.6
+Revision: a1d90498ff82872c5eb89edef77a08b25b4f14c4
+License: Apache-2.0
+License File: //external/vendor/linked_list_allocator-0.10.6/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Simple allocator usable for no_std systems. It builds a linked list from the freed blocks and thus needs no additional data structures.

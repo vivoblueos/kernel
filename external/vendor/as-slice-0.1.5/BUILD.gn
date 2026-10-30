@@ -1,0 +1,43 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("as_slice") {
+  epoch = "0.1"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/as-slice-0.1.5/src/lib.rs" ]
+  inputs = []
+  edition = "2015"
+  deps = [
+    "//external/vendor/generic-array-0.12.4:generic_array",
+    "//external/vendor/generic-array-0.13.3:generic_array",
+    "//external/vendor/generic-array-0.14.7:generic_array",
+    "//external/vendor/stable_deref_trait-1.2.1:stable_deref_trait",
+  ]
+  aliased_deps = {
+    ga13 = "//external/vendor/generic-array-0.13.3:generic_array"
+    ga14 = "//external/vendor/generic-array-0.14.7:generic_array"
+  }
+
+  cargo_pkg_name = "as-slice"
+  cargo_pkg_version = "0.1.5"
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

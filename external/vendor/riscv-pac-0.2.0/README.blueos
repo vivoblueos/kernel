@@ -1,0 +1,10 @@
+Name: riscv-pac
+URL: https://crates.io/crates/riscv-pac
+Version: 0.2.0
+Revision: f73533a7d5663fc7ea85d715d828ca9983683761
+License: ISC
+License File: //external/vendor/riscv-pac-0.2.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Low level access to RISC-V processors

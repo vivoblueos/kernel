@@ -1,0 +1,27 @@
+[package]
+name = "delegate"
+description = "Method delegation with less boilerplate"
+version = "0.13.4"
+authors = ["Godfrey Chan <godfreykfc@gmail.com>", "Jakub Beránek <berykubik@gmail.com>"]
+repository = "https://github.com/kobzol/rust-delegate"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+edition = "2018"
+include = [
+    "src/*.rs",
+    "Cargo.toml",
+    "README.md"
+]
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit-mut"] }
+quote = "1"
+proc-macro2 = "1"
+
+[lib]
+proc-macro = true
+
+[dev-dependencies]
+async-trait = "0.1.50"
+futures = "0.3.16"
+tokio = { version = "1.16.1", features = ["sync"] }

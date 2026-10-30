@@ -1,0 +1,74 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("esp_hal") {
+  epoch = "1"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/esp-hal-1.1.1/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  deps = [
+    "//external/vendor/bitfield-0.19.4:bitfield",
+    "//external/vendor/bitflags-2.10.0:bitflags",
+    "//external/vendor/bytemuck-1.25.0:bytemuck",
+    "//external/vendor/cfg-if-1.0.4:cfg_if",
+    "//external/vendor/embassy-futures-0.1.2:embassy_futures",
+    "//external/vendor/embassy-sync-0.8.0:embassy_sync",
+    "//external/vendor/embedded-hal-1.0.0:embedded_hal",
+    "//external/vendor/embedded-hal-async-1.0.0:embedded_hal_async",
+    "//external/vendor/enumset-1.1.13:enumset",
+    "//external/vendor/esp-rom-sys-0.1.4:esp_rom_sys",
+    "//external/vendor/esp-sync-0.2.1:esp_sync",
+    "//external/vendor/fugit-0.3.9:fugit",
+    "//external/vendor/portable-atomic-1.13.1:portable_atomic",
+    "//external/vendor/riscv-0.15.0:riscv",
+    "//external/vendor/strum-0.27.2:strum",
+  ]
+
+  if (board == "esp32c6_devkitc_1") {
+    deps += [ "//external/vendor/esp32c6-0.23.0:esp32c6" ]
+    features = [ "esp32c6" ]
+  } else {
+    deps += [ "//external/vendor/esp32c3-0.32.2:esp32c3" ]
+    features = [ "esp32c3" ]
+  }
+  build_deps = [
+    "//external/vendor/esp-config-0.7.0:esp_config",
+    "//external/vendor/esp-metadata-generated-0.4.0:esp_metadata_generated",
+  ]
+  proc_macro_deps = [
+    "//external/vendor/delegate-0.13.4:delegate",
+    "//external/vendor/document-features-0.2.12:document_features",
+    "//external/vendor/esp-hal-procmacros-0.22.0:esp_hal_procmacros",
+    "//external/vendor/instability-0.3.12:instability",
+    "//external/vendor/paste-1.0.15:paste",
+  ]
+  aliased_deps = {
+    procmacros = "//external/vendor/esp-hal-procmacros-0.22.0:esp_hal_procmacros(//build/toolchain:host)"
+  }
+
+  cargo_pkg_name = "esp-hal"
+  cargo_pkg_version = "1.1.1"
+  build_root = "//external/vendor/esp-hal-1.1.1/build.rs"
+  build_sources = [ "//external/vendor/esp-hal-1.1.1/build.rs" ]
+  build_script_outputs = [ "esp_hal_config_table.md" ]
+
+  rustenv = [ "ESP_HAL_CONFIG_MIN_CHIP_REVISION=0" ]
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

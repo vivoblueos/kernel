@@ -1,0 +1,10 @@
+[package]
+name = "somni-parser"
+version = "0.2.2"
+edition = "2021"
+rust-version = "1.82.0"
+description = "Grammar parser of the Somni language and VM"
+keywords = ["expression", "script", "language", "evaluator", "eval"]
+categories = ["compilers"]
+repository = "https://github.com/bugadani/somni"
+license = "MIT OR Apache-2.0"

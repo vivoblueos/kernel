@@ -1,0 +1,10 @@
+Name: opaque-debug
+URL: https://crates.io/crates/opaque-debug
+Version: 0.3.1
+Revision: dd4adddf8b716bb51eb8ccb8c73e47bff1e358aa
+License: Apache-2.0
+License File: //external/vendor/opaque-debug-0.3.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Macro for opaque Debug trait implementation

@@ -1,0 +1,5 @@
+error: `#[should_error]` is not allowed on the `#[before_each]` function
+ --> tests/ui/before_each-has-should-error-macro.rs:7:8
+  |
+7 |     fn init() {}
+  |        ^^^^

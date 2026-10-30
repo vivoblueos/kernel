@@ -1,0 +1,10 @@
+Name: bitfield-macros
+URL: https://crates.io/crates/bitfield-macros
+Version: 0.19.4
+Revision: a459bcfd6f96a2d8e0cba02a69e3f4f9e7384938
+License: Apache-2.0
+License File: //external/vendor/bitfield-macros-0.19.4/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Internal crate for the bitfield crate.

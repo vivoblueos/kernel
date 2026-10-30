@@ -1,0 +1,10 @@
+Name: defmt-rtt
+URL: https://crates.io/crates/defmt-rtt
+Version: 1.1.0
+Revision: fde51d5a9e8d63223740732a139423644a0664e5
+License: Apache-2.0
+License File: //external/vendor/defmt-rtt-1.1.0/../../LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Transmit defmt log messages over the RTT (Real-Time Transfer) protocol

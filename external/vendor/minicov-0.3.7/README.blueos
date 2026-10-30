@@ -1,0 +1,10 @@
+Name: minicov
+URL: https://crates.io/crates/minicov
+Version: 0.3.7
+Revision: 31ed26cc5173df2d4bfe5361d4608e55b93122b1
+License: Apache-2.0
+License File: //external/vendor/minicov-0.3.7/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Code coverage and profile-guided optimization support for no_std and embedded programs

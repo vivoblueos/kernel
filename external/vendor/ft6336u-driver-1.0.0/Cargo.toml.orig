@@ -1,0 +1,16 @@
+[package]
+name = "ft6336u-driver"
+version = "1.0.0"
+edition = "2021"
+authors = ["Trevor Flahardy"]
+license = "MIT OR Apache-2.0"
+description = "A no_std embedded-hal driver for the FT6336U capacitive touch controller"
+repository = "https://github.com/trevorflahardy/ft6336u-driver"
+keywords = ["embedded", "touchscreen", "ft6336u", "capacitive", "no-std"]
+categories = ["embedded", "hardware-support", "no-std"]
+readme = "README.md"
+
+[dependencies]
+embedded-hal = "1.0"
+
+[dev-dependencies]

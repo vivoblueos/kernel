@@ -1,0 +1,36 @@
+[package]
+edition = "2018"
+name = "gd32e5"
+version = "0.9.1"
+authors = ["Andrew Walbran <qwandor@gmail.com>", "gd32-rs Contributors"]
+description = "Device support crate for GD32E5 devices"
+repository = "https://github.com/gd32-rust/gd32-rs"
+readme = "README.md"
+keywords = ["gd32", "svd2rust", "no_std", "embedded"]
+categories = ["embedded", "no-std"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+vcell = "0.1.3"
+cortex-m = "0.7.7"
+
+[dependencies.cortex-m-rt]
+optional = true
+version = "0.7.3"
+
+[dependencies.critical-section]
+optional = true
+version = "1.1.2"
+
+[package.metadata.docs.rs]
+features = ['rt', 'gd32e503', 'gd32e508']
+default-target = "thumbv8m.base-none-eabi"
+targets = []
+
+[features]
+default = []
+rt = ["cortex-m-rt/device"]
+gd32e503 = []
+gd32e505 = []
+gd32e507 = []
+gd32e508 = []

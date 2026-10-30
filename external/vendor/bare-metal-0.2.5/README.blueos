@@ -1,0 +1,10 @@
+Name: bare-metal
+URL: https://crates.io/crates/bare-metal
+Version: 0.2.5
+Revision: a2f8b222a14253141bbc7853e5699641e61e5ebf
+License: Apache-2.0
+License File: //external/vendor/bare-metal-0.2.5/LICENSE-APACHE,//external/vendor/bare-metal-0.2.5/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Abstractions common to bare metal systems

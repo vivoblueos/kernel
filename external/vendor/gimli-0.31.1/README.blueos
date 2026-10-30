@@ -1,0 +1,10 @@
+Name: gimli
+URL: https://crates.io/crates/gimli
+Version: 0.31.1
+Revision: 7e9d923a98c5eeed4d7a8b8cb32475d1ce16ced2
+License: Apache-2.0
+License File: //external/vendor/gimli-0.31.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A library for reading and writing the DWARF debugging format.

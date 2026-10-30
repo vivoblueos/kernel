@@ -1,0 +1,13 @@
+Name: elliptic-curve
+URL: https://crates.io/crates/elliptic-curve
+Version: 0.13.8
+Revision: 5ddf0f52f07f65f319ffd423c52e696406924d90
+License: Apache-2.0
+License File: //external/vendor/elliptic-curve-0.13.8/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: General purpose Elliptic Curve Cryptography (ECC) support, including types
+and traits for representing various elliptic curve forms, scalars, points,
+and public/secret keys composed thereof.
+

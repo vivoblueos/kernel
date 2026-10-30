@@ -1,0 +1,10 @@
+Name: embedded-websocket
+URL: https://crates.io/crates/embedded-websocket
+Version: 0.9.5
+Revision: 35943b081aedf28fd76190c2b0b059b39a9d92ab
+License: Apache-2.0
+License File: //external/vendor/embedded-websocket-0.9.5/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A lightweight websocket library for embedded systems (no_std)

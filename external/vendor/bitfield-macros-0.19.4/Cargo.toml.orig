@@ -1,0 +1,17 @@
+[package]
+name = "bitfield-macros"
+version = "0.19.4"
+edition = "2021"
+authors = ["Loïc Damien <loic.damien@dzamlo.ch>"]
+license = "MIT OR Apache-2.0"
+description = "Internal crate for the bitfield crate."
+repository = "https://github.com/dzamlo/rust-bitfield"
+documentation = "https://docs.rs/bitfield-macros"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.93"
+quote = "1.0.38"
+syn = "2.0.96"

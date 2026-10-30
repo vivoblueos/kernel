@@ -1,0 +1,58 @@
+# TODO: Build gnrt with GN
+action("build_gnrt") {
+  script = "//external/gnrt/run_gnrt_build.py"
+  inputs = [
+    "Cargo.toml",
+    "add.rs",
+    "gen.rs",
+    "vendor.rs",
+    "main.rs",
+    "update.rs",
+    "util.rs",
+    "lib/config.rs",
+    "lib/crates.rs",
+    "lib/deps.rs",
+    "lib/gn.rs",
+    "lib/group.rs",
+    "lib/inherit.rs",
+    "lib/manifest.rs",
+    "lib/metadata_util.rs",
+    "lib/paths.rs",
+    "lib/platforms.rs",
+    "lib/readme.rs",
+    "lib/util.rs",
+    "lib/vet.rs",
+  ]
+  path = "."
+  output_path = "$root_out_dir/host/bin"
+  output = "$root_out_dir/host/bin/gnrt"
+  print(output)
+  args = [
+    "-p",
+    rebase_path(path),
+    "-o",
+    rebase_path(output_path),
+  ]
+  outputs = [ output ]
+}
+
+action("gen_gnrt") {
+  deps = [ ":build_gnrt" ]
+  script = "//external/gnrt/run_gnrt_gen.py"
+  gnrt_executable = get_target_outputs(":build_gnrt")
+  inputs = [
+    gnrt_executable[0],
+    "//external/Cargo.toml",
+    "//external/BLUE_BUILD.gn.hbs",
+    "//external/gnrt_config.toml",
+  ]
+  args = [
+    "-exe",
+    rebase_path(gnrt_executable[0]),
+    "-w",
+    rebase_path("//"),
+    "-c",
+    rebase_path("//external"),
+  ]
+  outputs = [ "$target_gen_dir/$target_name/dummy" ]
+}

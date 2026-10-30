@@ -1,0 +1,10 @@
+Name: defmt-test-macros
+URL: https://crates.io/crates/defmt-test-macros
+Version: 0.3.2
+Revision: 56a4fc984433a4a78bdd7f752303dd4caacbe3b6
+License: Apache-2.0
+License File: //external/vendor/defmt-test-macros-0.3.2/../../../LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: defmt-test macros

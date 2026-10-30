@@ -1,0 +1,21 @@
+# Copyright © 2019–2021 Trevor Spiteri
+
+# Copying and distribution of this file, with or without modification,
+# are permitted in any medium without royalty provided the copyright
+# notice and this notice are preserved. This file is offered as-is,
+# without any warranty.
+
+[package]
+name = "az"
+version = "1.2.1"
+edition = "2018"
+description = "Casts and checked casts"
+documentation = "https://docs.rs/az"
+repository = "https://gitlab.com/tspiteri/az"
+readme = "README.md"
+keywords = ["cast", "checked", "integer", "float"]
+categories = ["no-std"]
+license = "MIT/Apache-2.0"
+
+[features]
+fail-on-warnings = []

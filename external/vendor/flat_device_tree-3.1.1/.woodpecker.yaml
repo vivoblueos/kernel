@@ -1,0 +1,40 @@
+matrix:
+  RUST: [stable, nightly]
+
+steps:
+  lint:
+    image: rust
+    when:
+      - event: pull_request
+      - event: manual
+      - event: push
+    environment: [CARGO_TERM_COLOR=always]
+    commands:
+      - rustup default $RUST
+      - rustup component add clippy rustfmt
+      - cargo clippy --all
+      - cargo clippy --all --tests
+      - cargo fmt --check --all
+
+  build:
+    image: rust
+    when:
+      - event: pull_request
+      - event: manual
+      - event: push
+    environment: [CARGO_TERM_COLOR=always]
+    commands:
+      - rustup default $RUST
+      - cargo build --all-features
+
+  test:
+    image: rust
+    when:
+      - event: pull_request
+      - event: manual
+      - event: push
+    environment: [CARGO_TERM_COLOR=always]
+    commands:
+      - rustup default $RUST
+      - cargo check
+      - cargo test --all

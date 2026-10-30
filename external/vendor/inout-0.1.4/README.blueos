@@ -1,0 +1,10 @@
+Name: inout
+URL: https://crates.io/crates/inout
+Version: 0.1.4
+Revision: 784ff3c76c907f80363ada7dc69c1d5831d4789f
+License: Apache-2.0
+License File: //external/vendor/inout-0.1.4/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Custom reference types for code generic over in-place and buffer-to-buffer modes of operation.

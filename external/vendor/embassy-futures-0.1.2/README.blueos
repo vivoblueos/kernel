@@ -1,0 +1,10 @@
+Name: embassy-futures
+URL: https://crates.io/crates/embassy-futures
+Version: 0.1.2
+Revision: 3e8d8fec15286eb25b8bba7d103c8fc279544551
+License: Apache-2.0
+License File: //external/vendor/embassy-futures-0.1.2/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: no-std, no-alloc utilities for working with futures

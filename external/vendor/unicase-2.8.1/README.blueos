@@ -1,0 +1,10 @@
+Name: unicase
+URL: https://crates.io/crates/unicase
+Version: 2.8.1
+Revision: c42d9624fe9043607820064c3bd375f809b7b808
+License: Apache-2.0
+License File: //external/vendor/unicase-2.8.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A case-insensitive wrapper around strings.

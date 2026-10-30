@@ -1,0 +1,10 @@
+Name: const-default
+URL: https://crates.io/crates/const-default
+Version: 1.0.0
+Revision: 699779f5b713e476b97d0eee4a8124d715fc7b77
+License: MIT
+License File: //external/vendor/const-default-1.0.0/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: A const Default trait

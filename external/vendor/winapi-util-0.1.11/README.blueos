@@ -1,0 +1,10 @@
+Name: winapi-util
+URL: https://crates.io/crates/winapi-util
+Version: 0.1.11
+Revision: 803874c57dc1f10ecd42f7c86d9de72f53818432
+License: MIT
+License File: //external/vendor/winapi-util-0.1.11/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: A dumping ground for high level safe wrappers over windows-sys.

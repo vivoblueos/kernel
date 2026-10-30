@@ -1,0 +1,5 @@
+error: only a single `#[init]` function can be defined
+ --> tests/ui/init-duplicate.rs:9:8
+  |
+9 |     fn second() {}
+  |        ^^^^^^

@@ -1,0 +1,11 @@
+Name: proc-macro-crate
+URL: https://crates.io/crates/proc-macro-crate
+Version: 3.5.0
+Revision: 8f3d8b04539f732e09c07907f138a248c8d0eed9
+License: Apache-2.0
+License File: //external/vendor/proc-macro-crate-3.5.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Replacement for crate (macro_rules keyword) in proc-macros
+

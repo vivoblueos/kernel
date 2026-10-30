@@ -1,0 +1,21 @@
+[package]
+authors = ["The Knurling-rs developers"]
+description = "defmt-test macros"
+edition = "2021"
+keywords = ["knurling", "defmt", "testing"]
+license = "MIT OR Apache-2.0"
+name = "defmt-test-macros"
+readme = "README.md"
+repository = "https://github.com/knurling-rs/defmt"
+version = "0.3.2"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["extra-traits", "full"] }
+
+[dev-dependencies]
+trybuild = "1"

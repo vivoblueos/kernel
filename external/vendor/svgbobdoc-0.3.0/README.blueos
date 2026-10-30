@@ -1,0 +1,11 @@
+Name: svgbobdoc
+URL: https://crates.io/crates/svgbobdoc
+Version: 0.3.0
+Revision: 8046e3679c26e138971f93f7f744bb462fcc6629
+License: Apache-2.0
+License File: //external/vendor/svgbobdoc-0.3.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Renders ASCII diagrams in doc comments as SVG images.
+

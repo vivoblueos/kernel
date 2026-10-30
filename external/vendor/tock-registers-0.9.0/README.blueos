@@ -1,0 +1,10 @@
+Name: tock-registers
+URL: https://crates.io/crates/tock-registers
+Version: 0.9.0
+Revision: 3a0527d586702b8ae8cb242391fa72eb3a412f49
+License: Apache-2.0
+License File: //external/vendor/tock-registers-0.9.0/LICENSE-APACHE,//external/vendor/tock-registers-0.9.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Memory-Mapped I/O and register interface developed for Tock.

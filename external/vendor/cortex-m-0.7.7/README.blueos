@@ -1,0 +1,10 @@
+Name: cortex-m
+URL: https://crates.io/crates/cortex-m
+Version: 0.7.7
+Revision: bb4a78208323260a161e68b2498438867f971bc5
+License: Apache-2.0
+License File: //external/vendor/cortex-m-0.7.7/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Low level access to Cortex-M processors

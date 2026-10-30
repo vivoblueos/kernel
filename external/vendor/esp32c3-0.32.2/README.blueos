@@ -1,0 +1,10 @@
+Name: esp32c3
+URL: https://crates.io/crates/esp32c3
+Version: 0.32.2
+Revision: 62d3266cfd3503a532c259b1dd85e5166b804385
+License: Apache-2.0
+License File: //external/vendor/esp32c3-0.32.2/LICENSE-MIT,//external/vendor/esp32c3-0.32.2/LICENSE-Apache-2.0
+Shipped: yes
+Security Critical: yes
+
+Description: Peripheral access crate for the ESP32-C3

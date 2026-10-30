@@ -1,0 +1,10 @@
+Name: semver-parser
+URL: https://crates.io/crates/semver-parser
+Version: 0.7.0
+License: Apache-2.0
+License File: //external/vendor/semver-parser-0.7.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Parsing of the semver spec.
+

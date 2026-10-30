@@ -1,0 +1,10 @@
+Name: riscv-macros
+URL: https://crates.io/crates/riscv-macros
+Version: 0.3.0
+Revision: 527f6e23946c090490f41dd9dda25c596ec58522
+License: Apache-2.0
+License File: //external/vendor/riscv-macros-0.3.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Procedural macros re-exported in `riscv`

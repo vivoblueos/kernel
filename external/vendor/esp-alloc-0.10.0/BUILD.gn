@@ -1,0 +1,46 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from external/BLUE_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("esp_alloc") {
+  epoch = "0.10"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/esp-alloc-0.10.0/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  deps = [
+    "//external/vendor/allocator-api2-0.3.1:allocator_api2",
+    "//external/vendor/cfg-if-1.0.4:cfg_if",
+    "//external/vendor/enumset-1.1.13:enumset",
+    "//external/vendor/esp-sync-0.2.1:esp_sync",
+    "//external/vendor/linked_list_allocator-0.10.6:linked_list_allocator",
+    "//external/vendor/rlsf-0.2.2:rlsf",
+  ]
+  build_deps = [ "//external/vendor/esp-config-0.7.0:esp_config" ]
+  proc_macro_deps =
+      [ "//external/vendor/document-features-0.2.12:document_features" ]
+
+  cargo_pkg_name = "esp-alloc"
+  cargo_pkg_version = "0.10.0"
+  build_root = "//external/vendor/esp-alloc-0.10.0/build.rs"
+  build_sources = [ "//external/vendor/esp-alloc-0.10.0/build.rs" ]
+
+  rustflags = [
+    "--cap-lints=allow",  # Suppress all warnings in crates.io crates
+  ]
+}

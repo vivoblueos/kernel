@@ -1,0 +1,10 @@
+Name: max7219
+URL: https://crates.io/crates/max7219
+Version: 0.5.0
+Revision: 0fe78747744622bdcd1e87b41a1ee91dfeb99801
+License: MIT
+License File: //external/vendor/max7219-0.5.0/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: A platform agnostic driver to interface the MAX7219 (LED driver)

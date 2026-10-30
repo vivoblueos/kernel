@@ -1,0 +1,62 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+
+### Changed
+
+
+### Fixed
+
+
+### Removed
+
+
+## [v0.1.4] - 2026-04-16
+
+### Added
+
+- Initial ESP32-C5 support (#4859)
+- Initial ESP32-C61 support (#5187)
+
+### Changed
+
+- Update ROM symbols to match ESP-IDF 5.5.3 (#5226)
+
+### Fixed
+
+- Fixed `ets_update_cpu_frequency_rom` not linking on ESP32 (#4500)
+
+## [v0.1.3] - 2025-10-30
+
+## [v0.1.2] - 2025-10-13
+
+### Added
+
+- Initialize the syscall table (#4177)
+
+### Changed
+
+- Updated linker scripts (#4113)
+
+### Fixed
+
+- esp32: c2, c3, s2, s3: fixed "Defalut" typo in ld scripts (#4180)
+
+## [v0.1.1] - 2025-07-16
+
+## [v0.1.0] - 2025-07-01
+
+[v0.1.0]: https://github.com/esp-rs/esp-hal/releases/tag/esp-rom-sys-v0.1.0
+[v0.1.1]: https://github.com/esp-rs/esp-hal/compare/esp-rom-sys-v0.1.0...esp-rom-sys-v0.1.1
+[v0.1.2]: https://github.com/esp-rs/esp-hal/compare/esp-rom-sys-v0.1.1...esp-rom-sys-v0.1.2
+[v0.1.3]: https://github.com/esp-rs/esp-hal/compare/esp-rom-sys-v0.1.2...esp-rom-sys-v0.1.3
+[v0.1.4]: https://github.com/esp-rs/esp-hal/compare/esp-rom-sys-v0.1.3...esp-rom-sys-v0.1.4
+[Unreleased]: https://github.com/esp-rs/esp-hal/compare/esp-rom-sys-v0.1.4...HEAD

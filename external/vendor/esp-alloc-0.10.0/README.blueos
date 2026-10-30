@@ -1,0 +1,10 @@
+Name: esp-alloc
+URL: https://crates.io/crates/esp-alloc
+Version: 0.10.0
+Revision: 347003de8a48320bb7724f53045be3afa9204411
+License: Apache-2.0
+License File: //external/vendor/esp-alloc-0.10.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: A heap allocator for Espressif devices

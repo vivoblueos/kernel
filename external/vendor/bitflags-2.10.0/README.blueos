@@ -1,0 +1,11 @@
+Name: bitflags
+URL: https://crates.io/crates/bitflags
+Version: 2.10.0
+Revision: 7cc8595e93d04d180d39e2f25242dca85dd71228
+License: Apache-2.0
+License File: //external/vendor/bitflags-2.10.0/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A macro to generate structures which behave like bitflags.
+

@@ -1,0 +1,10 @@
+Name: generic-array
+URL: https://crates.io/crates/generic-array
+Version: 0.13.3
+Revision: 525f5e7dc3e3e9cab6ee92c2655611c5590675d3
+License: MIT
+License File: //external/vendor/generic-array-0.13.3/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Generic types implementing functionality of arrays

@@ -1,0 +1,456 @@
+/**
+\defgroup vstream_interface_gr vStream
+\brief Driver API for Virtual Streaming interface using fixed-size data blocks (%cmsis_vstream.h)
+\details
+
+The **vStream** software component provides an abstraction layer for streaming data using fixed-size blocks.
+It offers a standardized interface to interact with various streaming devices such as sensors, cameras, microphones, speakers, or simulated devices.
+It allows seamless development on one platform and deployment on another.
+
+<b>vStream API</b>
+
+The following header file defines the Application Programming Interface (API) for Virtual Streaming interface:
+  - <b>%cmsis_vstream.h</b>: Driver API for Virtual Streaming interface
+
+The driver implementation is typically a part of the Board Support Pack (BSP) for a specific board with streaming devices.
+
+<b>Driver Functions</b>
+
+All driver functions are grouped within the \ref vStreamDriver_t access structure.
+
+<b>User Code Template</b>
+
+The **CMSIS Driver:vStream (API):Custom** component provides a stub implementation of all vStream driver functions.  
+This template can be used to implement the vStream driver for your target hardware.
+
+The default driver access structure is named <b>Driver_vStreamDevice</b>, but `Device` should be replaced with
+a specific device name, such as `Driver_vStreamAccelerometer`. See \ref vStreamDriver_t for more details.
+
+<b>Code Example</b>
+
+The following example demonstrates how to use the vStream driver for an accelerometer:
+
+\include vStream_Example.c
+
+@{
+*/
+
+/**
+\defgroup vstream_return_code Return Codes
+\ingroup  vstream_interface_gr
+\brief    Return codes for driver functions. Negative values indicate errors.
+@{
+\def VSTREAM_OK
+\def VSTREAM_ERROR
+\def VSTREAM_ERROR_PARAMETER
+@}
+*/
+
+/**
+\defgroup vstream_mode Streaming Modes
+\ingroup  vstream_interface_gr
+\brief    Streaming modes used by the \ref vStreamStart function.
+@{
+\def VSTREAM_MODE_CONTINUOUS
+\def VSTREAM_MODE_SINGLE
+@}
+*/
+
+/**
+\defgroup vstream_events Driver Event Flags
+\ingroup  vstream_interface_gr
+\brief    Events signaled by the driver via the \ref vStreamEvent function.
+@{
+\def VSTREAM_EVENT_DATA
+\def VSTREAM_EVENT_OVERFLOW
+\def VSTREAM_EVENT_UNDERFLOW
+\def VSTREAM_EVENT_EOS
+@}
+*/
+
+/**
+\defgroup vStreamStatus_t Streaming Status
+\ingroup  vstream_interface_gr
+\brief    Structure indicating the status of the virtual stream.
+@{
+\struct vStreamStatus_t
+@}
+*/
+
+/**
+\typedef vStreamEvent_t
+\details
+Provides the typedef for the callback function \ref vStreamEvent.
+
+<b>Parameter for:</b>
+  - \ref vStreamInitialize
+*/
+
+/**
+\struct vStreamDriver_t
+\details
+This structure provides function pointers to access the vStream driver.
+
+Recommended naming convention for access structures:
+  - Driver_vStream<Device>
+  - Examples:
+    - Driver_vStreamAccelerometer
+    - Driver_vStreamGyroscope
+    - Driver_vStreamHumidity
+    - Driver_vStreamTemperature
+    - Driver_vStreamIMU
+    - Driver_vStreamAudioIn
+    - Driver_vStreamAudioOut
+    - Driver_vStreamVideoIn
+    - Driver_vStreamVideoOut
+
+*****************************************************************************************************************/
+
+int32_t vStreamInitialize (vStreamEvent_t event_cb) { return VSTREAM_OK; }
+/**
+\fn int32_t vStreamInitialize (vStreamEvent_t event_cb)
+\details
+This function prepares the Virtual Streaming interface for operation.  
+
+It performs the following tasks:
+  - Initializes internal driver resources and streaming device interface.
+  - Registers the \ref vStreamEvent event signaling callback function.
+
+The event callback function must conform to the \ref vStreamEvent_t type.  
+If event signaling is not required, pass a NULL pointer for \em event_cb.
+
+This function must be called before any other vStream operations.
+
+<b>Code Example</b>:
+
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+int main (void) {
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  // ...
+}
+\endcode
+
+********************************************************************************/
+
+int32_t vStreamUninitialize (void) { return VSTREAM_OK; }
+/**
+\fn int32_t vStreamUninitialize (void)
+\details
+This function disables the Virtual Streaming interface and releases all associated resources that
+were allocated during \ref vStreamInitialize.
+
+Use this function to properly shut down the interface when streaming is no longer required.  
+After calling \b vStreamUninitialize, the interface is considered inactive, and re-initialization is required to resume streaming operations.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+int main (void) {
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  // ...
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+int32_t vStreamSetBuf (void *buf, uint32_t buf_size, uint32_t block_size) { return VSTREAM_OK; }
+/**
+\fn int32_t vStreamSetBuf (void *buf, uint32_t buf_size, uint32_t block_size)
+\details
+This function registers a memory buffer for use by the Virtual Streaming driver.  
+The buffer is used for reading or writing fixed-size data blocks, depending on the streaming direction.
+
+Memory buffer recommendations:
+  - the buffer should be aligned to a 4-byte boundary, to facilitate DMA usage.
+  - \em buf_size should be an integer multiple of \em block_size, otherwise the largest multiple that fits will be used.
+  - a minimum of two blocks is recommended to ensure proper buffering and streaming continuity.
+
+If \em block_size is larger than \em buf_size, the function returns \ref VSTREAM_ERROR_PARAMETER.
+
+This function must be called after initialization and before starting the stream.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+static uint32_t vstream_buf[256];
+
+int main (void) {
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  ptrDriver_vStreamAccelerometer->SetBuf(vstream_buf, sizeof(vstream_buf), sizeof(vstream_buf)/2);
+  // ...
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+int32_t vStreamStart (uint32_t mode) { return VSTREAM_OK; }
+/**
+\fn int32_t vStreamStart (uint32_t mode)
+\details
+This function initiates the streaming operation based on the specified mode.
+
+Before calling \b vStreamStart:
+  - The interface must be initialized using \ref vStreamInitialize.
+  - A valid buffer must be configured using \ref vStreamSetBuf.
+
+The \em mode parameter defines the streaming behavior:
+  - \ref VSTREAM_MODE_CONTINUOUS : Streaming continues until explicitly stopped.
+  - \ref VSTREAM_MODE_SINGLE : Streaming stops automatically after transferring a single data block.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+static uint32_t vstream_buf[256];
+
+int main (void) {
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  ptrDriver_vStreamAccelerometer->SetBuf(vstream_buf, sizeof(vstream_buf), sizeof(vstream_buf)/2);
+  ptrDriver_vStreamAccelerometer->Start(VSTREAM_MODE_CONTINUOUS);
+  // ...
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+int32_t vStreamStop (void) { return VSTREAM_OK; }
+/**
+\fn int32_t vStreamStop (void)
+\details
+This function stops the ongoing streaming process initiated by \ref vStreamStart and resets the
+stream, by discarding any remaining or incomplete data blocks.
+
+Calling this function halts data transfers and prepares the stream for either shutdown or restart.
+After stopping, the stream can be restarted using \ref vStreamStart without requiring re-initialization or reconfiguration, provided the buffer settings remain valid.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+static uint32_t vstream_buf[256];
+
+int main (void) {
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  ptrDriver_vStreamAccelerometer->SetBuf(vstream_buf, sizeof(vstream_buf), sizeof(vstream_buf)/2);
+  ptrDriver_vStreamAccelerometer->Start(VSTREAM_MODE_CONTINUOUS);
+  // ...
+  ptrDriver_vStreamAccelerometer->Stop();
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+void *vStreamGetBlock (void) { return NULL; }
+/**
+\fn void *vStreamGetBlock (void)
+\details
+This function provides access to the data block used for input or output operations,
+depending on the streaming direction.
+
+- For input streams (receiving data): returns a pointer to the oldest unread data block.  
+  If no unread block is available, the function returns NULL.
+
+- For output streams (sending data): returns a pointer to the next available empty block where the application can write data.  
+  If no empty block is available, the function returns NULL.
+
+The returned block remains valid until it is released using \ref vStreamReleaseBlock.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+static uint32_t vstream_buf[256];
+
+int main (void) {
+  static volatile uint32_t *ptr_sensor_data_block;
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  ptrDriver_vStreamAccelerometer->SetBuf(vstream_buf, sizeof(vstream_buf), sizeof(vstream_buf)/2);
+  ptrDriver_vStreamAccelerometer->Start(VSTREAM_MODE_CONTINUOUS);
+  do {
+    ptr_sensor_data_block = ptrDriver_vStreamAccelerometer->GetBlock();
+  } while (ptr_sensor_data_block == NULL);
+  // ...
+  ptrDriver_vStreamAccelerometer->Stop();
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+int32_t vStreamReleaseBlock (void) { return VSTREAM_OK; }
+/**
+\fn int32_t vStreamReleaseBlock (void)
+\details
+This function finalizes the use of the data block returned by \ref vStreamGetBlock.
+
+- For input streams: marks the block as processed, making it available for reuse by the driver.
+- For output streams: commits the block for transmission, indicating that the data is ready to be streamed out.
+
+This function must be called after processing or preparing the data block returned by \ref vStreamGetBlock to maintain proper buffer flow and avoid data loss or stalling.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+static uint32_t vstream_buf[256];
+
+int main (void) {
+  static volatile uint32_t *ptr_sensor_data_block;
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  ptrDriver_vStreamAccelerometer->SetBuf(vstream_buf, sizeof(vstream_buf), sizeof(vstream_buf)/2);
+  ptrDriver_vStreamAccelerometer->Start(VSTREAM_MODE_CONTINUOUS);
+  do {
+    ptr_sensor_data_block = ptrDriver_vStreamAccelerometer->GetBlock();
+  } while (ptr_sensor_data_block == NULL);
+  // Do something with sensor data
+  // ...
+  ptrDriver_vStreamAccelerometer->ReleaseBlock();
+  ptrDriver_vStreamAccelerometer->Stop();
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+vStreamStatus_t vStreamGetStatus (void) {
+  vStreamStatus_t status = { 0U, 0U, 0U, 0U, 0U };
+  return status;
+}
+/**
+\fn vStreamStatus_t vStreamGetStatus (void)
+\details
+This function returns the current operational status of the Virtual Streaming interface.
+
+The returned structure includes the following information:
+  - Streaming activity status.
+  - Overflow or underflow conditions.
+  - End-of-stream (EOS) indication.
+
+Use this function to monitor the health and state of the streaming process during runtime.
+
+<b>Code Example</b>:
+\code
+#include "cmsis_vstream.h"
+
+// vStream driver
+extern vStreamDriver_t     Driver_vStreamAccelerometer;
+static vStreamDriver_t *ptrDriver_vStreamAccelerometer = &Driver_vStreamAccelerometer;
+
+static uint32_t vstream_buf[256];
+
+int main (void) {
+
+  SystemCoreClockUpdate();              // System Initialization
+
+  ptrDriver_vStreamAccelerometer->Initialize(NULL);
+  ptrDriver_vStreamAccelerometer->SetBuf(vstream_buf, sizeof(vstream_buf), sizeof(vstream_buf)/2);
+  ptrDriver_vStreamAccelerometer->Start(VSTREAM_MODE_CONTINUOUS);
+  if (ptrDriver_vStreamAccelerometer->GetStatus().active == 0U) {
+    // If streaming is not active exit
+  }
+  // ...
+  ptrDriver_vStreamAccelerometer->Stop();
+  ptrDriver_vStreamAccelerometer->Uninitialize();
+}
+\endcode
+
+********************************************************************************/
+
+void vStreamEvent (uint32_t event_flags) { }
+/**
+\fn void vStreamEvent (uint32_t event_flags)
+\details
+This user-implemented callback function is invoked by the driver to signal runtime events during streaming.  
+It is registered by the \ref vStreamInitialize function.
+
+The \ref vstream_events "event_flags" parameter is a bitmask where each bit represents a specific event condition.
+
+Multiple events may be reported simultaneously via combined bits. Use this function to respond to runtime conditions, such as processing data, handling errors, or updating application state.
+
+The following events can be signaled:
+
+<table class="cmtable" summary="">
+<tr>
+  <th> Parameter \em event_flags   </th><th> Bit </th><th> Description </th>                                              
+</tr>
+<tr>
+  <td> \ref VSTREAM_EVENT_DATA     </td><td>  0  </td><td> Occurs when a new block of incoming data is available
+  or when a block of outgoing data was streamed out.</td>
+</tr>
+<tr>
+  <td> \ref VSTREAM_EVENT_OVERFLOW </td><td>  1  </td><td> Occurs when a block of incoming data begins to be overwritten
+  because it was not released in time using the \ref vStreamReleaseBlock function.</td>
+</tr>
+<tr>
+  <td> \ref VSTREAM_EVENT_UNDERFLOW</td><td>  2  </td><td> Occurs when a block of outgoing data was not ready
+  (committed with \ref vStreamReleaseBlock function) before streaming out required it.</td>
+</tr>
+<tr>
+  <td> \ref VSTREAM_EVENT_EOS      </td><td>  3  </td><td> Occurs when a streaming interface reached end of stream.</td>
+</tr>
+</table>
+
+********************************************************************************/
+
+
+/**
+@}
+*/
+// End vStream Interface

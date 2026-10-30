@@ -1,0 +1,5 @@
+error: function requires `#[init]`, `#[teardown]`, `#[before_each]`, `#[after_each]`, or `#[test]` attribute
+ --> tests/ui/tests-without-annotated-function.rs:5:5
+  |
+5 |     fn some_function() {
+  |     ^^

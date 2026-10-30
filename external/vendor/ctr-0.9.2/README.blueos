@@ -1,0 +1,10 @@
+Name: ctr
+URL: https://crates.io/crates/ctr
+Version: 0.9.2
+Revision: 65320945adb1b6f7290e61b033f9e04ccdb2581b
+License: Apache-2.0
+License File: //external/vendor/ctr-0.9.2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: CTR block modes of operation

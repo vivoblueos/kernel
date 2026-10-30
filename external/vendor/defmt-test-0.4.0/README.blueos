@@ -1,0 +1,10 @@
+Name: defmt-test
+URL: https://crates.io/crates/defmt-test
+Version: 0.4.0
+Revision: f6decae6e09d1216aff052aa0733a6b5e632a100
+License: Apache-2.0
+License File: //external/vendor/defmt-test-0.4.0/../../LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: A test harness for embedded devices

@@ -1,0 +1,10 @@
+Name: esp32c6
+URL: https://crates.io/crates/esp32c6
+Version: 0.23.0
+Revision: e8ab66566f55311fd1dfe8900106042c37588aff
+License: Apache-2.0
+License File: //external/vendor/esp32c6-0.23.0/LICENSE-MIT,//external/vendor/esp32c6-0.23.0/LICENSE-Apache-2.0
+Shipped: yes
+Security Critical: yes
+
+Description: Peripheral access crate for the ESP32-C6

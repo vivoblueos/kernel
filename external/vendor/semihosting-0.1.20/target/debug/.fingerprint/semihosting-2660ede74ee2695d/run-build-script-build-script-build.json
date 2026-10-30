@@ -1,0 +1,1 @@
+{"rustc":236150593554202857,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[17526071880267620025,"build_script_build",false,7792825834176292236]],"local":[{"RerunIfChanged":{"output":"debug/build/semihosting-2660ede74ee2695d/output","paths":["build.rs","src/gen/build.rs"]}}],"rustflags":[],"metadata":0,"config":0,"compile_kind":0}

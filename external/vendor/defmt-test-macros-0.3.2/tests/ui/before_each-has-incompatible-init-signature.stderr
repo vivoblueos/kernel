@@ -1,0 +1,5 @@
+error: this type must match `#[init]`s return type: u32
+  --> tests/ui/before_each-has-incompatible-init-signature.rs:11:24
+   |
+11 |     fn say(value: &mut u16) {
+   |                        ^^^

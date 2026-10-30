@@ -1,0 +1,13 @@
+error[E0658]: non-inline modules in proc macro input are unstable
+ --> tests/ui/mod-must-be-inline.rs:4:1
+  |
+4 | mod tests;
+  | ^^^^^^^^^^
+  |
+  = note: see issue #54727 <https://github.com/rust-lang/rust/issues/54727> for more information
+
+error: module must be inline (e.g. `mod foo {}`)
+ --> tests/ui/mod-must-be-inline.rs:4:1
+  |
+4 | mod tests;
+  | ^^^

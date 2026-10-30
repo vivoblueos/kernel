@@ -1,0 +1,44 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/cargo_crate.gni")
+
+cargo_crate("serde_json") {
+  epoch = "1"
+  crate_type = "rlib"
+  sources = [ "//external/vendor/serde_json-1.0.135/src/lib.rs" ]
+  inputs = []
+  edition = "2021"
+  deps = [
+    "//external/vendor/itoa-1.0.18:itoa",
+    "//external/vendor/memchr-2.7.6:memchr",
+    "//external/vendor/ryu-1.0.23:ryu",
+    "//external/vendor/serde-1.0.228:serde",
+  ]
+  features = [
+    "alloc",
+    "std",
+  ]
+
+  cargo_pkg_name = "serde_json"
+  cargo_pkg_version = "1.0.135"
+  build_root = "//external/vendor/serde_json-1.0.135/build.rs"
+  build_sources = [ "//external/vendor/serde_json-1.0.135/build.rs" ]
+  rustenv = [
+    "CARGO_CFG_TARGET_ARCH=riscv32",
+    "CARGO_CFG_TARGET_POINTER_WIDTH=32",
+  ]
+
+  rustflags = [ "--cap-lints=allow" ]
+}

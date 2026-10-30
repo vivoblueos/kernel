@@ -1,0 +1,10 @@
+Name: xtensa-lx
+URL: https://crates.io/crates/xtensa-lx
+Version: 0.13.0
+Revision: 7757c381a0bfb9c4f881bf6aab406beb257aec06
+License: Apache-2.0
+License File: //external/vendor/xtensa-lx-0.13.0/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Low-level access to Xtensa LX processors and peripherals

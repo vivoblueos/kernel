@@ -1,0 +1,13 @@
+Name: primeorder
+URL: https://crates.io/crates/primeorder
+Version: 0.13.6
+Revision: bfd7b49d080270e4b260a6707a603c6ce8c66116
+License: Apache-2.0
+License File: //external/vendor/primeorder-0.13.6/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Pure Rust implementation of complete addition formulas for prime order elliptic
+curves (Renes-Costello-Batina 2015). Generic over field elements and curve
+equation coefficients
+

@@ -1,0 +1,30 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  merge_group:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rust: 1.54
+            features: ''
+          - rust: 1.63
+            features: ''
+          - rust: 1.63
+            features: 'std'
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: ${{matrix.rust}}
+            components: clippy
+            override: true
+      - name: Test
+        run: cargo test --features "${{matrix.features}}"

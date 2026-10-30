@@ -1,0 +1,10 @@
+Name: heapless
+URL: https://crates.io/crates/heapless
+Version: 0.6.1
+Revision: 96f38a6f738d62d59c881eb4e50aa506d9bfdb85
+License: Apache-2.0
+License File: //external/vendor/heapless-0.6.1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: `static` friendly data structures that don't require dynamic memory allocation

@@ -1,0 +1,24 @@
+[package]
+name = "manyhow-macros"
+description = "Macro for manyhow"
+version = "0.11.4"
+edition = "2021"
+categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
+keywords = ["proc-macro", "error", "error-handling"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/ModProg/manyhow"
+documentation = "https://docs.rs/manyhow"
+
+[lib]
+proc-macro = true
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proc-macro-utils = "0.10.0"
+proc-macro2 = "1"
+quote = "1"
+
+[package.metadata.release]
+tag = false
+shared-version = true
