@@ -1,7 +1,7 @@
 org = "vivoblueos"
-upstream-repo = "vivoblueos/bluekernel"
+upstream-repo = "vivoblueos/kernel"
 upstream-branch = "main"
 
 repo = "librs"
-path = "librs"
+path = "libs/librs"
 filter-version = 2
