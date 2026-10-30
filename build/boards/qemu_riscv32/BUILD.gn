@@ -1,0 +1,67 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/default_targets.gni")
+import("//build/templates/board.gni")
+
+blueos_board("qemu_riscv32") {
+  kernel_config = {
+    cflags = [ "--static" ]
+    ldflags = [
+      "-nostartfiles",
+      "-Wl,-gc-sections",
+      "-Wl,-z,norelro",
+    ]
+    rustflags = [
+      "--cfg",
+      "target_board=\"qemu_riscv32\"",
+      "-Zemit-stack-sizes",
+      "-Crelocation-model=static",
+      "-Clinker=riscv-none-elf-gcc",
+    ]
+    foreach(item, ldflags) {
+      rustflags += [ "-Clink-arg=${item}" ]
+    }
+  }
+
+  app_config = {
+    rustflags = [
+      "--cfg",
+      "target_board=\"qemu_riscv32\"",
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=riscv32",
+      "-Clink-arg=-march=rv32",
+      "-Clink-arg=-mabi=ilp32",
+      "-Clink-arg=-Wl,-z,norelro",
+    ]
+  }
+
+  default = []
+  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
+  check_all = filter_exclude(_check_all,
+                             [
+                               "//kernel/adapter*",
+                               "//kernel/loader*",
+                             ])
+
+  if (!coverage && !profile) {
+    # Register the loader foundations before enabling ELF integration on RV32.
+    check_all += [
+      "//kernel/loader:run_loader_unittest",
+      "//kernel/loader:loader_unittest_clippy",
+      "//kernel/loader:blueos_loader_clippy",
+    ]
+  }
+}

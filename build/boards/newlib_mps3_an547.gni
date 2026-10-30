@@ -1,0 +1,27 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+board_default_toolchain = "//build/toolchain:gcc_fv_thumbv8m"
+default_linker_script = "${root_gen_dir}/link.pre.ld"
+qemu_exe = "qemu-system-arm"
+qemu_machine = "mps3-an547"
+rust_abi_target = "thumbv8m.main-none-eabihf"
+qemu_extra_args = []
+qemu_net_args = []
+qemu_block_args = []
+board_deps = [
+  "//build/boards/${board}:default_linker_script",
+  "//external/vendor/cortex-m-0.7.7:cortex_m",
+  "//external/vendor/semihosting-0.1.20:semihosting",
+]

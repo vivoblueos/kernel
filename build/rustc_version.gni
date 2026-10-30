@@ -1,0 +1,25 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Detect the minor version of the rustc that the build will actually invoke
+# (toolchains call rustc by its bare name, i.e. the PATH/rustup default).
+#
+# Result is a plain integer: 96 for 1.96.0-dev. Evaluated once per `gn gen`.
+rustc_minor_version =
+    exec_script("//build/scripts/get_rustc_version.py", [], "value", [])
+
+# Global switch: true when the active toolchain is older than 1.90.
+# Rust code can branch on it via the `compatible_old_toolchain` cfg, which
+# build/config/BUILD.gn sets for every rust target when this is true.
+is_rust_toolchain_older_than_1_90 = rustc_minor_version < 90

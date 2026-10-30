@@ -1,0 +1,83 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/default_targets.gni")
+import("//build/templates/board.gni")
+
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "riscv-none-elf-gcc" ],
+                       "string")
+
+blueos_board("esp32c6_devkitc_1") {
+  kernel_config = {
+    cflags = [
+      "--static",
+      "-fshort-enums",
+      "-fsigned-char",
+      "-nostdlib",
+      "-isystem",
+      "${_sysroot}/include",
+    ]
+    ldflags = [
+      "-nostartfiles",
+      "-Wl,-gc-sections",
+      "-Wl,-z,norelro",
+    ]
+    rustflags = [
+      "--cfg",
+      "target_board=\"esp32c6_devkitc_1\"",
+      "-Zemit-stack-sizes",
+      "-Crelocation-model=static",
+      "-Clinker=riscv-none-elf-gcc",
+    ]
+    foreach(item, ldflags) {
+      rustflags += [ "-Clink-arg=${item}" ]
+    }
+  }
+
+  # ESP32-C6 is rv32imac (has the atomic extension), whereas C3 was rv32imc.
+  app_config = {
+    rustflags = [
+      "--cfg",
+      "target_board=\"esp32c6_devkitc_1\"",
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=riscv32",
+      "-Clink-arg=-march=rv32imac",
+      "-Clink-arg=-mabi=ilp32",
+      "-Clink-arg=-Wl,-z,norelro",
+    ]
+  }
+
+  default = [
+    "//apps/shell:shell",
+    "//apps/example/agent_loop:agent_loop",
+    "//apps/example/wifi:wifi_example",
+  ]
+
+  # ESP32-C6 has no usable QEMU: upstream QEMU has no esp32c6 machine and the
+  # qemu-esp32 fork only supports esp32c3 (see
+  # memory/qemu-esp32-fork-missing.md). So, like gd32vw553_eval, C6 runs only
+  # clippy + compilation checks here. The `run_qemu_check`-based
+  # `check_kernel`/`check_librs`/`check_rsrt` (which execute the ELF under QEMU)
+  # are intentionally NOT referenced — they would fail with
+  # `unsupported machine type: "esp32c6"`. Board verification runs through
+  # espflash / Wokwi on real hardware instead.
+  check_all = [
+    "//apps/shell:shell",
+    "//kernel/kernel:check_kernel_by_clippy",
+    "//librs:check_librs_by_clippy",
+    "//kernel/rsrt:check_rsrt_by_clippy",
+  ]
+}

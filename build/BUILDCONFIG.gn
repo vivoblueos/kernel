@@ -1,0 +1,90 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+declare_args() {
+  build_type = "debug"
+
+  # Host Miri used by the dedicated Miri toolchain. Keep these empty/defaulted
+  # for ordinary builds; they are only consumed when a miri_test target is
+  # requested.
+  miri_path = "miri"
+  miri_sysroot = getenv("MIRI_SYSROOT")
+
+  # We are using "board" to determine which toolchain to use, so we
+  # don't rely on target_cpu & target_os to make build decision. For
+  # this reason, we don't set target_cpu & target_os. However, we
+  # have set current_cpu & current_os for each toolchain. As stated
+  # in https://gn.googlesource.com/gn/+/main/docs/reference.md#var_target_os,
+  # GN doesn't use target_cpu & target_os internally either, so it
+  # should be safe for us to use "board" to make build decision.
+  board = "none"
+}
+
+declare_args() {
+  defconfig_files =
+      rebase_path("//kernel/kconfig/config/${board}/${build_type}/defconfig")
+}
+
+# Global toolchain capability flags, visible in every scope.
+import("//build/rustc_version.gni")
+
+# Define boolean flags for convenience.
+coverage = "${build_type}" == "coverage"
+profile = "${build_type}" == "profile"
+release = "${build_type}" == "release"
+debug = "${build_type}" == "debug"
+profile = "${build_type}" == "profile"
+
+import("//build/boards/${board}.gni")
+
+# Check if the ${board}.gni is valid.
+assert(defined(board_default_toolchain))
+
+set_default_toolchain(board_default_toolchain)
+set_defaults("source_set") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("static_library") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("shared_library") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("executable") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("rust_library") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("rust_proc_macro") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("build_rust") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("bindgen") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}
+set_defaults("cargo_crate") {
+  configs = [ "//build/config:${build_type}" ]
+  public_configs = [ "//build/config:${build_type}" ]
+}

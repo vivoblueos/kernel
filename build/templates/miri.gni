@@ -1,0 +1,58 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/templates/rust.gni")
+
+# Build and interpret a Rust test through the dedicated Miri toolchain.
+#
+# The default-toolchain target is a forwarding group. The actual Rust target is
+# instantiated under //build/toolchain:miri, so all of its Rust dependencies
+# are rebuilt by Miri with complete MIR instead of reusing normal target rlibs.
+
+template("miri_test") {
+  if (current_toolchain == default_toolchain) {
+    not_needed(invoker, "*")
+    group(target_name) {
+      testonly = true
+      deps = [ ":${target_name}(//build/toolchain:miri)" ]
+    }
+  } else {
+    assert(current_toolchain == "//build/toolchain:miri",
+           "miri_test may only use the default or Miri toolchain")
+
+    build_rust(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "crate_name",
+                               "deps",
+                               "inputs",
+                               "rustenv",
+                             ])
+
+      crate_type = "bin"
+      testonly = true
+      sources = [ invoker.crate ]
+      rustflags = [ "--test" ]
+      if (defined(invoker.extra_miri_flags)) {
+        rustflags += invoker.extra_miri_flags
+      }
+      if (defined(invoker.configs)) {
+        configs += invoker.configs
+      }
+      if (defined(invoker.public_configs)) {
+        public_configs += invoker.public_configs
+      }
+    }
+  }
+}

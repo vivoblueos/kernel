@@ -1,0 +1,113 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+_common_cflags = [
+  "-ffunction-sections",
+  "-fdata-sections",
+]
+
+import("//build/rustc_version.gni")
+
+_common_rustflags = [
+  "--color=always",
+
+  #FIXME: We should remove these flags in the future.
+  "-D",
+  "warnings",
+  "-A",
+  "unused",
+  "-A",
+  "dead_code",
+  "-A",
+  "static_mut_refs",
+]
+
+if (is_rust_toolchain_older_than_1_90) {
+  # Enables `#[cfg(compatible_old_toolchain)]` in all Rust code so it can
+  # provide fallbacks for newer language/library features. Absent on >= 1.90,
+  # so `#[cfg(not(compatible_old_toolchain))]` selects the modern path.
+  _common_rustflags += [
+    "--cfg",
+    "compatible_old_toolchain",
+  ]
+}
+
+config("release") {
+  cflags = [
+             "-Oz",
+             "-fdiagnostics-color=always",
+
+             # There are still a lot of unsafe codes in C or Rust,
+             # so switch off strict aliasing currently to avoid subtle bugs.
+             "-fno-strict-aliasing",
+           ] + _common_cflags
+  cflags_c = [ "-std=c11" ]
+  rustflags = [
+                "-Copt-level=z",
+                "-Cstrip=debuginfo",
+              ] + _common_rustflags
+}
+
+config("debug") {
+  cflags = [
+             "-O1",
+             "-g",
+             "-gdwarf-4",
+             "-fno-omit-frame-pointer",
+             "-fdiagnostics-color=always",
+           ] + _common_cflags
+  cflags_c = [ "-std=c11" ]
+  rustflags = [
+                "-Copt-level=1",
+                "-Cforce-frame-pointers=yes",
+                "-Cdebug-assertions",
+                "-Cdebuginfo=full",
+              ] + _common_rustflags
+}
+
+config("coverage") {
+  cflags = [
+             "-O1",
+             "-g",
+             "-gdwarf-4",
+             "-fno-omit-frame-pointer",
+             "-fdiagnostics-color=always",
+           ] + _common_cflags
+  cflags_c = [ "-std=c11" ]
+  rustflags = [
+                "-Copt-level=1",
+                "-Cdebuginfo=full",
+                "-Cforce-frame-pointers=yes",
+                "-Cinstrument-coverage",
+                "-Zno-profiler-runtime",
+              ] + _common_rustflags
+}
+
+config("profile") {
+  cflags = [
+             "-O1",
+             "-g",
+             "-gdwarf-4",
+             "-fno-omit-frame-pointer",
+             "-fdiagnostics-color=always",
+           ] + _common_cflags
+  cflags_c = [ "-std=c11" ]
+  rustflags = [
+                "-Copt-level=1",
+                "-Cdebuginfo=full",
+                "-Cforce-frame-pointers=yes",
+                "-Cprofile-generate",
+                "-Zno-profiler-runtime",
+              ] + _common_rustflags
+}

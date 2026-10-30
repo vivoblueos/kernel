@@ -1,0 +1,92 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/default_targets.gni")
+import("//build/templates/board.gni")
+import("//build/templates/linker_script.gni")
+
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "arm-none-eabi-cpp" ],
+                       "string")
+
+generate_linker_script("default_linker_script") {
+  preprocessor = "arm-none-eabi-gcc"
+  template = "//kernel/arch/arm/cortex_m/link.x"
+  output = "${root_gen_dir}/link.pre.ld"
+}
+
+blueos_board("qemu_mps3_an547") {
+  kernel_config = {
+    cflags = [
+      "--target=thumbv8m.main-none-eabihf",
+      "-mthumb",
+      "-mcpu=cortex-m55",
+      "-march=armv8.1-m.main+mve.fp+fp.dp",
+      "-mfpu=fpv5-d16",
+      "-mfloat-abi=hard",
+      "--static",
+      "-fshort-enums",
+      "-fsigned-char",
+      "-nostdlib",
+      "-isystem",
+      "${_sysroot}/include",
+    ]
+    ldflags = [
+      "-mthumb",
+      "-mcpu=cortex-m55",
+      "-march=armv8.1-m.main+mve.fp+fp.dp",
+      "-mfpu=fpv5-d16",
+      "-mfloat-abi=hard",
+      "-nostartfiles",
+      "-Wl,-gc-sections",
+      "-Wl,-z,norelro",
+    ]
+    rustflags = [
+      "--cfg",
+      "target_board=\"qemu_mps3_an547\"",
+      "--cfg",
+      "cortex_m",
+      "--cfg",
+      "armv8m",
+      "--cfg",
+      "armv8m_main",
+      "--cfg",
+      "has_fpu",
+      "-Zemit-stack-sizes",
+      "-Crelocation-model=static",
+      "-Clinker=arm-none-eabi-gcc",
+    ]
+    foreach(item, ldflags) {
+      rustflags += [ "-Clink-arg=${item}" ]
+    }
+  }
+  app_config = {
+    rustflags = [
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=thumbv8m.main-none-eabihf",
+      "-Clink-arg=-Wl,-z,norelro",
+    ]
+  }
+  default = [
+    "//apps/example:check_apps",
+    "//apps/shell:shell_runner",
+  ]
+  check_all = check_all_on_virtual_board + clippy_all_on_virtual_board +
+              [ "//apps/example:check_apps" ]
+
+  # FIXME: Enable thread_metric on this board. Currently, VFS is disabled on
+  # this board, so that `printf` in libc is unavailable.  However, thread_metric
+  # requires `printf`.
+}

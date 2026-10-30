@@ -1,0 +1,5 @@
+// CHECK-SUCC: It's a successful check
+// CHECK-FAIL: It has failed for \d+ times
+// ASSERT-FAIL: Failed checking, exiting
+// ASSERT-SUCC: Passed checking, exiting
+// NEWLINE-TIMEOUT: 15

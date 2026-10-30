@@ -1,0 +1,195 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This code is based on https://chromium.googlesource.com/chromium/src/+/refs/heads/main/build/rust/cargo_crate.gni
+# Copyright 2021 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/templates/rust.gni")
+
+template("cargo_crate") {
+  crate_name = target_name
+
+  if (defined(invoker.crate_name)) {
+    crate_name = invoker.crate_name
+  }
+
+  rustc_metadata = ""
+  if (defined(invoker.rustc_metadata)) {
+    rustc_metadata = invoker.rustc_metadata
+  } else if (defined(invoker.epoch)) {
+    rustc_metadata = "${crate_name}-${invoker.epoch}"
+  }
+
+  _epochlabel = "vunknown"
+  if (defined(invoker.epoch)) {
+    _tempepoch = string_replace(invoker.epoch, ".", "_")
+    _epochlabel = "v${_tempepoch}"
+  }
+
+  # Executables need to have unique names. Work out a prefix.
+  if (defined(invoker.build_root)) {
+    # This name includes the target name to ensure it's unique for each possible
+    # build target in the same BUILD.gn file.
+    build_script_name =
+        "${crate_name}_${target_name}_${_epochlabel}_build_script"
+  }
+
+  _rustenv = []
+  if (defined(invoker.rustenv)) {
+    _rustenv = invoker.rustenv
+  }
+
+  if (defined(invoker.cargo_pkg_version)) {
+    _rustenv += [ "CARGO_PKG_VERSION=${invoker.cargo_pkg_version}" ]
+
+    # Parse `<major>.<minor>.<patch>-<pre>` (the `-<pre>` part of optional,
+    # other parts are mandatory).
+    _cargo_pkg_version_parts = string_split(invoker.cargo_pkg_version, ".")
+    _rustenv += [ "CARGO_PKG_VERSION_MAJOR=${_cargo_pkg_version_parts[0]}" ]
+    _rustenv += [ "CARGO_PKG_VERSION_MINOR=${_cargo_pkg_version_parts[1]}" ]
+    _cargo_pkg_version_subparts = string_split(_cargo_pkg_version_parts[2], "-")
+    _cargo_pkg_version_subparts += [ "" ]  # In case there is no prerelease.
+    _rustenv += [ "CARGO_PKG_VERSION_PATCH=${_cargo_pkg_version_subparts[0]}" ]
+    _rustenv += [ "CARGO_PKG_VERSION_PRE=${_cargo_pkg_version_subparts[1]}" ]
+  }
+  if (defined(invoker.cargo_pkg_name)) {
+    _rustenv += [ "CARGO_PKG_NAME=${invoker.cargo_pkg_name}" ]
+  }
+  if (defined(invoker.cargo_pkg_repository)) {
+    _rustenv += [ "CARGO_PKG_REPOSITORY=${invoker.cargo_pkg_repository}" ]
+  }
+
+  # Try to determine the CARGO_MANIFEST_DIR, preferring the directory
+  # with build.rs and otherwise assuming that the target contains a
+  # `crate/` subdirectory.
+  if (defined(invoker.build_root)) {
+    manifest_dir = "."
+    _rustenv += [ "CARGO_MANIFEST_DIR=${manifest_dir}" ]
+  }
+
+  build_rust(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "build_root",
+                             "build_sources",
+                             "build_script_inputs",
+                             "build_script_outputs",
+                             "rustenv",
+                           ])
+    rustenv = _rustenv
+    if (!defined(rustflags)) {
+      rustflags = []
+    }
+
+    crate_type = "rlib"
+    if (defined(invoker.crate_type)) {
+      crate_type = invoker.crate_type
+    }
+
+    if (defined(invoker.build_root)) {
+      if (!defined(deps)) {
+        deps = []
+      }
+      if (!defined(sources)) {
+        sources = []
+      }
+
+      flags_file = "${target_out_dir}/cargo_flags.rs"
+
+      rustflags += [ "@" + rebase_path(flags_file, root_build_dir) ]
+      rustflags += [
+        "-L",
+        "native=" + rebase_path(target_out_dir, root_build_dir),
+      ]
+      sources += [ flags_file ]
+      if (defined(invoker.build_script_outputs)) {
+        inputs = []
+        foreach(extra_source,
+                filter_exclude(invoker.build_script_outputs, [ "*.rs" ])) {
+          inputs += [ "$target_out_dir/$extra_source" ]
+        }
+        foreach(extra_source,
+                filter_include(invoker.build_script_outputs, [ "*.rs" ])) {
+          sources += [ "$target_out_dir/$extra_source" ]
+        }
+        _out_dir = rebase_path(target_out_dir)
+        rustenv += [ "OUT_DIR=$_out_dir" ]
+      }
+      deps += [ ":${build_script_name}_output" ]
+    }
+  }
+
+  if (defined(invoker.build_root)) {
+    action("${build_script_name}_output") {
+      script = rebase_path("//build/scripts/run_build_script.py")
+      build_script_target = ":${build_script_name}(//build/toolchain:host)"
+      deps = [ build_script_target ]
+      build_script = "$root_build_dir/host/bin/${build_script_name}"
+      flags_file = "$target_out_dir/cargo_flags.rs"
+      args = [
+        "--build-script",
+        rebase_path(build_script, root_build_dir),
+        "--output",
+        rebase_path(flags_file),
+        "--target",
+        rust_abi_target,
+        "--src-dir",
+        rebase_path(get_path_info(invoker.build_root, "dir"), root_build_dir),
+        "--out-dir",
+        rebase_path(target_out_dir, root_build_dir),
+      ]
+
+      if (_rustenv != []) {
+        args += [ "--env" ]
+        args += _rustenv
+      }
+
+      if (defined(invoker.features)) {
+        args += [ "--features" ]
+        args += invoker.features
+      }
+      outputs = [ flags_file ]
+
+      if (defined(invoker.build_script_outputs)) {
+        foreach(generated_file, invoker.build_script_outputs) {
+          outputs += [ "$target_out_dir/$generated_file" ]
+        }
+        args += [ "--generated-files" ]
+        args += invoker.build_script_outputs
+      }
+
+      if (defined(invoker.build_script_inputs)) {
+        inputs += invoker.build_script_inputs
+      }
+    }
+    build_rust(build_script_name) {
+      sources = invoker.build_sources
+
+      crate_type = "bin"
+      if (defined(invoker.build_deps)) {
+        deps = invoker.build_deps
+      }
+      rustenv = _rustenv
+      forward_variables_from(invoker,
+                             [
+                               "features",
+                               "edition",
+                               "rustflags",
+                             ])
+    }
+  }
+}

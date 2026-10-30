@@ -1,0 +1,135 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This template offers syntactic sugar for rust_library, rust_proc_macro target.
+template("build_rust") {
+  deps = []
+  if (defined(invoker.deps)) {
+    deps += invoker.deps
+  }
+
+  if (defined(invoker.build_deps)) {
+    deps += invoker.build_deps
+  }
+
+  # We are using host toolchain to build proc_macro_deps.
+  if (defined(invoker.proc_macro_deps)) {
+    foreach(dep, invoker.proc_macro_deps) {
+      deps += [ dep + "(//build/toolchain:host)" ]
+    }
+  }
+
+  forward_variables_from(invoker,
+                         [
+                           "rustflags",
+                           "rustenv",
+                           "sources",
+                           "inputs",
+                           "libs",
+                           "lib_dirs",
+                           "crate_type",
+                           "testonly",
+                           "public_deps",
+                           "aliased_deps",
+                         ],
+                         [
+                           "configs",
+                           "public_configs",
+                         ])
+
+  crate_name = target_name
+  if (defined(invoker.crate_name)) {
+    crate_name = invoker.crate_name
+  }
+  if (defined(rustenv)) {
+    rustenv += [ "CARGO_CRATE_NAME=$crate_name" ]
+  } else {
+    rustenv = [ "CARGO_CRATE_NAME=$crate_name" ]
+  }
+  if (defined(rustflags)) {
+  } else {
+    rustflags = []
+  }
+
+  if (defined(board_rustflags)) {
+    rustflags += board_rustflags
+  }
+
+  if (defined(invoker.features)) {
+    foreach(feature, invoker.features) {
+      rustflags += [ "--cfg=feature=\"${feature}\"" ]
+    }
+  }
+
+  if (defined(invoker.cfgs)) {
+    foreach(cfg, invoker.cfgs) {
+      rustflags += [
+        "--cfg",
+        cfg,
+      ]
+    }
+  }
+
+  if (defined(invoker.edition)) {
+    edition = invoker.edition
+    rustflags += [ "--edition=$edition" ]
+  } else {
+    rustflags += [ "--edition=2021" ]
+  }
+
+  rustc_metadata = ""
+  if (defined(invoker.rustc_metadata)) {
+    rustc_metadata = invoker.rustc_metadata
+  } else if (defined(invoker.epoch)) {
+    rustc_metadata = "${crate_name}-${invoker.epoch}"
+  }
+
+  if (rustc_metadata != "") {
+    rustflags += [ "-Cmetadata=${rustc_metadata}" ]
+  }
+
+  if (defined(inputs)) {
+  } else {
+    inputs = []
+  }
+
+  if (defined(invoker.linker_script)) {
+    rustflags += [ "-Clink-arg=-Wl,-T" + rebase_path(invoker.linker_script) ]
+    inputs += [ invoker.linker_script ]
+  }
+
+  if (defined(invoker.crate_type) && invoker.crate_type == "proc-macro") {
+    rust_proc_macro(target_name) {
+      configs = []
+      if (defined(invoker.configs)) {
+        configs += invoker.configs
+      }
+      public_configs = []
+      if (defined(invoker.public_configs)) {
+        public_configs += invoker.public_configs
+      }
+    }
+  } else {
+    rust_library(target_name) {
+      configs = []
+      if (defined(invoker.configs)) {
+        configs += invoker.configs
+      }
+      public_configs = []
+      if (defined(invoker.public_configs)) {
+        public_configs += invoker.public_configs
+      }
+    }
+  }
+}

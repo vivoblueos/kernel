@@ -1,0 +1,75 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/default_targets.gni")
+import("//build/templates/board.gni")
+
+_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                       [ "riscv-none-elf-gcc" ],
+                       "string")
+
+blueos_board("seeed_xiao_esp32c3") {
+  kernel_config = {
+    cflags = [
+      "--static",
+      "-fshort-enums",
+      "-fsigned-char",
+      "-nostdlib",
+      "-isystem",
+      "${_sysroot}/include",
+    ]
+    ldflags = [
+      "-nostartfiles",
+      "-Wl,-gc-sections",
+      "-Wl,-z,norelro",
+
+      # The board link.x INCLUDEs "rom/esp32c3.rom.ld", which GNU ld
+      # resolves via this -L search path.
+      "-L" + rebase_path("//external/vendor/esp-rom-sys-0.1.4/ld/esp32c3"),
+    ]
+    rustflags = [
+      "--cfg",
+      "target_board=\"seeed_xiao_esp32c3\"",
+      "-Zemit-stack-sizes",
+      "-Crelocation-model=static",
+      "-Clinker=riscv-none-elf-gcc",
+    ]
+    foreach(item, ldflags) {
+      rustflags += [ "-Clink-arg=${item}" ]
+    }
+  }
+
+  app_config = {
+    rustflags = [
+      "--cfg",
+      "target_board=\"seeed_xiao_esp32c3\"",
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=riscv32",
+      "-Clink-arg=-march=rv32imc",
+      "-Clink-arg=-mabi=ilp32",
+      "-Clink-arg=-Wl,-z,norelro",
+    ]
+  }
+  default = [
+    "//apps/shell:shell",
+    "//apps/example/framebuffer:fb_example",
+    "//apps/example/wifi:wifi_example",
+    "//apps/example/agent_loop:agent_loop",
+  ]
+  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
+  check_all = filter_exclude(_check_all, [ "//kernel/adapter*" ])
+
+  check_all += [ "//kernel/adapter/esp_radio_sys:run_esp_radio_sys_unittest" ]
+}

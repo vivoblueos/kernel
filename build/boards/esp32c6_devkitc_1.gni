@@ -1,0 +1,59 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+declare_args() {
+  chip = "esp32c6"
+}
+
+# ESP32-C6 (rv32imac) reuses the existing imac toolchain — the rustc target
+# `riscv32-vivo-blueos` already carries the `+a` atomic extension. See
+# build/toolchain/BUILD.gn:blueos_riscv32imac (also used by gd32vw553_eval).
+board_default_toolchain = "//build/toolchain:blueos_riscv32imac"
+default_linker_script = "//kernel/kernel/src/boards/${board}/link.x"
+
+# NOTE: the Espressif qemu fork (`qemu-esp32-riscv32`) is not installed on this
+# host, and upstream QEMU has no esp32c6 machine. QEMU boot is therefore blocked
+# here (same as for seeed_xiao_esp32c3). The config is written in full so that
+# `gn gen`/`ninja` still produce the esp32 image + runner scripts; verification
+# runs through Wokwi instead. See memory/qemu-esp32-fork-missing.md.
+qemu_exe = "qemu-esp32-riscv32"
+qemu_machine = "esp32c6"
+rust_abi_target = "riscv32"
+qemu_extra_args = []
+qemu_net_args = []
+qemu_block_args = []
+
+qemu_esp32_bootloader_bin = ""
+qemu_esp32_partition_table_bin = ""
+
+# WiFi/net driver dependencies. Structurally identical to seeed_xiao_esp32c3.gni,
+# only swapping the c3-specific crates for c6:
+#   esp-wifi-sys-esp32c3-0.2.0 → esp-wifi-sys-esp32c6-0.2.0
+#   esp32c3-0.32.2            → esp32c6-0.23.0
+# The remaining 7 (esp-hal/esp-phy/esp-radio-rtos-driver/esp-rom-sys/esp-sync/
+# smoltcp/enumset) share the same vendor directory and version numbers as C3.
+# These crates are referenced only by the net module under #[cfg(enable_net)];
+# they are only actually linked into the kernel when agent_loop's app.conf sets
+# CONFIG_ENABLE_NET=y.
+board_deps = [
+  "//external/vendor/enumset-1.1.13:enumset",
+  "//external/vendor/esp-hal-1.1.1:esp_hal",
+  "//external/vendor/esp-phy-0.2.0:esp_phy",
+  "//external/vendor/esp-radio-rtos-driver-0.3.0:esp_radio_rtos_driver",
+  "//external/vendor/esp-rom-sys-0.1.4:esp_rom_sys",
+  "//external/vendor/esp-sync-0.2.1:esp_sync",
+  "//external/vendor/esp-wifi-sys-esp32c6-0.2.0:esp_wifi_sys_esp32c6",
+  "//external/vendor/esp32c6-0.23.0:esp32c6",
+  "//external/vendor/smoltcp-0.12.0:smoltcp",
+]

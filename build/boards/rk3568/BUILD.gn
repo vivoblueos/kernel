@@ -1,0 +1,54 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/default_targets.gni")
+import("//build/templates/board.gni")
+import("//build/templates/linker_script.gni")
+
+generate_linker_script("default_linker_script") {
+  preprocessor = "aarch64-none-elf-cpp"
+  template = "//kernel/arch/arm/arm64/link.x"
+  output = "${root_gen_dir}/link.pre.ld"
+}
+
+blueos_board("rk3568") {
+  kernel_config = {
+    cflags = [ "--static" ]
+    ldflags = [
+      "-nostartfiles",
+      "-Wl,-gc-sections",
+    ]
+    rustflags = [
+      "--cfg",
+      "target_board=\"rk3568\"",
+      "-Zemit-stack-sizes",
+      "-Crelocation-model=static",
+      "-Clinker=aarch64-none-elf-gcc",
+    ]
+    foreach(item, ldflags) {
+      rustflags += [ "-Clink-arg=${item}" ]
+    }
+  }
+
+  app_config = {
+    rustflags = [
+      "--cfg",
+      "target_board=\"rk3568\"",
+      "-Clinker=aarch64-none-elf-gcc",
+    ]
+  }
+
+  default = [ "//apps/shell" ]
+  check_all = []
+}

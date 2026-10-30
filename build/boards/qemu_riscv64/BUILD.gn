@@ -1,0 +1,58 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/default_targets.gni")
+import("//build/templates/board.gni")
+
+blueos_board("qemu_riscv64") {
+  kernel_config = {
+    cflags = [ "--static" ]
+    ldflags = [
+      "-nostartfiles",
+      "-Wl,-gc-sections",
+      "-Wl,-z,norelro",
+    ]
+    rustflags = [
+      "--cfg",
+      "target_board=\"qemu_riscv64\"",
+      "-Zemit-stack-sizes",
+      "-Crelocation-model=static",
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=riscv64",
+      "-Clink-arg=-march=rv64",
+      "-Clink-arg=-mabi=lp64",
+    ]
+    foreach(item, ldflags) {
+      rustflags += [ "-Clink-arg=${item}" ]
+    }
+  }
+
+  app_config = {
+    rustflags = [
+      "--cfg",
+      "target_board=\"qemu_riscv64\"",
+      "-Clinker=clang",
+      "-Clink-arg=-fuse-ld=lld",
+      "-Clink-arg=--target=riscv64",
+      "-Clink-arg=-march=rv64",
+      "-Clink-arg=-mabi=lp64",
+      "-Clink-arg=-Wl,-z,norelro",
+    ]
+  }
+
+  default = []
+  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
+  check_all = filter_exclude(_check_all, [ "//kernel/adapter*" ])
+}
