@@ -72,8 +72,8 @@ blueos_board("qemu_mps2_an385") {
     ]
   }
   default = [
-    "//apps/example:check_apps",
-    "//apps/shell:shell_runner",
+    "//example:check_apps",
+    "//shell:shell_runner",
   ]
   check_all = default + check_all_on_virtual_board + clippy_all_on_virtual_board
   check_all += [ "//kernel/adapter/cmsis:run_adapter_validation" ]
