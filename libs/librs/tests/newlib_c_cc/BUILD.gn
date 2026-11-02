@@ -1,7 +1,7 @@
 import("//build/sysroot.gni")
 import("//build/templates/bindgen.gni")
 import("//build/templates/rust.gni")
-import("//librs/tests/newlib_c_cc/testcase.gni")
+import("//libs/librs/tests/newlib_c_cc/testcase.gni")
 
 group("check_newlib_c_cc") {
   deps = [
@@ -55,14 +55,14 @@ bindgen("newlib_reent_header") {
 build_rust("librs_newlib_c_cc") {
   crate_type = "staticlib"
   crate_name = "librs"
-  sources = [ "//librs/src/newlib.rs" ]
+  sources = [ "//libs/librs/src/newlib.rs" ]
   deps = [
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/kernel:blueos",
     "//kernel/scal:blueos_scal",
-    "//libc",
+    "//libs/libc",
   ]
   features = []
   configs += [ "//build/boards/${board}:kernel_config" ]
