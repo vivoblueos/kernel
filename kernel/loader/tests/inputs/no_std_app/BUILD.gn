@@ -19,8 +19,8 @@ build_rust("loader_test_app") {
   crate_type = "bin"
   sources = [ "src/main.rs" ]
   deps = [
-    "//libc",
-    "//librs:librs_swi",
+    "//libs/libc",
+    "//libs/librs:librs_swi",
   ]
   configs += [ "//build/boards/${board}:app_config" ]
   rustflags = [
