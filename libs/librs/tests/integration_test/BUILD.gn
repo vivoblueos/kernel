@@ -27,10 +27,10 @@ build_rust("librs_integration_test_image") {
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/kernel:blueos",
-    "//kernel/rsrt:rsrt",
+    "//kernel/rsrt",
     "//kernel/scal:blueos_scal",
-    "//libc:libc",
-    "//librs:librs",
+    "//libs/libc",
+    "//libs/librs",
   ]
   linker_script = default_linker_script
   if (coverage || profile) {

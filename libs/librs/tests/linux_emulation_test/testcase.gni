@@ -10,14 +10,14 @@ template("librs_linux_emulation_case") {
 
   executable(exe_name) {
     testonly = true
-    sources = [ "//librs/tests/linux_emulation_test/${case_name}.c" ]
-    deps = [ "//librs/tests/linux_emulation_test:librs_linux_emulation" ]
+    sources = [ "//libs/librs/tests/linux_emulation_test/${case_name}.c" ]
+    deps = [ "//libs/librs/tests/linux_emulation_test:librs_linux_emulation" ]
     specs = "-specs=" +
-            rebase_path("//librs/tests/linux_emulation_test/blueos.specs")
+            rebase_path("//libs/librs/tests/linux_emulation_test/blueos.specs")
     librs_path =
         rebase_path(
             get_label_info(
-                "//librs/tests/linux_emulation_test:librs_linux_emulation",
+                "//libs/librs/tests/linux_emulation_test:librs_linux_emulation",
                 "target_out_dir")) + "/" + "librs_linux_emulation"
 
     ldflags = [
@@ -42,7 +42,7 @@ template("librs_linux_emulation_case") {
       # print("Unsupported board for librs linux emulation test: ${board}")
     }
 
-    include_dirs = [ "//librs/newlib/include" ]
+    include_dirs = [ "//libs/librs/newlib/include" ]
 
     # common flags should come from board arg
 
@@ -83,7 +83,7 @@ template("librs_linux_emulation_case") {
       img = ":${exe_name}"
     }
     runner = ":${runner_name}"
-    checker = "//librs/tests/linux_emulation_test/common_checker.test"
+    checker = "//libs/librs/tests/linux_emulation_test/common_checker.test"
   }
 }
 
@@ -96,16 +96,14 @@ template("librs_linux_emulation_rs_case") {
 
   executable(exe_name) {
     testonly = true
-    sources = [ "//librs/tests/linux_emulation_test/${case_name}.c" ]
-    deps = [
-      "//librs/tests/linux_emulation_test:librs_linux_emulation_shell_example",
-    ]
+    sources = [ "//libs/librs/tests/linux_emulation_test/${case_name}.c" ]
+    deps = [ "//libs/librs/tests/linux_emulation_test:librs_linux_emulation_shell_example" ]
     specs = "-specs=" +
-            rebase_path("//librs/tests/linux_emulation_test/blueos.specs")
+            rebase_path("//libs/librs/tests/linux_emulation_test/blueos.specs")
     librs_path =
         rebase_path(
             get_label_info(
-                "//librs/tests/linux_emulation_test:librs_linux_emulation",
+                "//libs/librs/tests/linux_emulation_test:librs_linux_emulation",
                 "target_out_dir")) + "/" + "librs_linux_emulation"
 
     ldflags = [
@@ -130,7 +128,7 @@ template("librs_linux_emulation_rs_case") {
       # print("Unsupported board for librs linux_emulation test: ${board}")
     }
 
-    include_dirs = [ "//librs/newlib/include" ]
+    include_dirs = [ "//libs/librs/newlib/include" ]
 
     # common flags should come from board arg
 
@@ -171,6 +169,6 @@ template("librs_linux_emulation_rs_case") {
       img = ":${exe_name}"
     }
     runner = ":${runner_name}"
-    checker = "//librs/tests/linux_emulation_test/common_checker.test"
+    checker = "//libs/librs/tests/linux_emulation_test/common_checker.test"
   }
 }
