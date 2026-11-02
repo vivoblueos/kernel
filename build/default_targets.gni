@@ -17,21 +17,21 @@ if (coverage || profile) {
     "//kernel/adapter:check_adapter",
     "//kernel/kernel:check_kernel",
     "//kernel/rsrt:check_rsrt",
-    "//librs:check_librs",
+    "//libs/librs:check_librs",
   ]
   clippy_all_on_virtual_board = []
 } else {
   check_all_on_virtual_board = [
-    "//apps/shell:shell",
+    "//shell:shell",
     "//kernel/adapter:check_adapter",
     "//kernel/kernel:check_kernel",
     "//kernel/loader:check_loader",
     "//kernel/rsrt:check_rsrt",
-    "//librs:check_librs",
+    "//libs/librs:check_librs",
   ]
   clippy_all_on_virtual_board = [
     "//kernel/kernel:check_kernel_by_clippy",
-    "//librs:check_librs_by_clippy",
+    "//libs/librs:check_librs_by_clippy",
     "//kernel/adapter:check_adapter_by_clippy",
     "//kernel/loader:check_loader_by_clippy",
     "//kernel/rsrt:check_rsrt_by_clippy",

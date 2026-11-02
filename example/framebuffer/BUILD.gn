@@ -27,8 +27,8 @@ reload_autoconf_and_build("fb_example") {
     "//external/vendor/embedded-graphics-0.8.2:embedded_graphics",
     "//external/vendor/embedded-graphics-core-0.4.1:embedded_graphics_core",
     "//kernel/rsrt:rsrt_std",
-    "//libc",
-    "//librs",
+    "//libs/libc",
+    "//libs/librs",
   ]
   linker_script = default_linker_script
   configs = [ "//build/boards/${board}:kernel_config" ]
