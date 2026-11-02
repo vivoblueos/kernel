@@ -61,9 +61,9 @@ blueos_board("esp32c6_devkitc_1") {
   }
 
   default = [
-    "//apps/shell:shell",
-    "//apps/example/agent_loop:agent_loop",
-    "//apps/example/wifi:wifi_example",
+    "//shell:shell",
+    "//example/agent_loop:agent_loop",
+    "//example/wifi:wifi_example",
   ]
 
   # ESP32-C6 has no usable QEMU: upstream QEMU has no esp32c6 machine and the
@@ -75,9 +75,9 @@ blueos_board("esp32c6_devkitc_1") {
   # `unsupported machine type: "esp32c6"`. Board verification runs through
   # espflash / Wokwi on real hardware instead.
   check_all = [
-    "//apps/shell:shell",
+    "//shell:shell",
     "//kernel/kernel:check_kernel_by_clippy",
-    "//librs:check_librs_by_clippy",
+    "//libs/librs:check_librs_by_clippy",
     "//kernel/rsrt:check_rsrt_by_clippy",
   ]
 }
