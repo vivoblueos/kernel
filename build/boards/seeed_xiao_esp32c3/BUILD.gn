@@ -63,10 +63,10 @@ blueos_board("seeed_xiao_esp32c3") {
     ]
   }
   default = [
-    "//apps/shell:shell",
-    "//apps/example/framebuffer:fb_example",
-    "//apps/example/wifi:wifi_example",
-    "//apps/example/agent_loop:agent_loop",
+    "//shell:shell",
+    "//example/framebuffer:fb_example",
+    "//example/wifi:wifi_example",
+    "//example/agent_loop:agent_loop",
   ]
   _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
   check_all = filter_exclude(_check_all, [ "//kernel/adapter*" ])

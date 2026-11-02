@@ -52,7 +52,8 @@ config("newlib_reent_config") {
   ]
 }
 
-# Generate the `struct _reent` / `struct __sFILE` / ... bindings newlib.rs needs.
+# Generate the `struct _reent` / `struct __sFILE` / ... bindings newlib.rs
+# needs.
 bindgen("newlib_reent") {
   bindgen_flags = [
     "--use-core",
@@ -83,14 +84,14 @@ _reent_out = get_target_outputs(":newlib_reent")
 build_rust("librs_newlib") {
   crate_type = "staticlib"
   crate_name = "librs"
-  sources = [ "//librs/src/newlib.rs" ]
+  sources = [ "//libs/librs/src/newlib.rs" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
   deps = [
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/kernel:blueos",
     "//kernel/scal:blueos_scal",
-    "//libc",
+    "//libs/libc",
   ]
   build_deps = [ ":newlib_reent" ]
   rustenv = [ "BINDGEN_DIR=" + rebase_path(_reent_out[0]) ]
@@ -131,7 +132,8 @@ executable("quickjs") {
     rebase_path(default_linker_script),
   ]
 
-  # newlib libc/libm/libgcc for this board's ABI (see build/templates/quickjs.gni).
+  # newlib libc/libm/libgcc for this board's ABI (see
+  # build/templates/quickjs.gni).
   libs = quickjs_newlib_libs
 }
 

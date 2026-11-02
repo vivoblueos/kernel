@@ -24,7 +24,7 @@ build_rust("no_std_example") {
   deps = [
     "//kernel/kernel:blueos",
     "//kernel/rsrt",
-    "//librs",
+    "//libs/librs",
   ]
   linker_script = default_linker_script
 }
