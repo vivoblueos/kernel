@@ -26,8 +26,8 @@ reload_autoconf_and_build("shell") {
     "//external/vendor/phf-0.12.1:phf",
     "//kernel/kconfig:generate_rustflags_file",
     "//kernel/rsrt:rsrt_std",
-    "//libc",
-    "//librs",
+    "//libs/libc",
+    "//libs/librs",
   ]
   linker_script = default_linker_script
   configs = [

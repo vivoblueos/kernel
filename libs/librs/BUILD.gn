@@ -26,7 +26,7 @@ build_rust("librs") {
     "//kernel/header:blueos_header",
     "//kernel/infra:blueos_infra",
     "//kernel/scal:blueos_scal",
-    "//libc",
+    "//libs/libc",
   ]
   configs += [ "//build/boards/${board}:kernel_config" ]
 }
@@ -44,7 +44,7 @@ build_rust("librs_swi") {
     "//kernel/header:blueos_header",
     "//kernel/infra:blueos_infra",
     "//kernel/scal:blueos_scal_swi",
-    "//libc",
+    "//libs/libc",
   ]
 
   # librs_swi will be used in apps dynamically loaded.
@@ -68,7 +68,7 @@ build_rust("librs_unittest_image") {
     "//kernel/kernel:blueos",
     "//kernel/rsrt",
     "//kernel/scal:blueos_scal",
-    "//libc",
+    "//libs/libc",
   ]
   linker_script = default_linker_script
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]

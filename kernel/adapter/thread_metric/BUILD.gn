@@ -24,8 +24,8 @@ build_rust("thread_metric") {
   deps += [
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/kernel:blueos",
-    "//libc",
-    "//librs",
+    "//libs/libc",
+    "//libs/librs",
   ]
 }
 

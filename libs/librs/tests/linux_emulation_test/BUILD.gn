@@ -1,5 +1,5 @@
 import("//build/templates/rust.gni")
-import("//librs/tests/linux_emulation_test/testcase.gni")
+import("//libs/librs/tests/linux_emulation_test/testcase.gni")
 
 group("run_librs_linux_emulation") {
   testonly = true
@@ -17,12 +17,12 @@ build_rust("librs_linux_emulation") {
   testonly = true
   crate_type = "staticlib"
   crate_name = "librs"
-  sources = [ "//librs/src/lib.rs" ]
+  sources = [ "//libs/librs/src/lib.rs" ]
   deps = [
     "//external/vendor/spin-0.9.8:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal",
-    "//libc",
+    "//libs/libc",
   ]
   features = [ "linux_emulation" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
@@ -33,8 +33,8 @@ build_rust("librs_linux_emulation_shell_example") {
   testonly = true
   crate_type = "staticlib"
   crate_name = "librs_linux_emulation_shell_example"
-  sources = [ "//librs/tests/linux_emulation_test/shell_example.rs" ]
-  deps = [ "//librs/tests/linux_emulation_test:librs_linux_emulation" ]
+  sources = [ "//libs/librs/tests/linux_emulation_test/shell_example.rs" ]
+  deps = [ "//libs/librs/tests/linux_emulation_test:librs_linux_emulation" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
 }
 

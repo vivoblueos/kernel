@@ -23,7 +23,7 @@ build_rust("net_example") {
   sources = [ "src/main.rs" ]
   deps = [
     "//kernel/rsrt:rsrt_std",
-    "//librs",
+    "//libs/librs",
   ]
   linker_script = default_linker_script
   configs += [ "//build/boards/${board}:kernel_config" ]

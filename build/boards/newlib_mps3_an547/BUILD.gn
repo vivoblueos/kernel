@@ -70,8 +70,8 @@ blueos_board("newlib_mps3_an547") {
       "-Clink-arg=--target=thumbv8m.main-none-eabihf",
     ]
   }
-  default = [ "//librs/tests/newlib_c_cc:check_newlib_c_cc" ]
-  check_all = [ "//librs/tests/newlib_c_cc:check_newlib_c_cc" ]
+  default = [ "//libs/librs/tests/newlib_c_cc:check_newlib_c_cc" ]
+  check_all = [ "//libs/librs/tests/newlib_c_cc:check_newlib_c_cc" ]
 
   # this target enable VFS default
 }

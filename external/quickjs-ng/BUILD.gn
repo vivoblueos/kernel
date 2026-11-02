@@ -48,11 +48,12 @@ static_library("quickjs_ng") {
 
     # quickjs-ng uses the pthread-based thread shims in cutils.h (js_mutex_t /
     # js_cond_t / js_once_t are unconditional because quickjs.c's Atomics code
-    # needs them, so the EMSCRIPTEN/__wasi__ no-thread path is not usable).
-    # The pthread *implementations* are provided by //librs (librs/src/pthread.rs,
-    # librs/src/syncs.rs, librs/src/time/mod.rs).
-    # declares the pthread/clock prototypes behind these feature-test macros, so
-    # define them to expose the prototypes; the symbols resolve to adapter at link.
+    # needs them, so the EMSCRIPTEN/__wasi__ no-thread path is not usable). The
+    # pthread *implementations* are provided by //libs/librs
+    # (libs/librs/src/pthread.rs, libs/librs/src/syncs.rs,
+    # libs/librs/src/time/mod.rs). declares the pthread/clock prototypes behind
+    # these feature-test macros, so define them to expose the prototypes; the
+    # symbols resolve to adapter at link.
     "-D_POSIX_THREADS=1",
     "-D_POSIX_TIMERS=1",
     "-D_POSIX_MONOTONIC_CLOCK=1",
