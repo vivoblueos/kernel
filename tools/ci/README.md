@@ -26,8 +26,8 @@ For changed-file checks, check out `MERGE_COMMIT` first. The script compares its
 tree with `BASE_COMMIT`, checks existing changed GN/Python/Rust/YAML files, and
 runs license-eye in each affected component using its existing configuration.
 Moves and deletions also count when selecting affected license configurations.
-Formatting excludes `external`; license checks cover `kernel`, `build`, `librs`,
-`apps/example`, `apps/shell`, and `tools/ci`.
+Formatting excludes `external`; license checks cover `kernel`, `build`, `libs/librs`,
+`example`, `shell`, and `tools/ci`.
 
 To reproduce the Miri job:
 
