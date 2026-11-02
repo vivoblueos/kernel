@@ -72,11 +72,11 @@ blueos_board("gd32e507_eval") {
   if (debug) {
     # FIXME: Disable apps in debug build temporarily,
     # because of the size of firmware too big in debug mode.
-    default = [ "//apps/shell" ]
+    default = [ "//shell" ]
   } else {
     default = [
-      "//apps/shell",
-      "//apps/example/blinky:blinky_example",
+      "//shell",
+      "//example/blinky:blinky_example",
     ]
   }
 

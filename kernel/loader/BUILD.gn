@@ -55,7 +55,7 @@ build_rust("blueos_loader") {
   deps = [
     "//external/vendor/goblin-0.9.3:goblin",
     "//kernel/infra:blueos_infra",
-    "//librs",
+    "//libs/librs",
   ]
 }
 
@@ -74,7 +74,7 @@ if (_loader_unittest_enabled) {
       "//external/vendor/semihosting-0.1.20:semihosting",
       "//kernel/infra:blueos_infra",
       "//kernel/rsrt",
-      "//librs",
+      "//libs/librs",
     ]
 
     if (board == "qemu_virt64_aarch64") {

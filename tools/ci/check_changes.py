@@ -29,9 +29,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LICENSE_ROOTS = (
     PurePosixPath("kernel"),
     PurePosixPath("build"),
-    PurePosixPath("librs"),
-    PurePosixPath("apps/example"),
-    PurePosixPath("apps/shell"),
+    PurePosixPath("libs/librs"),
+    PurePosixPath("example"),
+    PurePosixPath("shell"),
     PurePosixPath("tools/ci"),
 )
 
