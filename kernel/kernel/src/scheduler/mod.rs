@@ -234,8 +234,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         let elapsed = now.since(start);
         old.elapse_time_slices(elapsed);
     }
-    #[cfg(thread_stats)]
-    old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         cleanup_retired_thread(&mut old);
     }
