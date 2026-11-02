@@ -519,6 +519,24 @@ fn test_fatfs_mount_unmount() {
 
 #[cfg(procfs)]
 #[test]
+fn test_procfs_reject_creation() {
+    let file = c"/proc/test_create_file".as_ptr();
+    let dir = c"/proc/test_create_dir".as_ptr();
+
+    // Rejected attempts must not leave entries in the directory cache.
+    for _ in 0..2 {
+        assert_eq!(
+            open(file, O_CREAT | O_WRONLY | O_TRUNC, 0o644),
+            -libc::EPERM
+        );
+        assert_eq!(mkdir(dir, 0o755), -libc::EPERM);
+        assert_eq!(open(file, O_RDONLY, 0), -libc::ENOENT);
+        assert_eq!(open(dir, O_RDONLY | O_DIRECTORY, 0), -libc::ENOENT);
+    }
+}
+
+#[cfg(procfs)]
+#[test]
 fn test_procfs_posix() {
     // 1. Test: read /proc/meminfo
     let path = c"/proc/meminfo".as_ptr() as *const c_char;
