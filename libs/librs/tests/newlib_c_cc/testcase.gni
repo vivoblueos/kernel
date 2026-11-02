@@ -40,8 +40,8 @@ template("librs_newlib_c_cc_case") {
   checker_name = "run_librs_newlib_c_cc_${case_name}"
 
   executable(exe_name) {
-    sources = [ "//librs/tests/newlib_c_cc/${case_name}.cc" ]
-    deps = [ "//librs/tests/newlib_c_cc:librs_newlib_c_cc" ]
+    sources = [ "//libs/librs/tests/newlib_c_cc/${case_name}.cc" ]
+    deps = [ "//libs/librs/tests/newlib_c_cc:librs_newlib_c_cc" ]
 
     configs += [ "//build/boards/${board}:kernel_config" ]
 
@@ -73,6 +73,6 @@ template("librs_newlib_c_cc_case") {
       img = ":${exe_name}"
     }
     runner = ":${runner_name}"
-    checker = "//librs/tests/newlib_c_cc/common_checker.test"
+    checker = "//libs/librs/tests/newlib_c_cc/common_checker.test"
   }
 }

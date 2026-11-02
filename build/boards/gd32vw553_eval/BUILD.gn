@@ -59,12 +59,12 @@ blueos_board("gd32vw553_eval") {
     ]
   }
   default = [
-    "//apps/shell",
-    "//apps/example/blinky:blinky_example",
+    "//shell",
+    "//example/blinky:blinky_example",
   ]
   check_all = [
     "//kernel/kernel:check_kernel_by_clippy",
-    "//librs:check_librs_by_clippy",
+    "//libs/librs:check_librs_by_clippy",
     "//kernel/rsrt:check_rsrt_by_clippy",
   ]
 }
