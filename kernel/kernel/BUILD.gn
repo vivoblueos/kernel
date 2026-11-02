@@ -70,7 +70,7 @@ _shared_deps = [
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
-  "//libc",
+  "//libs/libc",
 ]
 
 # GCC provides __atomic builtins natively; skip the clang-derived libatomic for
@@ -139,7 +139,7 @@ build_rust("kernel_integration_test") {
            "//kernel/infra:blueos_infra",
            "//kernel/rsrt",
            "//kernel/scal:blueos_scal",
-           "//libc",
+           "//libs/libc",
          ] + board_deps
   if (coverage || profile) {
     deps += [ "//external/vendor/minicov-0.3.7:minicov" ]

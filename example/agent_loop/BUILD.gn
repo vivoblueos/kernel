@@ -35,8 +35,8 @@ reload_autoconf_and_build("agent_loop") {
     "//kernel/adapter/esp_radio_sys",
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/rsrt:rsrt_std",
-    "//libc",
-    "//librs",
+    "//libs/libc",
+    "//libs/librs",
   ]
   linker_script = default_linker_script
   configs = [ "//build/boards/${board}:kernel_config" ]

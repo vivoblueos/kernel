@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Filter a BlueKernel revision and try pushing it to a child repository branch."""
+"""Filter a kernel center revision and try pushing it to a child repository branch."""
 
 import argparse
 import re
@@ -10,14 +10,12 @@ import tempfile
 from pathlib import Path
 
 PATH_MAP = {
-    "apps_shell": "apps/shell",
-    "apps_example": "apps/example",
-    "book": "book",
+    "apps_shell": "shell",
+    "apps_example": "example",
     "build": "build",
     "external": "external",
-    "kernel": "kernel",
-    "libc": "libc",
-    "librs": "librs",
+    "libc": "libs/libc",
+    "librs": "libs/librs",
 }
 
 # These files are maintained by the subtree sync automation, not developers.
@@ -25,38 +23,64 @@ SYNC_VERSION_FILES = ("bluekernel-version", "blueos-version")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        allow_abbrev=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=
+        """Range mode requires both --source-base and --target-base. The source base
+must be an ancestor of --source-rev or the same commit (an empty range).
+Its subtree must match the child baseline except for bluekernel-version
+and blueos-version, which are preserved from the child baseline. Replay
+flattens merges; conflicts or file mismatches stop the push.
+
+Omit both bases to export the entire reachable subtree history, including
+sync markers. Only committed content is exported; the current branch and
+working tree stay in place. Without --push, even --force is only a preview.
+
+The remote filter must match the selected directory; --repo does not change
+it. Run Josh operations sequentially within a repository.""",
+    )
     parser.add_argument(
         "--source-rev",
         required=True,
         help=
-        "Source BlueKernel commit (range end included); branch, SHA or Git expression",
+        "Source kernel center commit (range end included); branch, tag, SHA or Git expression",
     )
     parser.add_argument(
         "--source-base",
         help=
-        "Excluded BlueKernel baseline; branch, SHA or Git expression; requires --target-base",
+        "Excluded kernel center baseline; branch, tag, SHA or Git expression; requires --target-base",
     )
     parser.add_argument("--target-remote",
                         required=True,
                         help="Configured Josh remote")
-    parser.add_argument("--repo", required=True, choices=PATH_MAP)
+    parser.add_argument("--repo",
+                        required=True,
+                        choices=PATH_MAP,
+                        help="Child repository to export")
     parser.add_argument("--target-branch",
                         required=True,
                         help="Child branch to update or create")
-    parser.add_argument("--repo-root",
-                        type=Path,
-                        default=Path(__file__).resolve().parents[2])
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[2],
+        help="Center checkout (default: the script's repository)",
+    )
     parser.add_argument("--push",
                         action="store_true",
                         help="Actually push; default is dry-run")
-    parser.add_argument("--force",
-                        "-f",
-                        action="store_true",
-                        help="Pass --force to Josh push")
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help=("Allow replacing history; no lease check "
+              "(requires --push to publish)"),
+    )
     parser.add_argument(
         "--target-base",
-        help="Child branch to replay onto; requires --source-base")
+        help="Child baseline branch name (not a SHA); requires --source-base")
     args = parser.parse_args()
     if (args.source_base is None) != (args.target_base is None):
         parser.error(
@@ -100,6 +124,7 @@ def main():
                 "Remote and target branch names cannot start with '-'")
         destination = f"refs/heads/{args.target_branch}"
         tracking = f"refs/remotes/{args.target_remote}/{args.target_branch}"
+        # Export refs are overwritten on each run and retained for inspection.
         export_ref = f"refs/export/{args.target_remote}/{args.target_branch}"
         for reference in (destination, tracking, export_ref):
             git("check-ref-format", reference)
@@ -175,7 +200,7 @@ def main():
                         "Center base files differ from child target base",
                         f"{path}/")
             with tempfile.TemporaryDirectory(
-                    prefix="bluekernel-josh-export-") as worktree:
+                    prefix="kernel-josh-export-") as worktree:
                 run("git", "worktree", "add", "--detach", worktree,
                     filtered_head)
                 try:
@@ -227,6 +252,7 @@ def main():
         if args.force:
             push_command.append("--force")
 
+        # Parsing below depends on the "Pushing <SHA> to ..." output in r26.07.19.
         # Josh's dry-run computes the raw child commit too; show that history,
         # rather than treating the prefixed center projection as the result.
         preview = run(*push_command, "--dry-run", capture=True, check=False)
