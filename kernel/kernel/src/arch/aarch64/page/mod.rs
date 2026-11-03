@@ -15,11 +15,7 @@
 mod a64_4k;
 
 #[cfg(aarch64_va_bits_39)]
-mod a64_4k_39;
-#[cfg(aarch64_va_bits_39)]
-pub use a64_4k_39::{PageEntry, PAGE_FORMAT};
+pub type PageEntry = a64_4k::PageEntry<3>;
 
 #[cfg(aarch64_va_bits_48)]
-mod a64_4k_48;
-#[cfg(aarch64_va_bits_48)]
-pub use a64_4k_48::{PageEntry, PAGE_FORMAT};
+pub type PageEntry = a64_4k::PageEntry<4>;
