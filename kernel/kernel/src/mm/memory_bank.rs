@@ -142,7 +142,7 @@ pub fn create_memory_region_from_memory_bank(
         flags: MemFlags::READ | MemFlags::WRITE,
         memory_type: MemType::Normal(CachePolicy::WriteBack),
         is_reserved: true,
-        name: "boot page table",
+        name: "temporary boot stacks and boot page table",
     });
 
     for region in &all_regions {

@@ -67,6 +67,14 @@ SECTIONS
         __sys_stack_end = .;
     }
 
+    .temp_boot_stack (NOLOAD) : ALIGN(4096)
+    {
+        /* Early per-CPU stacks must remain outside runtime BSS clearing. */
+        __temp_boot_stack_start = .;
+        KEEP(*(.temp_boot_stack))
+        . = ALIGN(4096);
+        __temp_boot_stack_end = .;
+    }
 
     .boot_page_table (NOLOAD) : ALIGN(4096)
     {

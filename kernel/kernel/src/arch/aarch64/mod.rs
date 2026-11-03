@@ -53,6 +53,12 @@ pub(crate) const fn cpu_affinity(cpu_id: usize) -> usize {
 // Temporary stack used during early boot (before MMU is enabled).
 #[repr(C, align(16))]
 pub struct TempBootStack([u8; 4096]);
+#[used]
+#[cfg_attr(compatible_old_toolchain, link_section = ".temp_boot_stack")]
+#[cfg_attr(
+    not(compatible_old_toolchain),
+    unsafe(link_section = ".temp_boot_stack")
+)]
 pub static mut TEMP_BOOT_STACK: [TempBootStack; blueos_kconfig::CONFIG_NUM_CORES as usize] =
     [const { TempBootStack([0u8; 4096]) }; blueos_kconfig::CONFIG_NUM_CORES as usize];
 
