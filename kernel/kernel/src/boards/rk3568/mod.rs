@@ -43,8 +43,8 @@ pub(crate) fn init() {
         }
     });
     STAGING.run(2, false, || {
-        #[cfg(all(paging, smp))]
-        if arch::current_cpu_id() != 0 {
+        #[cfg(paging)]
+        {
             use crate::mm::kernel_space::KernelAddressSpace;
             let space = KernelAddressSpace::get().expect("kernel address space not initialized");
             unsafe { arch::mmu::activate_kernel_table(space.root_address()) };

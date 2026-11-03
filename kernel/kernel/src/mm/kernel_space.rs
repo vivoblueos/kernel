@@ -156,14 +156,16 @@ impl KernelAddressSpace {
         *slot = Some(region);
         Ok(())
     }
+}
 
-    fn bootstrap(regions: &[MemoryRegion]) -> Result<Self, &'static str> {
+pub(crate) fn init_kernel_space(regions: &[MemoryRegion]) -> Result<(), &'static str> {
+    KERNEL_SPACE.try_call_once(|| {
         let allocator = FirstFitFrameAllocator::instance();
         // SAFETY: boot initialized the physical allocator and the boot direct
         // map. New table frames are disjoint from the reserved kernel image,
         // and these tables are retained permanently by KERNEL_SPACE.
         let mapper = unsafe { PageMapper::create(allocator)? };
-        let mut space = Self {
+        let mut space = KernelAddressSpace {
             regions: [None; REGION_COUNT],
             mapper: SpinLock::new(mapper),
         };
@@ -180,16 +182,11 @@ impl KernelAddressSpace {
                 region.memory_type,
             )?;
         }
-        // SAFETY: these tables cover the kernel and direct-mapped RAM. Static
-        // region metadata and page tables were constructed without heap use.
+        // Retain the completed tables permanently before publishing them for
+        // activation by each CPU during board initialization.
         space.mapper.irqsave_lock().retain_tables();
-        unsafe { crate::arch::mmu::activate_kernel_table(space.root_address()) };
         Ok(space)
-    }
-}
-
-pub(crate) fn init_kernel_space(regions: &[MemoryRegion]) -> Result<(), &'static str> {
-    KERNEL_SPACE.try_call_once(|| KernelAddressSpace::bootstrap(regions))?;
+    })?;
     Ok(())
 }
 
