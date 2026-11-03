@@ -28,7 +28,7 @@ const PAGE_SIZE: usize = 4096;
 /// Private suballocator over exclusively owned, physically contiguous frame
 /// backing. Its state and backing outlive every allocation used by each test.
 #[must_use]
-struct Fixture<const N: usize> {
+pub(crate) struct Fixture<const N: usize> {
     allocator: FirstFitFrameAllocator,
     _states: Box<[FrameState; N]>,
     backing: NonNull<u8>,
@@ -67,7 +67,7 @@ impl<const N: usize> Fixture<N> {
         }
     }
 
-    fn new(states: [FrameState; N]) -> Self {
+    pub(crate) fn new(states: [FrameState; N]) -> Self {
         let layout = Layout::from_size_align(N * PAGE_SIZE, PAGE_SIZE).unwrap();
         let physical = FirstFitFrameAllocator::instance()
             .alloc_frames(N)
@@ -110,6 +110,10 @@ impl<const N: usize> Fixture<N> {
             layout,
             managed_base,
         }
+    }
+
+    pub(crate) fn frame_allocator(&self) -> &FirstFitFrameAllocator {
+        &self.allocator
     }
 
     fn base(&self) -> PhysicalAddress {

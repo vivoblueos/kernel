@@ -58,13 +58,61 @@ const SLOT_OFFSET: usize =
     (size_of::<PoolPage>() + align_of::<Mapping>() - 1) & !(align_of::<Mapping>() - 1);
 const SLOTS: usize = (PAGE_SIZE - SLOT_OFFSET) / size_of::<Mapping>();
 const _: () = assert!(SLOTS > 0 && SLOTS <= 64);
-static POOL: SpinLock<usize> = SpinLock::new(0);
-static AREAS: SpinLock<AreaIndex<1>> = SpinLock::new(AreaIndex::new());
+struct VmapState {
+    pool: SpinLock<usize>,
+    areas: SpinLock<AreaIndex<1>>,
+}
+
+impl VmapState {
+    const fn new() -> Self {
+        Self {
+            pool: SpinLock::new(0),
+            areas: SpinLock::new(AreaIndex::new()),
+        }
+    }
+
+    // The mapper must undo partial mappings before returning an error.
+    fn allocate(
+        &self,
+        allocator: &FirstFitFrameAllocator,
+        request: PageRequest,
+        map: impl FnOnce(usize, usize) -> Result<(), &'static str>,
+    ) -> Option<PageSpan> {
+        let bytes = request.pages.checked_mul(PAGE_SIZE)?;
+        if request.pages == 0 || request.align < PAGE_SIZE || !request.align.is_power_of_two() {
+            return None;
+        }
+        let mut pending = MappingReservation::new(self, allocator, request.pages)?;
+        let mapping = pending.node?.as_ptr();
+        let start = {
+            let mut areas = self.areas.irqsave_lock();
+            let start = areas.find_gap(HEAP_START, HEAP_END, bytes, request.align)?;
+            unsafe {
+                (*mapping).area = Area::new(start, request.pages).unwrap();
+                areas
+                    .insert(NonNull::new_unchecked(core::ptr::addr_of_mut!(
+                        (*mapping).area
+                    )))
+                    .ok()?;
+            }
+            pending.reserved = true;
+            start
+        };
+        map(start, request.pages).ok()?;
+        pending.mapped = true;
+        pending.commit()
+    }
+}
+
+static VMAP: VmapState = VmapState::new();
 
 // No GlobalAlloc, TinyArc, Vec or heap mapping is used by this metadata pool.
-fn acquire_metadata() -> Option<(*mut Mapping, usize)> {
+fn acquire_metadata(
+    state: &VmapState,
+    allocator: &FirstFitFrameAllocator,
+) -> Option<(*mut Mapping, usize)> {
     {
-        let head = POOL.irqsave_lock();
+        let head = state.pool.irqsave_lock();
         let mut page = *head;
         while page != 0 {
             let header = unsafe { &mut *(page as *mut PoolPage) };
@@ -78,9 +126,9 @@ fn acquire_metadata() -> Option<(*mut Mapping, usize)> {
             page = header.next;
         }
     }
-    let frame = FirstFitFrameAllocator::instance().alloc_frame()?;
+    let frame = allocator.alloc_frame()?;
     let page = kernel_phys_to_virt(frame).into_raw();
-    let mut head = POOL.irqsave_lock();
+    let mut head = state.pool.irqsave_lock();
     unsafe {
         (page as *mut PoolPage).write(PoolPage {
             next: *head,
@@ -94,11 +142,15 @@ fn acquire_metadata() -> Option<(*mut Mapping, usize)> {
     *head = page;
     Some(((page + SLOT_OFFSET) as *mut Mapping, page))
 }
-unsafe fn release_metadata(mapping: *mut Mapping) {
+unsafe fn release_metadata(
+    state: &VmapState,
+    allocator: &FirstFitFrameAllocator,
+    mapping: *mut Mapping,
+) {
     let page = (*mapping).pool;
     let slot = (mapping as usize - page - SLOT_OFFSET) / size_of::<Mapping>();
     let empty = {
-        let mut head = POOL.irqsave_lock();
+        let mut head = state.pool.irqsave_lock();
         let h = &mut *(page as *mut PoolPage);
         assert!(slot < SLOTS && h.occupied & (1u64 << slot) != 0);
         core::ptr::drop_in_place(mapping);
@@ -118,7 +170,7 @@ unsafe fn release_metadata(mapping: *mut Mapping) {
         }
     };
     if empty {
-        FirstFitFrameAllocator::instance()
+        allocator
             .free_frame(PhysicalAddress::new(page - KERNEL_VIRT_OFFSET))
             .expect("release mapping metadata");
     }
@@ -126,15 +178,21 @@ unsafe fn release_metadata(mapping: *mut Mapping) {
 
 /// Own metadata, a VA reservation and its mapping until publication.
 #[must_use = "unpublished virtual mappings are rolled back on drop"]
-struct MappingReservation {
+struct MappingReservation<'a> {
+    state: &'a VmapState,
+    allocator: &'a FirstFitFrameAllocator,
     node: Option<NonNull<Mapping>>,
     reserved: bool,
     mapped: bool,
     pages: usize,
 }
-impl MappingReservation {
-    fn new(pages: usize) -> Option<Self> {
-        let (mapping, pool) = acquire_metadata()?;
+impl<'a> MappingReservation<'a> {
+    fn new(
+        state: &'a VmapState,
+        allocator: &'a FirstFitFrameAllocator,
+        pages: usize,
+    ) -> Option<Self> {
+        let (mapping, pool) = acquire_metadata(state, allocator)?;
         // Initialize even before finding a gap, so metadata-only rollback has
         // a fully initialized value and never needs another allocation.
         unsafe {
@@ -144,6 +202,8 @@ impl MappingReservation {
             });
         }
         Some(Self {
+            state,
+            allocator,
             node: NonNull::new(mapping),
             reserved: false,
             mapped: false,
@@ -165,7 +225,7 @@ impl MappingReservation {
         Some(span)
     }
 }
-impl Drop for MappingReservation {
+impl Drop for MappingReservation<'_> {
     fn drop(&mut self) {
         let Some(node) = self.node else {
             return;
@@ -179,10 +239,10 @@ impl Drop for MappingReservation {
             };
         }
         if self.reserved {
-            assert!(AREAS.irqsave_lock().remove(start).is_some());
+            assert!(self.state.areas.irqsave_lock().remove(start).is_some());
         }
         unsafe {
-            release_metadata(node.as_ptr());
+            release_metadata(self.state, self.allocator, node.as_ptr());
         }
     }
 }
@@ -193,31 +253,15 @@ pub struct VmapSource;
 // translations; both physical backing and descriptor storage are exclusively owned.
 unsafe impl PageSource for VmapSource {
     fn allocate(&self, request: PageRequest) -> Option<PageSpan> {
-        let bytes = request.pages.checked_mul(PAGE_SIZE)?;
-        if request.pages == 0 || request.align < PAGE_SIZE || !request.align.is_power_of_two() {
-            return None;
-        }
-        let mut pending = MappingReservation::new(request.pages)?;
-        let mapping = pending.node?.as_ptr();
-        let start = {
-            let mut areas = AREAS.irqsave_lock();
-            let start = areas.find_gap(HEAP_START, HEAP_END, bytes, request.align)?;
-            unsafe {
-                (*mapping).area = Area::new(start, request.pages).unwrap();
-                areas
-                    .insert(NonNull::new_unchecked(core::ptr::addr_of_mut!(
-                        (*mapping).area
-                    )))
-                    .ok()?;
-            }
-            pending.reserved = true;
-            start
-        };
-        KernelAddressSpace::get()?
-            .map_heap(start, request.pages)
-            .ok()?;
-        pending.mapped = true;
-        pending.commit()
+        VMAP.allocate(
+            FirstFitFrameAllocator::instance(),
+            request,
+            |start, pages| {
+                KernelAddressSpace::get()
+                    .ok_or("kernel space not initialized")?
+                    .map_heap(start, pages)
+            },
+        )
     }
 
     unsafe fn release(&self, span: PageSpan) {
@@ -227,10 +271,16 @@ unsafe impl PageSource for VmapSource {
             .expect("kernel space")
             .release_heap(span.start().as_ptr().addr(), span.pages());
         assert_eq!(
-            AREAS.irqsave_lock().remove(span.start().as_ptr().addr()),
+            VMAP.areas
+                .irqsave_lock()
+                .remove(span.start().as_ptr().addr()),
             Some(node)
         );
-        release_metadata(node.as_ptr().cast::<Mapping>());
+        release_metadata(
+            &VMAP,
+            FirstFitFrameAllocator::instance(),
+            node.as_ptr().cast::<Mapping>(),
+        );
     }
     fn frame_stats(&self) -> FrameStats {
         FirstFitFrameAllocator::instance()
@@ -238,7 +288,7 @@ unsafe impl PageSource for VmapSource {
             .expect("frame allocator initialized")
     }
     fn largest_free_run_bytes(&self) -> usize {
-        let virtual_bytes = AREAS.irqsave_lock().largest_gap(HEAP_START, HEAP_END);
+        let virtual_bytes = VMAP.areas.irqsave_lock().largest_gap(HEAP_START, HEAP_END);
         virtual_bytes.min(self.frame_stats().free.saturating_mul(PAGE_SIZE))
     }
 }
@@ -283,35 +333,78 @@ impl<P: PageSource> Drop for PendingPages<'_, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as blueos;
+    use crate::mm::{
+        paging::{
+            first_fit::{tests::Fixture, FrameState},
+            mapper::PageMapper,
+            PageFormat,
+        },
+        VirtualAddress,
+    };
     use blueos_test_macro::test;
+    use core::cell::Cell;
 
-    #[test]
+    #[test(thread = 2, repeat = 4)]
     fn failed_mapping_restores_virtual_space_frames_and_metadata() {
-        let before = VmapSource.frame_stats();
-        let gap = AREAS.irqsave_lock().largest_gap(HEAP_START, HEAP_END);
-        assert!(VmapSource
-            .allocate(PageRequest {
-                pages: before.free + 1,
-                align: PAGE_SIZE
-            })
-            .is_none());
-        assert_eq!(AREAS.irqsave_lock().largest_gap(HEAP_START, HEAP_END), gap);
-        let after = VmapSource.frame_stats();
-        assert_eq!(
-            (after.free, after.allocated),
-            (before.free, before.allocated)
-        );
-        assert!(VmapSource
-            .allocate(PageRequest {
-                pages: (HEAP_END - HEAP_START) / PAGE_SIZE + 1,
-                align: PAGE_SIZE,
-            })
-            .is_none());
-        let after = VmapSource.frame_stats();
-        assert_eq!(
-            (after.free, after.allocated),
-            (before.free, before.allocated)
-        );
+        // Global VA/frame snapshots can change while other CPUs allocate or
+        // release memory. Exercise the real rollback path with private state
+        // and a small frame budget, without exhausting the kernel's frames.
+        for free in 2..crate::arch::page::PageEntry::LEVELS as usize + 4 {
+            let mut states = [FrameState::Reserved; 8];
+            states[..free].fill(FrameState::Free);
+            let fixture = Fixture::new(states);
+            let allocator = fixture.frame_allocator();
+            let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
+            let before = allocator.frame_stats().unwrap();
+            let state = VmapState::new();
+            let mapped = Cell::new(false);
+            assert!(state
+                .allocate(
+                    allocator,
+                    PageRequest {
+                        pages: 3,
+                        align: PAGE_SIZE,
+                    },
+                    |start, pages| {
+                        mapped.set(true);
+                        assert_eq!(start, HEAP_START);
+                        unsafe {
+                            mapper.map_owned_range(VirtualAddress::new(start), pages * PAGE_SIZE)
+                        }
+                    },
+                )
+                .is_none());
+            assert!(mapped.get());
+            assert_eq!(
+                state.areas.irqsave_lock().largest_gap(HEAP_START, HEAP_END),
+                HEAP_END - HEAP_START
+            );
+            assert_eq!(*state.pool.irqsave_lock(), 0);
+            for page in 0..3 {
+                assert!(mapper.translate(HEAP_START + page * PAGE_SIZE).is_none());
+            }
+            let after = allocator.frame_stats().unwrap();
+            assert_eq!(
+                (after.free, after.allocated),
+                (before.free, before.allocated)
+            );
+
+            // VA exhaustion must also roll back metadata without calling the mapper.
+            assert!(state
+                .allocate(
+                    allocator,
+                    PageRequest {
+                        pages: (HEAP_END - HEAP_START) / PAGE_SIZE + 1,
+                        align: PAGE_SIZE,
+                    },
+                    |_, _| panic!("oversized reservation reached the mapper"),
+                )
+                .is_none());
+            assert_eq!(*state.pool.irqsave_lock(), 0);
+            assert_eq!(allocator.frame_stats().unwrap(), after);
+        }
+
         let next = VmapSource
             .allocate(PageRequest {
                 pages: 1,
@@ -319,10 +412,5 @@ mod tests {
             })
             .unwrap();
         unsafe { VmapSource.release(next) };
-        let after = VmapSource.frame_stats();
-        assert_eq!(
-            (after.free, after.allocated),
-            (before.free, before.allocated)
-        );
     }
 }
