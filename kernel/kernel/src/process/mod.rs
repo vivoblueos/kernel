@@ -16,6 +16,7 @@
 use crate::vfs::fd_manager::FdManager;
 use crate::{
     error::Error,
+    mm::address_space::AddressSpace,
     scheduler,
     sync::SpinLock,
     thread::{Thread, ThreadList, ThreadNode},
@@ -231,6 +232,8 @@ pub struct Process {
     topology: SpinLock<ProcessTopology>,
     // The threads owned by this process.
     threads: SpinLock<ThreadList>,
+    // This process's independent address space.
+    address_space: Arc<AddressSpace>,
     // This process's open-file table.
     #[cfg(enable_vfs)]
     fd_manager: SpinLock<FdManager>,
@@ -243,7 +246,7 @@ pub struct Process {
 // storage is never moved or dropped, and every field that can be touched
 // concurrently (`topology`, `threads`, `fd_manager`) is already guarded by a
 // `SpinLock` whose irqsave read/write guards serialize access. The remaining
-// field (`pid`) is plain `Send + Sync`. So it is sound to move the owning
+// fields (`pid`, `address_space`) are `Send + Sync`. So it is sound to move the owning
 // `Arc<Process>` between threads and to share `&Process` across cores — which
 // the scheduler already relies on for the root process. This unlocks
 // `Once<Arc<Process>>` (the `root` field) and `Once<ProcessManager>` as
@@ -261,6 +264,7 @@ impl Process {
                 state: ProcessState::Alive,
             }),
             threads: SpinLock::new(ThreadList::new()),
+            address_space: Arc::new(AddressSpace::new()),
 
             #[cfg(enable_vfs)]
             fd_manager: SpinLock::new(FdManager::new()),
@@ -357,6 +361,11 @@ impl Process {
         &self.fd_manager
     }
 
+    /// This process's independent address space.
+    pub fn address_space(&self) -> &Arc<AddressSpace> {
+        &self.address_space
+    }
+
     /// Add a thread to this process's thread list.
     ///
     /// Returns `true` when success, and `false` when failed.
@@ -413,7 +422,9 @@ impl core::fmt::Debug for Process {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let parent_pid = self.parent().map(|p| p.pid());
         let mut dbg = f.debug_struct("Process");
-        dbg.field("pid", &self.pid).field("parent", &parent_pid);
+        dbg.field("pid", &self.pid)
+            .field("parent", &parent_pid)
+            .field("address_space", &self.address_space);
         #[cfg(enable_vfs)]
         dbg.field("fd_manager", &"<per-process>");
         dbg.finish()
@@ -453,6 +464,11 @@ mod tests {
         let child = Process::new(Pid(2), Arc::downgrade(&root)).expect("Process::new failed");
         assert_ne!(child.pid(), root.pid());
         assert_eq!(child.parent().map(|p| p.pid()), Some(ROOT_PID));
+
+        // Every process owns an empty, independent address space.
+        assert!(root.address_space().is_empty());
+        assert!(child.address_space().is_empty());
+        assert!(!Arc::ptr_eq(root.address_space(), child.address_space()));
 
         // When VFS is enabled, every process also owns an independent
         // per-process open-file table. The syscall path resolves each

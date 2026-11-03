@@ -14,6 +14,14 @@
 
 extern crate alloc;
 
+#[cfg(all(paging, allocator_buddy))]
+compile_error!("paging and the independent buddy physical allocator cannot manage the same RAM");
+
+#[cfg(all(paging, not(allocator = "page_heap")))]
+compile_error!("paging requires the page_heap allocator");
+#[cfg(all(not(paging), allocator = "page_heap"))]
+compile_error!("the page_heap allocator requires paging");
+
 use crate::{
     mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
     static_arc,
@@ -23,6 +31,13 @@ use core::{alloc::GlobalAlloc, ptr};
 
 // Raw heap implementations are in the allocator_crate.
 // This module only contains SpinLock wrappers and the GlobalAlloc impl.
+
+#[cfg(paging)]
+pub(crate) mod page_heap;
+#[cfg(paging)]
+pub use allocator_crate::page_heap::{HeapError, HeapStats};
+#[cfg(allocator = "page_heap")]
+pub use page_heap::PageHeap as Heap;
 
 #[cfg(allocator_buddy)]
 mod buddy;
@@ -177,6 +192,7 @@ impl KernelAllocator {
 /// FDT/DTB dynamic detection in a future update.
 ///
 /// TODO: support slab initialization based on buddy allocator
+#[cfg(not(paging))]
 pub fn init_heap(start: *mut u8, end: *mut u8) {
     #[cfg(allocator_buddy)]
     {
@@ -209,11 +225,30 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
     #[cfg(not(allocator_buddy))]
     {
         let start_addr = start as usize;
-        let size = unsafe { end.offset_from(start) as usize };
+        let size = (end as usize)
+            .checked_sub(start_addr)
+            .filter(|size| *size != 0)
+            .expect("invalid kernel heap range");
         unsafe {
             HEAP.init(start_addr, size);
         }
     }
+}
+
+/// Initialize the demand-backed heap after the permanent kernel table is published.
+#[cfg(paging)]
+pub(crate) fn init_paged_heap() -> Result<(), HeapError> {
+    use crate::mm::kernel_space::{HEAP_END, HEAP_START};
+    use allocator_crate::page_heap::{PageWindow, PAGE_SIZE};
+    let base = core::ptr::NonNull::new(HEAP_START as *mut u8).ok_or(HeapError::InvalidGeometry)?;
+    // SAFETY: the source reserves and maps each committed span before publication.
+    let window = unsafe { PageWindow::new(base, (HEAP_END - HEAP_START) / PAGE_SIZE) }?;
+    unsafe { HEAP.init(window) }
+}
+
+#[cfg(paging)]
+pub fn heap_stats() -> HeapStats {
+    HEAP.heap_stats()
 }
 
 pub fn memory_info() -> MemoryInfo {
@@ -225,13 +260,20 @@ pub fn memory_info() -> MemoryInfo {
 // TODO: Make malloc a blocking API, i.e., if the heap lock is
 // acquired by another thread, current thread should be suspended.
 pub fn malloc(size: usize) -> *mut u8 {
-    if core::intrinsics::unlikely(size == 0) {
-        return ptr::null_mut();
+    #[cfg(paging)]
+    {
+        HEAP.malloc(size)
     }
-    const ALIGN: usize = core::mem::size_of::<usize>();
-    let layout = Layout::from_size_align(size, ALIGN).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    #[cfg(not(paging))]
+    {
+        if core::intrinsics::unlikely(size == 0) {
+            return ptr::null_mut();
+        }
+        const ALIGN: usize = core::mem::size_of::<usize>();
+        let layout = Layout::from_size_align(size, ALIGN).unwrap();
+        HEAP.alloc(layout)
+            .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    }
 }
 
 /// Free previously allocated memory pointed by ptr.
@@ -240,10 +282,17 @@ pub fn malloc(size: usize) -> *mut u8 {
 ///
 /// * `ptr` - A pointer pointing to the memory location to be freed.
 pub fn free(ptr: *mut u8) {
-    if core::intrinsics::unlikely(ptr.is_null()) {
-        return;
+    #[cfg(paging)]
+    {
+        unsafe { HEAP.free(ptr) }
     }
-    unsafe { HEAP.deallocate_unknown_align(ptr) };
+    #[cfg(not(paging))]
+    {
+        if core::intrinsics::unlikely(ptr.is_null()) {
+            return;
+        }
+        unsafe { HEAP.deallocate_unknown_align(ptr) };
+    }
 }
 
 /// Reallocate memory pointed by ptr to have a new size.
@@ -253,16 +302,23 @@ pub fn free(ptr: *mut u8) {
 /// * `ptr` - A pointer pointing to the memory location to be reallocated.
 /// * `newsize` - The new size for the reallocated memory.
 pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
-    if newsize == 0 {
-        free(ptr);
-        return ptr::null_mut();
+    #[cfg(paging)]
+    {
+        unsafe { HEAP.c_realloc(ptr, newsize) }
     }
-    if ptr.is_null() {
-        return malloc(newsize);
-    }
-    unsafe {
-        HEAP.realloc_unknown_align(ptr, newsize)
-            .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+    #[cfg(not(paging))]
+    {
+        if newsize == 0 {
+            free(ptr);
+            return ptr::null_mut();
+        }
+        if ptr.is_null() {
+            return malloc(newsize);
+        }
+        unsafe {
+            HEAP.realloc_unknown_align(ptr, newsize)
+                .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
+        }
     }
 }
 
@@ -276,23 +332,30 @@ pub fn realloc(ptr: *mut u8, newsize: usize) -> *mut u8 {
 /// * `count` - Number of elements to allocate space for.
 /// * `size` - Size of each element.
 pub fn calloc(count: usize, size: usize) -> *mut u8 {
-    // `count * size` may overflow `usize` (e.g. 1024 * 800000000 on 32-bit
-    // targets). A wrapping product yields a bogus smaller size, silently
-    // under-allocating the block the caller believes it owns. Follow the C
-    // standard and report failure with a null pointer instead.
-    let Some(required_size) = count.checked_mul(size) else {
-        return ptr::null_mut();
-    };
-    const ALIGN: usize = core::mem::size_of::<usize>();
-    if let Ok(layout) = Layout::from_size_align(required_size, ALIGN) {
-        if let Some(alloc_ptr) = HEAP.alloc(layout) {
-            unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
-            alloc_ptr.as_ptr()
+    #[cfg(paging)]
+    {
+        HEAP.calloc(count, size)
+    }
+    #[cfg(not(paging))]
+    {
+        // `count * size` may overflow `usize` (e.g. 1024 * 800000000 on 32-bit
+        // targets). A wrapping product yields a bogus smaller size, silently
+        // under-allocating the block the caller believes it owns. Follow the C
+        // standard and report failure with a null pointer instead.
+        let Some(required_size) = count.checked_mul(size) else {
+            return ptr::null_mut();
+        };
+        const ALIGN: usize = core::mem::size_of::<usize>();
+        if let Ok(layout) = Layout::from_size_align(required_size, ALIGN) {
+            if let Some(alloc_ptr) = HEAP.alloc(layout) {
+                unsafe { ptr::write_bytes(alloc_ptr.as_ptr(), 0, required_size) };
+                alloc_ptr.as_ptr()
+            } else {
+                ptr::null_mut()
+            }
         } else {
             ptr::null_mut()
         }
-    } else {
-        ptr::null_mut()
     }
 }
 
@@ -303,13 +366,20 @@ pub fn calloc(count: usize, size: usize) -> *mut u8 {
 /// * `size` - Minimum size of the memory region to allocate.
 /// * `align` - Alignment requirement for the returned memory.
 pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
-    if core::intrinsics::unlikely(size == 0) {
-        return ptr::null_mut();
+    #[cfg(paging)]
+    {
+        HEAP.malloc_align(size, align)
     }
+    #[cfg(not(paging))]
+    {
+        if core::intrinsics::unlikely(size == 0) {
+            return ptr::null_mut();
+        }
 
-    let layout = Layout::from_size_align(size, align).unwrap();
-    HEAP.alloc(layout)
-        .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+        let layout = Layout::from_size_align(size, align).unwrap();
+        HEAP.alloc(layout)
+            .map_or(ptr::null_mut(), |allocation| allocation.as_ptr())
+    }
 }
 
 /// Deallocates memory that was allocated using `malloc_align`.
@@ -318,17 +388,31 @@ pub fn malloc_align(size: usize, align: usize) -> *mut u8 {
 ///
 /// * `ptr` - Pointer to the memory region to deallocate.
 pub fn free_align(ptr: *mut u8, align: usize) {
-    if ptr.is_null() {
-        return;
+    #[cfg(paging)]
+    {
+        unsafe { HEAP.free_align(ptr, align) }
     }
-    unsafe {
-        let layout = Layout::from_size_align_unchecked(0, align);
-        HEAP.dealloc(ptr, layout);
+    #[cfg(not(paging))]
+    {
+        if ptr.is_null() {
+            return;
+        }
+        unsafe {
+            let layout = Layout::from_size_align_unchecked(0, align);
+            HEAP.dealloc(ptr, layout);
+        }
     }
 }
 
 pub(crate) fn get_max_free_block_size() -> usize {
-    unsafe { HEAP.get_max_free_block_size() }
+    #[cfg(paging)]
+    {
+        HEAP.get_max_free_block_size()
+    }
+    #[cfg(not(paging))]
+    {
+        unsafe { HEAP.get_max_free_block_size() }
+    }
 }
 
 /// Returns the offset of the address within the alignment.
@@ -368,6 +452,52 @@ mod tests {
     use alloc::{alloc::Layout, boxed::Box, vec, vec::Vec};
     use blueos_test_macro::test;
 
+    #[cfg(paging)]
+    #[test]
+    fn paged_public_allocation_validates_inputs_and_zeroes_payload() {
+        assert!(malloc(usize::MAX).is_null());
+        assert!(malloc_align(64, 0).is_null());
+        assert!(malloc_align(64, 3).is_null());
+        assert!(calloc(0, 8).is_null());
+        let ptr = calloc(7, 13);
+        assert!(!ptr.is_null());
+        unsafe {
+            assert!(core::slice::from_raw_parts(ptr, 91)
+                .iter()
+                .all(|byte| *byte == 0));
+            ptr.write_bytes(0xa5, 91);
+        }
+        let grown = realloc(ptr, 8192);
+        assert!(!grown.is_null());
+        unsafe {
+            assert!(core::slice::from_raw_parts(grown, 91)
+                .iter()
+                .all(|byte| *byte == 0xa5));
+        }
+        assert!(realloc(grown, 0).is_null());
+        let aligned = malloc_align(8192, 8192);
+        assert!(!aligned.is_null());
+        assert_eq!(aligned as usize % 8192, 0);
+        free_align(aligned, 8192);
+    }
+
+    #[cfg(paging)]
+    #[test]
+    fn paged_public_statistics_keep_physical_and_object_units_separate() {
+        let info = memory_info();
+        assert_eq!(info.total % 4096, 0);
+        assert_eq!(info.used % 4096, 0);
+        assert!(info.used <= info.total);
+        assert!(info.max_used >= info.used);
+        let heap = heap_stats();
+        assert!(heap.charged_bytes <= heap.backing_bytes);
+        assert_eq!(heap.backing_bytes % 4096, 0);
+        // The maximum combines free slots and physical runs; concurrent frame
+        // users may grow or shrink either snapshot, so no monotonicity claim.
+        assert!(get_max_free_block_size() > 0);
+    }
+
+    #[cfg(not(paging))]
     #[test]
     fn max_free_block_comprehensive() {
         // Test 1: Basic behavior - check max free block after pool initialization

@@ -68,9 +68,17 @@ SECTIONS
     }
 
 
-    . = ALIGN(4096);
-    __heap_start = .;
-    . += 0x2000000;
-    __heap_end = .;
+    .boot_page_table (NOLOAD) : ALIGN(4096)
+    {
+        /* Keep the shared boot table reserved during heap initialization. */
+        BOOT_PAGE_TABLE = LOADADDR(.boot_page_table);
+#ifdef CONFIG_AARCH64_VA_BITS_48
+        /* L0 root followed by the L1 table holding bootstrap block mappings. */
+        . += 8192;
+#else
+        . += 4096;
+#endif
+    }
     _end = .;
+
 }

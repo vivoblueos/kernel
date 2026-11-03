@@ -7,4 +7,19 @@ config KERNEL_PHYS_BASE
 config NUM_IRQS
     int
 
+config PAGING
+    bool
+
+choice
+    prompt "AArch64 virtual address size"
+    default AARCH64_VA_BITS_39
+
+config AARCH64_VA_BITS_39
+    bool "39-bit (3-level page tables)"
+
+config AARCH64_VA_BITS_48
+    bool "48-bit (4-level page tables)"
+
+endchoice
+
 endmenu

@@ -24,6 +24,7 @@ config FLASH_SIZE
 
 config KERNEL_VIRT_OFFSET
 	hex
+	default 0xFFFF000000000000 if AARCH64_VA_BITS_48
 	default 0xFFFFFF8000000000 if AARCH64
 	default 0x0
 	help

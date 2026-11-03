@@ -35,6 +35,7 @@
 #![cfg_attr(compatible_old_toolchain, feature(slice_as_chunks))] // 1.88
 #![cfg_attr(compatible_old_toolchain, feature(strict_provenance_atomic_ptr))] // 1.91
 
+pub mod avl;
 pub mod intrusive;
 pub mod lifetime;
 pub mod list;

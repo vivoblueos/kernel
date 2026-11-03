@@ -211,6 +211,22 @@ pub fn end_interrupt(irq: IrqNumber) {
 }
 
 pub fn send_sgi(irq: IrqNumber, cpu_mask: u16) {
+    if super::CPU_ID_SHIFT == 8 {
+        for cpu in 0..u16::BITS {
+            if cpu_mask & (1 << cpu) != 0 {
+                GicV3::send_sgi(
+                    irq.0,
+                    SgiTarget::List {
+                        affinity3: 0,
+                        affinity2: 0,
+                        affinity1: cpu as u8,
+                        target_list: 1,
+                    },
+                );
+            }
+        }
+        return;
+    }
     GicV3::send_sgi(
         irq.0,
         SgiTarget::List {
