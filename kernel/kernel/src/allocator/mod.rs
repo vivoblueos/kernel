@@ -183,8 +183,16 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
         // Level 1: Initialize buddy allocator to manage all physical memory.
         let phys_dram_base = crate::boards::PHYS_DRAM_BASE as usize;
         let phys_dram_size = crate::boards::PHYS_DRAM_SIZE as usize;
+        let buddy_layout = buddy::get_buddy_layout(
+            phys_dram_base,
+            phys_dram_base + phys_dram_size,
+            core::ptr::addr_of_mut!(crate::boot::_end) as usize,
+        )
+        .expect("invalid kernel buddy metadata layout");
         unsafe {
-            BUDDY_ALLOC.init(phys_dram_base, phys_dram_base + phys_dram_size);
+            BUDDY_ALLOC
+                .init(buddy_layout)
+                .expect("failed to initialize raw buddy allocator");
         }
 
         // Level 2: Allocate page pool for small-object allocator from buddy.

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::heap::BuddyHeap;
+use super::heap::{get_buddy_layout, BuddyHeap, BuddyLayout};
 use crate::{
     mm::{kernel_phys_to_virt, kernel_virt_to_phys, PhysicalAddress, VirtualAddress},
     scheduler,
@@ -164,22 +164,19 @@ impl BuddyTestArena {
         let arena_size = total_pages.checked_mul(PAGE_SIZE).unwrap();
         let arena_layout = Layout::from_size_align(arena_size, PAGE_SIZE).unwrap();
         let backing = TestAllocation::new(arena_layout);
-        let metadata_layout = BuddyAllocator::metadata_layout(total_pages).unwrap();
-        let manageable_start_pfn = metadata_layout.size().div_ceil(PAGE_SIZE);
-        assert!(manageable_start_pfn < total_pages);
-
         let phys_base =
             kernel_virt_to_phys(VirtualAddress::new(backing.ptr().as_ptr() as usize)).into_raw();
+        let layout = get_buddy_layout(
+            phys_base,
+            phys_base.checked_add(arena_size).unwrap(),
+            backing.ptr().as_ptr() as usize,
+        )
+        .unwrap();
+        let manageable_start_pfn = layout.manageable_start_pfn;
+        assert!(manageable_start_pfn < total_pages);
         let heap = Box::new(BuddyHeap::new());
         unsafe {
-            heap.init_for_test(
-                phys_base,
-                total_pages,
-                manageable_start_pfn,
-                backing.ptr(),
-                metadata_layout.size(),
-            )
-            .unwrap();
+            heap.init(layout).unwrap();
         }
 
         Self {
@@ -486,8 +483,14 @@ fn wrapper_translates_addresses_and_handles_overflow() {
     let heap = Box::new(BuddyHeap::new());
     let phys_base = usize::MAX & !(PAGE_SIZE - 1);
     unsafe {
-        heap.init_for_test(phys_base, 2, 0, metadata.ptr(), layout.size())
-            .unwrap();
+        heap.init(BuddyLayout {
+            phys_base,
+            metadata_virt_start: metadata.ptr().as_ptr() as usize,
+            metadata_len: layout.size(),
+            total_pages: 2,
+            manageable_start_pfn: 0,
+        })
+        .unwrap();
     }
 
     assert_eq!(heap.pfn_to_phys(0), Some(phys_base));
