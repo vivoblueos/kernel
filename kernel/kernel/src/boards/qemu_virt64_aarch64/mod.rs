@@ -15,6 +15,6 @@
 pub mod init;
 pub use init::*;
 pub mod config;
-pub(crate) use config::MEMORY_BANKS;
+pub(crate) use config::{CPU_AFFINITIES, MEMORY_BANKS};
 pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE, TEXT_OFFSET};
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::QemuGtClk;

@@ -24,6 +24,8 @@ pub const CONSOLE_UART_IRQNUM: IrqNumber = IrqNumber::new(150);
 pub const GENERIC_TIMER_IRQNUM: IrqNumber = IrqNumber::new(30);
 pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
 pub const PSCI_BASE: u32 = 0x84000000;
+// Logical CPU order, with the boot CPU first. RK3568 varies MPIDR_EL1.Aff1.
+pub(crate) const CPU_AFFINITIES: [usize; 4] = [0x000, 0x100, 0x200, 0x300];
 pub const GICD: usize = kernel_phys_to_virt(PhysicalAddress::new(0xfd400000)).into_raw();
 pub const GICR: usize = kernel_phys_to_virt(PhysicalAddress::new(0xfd460000)).into_raw();
 

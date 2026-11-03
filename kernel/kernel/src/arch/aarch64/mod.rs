@@ -13,6 +13,7 @@
 // limitations under the License.
 
 pub(crate) mod asm;
+pub(crate) mod cpu;
 mod exception;
 pub mod irq;
 pub(crate) mod mmu;
@@ -35,20 +36,10 @@ use core::{
         atomic::{AtomicU8, Ordering},
     },
 };
+use cpu::{cpu_affinity, cpu_id_from_mpidr};
 use scheduler::ContextSwitchHookHolder;
 
 pub(crate) const NR_SWITCH: usize = !0;
-
-// RK3568 numbers cores in MPIDR.Aff1; QEMU virt uses MPIDR.Aff0.
-pub(crate) const CPU_ID_SHIFT: u8 = if cfg!(soc_rk3568) { 8 } else { 0 };
-
-const fn cpu_id_from_mpidr(mpidr: usize) -> usize {
-    (mpidr >> CPU_ID_SHIFT) & 0xff
-}
-
-pub(crate) const fn cpu_affinity(cpu_id: usize) -> usize {
-    cpu_id << CPU_ID_SHIFT
-}
 
 // Temporary stack used during early boot (before MMU is enabled).
 #[repr(C, align(16))]
@@ -65,7 +56,8 @@ pub static mut TEMP_BOOT_STACK: [TempBootStack; blueos_kconfig::CONFIG_NUM_CORES
 #[macro_export]
 macro_rules! enter_el1 {
     () => {
-        "
+        concat!(
+            "
         mrs x0, cpacr_el1
         orr x0, x0, #(0x3 << 20)
         msr cpacr_el1, x0
@@ -80,8 +72,9 @@ macro_rules! enter_el1 {
         // We reserve the top 4KB of each core's 16KB chunk for EL2.
         adrp x1, {stack_end}
         add x1, x1, :lo12:{stack_end}
-        mrs x9, mpidr_el1
-        ubfx x9, x9, #{cpu_id_shift}, #8
+        ",
+            $crate::aarch64_read_cpu_id!(),
+            "
         lsl x9, x9, #14
         sub x1, x1, x9
         mov sp, x1
@@ -96,8 +89,9 @@ macro_rules! enter_el1 {
         // Enable EL1 MMU while still in EL2.
         adrp x4, {tmp_stack}
         add x4, x4, :lo12:{tmp_stack}
-        mrs x9, mpidr_el1
-        ubfx x9, x9, #{cpu_id_shift}, #8
+        ",
+            $crate::aarch64_read_cpu_id!(),
+            "
         add x9, x9, #1
         add x4, x4, x9, lsl #12
         mov sp, x4
@@ -119,6 +113,7 @@ macro_rules! enter_el1 {
         msr elr_el2, x3
         eret
         "
+        )
     };
 }
 
@@ -152,7 +147,9 @@ macro_rules! arch_bootstrap {
             init_el1_enable_mmu = sym $crate::arch::aarch64::mmu::init_el1_enable_mmu,
             kernel_virt_start = const $crate::arch::aarch64::mmu::KERNEL_VIRT_START,
             tmp_stack = sym $crate::arch::aarch64::TEMP_BOOT_STACK,
-            cpu_id_shift = const $crate::arch::aarch64::CPU_ID_SHIFT,
+            cpu_affinities = sym $crate::arch::aarch64::cpu::CPU_AFFINITIES,
+            cpu_count = const blueos_kconfig::CONFIG_NUM_CORES,
+            mpidr_mask = const $crate::arch::aarch64::cpu::MPIDR_HWID_BITMASK,
             stack_start = sym $stack_start,
             stack_end = sym $stack_end,
             cont = sym $cont,
@@ -507,11 +504,10 @@ pub(crate) extern "C" fn jump_to_high_va() -> ! {
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
         core::arch::naked_asm!(
+            crate::aarch64_read_cpu_id!(),
             "
                 // set sp
-                mrs x8, mpidr_el1
-                ubfx x8, x8, #{cpu_id_shift}, #8
-                lsl x8, x8, #14
+                lsl x8, x9, #14
                 sub sp, x1, x8
                 // Code, stack and runtime MMIO now use the TTBR1 high mapping.
                 // Drop the TTBR0 boot identity mapping on every platform.
@@ -524,7 +520,9 @@ pub(crate) extern "C" fn init() -> ! {
                 // branch to a far address
                 br x2
                 ",
-            cpu_id_shift = const CPU_ID_SHIFT,
+            cpu_affinities = sym cpu::CPU_AFFINITIES,
+            cpu_count = const blueos_kconfig::CONFIG_NUM_CORES,
+            mpidr_mask = const cpu::MPIDR_HWID_BITMASK,
         )
     }
 }
@@ -559,7 +557,7 @@ pub extern "C" fn enable_local_irq() {
 
 #[inline]
 pub extern "C" fn current_cpu_id() -> usize {
-    cpu_id_from_mpidr(MPIDR_EL1.get() as usize)
+    cpu_id_from_mpidr(MPIDR_EL1.get() as usize).expect("CPU affinity missing from board topology")
 }
 
 #[inline(always)]
@@ -629,40 +627,5 @@ pub(crate) extern "C" fn switch_stack(
 }
 
 pub(crate) extern "C" fn send_ipi(target_core_id: usize) {
-    let affinity = cpu_affinity(target_core_id) as u64;
-    let aff1 = (affinity >> 8) & 0xff;
-    let aff2 = 0u64;
-    let aff3 = 0u64;
-    let target_list = 1u64 << (affinity & 0xff);
-    let int_id = 1u64;
-
-    let sgi_val: u64 = (aff3 << 48) | (aff2 << 32) | (int_id << 24) | (aff1 << 16) | (target_list);
-    unsafe {
-        core::arch::asm!(
-            "msr ICC_SGI1R_EL1, {x}",
-            "isb",
-            x = in(reg) sgi_val,
-            options(nomem, nostack)
-        );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{cpu_affinity, cpu_id_from_mpidr};
-    use blueos_test_macro::test;
-
-    #[test]
-    fn cpu_topology_matches_platform_affinity() {
-        #[cfg(soc_rk3568)]
-        let affinities = [0x000, 0x100, 0x200, 0x300];
-        #[cfg(not(soc_rk3568))]
-        let affinities = [0, 1, 2, 3];
-
-        for (cpu, affinity) in affinities.into_iter().enumerate() {
-            assert_eq!(cpu_affinity(cpu), affinity);
-            // MPIDR's non-affinity flags must not affect the logical CPU ID.
-            assert_eq!(cpu_id_from_mpidr(0x8000_0000 | affinity), cpu);
-        }
-    }
+    irq::send_sgi_to_cpu(irq::IrqNumber::new(1), target_core_id);
 }

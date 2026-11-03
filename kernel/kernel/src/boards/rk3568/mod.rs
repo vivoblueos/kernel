@@ -16,7 +16,7 @@ mod config;
 use crate::{arch, arch::irq, scheduler, support::SmpStagedInit};
 use blueos_driver::uart::ns16x50::Ns16x50Isr;
 use blueos_kconfig::CONFIG_NUM_CORES;
-pub(crate) use config::MEMORY_BANKS;
+pub(crate) use config::{CPU_AFFINITIES, MEMORY_BANKS};
 pub use config::{PHYS_DRAM_BASE, PHYS_DRAM_SIZE, TEXT_OFFSET};
 pub type ClockImpl = crate::devices::clock::gic_generic_timer::GenericClock;
 use alloc::boxed::Box;

@@ -210,30 +210,46 @@ pub fn end_interrupt(irq: IrqNumber) {
     GicV3::end_interrupt(irq.0);
 }
 
-pub fn send_sgi(irq: IrqNumber, cpu_mask: u16) {
-    if super::CPU_ID_SHIFT == 8 {
-        for cpu in 0..u16::BITS {
-            if cpu_mask & (1 << cpu) != 0 {
-                GicV3::send_sgi(
-                    irq.0,
-                    SgiTarget::List {
-                        affinity3: 0,
-                        affinity2: 0,
-                        affinity1: cpu as u8,
-                        target_list: 1,
-                    },
-                );
-            }
-        }
-        return;
+fn sgi_target(affinity: usize) -> SgiTarget {
+    let affinity0 = affinity & 0xff;
+    // The current driver uses the 16-bit target list without range selection.
+    assert!(affinity0 < u16::BITS as usize);
+    SgiTarget::List {
+        affinity3: (affinity >> 32) as u8,
+        affinity2: (affinity >> 16) as u8,
+        affinity1: (affinity >> 8) as u8,
+        target_list: 1 << affinity0,
     }
-    GicV3::send_sgi(
-        irq.0,
-        SgiTarget::List {
-            affinity3: 0,
-            affinity2: 0,
-            affinity1: 0,
-            target_list: cpu_mask,
-        },
-    );
+}
+
+pub(super) fn send_sgi_to_cpu(irq: IrqNumber, cpu_id: usize) {
+    GicV3::send_sgi(irq.0, sgi_target(super::cpu::cpu_affinity(cpu_id)));
+    aarch64_cpu::asm::barrier::isb(aarch64_cpu::asm::barrier::SY);
+}
+
+pub fn send_sgi(irq: IrqNumber, cpu_mask: u16) {
+    for cpu in 0..u16::BITS {
+        if cpu_mask & (1 << cpu) != 0 {
+            send_sgi_to_cpu(irq, cpu as usize);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sgi_target, SgiTarget};
+    use blueos_test_macro::test;
+
+    #[test]
+    fn sgi_target_preserves_all_affinity_levels() {
+        assert_eq!(
+            sgi_target(0x120034560f),
+            SgiTarget::List {
+                affinity3: 0x12,
+                affinity2: 0x34,
+                affinity1: 0x56,
+                target_list: 1 << 15,
+            }
+        );
+    }
 }
