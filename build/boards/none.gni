@@ -12,9 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-board_default_toolchain = "//build/toolchain:host"
-if (host_os == "linux") {
-  rust_abi_target = "x86_64-unknown-linux-gnu"
-} else if (host_os == "mac") {
-  rust_abi_target = "aarch64-apple-darwin"
-}
+board_default_toolchain = "host"

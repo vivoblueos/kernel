@@ -234,8 +234,6 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         let elapsed = now.since(start);
         old.elapse_time_slices(elapsed);
     }
-    #[cfg(thread_stats)]
-    old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         cleanup_retired_thread(&mut old);
     }
@@ -320,15 +318,7 @@ fn inner_yield(next: ThreadNode) {
     };
     arch::switch_context_with_hook(&mut hook_holder as *mut _);
     debug_assert!(arch::local_irq_enabled());
-    old.enable_preempt();
-    // FIXME: Signal feature should be optional.
-    {
-        // FIXME: Do we need to change stack to handle signals?
-        if !old.lock().has_pending_signals() {
-            return;
-        }
-        signal::handle_signals();
-    }
+    old.finish_resumption();
 }
 
 pub fn yield_me() {
@@ -407,15 +397,7 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
         arch::switch_context_with_hook(&mut hook_holder as *mut _);
     }
     debug_assert!(arch::local_irq_enabled());
-    old.enable_preempt();
-    // FIXME: Signal feature should be optional.
-    {
-        // FIXME: Do we need to change stack to handle signals?
-        if !old.lock().has_pending_signals() {
-            return reached_deadline;
-        }
-        signal::handle_signals();
-    }
+    old.finish_resumption();
     reached_deadline
 }
 
