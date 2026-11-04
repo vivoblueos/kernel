@@ -1,5 +1,0 @@
-error: expected 1 attribute argument
- --> $DIR/derive-empty-attr.rs:3:7
-  |
-3 |     #[defmt()]
-  |       ^^^^^^^
