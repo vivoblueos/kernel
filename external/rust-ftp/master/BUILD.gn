@@ -23,7 +23,7 @@ build_rust("ftp") {
   sources = [ "src/lib.rs" ]
   edition = "2015"
   deps = [
-    "//external/vendor/log-0.4.28:log",
+    "//external/rust:log",
     "//kernel/rsrt:rsrt_std",
     "//libs/librs",
   ]
@@ -43,7 +43,7 @@ build_rust("example_connecting") {
   sources = [ "examples/connecting.rs" ]
   deps = [
     ":ftp",
-    "//external/vendor/log-0.4.28:log",
+    "//external/rust:log",
     "//kernel/rsrt:rsrt_std",
     "//libs/librs",
   ]

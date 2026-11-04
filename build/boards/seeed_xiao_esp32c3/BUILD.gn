@@ -33,10 +33,6 @@ blueos_board("seeed_xiao_esp32c3") {
       "-nostartfiles",
       "-Wl,-gc-sections",
       "-Wl,-z,norelro",
-
-      # The board link.x INCLUDEs "rom/esp32c3.rom.ld", which GNU ld
-      # resolves via this -L search path.
-      "-L" + rebase_path("//external/vendor/esp-rom-sys-0.1.4/ld/esp32c3"),
     ]
     rustflags = [
       "--cfg",
