@@ -1,0 +1,179 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# @generated from build/CARGO_BUILD.gn.hbs by gnrt
+# Do not edit!
+
+{{!-- Each target belongs to one resolved Cargo Host/Target context. --}}
+{{!--
+Render context (strict mode: every field is present; optional values are null
+and collections are empty when unused).
+
+  targets: [ Target ]
+
+  Target:
+    name                  GN target name including its instance identity
+    crate_name            Rust crate name without the instance suffix
+    crate_type            "rlib", "proc-macro", or "bin"
+    context               Cargo resolution context: "host" or "target"
+    crate_root            crate root source file, emitted as the sole source
+    edition               Rust edition
+    version               package version
+    epoch                 semver compatibility epoch
+    rustenv               CARGO_PKG_* environment entries
+    rustflags             conditional rustc argument groups
+    manifest_dir          vendored package directory
+    rustc_metadata        stable identity for this compilation instance
+    features              conditional Cargo feature groups
+    deps                  normal dependencies compiled for the target
+    build_deps            build dependencies compiled for the host
+    aliased_deps          renamed normal dependency labels
+    build_aliased_deps    renamed build dependency labels
+    build_root            build.rs path, or null when there is no build script
+    build_sources         source files for the build-script target
+    build_script_inputs   extra inputs that rerun the build-script action
+    build_script_outputs  build-script output markers
+    build_script_env      conditional CARGO_FEATURE_* entries for build.rs
+
+  CondGroup<T>:
+    cond       structured Cargo/GN condition, or null for unconditional items
+    items      values enabled by the condition
+
+  Alias:
+    use_name   dependency name used by the Rust crate
+    label      GN label of the resolved crate instance
+--}}
+import("//build/templates/cargo_crate.gni")
+
+{{#each targets}}
+cargo_crate("{{gn_escape name}}") {
+  crate_name = "{{gn_escape crate_name}}"
+  crate_type = "{{gn_escape crate_type}}"
+  context = "{{gn_escape context}}"
+  rustc_metadata = "{{gn_escape rustc_metadata}}"
+{{#if (eq crate_type "proc-macro")}}
+  output_dir = target_out_dir
+{{/if}}
+{{#if (eq crate_type "bin")}}
+  output_dir = target_out_dir
+{{/if}}
+  edition = "{{gn_escape edition}}"
+  epoch = "{{gn_escape epoch}}"
+  version = "{{gn_escape version}}"
+  rustenv = [
+    "CARGO_MANIFEST_DIR=" + rebase_path("{{gn_escape manifest_dir}}"),
+{{#each rustenv}}
+    "{{gn_escape this}}",
+{{/each}}
+  ]
+  sources = [ "{{gn_escape crate_root}}" ]
+  features = []
+{{#each features}}
+{{#if cond}}
+  if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+    features += [{{#each items}} "{{gn_escape this}}",{{/each}} ]
+{{#if cond}}
+  }
+{{/if}}
+{{/each}}
+  deps = []
+{{#each deps}}
+{{#if cond}}
+  if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+    deps += [{{#each items}} "{{gn_escape this}}",{{/each}} ]
+{{#if cond}}
+  }
+{{/if}}
+{{/each}}
+  build_deps = []
+{{#each build_deps}}
+{{#if cond}}
+  if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+    build_deps += [{{#each items}} "{{gn_escape this}}",{{/each}} ]
+{{#if cond}}
+  }
+{{/if}}
+{{/each}}
+{{#if aliased_deps}}
+  aliased_deps = {
+{{#each aliased_deps}}
+{{#if cond}}
+    if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+{{#each items}}
+      {{gn_escape this.use_name}} = "{{gn_escape this.label}}"
+{{/each}}
+{{#if cond}}
+    }
+{{/if}}
+{{/each}}
+  }
+{{/if}}
+{{#if build_root}}
+  build_root = "{{gn_escape build_root}}"
+  build_sources = [{{#each build_sources}} "{{gn_escape this}}",{{/each}} ]
+  build_script_features = features
+  build_script_rustenv = []
+{{#each build_script_env}}
+{{#if cond}}
+  if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+    build_script_rustenv += [{{#each items}} "{{gn_escape this}}",{{/each}} ]
+{{#if cond}}
+  }
+{{/if}}
+{{/each}}
+{{#if build_aliased_deps}}
+  build_script_aliased_deps = {
+{{#each build_aliased_deps}}
+{{#if cond}}
+    if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+{{#each items}}
+      {{gn_escape this.use_name}} = "{{gn_escape this.label}}"
+{{/each}}
+{{#if cond}}
+    }
+{{/if}}
+{{/each}}
+  }
+{{/if}}
+  build_script_inputs = [{{#each build_script_inputs}} "{{gn_escape this}}",{{/each}} ]
+  build_script_outputs = [{{#each build_script_outputs}} "{{gn_escape this}}",{{/each}} ]
+{{/if}}
+  rustflags = [
+    "--cap-lints=allow",
+{{#if (eq crate_type "proc-macro")}}
+    "--extern",
+    "proc_macro",
+{{/if}}
+  ]
+{{#each rustflags}}
+{{#if cond}}
+  if ({{gn_condition cond target_triple="build_ctx.toolchain_target_triple" target_cfgs="build_ctx.toolchain_cfgs" host_triple="host_build_ctx.toolchain_target_triple" host_cfgs="host_build_ctx.toolchain_cfgs"}}) {
+{{/if}}
+    rustflags += [
+{{#each items}}
+      "{{gn_escape this}}",
+{{/each}}
+    ]
+{{#if cond}}
+  }
+{{/if}}
+{{/each}}
+}
+{{/each}}

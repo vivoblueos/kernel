@@ -1,0 +1,45 @@
+# Patch: Use total_cmp directly and remove the autocfg build probe.
+# Reason: The BlueOS toolchain supports total_cmp without capability
+# detection.
+
+diff -ruN a/build.rs b/build.rs
+--- a/build.rs	2026-09-24 18:02:11.668595961 +0800
++++ b/build.rs	2026-09-24 18:02:11.669974539 +0800
+@@ -1,7 +1,3 @@
+ fn main() {
+-    let ac = autocfg::new();
+-
+-    ac.emit_expression_cfg("1f64.total_cmp(&2f64)", "has_total_cmp"); // 1.62
+-
+-    autocfg::rerun_path("build.rs");
+-}
++    println!("cargo::rerun-if-changed=build.rs");
++}
+\ No newline at end of file
+diff -ruN a/src/float.rs b/src/float.rs
+--- a/src/float.rs	2026-09-24 18:02:11.670990189 +0800
++++ b/src/float.rs	2026-09-24 18:02:11.672084463 +0800
+@@ -2302,23 +2302,10 @@
+     ($T:ident, $I:ident, $U:ident, $bits:expr) => {
+         impl TotalOrder for $T {
+             #[inline]
+-            #[cfg(has_total_cmp)]
+             fn total_cmp(&self, other: &Self) -> Ordering {
+                 // Forward to the core implementation
+                 Self::total_cmp(&self, other)
+             }
+-            #[inline]
+-            #[cfg(not(has_total_cmp))]
+-            fn total_cmp(&self, other: &Self) -> Ordering {
+-                // Backport the core implementation (since 1.62)
+-                let mut left = self.to_bits() as $I;
+-                let mut right = other.to_bits() as $I;
+-
+-                left ^= (((left >> ($bits - 1)) as $U) >> 1) as $I;
+-                right ^= (((right >> ($bits - 1)) as $U) >> 1) as $I;
+-
+-                left.cmp(&right)
+-            }
+         }
+     };
+ }

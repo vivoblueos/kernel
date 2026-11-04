@@ -12,102 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-_common_cflags = [
-  "-ffunction-sections",
-  "-fdata-sections",
-]
+import("//build/config/build_config.gni")
 
-import("//build/rustc_version.gni")
-
-_common_rustflags = [
-  "--color=always",
-
-  #FIXME: We should remove these flags in the future.
-  "-D",
-  "warnings",
-  "-A",
-  "unused",
-  "-A",
-  "dead_code",
-  "-A",
-  "static_mut_refs",
-]
-
-if (is_rust_toolchain_older_than_1_90) {
-  # Enables `#[cfg(compatible_old_toolchain)]` in all Rust code so it can
-  # provide fallbacks for newer language/library features. Absent on >= 1.90,
-  # so `#[cfg(not(compatible_old_toolchain))]` selects the modern path.
-  _common_rustflags += [
-    "--cfg",
-    "compatible_old_toolchain",
-  ]
-}
-
-config("release") {
-  cflags = [
-             "-Oz",
-             "-fdiagnostics-color=always",
-
-             # There are still a lot of unsafe codes in C or Rust,
-             # so switch off strict aliasing currently to avoid subtle bugs.
-             "-fno-strict-aliasing",
-           ] + _common_cflags
-  cflags_c = [ "-std=c11" ]
-  rustflags = [
-                "-Copt-level=z",
-                "-Cstrip=debuginfo",
-              ] + _common_rustflags
-}
+_debug = build_type_config.debug
 
 config("debug") {
-  cflags = [
-             "-O1",
-             "-g",
-             "-gdwarf-4",
-             "-fno-omit-frame-pointer",
-             "-fdiagnostics-color=always",
-           ] + _common_cflags
-  cflags_c = [ "-std=c11" ]
-  rustflags = [
-                "-Copt-level=1",
-                "-Cforce-frame-pointers=yes",
-                "-Cdebug-assertions",
-                "-Cdebuginfo=full",
-              ] + _common_rustflags
+  cflags = _debug.cflags
+  cflags_c = _debug.cflags_c
+  rustflags = _debug.rustflags
 }
+
+_release = build_type_config.release
+
+config("release") {
+  cflags = _release.cflags
+  cflags_c = _release.cflags_c
+  rustflags = _release.rustflags
+}
+
+_coverage = build_type_config.coverage
 
 config("coverage") {
-  cflags = [
-             "-O1",
-             "-g",
-             "-gdwarf-4",
-             "-fno-omit-frame-pointer",
-             "-fdiagnostics-color=always",
-           ] + _common_cflags
-  cflags_c = [ "-std=c11" ]
-  rustflags = [
-                "-Copt-level=1",
-                "-Cdebuginfo=full",
-                "-Cforce-frame-pointers=yes",
-                "-Cinstrument-coverage",
-                "-Zno-profiler-runtime",
-              ] + _common_rustflags
+  cflags = _coverage.cflags
+  cflags_c = _coverage.cflags_c
+  rustflags = _coverage.rustflags
 }
 
+_profile = build_type_config.profile
+
 config("profile") {
-  cflags = [
-             "-O1",
-             "-g",
-             "-gdwarf-4",
-             "-fno-omit-frame-pointer",
-             "-fdiagnostics-color=always",
-           ] + _common_cflags
-  cflags_c = [ "-std=c11" ]
-  rustflags = [
-                "-Copt-level=1",
-                "-Cdebuginfo=full",
-                "-Cforce-frame-pointers=yes",
-                "-Cprofile-generate",
-                "-Zno-profiler-runtime",
-              ] + _common_rustflags
+  cflags = _profile.cflags
+  cflags_c = _profile.cflags_c
+  rustflags = _profile.rustflags
 }
