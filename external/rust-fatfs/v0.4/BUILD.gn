@@ -5,8 +5,8 @@ build_rust("fatfs") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   deps = [
-    "//external/vendor/bitflags-2.10.0:bitflags",
-    "//external/vendor/log-0.4.28:log",
+    "//external/rust:bitflags",
+    "//external/rust:log",
   ]
   features = [
     "alloc",
