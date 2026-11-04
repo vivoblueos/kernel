@@ -12,24 +12,131 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/config/gnrt_sync.gni")
+
 # This template offers syntactic sugar for rust_library, rust_proc_macro target.
 template("build_rust") {
   deps = []
+
+  # Resolve declaration proxies; generated instance labels pass through
+  # unchanged.
   if (defined(invoker.deps)) {
-    deps += invoker.deps
-  }
+    foreach(dep, invoker.deps) {
+      _resolved = dep
+      foreach(entry, gnrt_crate_index.crates) {
+        if (entry.proxy == get_label_info(dep, "label_no_toolchain")) {
+          _toolchain = get_label_info(dep, "toolchain")
 
-  if (defined(invoker.build_deps)) {
-    deps += invoker.build_deps
-  }
-
-  # We are using host toolchain to build proc_macro_deps.
-  if (defined(invoker.proc_macro_deps)) {
-    foreach(dep, invoker.proc_macro_deps) {
-      deps += [ dep + "(//build/toolchain:host)" ]
+          # Native apps and proc macros share a toolchain but resolve features
+          # separately.
+          if (_toolchain == "//build/toolchain:host" &&
+              (default_toolchain != "//build/toolchain:host" ||
+               (defined(invoker.crate_type) &&
+                invoker.crate_type == "proc-macro"))) {
+            assert(defined(entry.host_label),
+                   "No host recipe for " + entry.proxy + ". Run gnrt sync.")
+            _resolved = entry.host_label
+          } else {
+            assert(defined(entry.target_label),
+                   "No target recipe for " + entry.proxy + ". Run gnrt sync.")
+            _resolved = entry.target_label
+          }
+          _resolved += "(" + _toolchain + ")"
+        }
+      }
+      deps += [ _resolved ]
     }
   }
 
+  # Build dependencies use host recipes; action labels pass through unchanged.
+  if (defined(invoker.build_deps)) {
+    foreach(dep, invoker.build_deps) {
+      _resolved = dep
+      foreach(entry, gnrt_crate_index.crates) {
+        if (entry.proxy == get_label_info(dep, "label_no_toolchain")) {
+          assert(defined(entry.host_label),
+                 "No host recipe for " + entry.proxy + ". Run gnrt sync.")
+          _resolved = entry.host_label + "(//build/toolchain:host)"
+        }
+      }
+      deps += [ _resolved ]
+    }
+  }
+
+  # Proc macros use host recipes and the host toolchain.
+  if (defined(invoker.proc_macro_deps)) {
+    foreach(dep, invoker.proc_macro_deps) {
+      _resolved = dep
+      foreach(entry, gnrt_crate_index.crates) {
+        if (entry.proxy == get_label_info(dep, "label_no_toolchain")) {
+          assert(defined(entry.host_label),
+                 "No host recipe for " + entry.proxy + ". Run gnrt sync.")
+          _resolved = entry.host_label + "(//build/toolchain:host)"
+        }
+      }
+      _resolved = get_label_info(_resolved, "label_no_toolchain") +
+                  "(//build/toolchain:host)"
+      deps += [ _resolved ]
+    }
+  }
+
+  public_deps = []
+
+  # Explicit public toolchains can export target libraries from a proc macro.
+  if (defined(invoker.public_deps)) {
+    foreach(dep, invoker.public_deps) {
+      _resolved = dep
+      foreach(entry, gnrt_crate_index.crates) {
+        if (entry.proxy == get_label_info(dep, "label_no_toolchain")) {
+          _toolchain = get_label_info(dep, "toolchain")
+          if (_toolchain == "//build/toolchain:host" &&
+              default_toolchain != "//build/toolchain:host") {
+            assert(defined(entry.host_label),
+                   "No host recipe for " + entry.proxy + ". Run gnrt sync.")
+            _resolved = entry.host_label
+          } else {
+            assert(defined(entry.target_label),
+                   "No target recipe for " + entry.proxy + ". Run gnrt sync.")
+            _resolved = entry.target_label
+          }
+          _resolved += "(" + _toolchain + ")"
+        }
+      }
+      public_deps += [ _resolved ]
+    }
+  }
+
+  # GN scopes cannot be iterated; pair aliases with the rewritten dependencies.
+  if (defined(invoker.aliased_deps)) {
+    _alias_file = "$target_gen_dir/${target_name}.cargo_aliases.json"
+    _alias_data = {
+      aliases = invoker.aliased_deps
+      original_deps = []
+      if (defined(invoker.deps)) {
+        original_deps += invoker.deps
+      }
+      if (defined(invoker.public_deps)) {
+        original_deps += invoker.public_deps
+      }
+      if (defined(invoker.build_deps)) {
+        original_deps += invoker.build_deps
+      }
+      if (defined(invoker.proc_macro_deps)) {
+        original_deps += invoker.proc_macro_deps
+      }
+      resolved_deps = deps + public_deps
+      directory = get_label_info(":" + target_name, "dir")
+      toolchain = current_toolchain
+    }
+    write_file(_alias_file, _alias_data, "json")
+    aliased_deps = exec_script("//build/scripts/resolve_cargo_aliases.py",
+                               [ rebase_path(_alias_file) ],
+                               "json",
+                               [ _alias_file ])
+  }
+
+  # GN infers `crate_root` from a single `sources` entry, so callers pass the
+  # crate root as the only source; the rest come from rustc dep-info.
   forward_variables_from(invoker,
                          [
                            "rustflags",
@@ -39,9 +146,9 @@ template("build_rust") {
                            "libs",
                            "lib_dirs",
                            "crate_type",
+                           "output_dir",
+                           "output_name",
                            "testonly",
-                           "public_deps",
-                           "aliased_deps",
                          ],
                          [
                            "configs",
@@ -119,6 +226,10 @@ template("build_rust") {
       if (defined(invoker.public_configs)) {
         public_configs += invoker.public_configs
       }
+      all_dependent_configs = []
+      if (defined(invoker.all_dependent_configs)) {
+        all_dependent_configs += invoker.all_dependent_configs
+      }
     }
   } else {
     rust_library(target_name) {
@@ -129,6 +240,10 @@ template("build_rust") {
       public_configs = []
       if (defined(invoker.public_configs)) {
         public_configs += invoker.public_configs
+      }
+      all_dependent_configs = []
+      if (defined(invoker.all_dependent_configs)) {
+        all_dependent_configs += invoker.all_dependent_configs
       }
     }
   }
