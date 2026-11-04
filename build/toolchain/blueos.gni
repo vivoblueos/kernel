@@ -19,6 +19,7 @@ import("//build/config/clippy.gni")
 template("postlink_action") {
   # exe is a label pointing to a executable target.
   assert(defined(invoker.exe))
+
   action(target_name) {
     forward_variables_from(invoker,
                            [
@@ -55,6 +56,7 @@ template("gen_probe_runner") {
   img_path = "${img_out_dir}/bin/${img_name}"
   out_dir = "${img_out_dir}/bin"
   outputs = [ "${out_dir}/${target_name}-probe.sh" ]
+
   action(target_name) {
     script = "//build/scripts/gen_probe_runner.py"
     args = [
@@ -93,6 +95,7 @@ template("gen_esp32_qemu_runner") {
   } else {
     semihosting = coverage || profile
   }
+
   action("${esp32_img_action_name}") {
     script = "//build/scripts/gen_esp32_image.py"
     outputs = [ esp32_img_path ]
@@ -178,6 +181,7 @@ template("gen_qemu_runner") {
   } else {
     semihosting = coverage || profile
   }
+
   action(target_name) {
     script = "//build/scripts/gen_qemu_runner.py"
     args = [
@@ -292,6 +296,7 @@ template("run_qemu_check") {
   if (coverage) {
     qemu_action_name = "action" + target_name
   }
+
   action(qemu_action_name) {
     script = "//build/scripts/qemu_checker/qemu_checker.py"
     args = [
@@ -310,6 +315,7 @@ template("run_qemu_check") {
     img_out_dir = get_label_info(img, "root_out_dir")
     img_name = get_label_info(img, "name")
     img_path = "${img_out_dir}/bin/${img_name}"
+
     action(target_name) {
       script = "//build/scripts/gen_coverage_report.py"
       args = [
@@ -336,6 +342,7 @@ template("run_host") {
   runner_name = get_label_info(runner, "name")
   runner_path = "${runner_out_dir}/bin/${runner_name}"
   test_path = "${runner_out_dir}/test"
+
   action(target_name) {
     script = "//build/scripts/run_cmd.py"
     args = [
@@ -351,11 +358,31 @@ template("run_host") {
 }
 
 template("blueos_toolchain") {
+  # llvm_target: LLVM/clang triple for cc/cxx --target and bindgen.
+  # target_triple: rustc --target value, used by rustc/clippy.
+  assert(defined(invoker.llvm_target), "$target_name must define llvm_target")
+  assert(defined(invoker.target_triple),
+         "$target_name must define target_triple")
+
   toolchain(target_name) {
     # https://groups.google.com/a/chromium.org/g/gn-dev/c/F_lv5T-tNDM
     forward_variables_from(invoker.toolchain_args, "*")
-    not_needed("*")
     forward_variables_from(invoker, "*")
+
+    # Forwarded `llvm_target`, `target_triple` and `current_cpu` have no
+    # reader in this scope.
+    not_needed("*")
+
+    # Wrapping both compilers injects the build-script environment
+    # (`BUILD_SCRIPT_RUSTC_ENV_FILE`) into rustc and clippy alike, so `env!`
+    # resolves the same for both. `invoker.rustc` stays unwrapped for the
+    # metadata below.
+    if (!defined(miri_mode) || !miri_mode) {
+      _rustc_wrapper =
+          rebase_path("//build/scripts/run_rustc.py", root_build_dir)
+      rustc = "python3 ${_rustc_wrapper} ${rustc}"
+      clippy_driver = "python3 ${_rustc_wrapper} ${clippy_driver}"
+    }
 
     link_map_opt = "-Wl,-Map="
     if (current_os == "mac") {
@@ -506,8 +533,9 @@ template("blueos_toolchain") {
       } else {
         default_output_extension = ".so"
       }
-      depfile = "{{target_out_dir}}/{{crate_name}}.d"
-      outfile = "{{target_out_dir}}/lib{{crate_name}}{{output_extension}}"
+      depfile = "{{target_out_dir}}/{{target_output_name}}.d"
+      outfile =
+          "{{target_out_dir}}/lib{{target_output_name}}{{output_extension}}"
       clippy_rspfile = "{{target_out_dir}}/{{target_output_name}}.clippy_rsp"
       clippy_command = "{{rustenv}} ${clippy_driver} --crate-name {{crate_name}} {{source}} --crate-type {{crate_type}} {{rustflags}} ${clippy_lint_flags} {{rustdeps}} {{externs}} -o ${outfile}.clippy"
       gen_clippy_rspfile_command =
@@ -620,6 +648,34 @@ template("blueos_toolchain") {
     tool("copy") {
       command = "cp -af {{source}} {{output}}"
       description = "COPY {{source}} {{output}}"
+    }
+  }
+
+  # Miri interprets tests and does not participate in Cargo resolution.
+  if (!defined(invoker.miri_mode) || !invoker.miri_mode) {
+    _toolchain_role = "target"
+    if (defined(invoker.toolchain_role)) {
+      _toolchain_role = invoker.toolchain_role
+    }
+    _toolchain_label = get_label_info(":$target_name", "label_no_toolchain")
+
+    group("${target_name}_metadata") {
+      metadata = {
+        gnrt_declarations = [
+          {
+            type = "toolchain"
+            origin = "gn"
+            role = _toolchain_role
+            cc = invoker.cc
+            cxx = invoker.cxx
+            ar = invoker.ar
+            rustc = invoker.rustc
+            llvm_target = invoker.llvm_target
+            target_triple = invoker.target_triple
+            label = _toolchain_label
+          },
+        ]
+      }
     }
   }
 }

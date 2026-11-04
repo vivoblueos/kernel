@@ -1,5 +1,7 @@
 target/
 /out
 Cargo.lock
+!/external/rust/Cargo.lock
 __pycache__/
 /rust-project.json
+/external/vendor/

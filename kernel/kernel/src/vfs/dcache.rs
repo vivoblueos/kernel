@@ -97,8 +97,10 @@ impl Dcache {
         if children.contains_key(name) {
             return Err(code::EEXIST);
         }
-        let inode =
-            inode_creator().unwrap_or_else(|| self.inode.create(name, type_, mode).unwrap());
+        let inode = match inode_creator() {
+            Some(inode) => inode,
+            None => self.inode.create(name, type_, mode)?,
+        };
         let child = Self::new(inode, String::from(name), self.get_weak_ref());
         if child.is_dcacheable() {
             children.insert(String::from(name), child.clone());

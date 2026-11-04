@@ -1,9 +1,0 @@
-block_labels = ["needs-decision"]
-delete_merged_branches = true
-required_approvals = 1
-status = [
-  "ci-linux (stable)",
-  "ci-linux (1.38.0)",
-  "rustfmt",
-  "clippy",
-]

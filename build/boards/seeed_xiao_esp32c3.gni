@@ -16,11 +16,11 @@ declare_args() {
   chip = "esp32c3"
 }
 
-board_default_toolchain = "//build/toolchain:blueos_riscv32imc"
+board_default_toolchain = "blueos_riscv32imc"
 default_linker_script = "//kernel/kernel/src/boards/${board}/link.x"
 qemu_exe = "qemu-esp32-riscv32"
 qemu_machine = "esp32c3"
-rust_abi_target = "riscv32"
+
 qemu_extra_args = []
 qemu_net_args = []
 qemu_block_args = []
@@ -36,14 +36,14 @@ loader_test_relocation = {
 }
 
 board_deps = [
-  "//external/vendor/enumset-1.1.13:enumset",
-  "//external/vendor/esp-hal-1.1.1:esp_hal",
-  "//external/vendor/esp-phy-0.2.0:esp_phy",
-  "//external/vendor/esp-radio-rtos-driver-0.3.0:esp_radio_rtos_driver",
-  "//external/vendor/esp-rom-sys-0.1.4:esp_rom_sys",
-  "//external/vendor/esp-sync-0.2.1:esp_sync",
-  "//external/vendor/esp-wifi-sys-esp32c3-0.2.0:esp_wifi_sys_esp32c3",
-  "//external/vendor/esp32c3-0.32.2:esp32c3",
-  "//external/vendor/mipidsi-0.10.0:mipidsi",
-  "//external/vendor/smoltcp-0.12.0:smoltcp",
+  "//external/rust:enumset",
+  "//external/rust:esp-hal",
+  "//external/rust:esp-phy",
+  "//external/rust:esp-radio-rtos-driver",
+  "//external/rust:esp-rom-sys",
+  "//external/rust:esp-sync",
+  "//external/rust:esp-wifi-sys-esp32c3",
+  "//external/rust:esp32c3",
+  "//external/rust:mipidsi",
+  "//external/rust:smoltcp",
 ]

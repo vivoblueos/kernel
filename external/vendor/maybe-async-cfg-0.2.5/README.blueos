@@ -1,9 +1,0 @@
-Name: maybe-async-cfg
-URL: https://crates.io/crates/maybe-async-cfg
-Version: 0.2.5
-License: MIT
-License File: //external/vendor/maybe-async-cfg-0.2.5/LICENSE
-Shipped: yes
-Security Critical: yes
-
-Description: A procedure macro to unify sync and async implementations depending on the features of your crate

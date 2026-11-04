@@ -12,6 +12,18 @@ passes only when all jobs succeed and can be selected as a required PR check.
 The scripts live outside the synchronized component directories. Existing
 component workflows and repository synchronization remain independent.
 
+## Rust dependencies
+
+Before running local builds or Miri tests, install GNRT and sync dependencies
+from the repository root:
+
+```sh
+cargo install --path external/gnrt --locked --bin gnrt
+gnrt sync --all
+```
+
+GN validates the saved sync state during `gn gen`.
+
 ## Run locally
 
 From the repository root, with the CI toolchain on `PATH`:
