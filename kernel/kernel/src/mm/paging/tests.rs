@@ -16,7 +16,10 @@ use super::{AllocatorState, FirstFitFrameAllocator, FrameState};
 use crate::mm::{
     kernel_phys_to_virt, kernel_virt_to_phys,
     memory_bank::MemoryRegion,
-    paging::{mapper::PageMapper, FrameDeallocationError, FrameStats, PageFormat},
+    paging::{
+        mapper::{FrameInit, PageMapper},
+        FrameDeallocationError, FrameStats, PageFormat,
+    },
     CachePolicy, MemAttribute, MemFlags, MemType, PhysicalAddress, VirtualAddress,
 };
 use alloc::{alloc::Layout, boxed::Box};
@@ -775,7 +778,19 @@ fn owned_virtual_range_uses_scattered_frames_and_reclaims_tables() {
     let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
     let before = allocator.frame_stats().unwrap();
     let va = VirtualAddress::new(0x1000);
-    unsafe { mapper.map_owned_range(va, 3 * PAGE_SIZE) }.unwrap();
+    unsafe {
+        mapper.map_owned_range(
+            va,
+            3 * PAGE_SIZE,
+            MemAttribute {
+                flags: MemFlags::READ | MemFlags::WRITE | MemFlags::GLOBAL,
+                memory_type: MemType::Normal(CachePolicy::WriteBack),
+            },
+            FrameInit::Uninitialized,
+            || {}, // This private table is never installed on a CPU.
+        )
+    }
+    .unwrap();
     let mut previous = None;
     for index in 0..3 {
         let physical = mapper.translate(va.into_raw() + index * PAGE_SIZE).unwrap();
@@ -787,7 +802,7 @@ fn owned_virtual_range_uses_scattered_frames_and_reclaims_tables() {
         unsafe { ptr.write_bytes(index as u8, PAGE_SIZE) };
     }
     assert_eq!(allocator.frame_stats().unwrap().free, 0);
-    unsafe { mapper.release_owned_range(va, 3 * PAGE_SIZE) };
+    unsafe { mapper.release_owned_range(va, 3 * PAGE_SIZE, || {}) };
     assert!(mapper.translate(va.into_raw()).is_none());
     let after = allocator.frame_stats().unwrap();
     assert_eq!(
@@ -796,6 +811,154 @@ fn owned_virtual_range_uses_scattered_frames_and_reclaims_tables() {
     );
     drop(mapper);
     assert_eq!(allocator.frame_stats().unwrap().free, count);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn owned_user_mapping_zeroes_recycled_pages_and_preserves_permissions() {
+    let fixture = Fixture::new([FrameState::Free; 8]);
+    // Seed every available frame so zeroing cannot pass because backing was fresh.
+    unsafe {
+        (kernel_phys_to_virt(fixture.base()).into_raw() as *mut u8)
+            .write_bytes(0xa5, 8 * PAGE_SIZE);
+    }
+    let allocator = &fixture.allocator;
+    let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
+    let va = VirtualAddress::new(0x4000);
+    let mut synchronizations = 0;
+    unsafe {
+        mapper.map_owned_range(
+            va,
+            2 * PAGE_SIZE,
+            MemAttribute {
+                flags: MemFlags::READ | MemFlags::USER,
+                memory_type: MemType::Normal(CachePolicy::WriteBack),
+            },
+            FrameInit::Zeroed,
+            || synchronizations += 1, // Private, inactive table.
+        )
+    }
+    .unwrap();
+    assert_eq!(synchronizations, 1);
+    for offset in [0, PAGE_SIZE] {
+        let addr = va.into_raw() + offset;
+        let frame = mapper.translate(addr).unwrap();
+        let ptr = kernel_phys_to_virt(frame).into_raw() as *const u8;
+        assert!(unsafe { core::slice::from_raw_parts(ptr, PAGE_SIZE) }
+            .iter()
+            .all(|byte| *byte == 0));
+        let entry = mapper.leaf_descriptor(addr).unwrap();
+        assert_eq!((entry >> 6) & 0b11, 0b11); // AP: user read-only.
+        assert_ne!(entry & (1 << 11), 0); // Non-global process mapping.
+        assert_ne!(entry & (1usize << 53), 0); // PXN.
+        assert_ne!(entry & (1usize << 54), 0); // UXN.
+    }
+    unsafe { mapper.release_owned_range(va, 2 * PAGE_SIZE, || {}) };
+    drop(mapper);
+    assert_eq!(allocator.frame_stats().unwrap().free, 8);
+}
+
+#[test]
+fn owned_mapping_synchronizes_before_releasing_data_and_tables() {
+    let fixture = Fixture::new([FrameState::Free; 8]);
+    let allocator = &fixture.allocator;
+    let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
+    let va = VirtualAddress::new(0x4000);
+    let levels = crate::arch::page::PageEntry::LEVELS as usize;
+    let mut published_allocated = 0;
+    unsafe {
+        mapper.map_owned_range(
+            va,
+            2 * PAGE_SIZE,
+            MemAttribute {
+                flags: MemFlags::READ | MemFlags::WRITE | MemFlags::GLOBAL,
+                memory_type: MemType::Normal(CachePolicy::WriteBack),
+            },
+            FrameInit::Uninitialized,
+            || published_allocated = allocator.frame_stats().unwrap().allocated,
+        )
+    }
+    .unwrap();
+    assert_eq!(published_allocated, levels + 2);
+    let mut retired_allocated = [0; 2];
+    let mut synchronizations = 0;
+    unsafe {
+        mapper.release_owned_range(va, 2 * PAGE_SIZE, || {
+            retired_allocated[synchronizations] = allocator.frame_stats().unwrap().allocated;
+            synchronizations += 1;
+        });
+    }
+    assert_eq!(synchronizations, 2);
+    // Data is still allocated at the first barrier; tables at the second.
+    assert_eq!(retired_allocated, [levels + 2, levels]);
+    assert_eq!(mapper.translate(va.into_raw()), None);
+    assert_eq!(allocator.frame_stats().unwrap().allocated, 1); // Root survives.
+    drop(mapper);
+    assert_eq!(allocator.frame_stats().unwrap().free, 8);
+}
+
+#[test]
+fn owned_mapping_rejects_invalid_attributes_before_allocating() {
+    let fixture = Fixture::new([FrameState::Free; 8]);
+    let allocator = &fixture.allocator;
+    let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
+    let before = allocator.frame_stats().unwrap();
+    for attributes in [
+        MemAttribute {
+            flags: MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+            memory_type: MemType::Normal(CachePolicy::WriteBack),
+        },
+        MemAttribute {
+            flags: MemFlags::USER,
+            memory_type: MemType::Normal(CachePolicy::WriteBack),
+        },
+        MemAttribute {
+            flags: MemFlags::READ | MemFlags::EXECUTE,
+            memory_type: MemType::Device,
+        },
+    ] {
+        assert!(unsafe {
+            mapper.map_owned_range(
+                VirtualAddress::new(0x4000),
+                PAGE_SIZE,
+                attributes,
+                FrameInit::Zeroed,
+                || panic!("invalid attributes must not reach publication or rollback"),
+            )
+        }
+        .is_err());
+        assert_eq!(allocator.frame_stats().unwrap(), before);
+        assert_eq!(mapper.translate(0x4000), None);
+    }
+}
+
+#[test]
+fn invalid_owned_range_cannot_release_a_valid_mapping_with_the_same_indices() {
+    let fixture = Fixture::new([FrameState::Free; 8]);
+    let allocator = &fixture.allocator;
+    let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
+    let va = VirtualAddress::new(0x4000);
+    let attributes = MemAttribute {
+        flags: MemFlags::READ | MemFlags::WRITE | MemFlags::USER,
+        memory_type: MemType::Normal(CachePolicy::WriteBack),
+    };
+    unsafe { mapper.map_owned_range(va, PAGE_SIZE, attributes, FrameInit::Zeroed, || {}) }.unwrap();
+    let frame = mapper.translate(va.into_raw()).unwrap();
+    let before = allocator.frame_stats().unwrap();
+    let invalid_va = VirtualAddress::new(
+        va.into_raw() | (1usize << crate::arch::page::PageEntry::VIRT_ADDR_BITS),
+    );
+    assert!(unsafe {
+        mapper.map_owned_range(invalid_va, PAGE_SIZE, attributes, FrameInit::Zeroed, || {
+            panic!("invalid address must not reach publication or rollback");
+        })
+    }
+    .is_err());
+    assert_eq!(mapper.translate(va.into_raw()), Some(frame));
+    assert_eq!(allocator.frame_stats().unwrap(), before);
+    unsafe { mapper.release_owned_range(va, PAGE_SIZE, || {}) };
+    drop(mapper);
+    assert_eq!(allocator.frame_stats().unwrap().free, 8);
 }
 
 #[test]
@@ -808,7 +971,21 @@ fn owned_mapping_oom_rolls_back_partial_tables_and_backing() {
         let mut mapper = unsafe { PageMapper::<_>::create(allocator) }.unwrap();
         let before = allocator.frame_stats().unwrap();
         let va = VirtualAddress::new(0x1000);
-        assert!(unsafe { mapper.map_owned_range(va, 3 * PAGE_SIZE) }.is_err());
+        let mut synchronizations = 0;
+        assert!(unsafe {
+            mapper.map_owned_range(
+                va,
+                3 * PAGE_SIZE,
+                MemAttribute {
+                    flags: MemFlags::READ | MemFlags::WRITE | MemFlags::USER,
+                    memory_type: MemType::Normal(CachePolicy::WriteBack),
+                },
+                FrameInit::Zeroed,
+                || synchronizations += 1, // Private, inactive table.
+            )
+        }
+        .is_err());
+        assert!((1..=2).contains(&synchronizations));
         assert!(mapper.translate(va.into_raw()).is_none());
         let after = allocator.frame_stats().unwrap();
         assert_eq!(

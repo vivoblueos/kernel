@@ -24,6 +24,15 @@ use crate::mm::{
 };
 use core::{marker::PhantomData, mem::size_of};
 
+/// Initialization of newly allocated mapping backing, before publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FrameInit {
+    /// Preserve previous contents. Initialize them before exposing to users.
+    Uninitialized,
+    /// Clear every backing page through its kernel direct-map alias.
+    Zeroed,
+}
+
 #[must_use = "dropping an inactive mapper releases its page tables"]
 pub struct PageMapper<F: FrameAllocator, P: PageFormat = crate::arch::page::PageEntry> {
     root_addr: usize,
@@ -189,33 +198,57 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
     }
 
     /// Back an exclusively reserved VA range with individually owned frames.
+    /// Mapping attributes, backing initialization and translation synchronization
+    /// are supplied by the caller. Failure restores an unmapped range.
     ///
     /// # Safety
     /// Caller serializes all walks/updates, owns the VA reservation, and ensures
-    /// the range has no users until success. Failure restores an unmapped range.
+    /// the range has no users until success. Uninitialized backing must be fully
+    /// initialized before exposing it to users. Attributes must be compatible
+    /// with the backing RAM and its kernel direct-map alias.
+    ///
+    /// `synchronize` must publish table writes and complete invalidation of all
+    /// relevant translations and walk caches before returning, and must not
+    /// unwind. It may be a no-op only for tables never installed on any CPU.
+    /// The callback is also used during rollback, before frames are released.
     pub(crate) unsafe fn map_owned_range(
         &mut self,
         virt: VirtualAddress,
         len: usize,
+        attributes: MemAttribute,
+        init: FrameInit,
+        mut synchronize: impl FnMut(),
     ) -> Result<(), &'static str> {
+        Self::validate_attributes(attributes)?;
         let start = virt.into_raw();
-        let end = start.checked_add(len).ok_or("heap mapping overflow")?;
+        let end = start.checked_add(len).ok_or("owned mapping overflow")?;
         if len == 0 || (start | len) & (P::PAGE_SIZE - 1) != 0 {
-            return Err("invalid heap range");
+            return Err("invalid owned range");
+        }
+        // Rollback walks raw table indices, so reject invalid address aliases
+        // before entering a path that can release any existing table entries.
+        if !Self::valid_va(start)
+            || !Self::valid_va(end - 1)
+            || (start >> P::VIRT_ADDR_BITS) != ((end - 1) >> P::VIRT_ADDR_BITS)
+        {
+            return Err("mapping range exceeds address space");
         }
         for va in (start..end).step_by(P::PAGE_SIZE) {
             if self.leaf_entry(va).is_some() {
-                return Err("heap range already mapped");
+                return Err("owned range already mapped");
             }
         }
         let result = (|| {
             self.prepare_range(virt, len)?;
             for va in (start..end).step_by(P::PAGE_SIZE) {
-                let frame = self.allocator.alloc_frame().ok_or("out of heap frames")?;
-                let attributes = MemAttribute {
-                    flags: MemFlags::READ | MemFlags::WRITE | MemFlags::GLOBAL,
-                    memory_type: MemType::Normal(crate::mm::CachePolicy::WriteBack),
-                };
+                let frame = self
+                    .allocator
+                    .alloc_frame()
+                    .ok_or("out of backing frames")?;
+                if init == FrameInit::Zeroed {
+                    let ptr = kernel_phys_to_virt(frame).into_raw() as *mut u8;
+                    ptr.write_bytes(0, P::PAGE_SIZE);
+                }
                 if let Err(e) =
                     self.map_range(VirtualAddress::new(va), frame, P::PAGE_SIZE, attributes)
                 {
@@ -228,9 +261,9 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
             Ok(())
         })();
         if result.is_err() {
-            self.release_owned_range(virt, len);
+            self.release_owned_range(virt, len, &mut synchronize);
         } else {
-            crate::arch::mmu::sync_kernel_mappings();
+            synchronize();
         }
         result
     }
@@ -242,7 +275,16 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
     /// # Safety
     /// The caller exclusively owns the range and its backing, has stopped all
     /// users and serializes walks/updates. No unrelated mapping may lie inside.
-    pub(crate) unsafe fn release_owned_range(&mut self, virt: VirtualAddress, len: usize) {
+    /// The range must be nonempty, page aligned and valid for this format.
+    /// `synchronize` has the same requirements as in `map_owned_range`; it is
+    /// called before releasing data frames and again before releasing retired
+    /// tables, if any. It must invalidate intermediate walk caches as well.
+    pub(crate) unsafe fn release_owned_range(
+        &mut self,
+        virt: VirtualAddress,
+        len: usize,
+        mut synchronize: impl FnMut(),
+    ) {
         let start = virt.into_raw();
         let end = start.checked_add(len).expect("owned range overflow");
         for va in (start..end).step_by(P::PAGE_SIZE) {
@@ -253,7 +295,7 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
                 }
             }
         }
-        crate::arch::mmu::sync_kernel_mappings();
+        synchronize();
         for va in (start..end).step_by(P::PAGE_SIZE) {
             if let Some(slot) = self.existing_slot(va) {
                 let entry = slot.read();
@@ -262,7 +304,7 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
                     slot.write(0);
                     self.allocator
                         .free_frame(PhysicalAddress::new(frame))
-                        .expect("release heap backing");
+                        .expect("release owned backing");
                 }
             }
         }
@@ -277,7 +319,7 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
             va += (span - (va & (span - 1))).min(end - va);
         }
         if retired != 0 {
-            crate::arch::mmu::sync_kernel_mappings();
+            synchronize();
             while retired != 0 {
                 let frame = retired;
                 retired = (kernel_phys_to_virt(PhysicalAddress::new(frame)).into_raw()
@@ -285,7 +327,7 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
                     .read();
                 self.allocator
                     .free_frame(PhysicalAddress::new(frame))
-                    .expect("release empty heap table");
+                    .expect("release empty owned table");
             }
         }
     }
@@ -320,6 +362,22 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
         }
     }
 
+    fn validate_attributes(attributes: MemAttribute) -> Result<(), &'static str> {
+        if attributes
+            .flags
+            .contains(MemFlags::WRITE | MemFlags::EXECUTE)
+        {
+            return Err("writable executable mappings are not supported");
+        }
+        if !attributes.flags.contains(MemFlags::READ)
+            || (matches!(attributes.memory_type, MemType::Device)
+                && attributes.flags.contains(MemFlags::EXECUTE))
+        {
+            return Err("mapping must be readable and device memory cannot be executable");
+        }
+        Ok(())
+    }
+
     /// Map an aligned range in an inactive table. Existing mappings are rejected.
     /// On allocation failure, some of the range may already have been mapped;
     /// the caller must discard the table rather than install a partial layout.
@@ -330,12 +388,7 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
         len: usize,
         attributes: MemAttribute,
     ) -> Result<(), &'static str> {
-        if attributes
-            .flags
-            .contains(MemFlags::WRITE | MemFlags::EXECUTE)
-        {
-            return Err("writable executable mappings are not supported");
-        }
+        Self::validate_attributes(attributes)?;
         if len == 0 {
             return Ok(());
         }
@@ -356,14 +409,6 @@ impl<F: FrameAllocator, P: PageFormat> PageMapper<F, P> {
             || phys_end > (1usize << P::PHYS_ADDR_BITS)
         {
             return Err("mapping range exceeds address space");
-        }
-        // FIXME: Temporarily allow writable executable mappings so the ELF loader tests pass.
-        // Restore W^X enforcement once the loader uses dedicated executable mappings.
-        if !attributes.flags.contains(MemFlags::READ)
-            || (matches!(attributes.memory_type, MemType::Device)
-                && attributes.flags.contains(MemFlags::EXECUTE))
-        {
-            return Err("mapping must be readable and device memory cannot be executable");
         }
         for addr in (virt.into_raw()..end).step_by(P::PAGE_SIZE) {
             if self.leaf_entry(addr).is_some() {

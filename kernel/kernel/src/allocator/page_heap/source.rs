@@ -337,10 +337,10 @@ mod tests {
     use crate::mm::{
         paging::{
             first_fit::{tests::Fixture, FrameState},
-            mapper::PageMapper,
+            mapper::{FrameInit, PageMapper},
             PageFormat,
         },
-        VirtualAddress,
+        CachePolicy, MemAttribute, MemFlags, MemType, VirtualAddress,
     };
     use blueos_test_macro::test;
     use core::cell::Cell;
@@ -370,7 +370,16 @@ mod tests {
                         mapped.set(true);
                         assert_eq!(start, HEAP_START);
                         unsafe {
-                            mapper.map_owned_range(VirtualAddress::new(start), pages * PAGE_SIZE)
+                            mapper.map_owned_range(
+                                VirtualAddress::new(start),
+                                pages * PAGE_SIZE,
+                                MemAttribute {
+                                    flags: MemFlags::READ | MemFlags::WRITE | MemFlags::GLOBAL,
+                                    memory_type: MemType::Normal(CachePolicy::WriteBack),
+                                },
+                                FrameInit::Uninitialized,
+                                || {}, // This private table is never installed on a CPU.
+                            )
                         }
                     },
                 )

@@ -18,7 +18,11 @@ use super::{
     address_space::Vma,
     kernel_phys_to_virt,
     memory_bank::MemoryRegion,
-    paging::{first_fit::FirstFitFrameAllocator, mapper::PageMapper, PageFormat},
+    paging::{
+        first_fit::FirstFitFrameAllocator,
+        mapper::{FrameInit, PageMapper},
+        PageFormat,
+    },
     MemAttribute, MemFlags, MemType, PhysicalAddress,
 };
 use crate::{arch::page::PageEntry, sync::SpinLock};
@@ -83,9 +87,16 @@ impl KernelAddressSpace {
         }
         // SAFETY: page source exclusively reserves this unmapped VA interval.
         unsafe {
-            self.mapper
-                .irqsave_lock()
-                .map_owned_range(super::VirtualAddress::new(start), len)
+            self.mapper.irqsave_lock().map_owned_range(
+                super::VirtualAddress::new(start),
+                len,
+                MemAttribute {
+                    flags: MemFlags::READ | MemFlags::WRITE | MemFlags::GLOBAL,
+                    memory_type: MemType::Normal(super::CachePolicy::WriteBack),
+                },
+                FrameInit::Uninitialized,
+                crate::arch::mmu::sync_kernel_mappings,
+            )
         }
     }
 
@@ -94,9 +105,11 @@ impl KernelAddressSpace {
     pub(crate) unsafe fn release_heap(&self, start: usize, pages: usize) {
         let len = pages.checked_mul(PageEntry::PAGE_SIZE).expect("heap size");
         assert!(start >= HEAP_START && start.checked_add(len).is_some_and(|end| end <= HEAP_END));
-        self.mapper
-            .irqsave_lock()
-            .release_owned_range(super::VirtualAddress::new(start), len);
+        self.mapper.irqsave_lock().release_owned_range(
+            super::VirtualAddress::new(start),
+            len,
+            crate::arch::mmu::sync_kernel_mappings,
+        );
     }
 
     /// Map a physical memory region to the kernel virtual address space.
