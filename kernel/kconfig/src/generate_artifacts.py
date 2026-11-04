@@ -18,6 +18,7 @@ Generate C header file and rustflags file from kconfig
 """
 
 import argparse
+import json
 import os
 import sys
 from kconfiglib import Kconfig, BOOL, STRING
@@ -33,7 +34,14 @@ def generate_configs(kconfig_path, output_dir, defconfig_files):
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    kconf.write_config(os.path.join(output_dir, f".config"))
+    config_path = os.path.abspath(os.path.join(output_dir, ".config"))
+    kconf.write_config(config_path)
+    inputs = {
+        os.path.abspath(os.path.join(kconf.srctree, path))
+        for path in kconf.kconfig_filenames
+    }
+    inputs.update(os.path.abspath(path) for path in defconfig_files)
+    return {"config": config_path, "inputs": sorted(inputs)}
 
 
 if __name__ == "__main__":
@@ -43,6 +51,7 @@ if __name__ == "__main__":
     parser.add_argument("--build_type", help="target build_type")
     parser.add_argument("--output_dir", help="output dir path")
     parser.add_argument("--defconfig_files", help="defconfig files")
+    parser.add_argument("--collect-inputs", action="store_true")
     args = parser.parse_args()
     os.environ["BOARD"] = args.board
     os.environ["KCONFIG_DIR"] = os.path.dirname(args.kconfig)
@@ -53,7 +62,9 @@ if __name__ == "__main__":
     os.environ["KERNEL_SRC_DIR"] = os.path.abspath(kernel_src_dir)
     defconfigs = args.defconfig_files.split(",")
     try:
-        generate_configs(args.kconfig, args.output_dir, defconfigs)
+        result = generate_configs(args.kconfig, args.output_dir, defconfigs)
+        if args.collect_inputs:
+            print(json.dumps(result))
     except Exception as e:
         print(f"\n[ERROR] Parse failed: {e}", file=sys.stderr)
         sys.exit(1)
