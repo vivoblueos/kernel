@@ -1,0 +1,15 @@
+# Patch: Remove std from thiserror's default features.
+# Reason: Transitive dependencies can enable defaults on no_std BlueOS
+# targets.
+
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -47,7 +47,7 @@
+ ]
+ 
+ [features]
+-default = ["std"]
++default = []
+ std = []
+ 
+ [lib]

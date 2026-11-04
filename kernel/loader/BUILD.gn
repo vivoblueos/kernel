@@ -43,8 +43,8 @@ if (coverage || profile) {
     crate_type = "rlib"
     sources = [ "tests/cov/lib.rs" ]
     deps = [
-      "//external/vendor/minicov-0.3.7:minicov",
-      "//external/vendor/semihosting-0.1.20:semihosting",
+      "//external/rust:minicov",
+      "//external/rust:semihosting",
     ]
   }
 }
@@ -53,7 +53,7 @@ build_rust("blueos_loader") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
   deps = [
-    "//external/vendor/goblin-0.9.3:goblin",
+    "//external/rust:goblin",
     "//kernel/infra:blueos_infra",
     "//libs/librs",
   ]
@@ -70,8 +70,8 @@ if (_loader_unittest_enabled) {
     edition = "2021"
     sources = [ "src/lib.rs" ]
     deps = [
-      "//external/vendor/goblin-0.9.3:goblin",
-      "//external/vendor/semihosting-0.1.20:semihosting",
+      "//external/rust:goblin",
+      "//external/rust:semihosting",
       "//kernel/infra:blueos_infra",
       "//kernel/rsrt",
       "//libs/librs",

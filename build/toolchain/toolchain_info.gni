@@ -1,0 +1,211 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Single source of truth for toolchain identity and commands.
+# Boards select an entry via `board_default_toolchain`.
+# BUILDCONFIG.gn derives the global rust context, and
+# //build/toolchain/BUILD.gn consumes the commands.
+
+if (host_os == "linux") {
+  _host_llvm_target = "x86_64-unknown-linux-gnu"
+  _host_target_triple = "x86_64-unknown-linux-gnu"
+} else if (host_os == "mac") {
+  _host_llvm_target = "aarch64-apple-darwin"
+  _host_target_triple = "aarch64-apple-darwin"
+}
+
+toolchain_info = {
+  host = {
+    label = "//build/toolchain:host"
+    llvm_target = _host_llvm_target
+    target_triple = _host_target_triple
+    cc = "clang"
+    cxx = "clang++"
+    ld = cc
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc"
+    clippy_driver = "clippy-driver"
+    current_os = host_os
+    current_cpu = host_cpu
+  }
+  blueos_riscv64 = {
+    label = "//build/toolchain:blueos_riscv64"
+    llvm_target = "riscv64"
+    target_triple = "riscv64-vivo-blueos"
+    cc = "clang --target=${llvm_target}"
+    cxx = "clang++ --target=${llvm_target}"
+    ld = cc
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "riscv64"
+  }
+  thumbv7m = {
+    label = "//build/toolchain:thumbv7m"
+    llvm_target = "thumbv7m-none-eabi"
+    target_triple = llvm_target
+    cc = "clang --target=${llvm_target}"
+    cxx = "clang++ --target=${llvm_target}"
+    ld = "arm-none-eabi-gcc"
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "none"
+    current_cpu = "arm"
+  }
+  blueos_thumbv7m = {
+    label = "//build/toolchain:blueos_thumbv7m"
+    llvm_target = "thumbv7m-none-eabi"
+    target_triple = "thumbv7m-vivo-blueos-newlibeabi"
+    cc = "clang --target=${llvm_target}"
+    cxx = "clang++ --target=${llvm_target}"
+    ld = "arm-none-eabi-gcc"
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "arm"
+  }
+  thumbv8m = {
+    label = "//build/toolchain:thumbv8m"
+    llvm_target = "thumbv8m.main-none-eabihf"
+    target_triple = llvm_target
+    cc = "clang --target=${llvm_target}"
+    cxx = "clang++ --target=${llvm_target}"
+    ld = "arm-none-eabi-gcc"
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "none"
+    current_cpu = "arm"
+  }
+  blueos_thumbv8m = {
+    label = "//build/toolchain:blueos_thumbv8m"
+    llvm_target = "thumbv8m.main-none-eabihf"
+    target_triple = "thumbv8m.main-vivo-blueos-newlibeabihf"
+    cc = "clang --target=${llvm_target}"
+    cxx = "clang++ --target=${llvm_target}"
+    ld = "arm-none-eabi-gcc"
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "arm"
+  }
+  gcc_fv_thumbv8m = {
+    label = "//build/toolchain:gcc_fv_thumbv8m"
+    llvm_target = "thumbv8m.main-none-eabihf"
+    target_triple = "thumbv8m.main-vivo-blueos-newlibeabihf"
+    cc = "arm-none-fv-eabi-gcc"
+    cxx = "arm-none-fv-eabi-g++"
+    ld = cc
+    ar = "arm-none-fv-eabi-ar"
+    objcopy = "arm-none-fv-eabi-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "arm"
+  }
+  aarch64 = {
+    label = "//build/toolchain:aarch64"
+    llvm_target = "aarch64-unknown-none"
+    target_triple = llvm_target
+    cc = "aarch64-none-elf-gcc"
+    cxx = "aarch64-none-elf-g++"
+    ld = cc
+    ar = "aarch64-none-elf-ar"
+    objcopy = "aarch64-none-elf-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "aarch64"
+  }
+  blueos_aarch64 = {
+    label = "//build/toolchain:blueos_aarch64"
+    llvm_target = "aarch64-unknown-none"
+    target_triple = "aarch64-vivo-blueos-newlib"
+    cc = "aarch64-none-elf-gcc"
+    cxx = "aarch64-none-elf-g++"
+    ld = cc
+    ar = "aarch64-none-elf-ar"
+    objcopy = "aarch64-none-elf-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "aarch64"
+  }
+  librs_linux_emulation_thumbv8m = {
+    label = "//build/toolchain:librs_linux_emulation_thumbv8m"
+    llvm_target = "thumbv8m.main-none-eabihf"
+    target_triple = "thumbv8m.main-vivo-blueos-newlibeabihf"
+    cc = "arm-none-eabi-gcc"
+    cxx = "arm-none-eabi-g++"
+    ld = cc
+    ar = "arm-none-eabi-ar"
+    objcopy = "arm-none-eabi-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "arm"
+  }
+  librs_linux_emulation_thumbv7m = {
+    label = "//build/toolchain:librs_linux_emulation_thumbv7m"
+    llvm_target = "thumbv7m-vivo-blueos-newlibeabi"
+    target_triple = llvm_target
+    cc = "arm-none-eabi-gcc"
+    cxx = "arm-none-eabi-g++"
+    ld = cc
+    ar = "arm-none-eabi-ar"
+    objcopy = "arm-none-eabi-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "arm"
+  }
+  blueos_riscv32imc = {
+    label = "//build/toolchain:blueos_riscv32imc"
+    llvm_target = "riscv32"
+    target_triple = "riscv32imc-vivo-blueos"
+    cc = "clang --target=${llvm_target} -march=rv32imc"
+    cxx = "clang++ --target=${llvm_target} -march=rv32imc"
+    ld = cc
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "riscv32"
+  }
+  blueos_riscv32imac = {
+    label = "//build/toolchain:blueos_riscv32imac"
+    llvm_target = "riscv32"
+    target_triple = "riscv32-vivo-blueos"
+    cc = "clang --target=${llvm_target} -march=rv32imac_zicsr"
+    cxx = "clang++ --target=${llvm_target} -march=rv32imac_zicsr"
+    ld = cc
+    ar = "llvm-ar"
+    objcopy = "llvm-objcopy"
+    rustc = "rustc --target=${target_triple}"
+    clippy_driver = "clippy-driver --target=${target_triple}"
+    current_os = "blueos"
+    current_cpu = "riscv32"
+  }
+}

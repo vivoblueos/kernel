@@ -1,0 +1,31 @@
+# Patch: Skip linking cortex-m's prebuilt assembly archives.
+# Reason: Their symbol indexes are incompatible with the target GNU linker;
+# the enabled inline-asm feature supplies the assembly routines instead.
+
+--- a/build.rs
++++ b/build.rs
+@@ -11,22 +11,8 @@
+         println!("cargo:rustc-cfg=native");
+     }
+ 
+-    if target.starts_with("thumb") {
+-        let suffix = if env::var_os("CARGO_FEATURE_LINKER_PLUGIN_LTO").is_some() {
+-            "-lto"
+-        } else {
+-            ""
+-        };
+-
+-        fs::copy(
+-            format!("bin/{}{}.a", target, suffix),
+-            out_dir.join(format!("lib{}.a", name)),
+-        )
+-        .unwrap();
+-
+-        println!("cargo:rustc-link-lib=static={}", name);
+-        println!("cargo:rustc-link-search={}", out_dir.display());
+-    }
++    // Inline assembly replaces archives whose symbol indexes are incompatible
++    // with the GNU linker used by these targets.
+ 
+     if target.starts_with("thumbv6m-") {
+         println!("cargo:rustc-cfg=cortex_m");
