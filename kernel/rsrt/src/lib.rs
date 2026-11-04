@@ -93,11 +93,17 @@ fn oops(info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+// An image normally gets its app entry from here. A C program that links rsrt
+// only for the allocator and the panic handler has its own entry (a C function
+// in `.bk_app_array`); registering this one as well would run the program on a
+// second thread, so such an image is built with `no_app_entry`.
+#[cfg(not(feature = "no_app_entry"))]
 #[used]
 #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
 #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
 static INIT: extern "C" fn() = init;
 
+#[cfg(not(feature = "no_app_entry"))]
 extern "C" fn init() {
     #[cfg(feature = "std")]
     {

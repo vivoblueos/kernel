@@ -17,22 +17,43 @@ import("//build/templates/board.gni")
 
 blueos_board("qemu_riscv64") {
   kernel_config = {
-    cflags = [ "--static" ]
+    # medany, not the default medlow: medlow resolves a string address with a
+    # 12-bit immediate (HI20), which only reaches +/-512 KiB. Once an image
+    # grows past that - a kernel plus a C library plus the POSIX test cases -
+    # the link fails with "relocation R_RISCV_HI20 out of range". medany
+    # resolves against the program counter, so the range is the whole address
+    # space. The kernel, the C library and the test cases must agree on the
+    # model, so it is set for the whole board rather than per target.
+    #
+    # On the C side the flag is spelled -mcmodel=medany. On the Rust side the
+    # equivalent is -C code-model=medium: LLVM calls that code model "medium",
+    # and the RISC-V psABI spells the same model "medany". It is the default
+    # for the riscv64-vivo-blueos target, so it is spelled out here to make
+    # the agreement with the C flags explicit rather than implicit.
+    cflags = [
+      "--static",
+      "-mcmodel=medany",
+    ]
     ldflags = [
       "-nostartfiles",
       "-Wl,-gc-sections",
       "-Wl,-z,norelro",
+      "-mcmodel=medany",
     ]
     rustflags = [
       "--cfg",
       "target_board=\"qemu_riscv64\"",
       "-Zemit-stack-sizes",
       "-Crelocation-model=static",
+      # The Rust code has to use the same code model as the C code: a medlow
+      # object linked against a medany one is rejected by lld.
+      "-Ccode-model=medium",
       "-Clinker=clang",
       "-Clink-arg=-fuse-ld=lld",
       "-Clink-arg=--target=riscv64",
       "-Clink-arg=-march=rv64",
       "-Clink-arg=-mabi=lp64",
+      "-Clink-arg=-mcmodel=medany",
     ]
     foreach(item, ldflags) {
       rustflags += [ "-Clink-arg=${item}" ]
@@ -43,16 +64,24 @@ blueos_board("qemu_riscv64") {
     rustflags = [
       "--cfg",
       "target_board=\"qemu_riscv64\"",
+      "-Ccode-model=medium",
       "-Clinker=clang",
       "-Clink-arg=-fuse-ld=lld",
       "-Clink-arg=--target=riscv64",
       "-Clink-arg=-march=rv64",
       "-Clink-arg=-mabi=lp64",
+      "-Clink-arg=-mcmodel=medany",
       "-Clink-arg=-Wl,-z,norelro",
     ]
   }
 
   default = []
-  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
+  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board + [
+                 # The same POSIX conformance cases as on AArch64. They are one
+                 # set of C files; only the toolchain and the linker script
+                 # differ, so a behaviour difference between the two boards
+                 # shows up as a failing case rather than as a silent skip.
+                 "//librs/tests/posix:run_posix_cases",
+               ]
   check_all = filter_exclude(_check_all, [ "//kernel/adapter*" ])
 }

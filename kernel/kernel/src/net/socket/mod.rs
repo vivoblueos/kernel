@@ -119,4 +119,12 @@ pub trait PosixSocket {
     fn shutdown(&self) -> SocketResult;
 
     fn is_shutdown(&self) -> bool;
+
+    /// Reports which of the requested `poll()` events are ready right now.
+    ///
+    /// `events` is the caller's request mask; the return value is the
+    /// matching `revents` mask from [`crate::vfs::poll`]. The mask is a
+    /// snapshot: it can go stale the instant this returns, which is why
+    /// `poll()` re-arms its waiters after every scan.
+    fn ready_events(&mut self, events: u32) -> u32;
 }

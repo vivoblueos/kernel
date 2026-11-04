@@ -1,0 +1,71 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+import("//librs/tests/posix/testcase.gni")
+
+# One archive holding the kernel and librs, for the C cases to link against.
+# No code of our own: see runtime.rs for why the entry point is in runner.c.
+build_rust("librs_posix_runtime") {
+  crate_type = "staticlib"
+  crate_name = "posix_runtime"
+  sources = [ "runtime.rs" ]
+  deps = [
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/infra:blueos_infra",
+    "//kernel/kernel:blueos",
+    "//kernel/rsrt:rsrt_no_entry",
+    "//kernel/scal:blueos_scal",
+    "//libc",
+    "//librs",
+  ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  public_deps = board_deps
+
+  # This archive *is* librs for the C cases, so it re-exports the header
+  # search path that goes with it. Without it the image would compile against
+  # newlib's four-byte `pthread_mutex_t` while linking this 24-byte one.
+  public_configs += [ "//librs:librs_include" ]
+}
+
+posix_case_image("posix_image") {
+  library = ":librs_posix_runtime"
+
+  # One line per case file. The runner does not need to be edited: every file
+  # registers itself through POSIX_CASE and the linker collects the section.
+  cases = [
+    "cases/c11_threads.c",
+    "cases/clock_gettime.c",
+    "cases/issue8_clock.c",
+    "cases/issue8_fdops.c",
+    "cases/issue8_poll.c",
+    "cases/issue8_signal.c",
+    "cases/issue8_stdlib.c",
+    "cases/issue8_string.c",
+    "cases/open.c",
+    "cases/pthread_create.c",
+    "cases/socket.c",
+    "cases/statvfs.c",
+    "cases/stdatomic.c",
+    "cases/write.c",
+  ]
+}
+
+group("check_posix") {
+  testonly = true
+  deps = [ ":run_posix_cases" ]
+}

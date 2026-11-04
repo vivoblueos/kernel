@@ -22,6 +22,13 @@ pub mod code {
     pub const FALSE: super::Error = super::Error(0);
     pub const ERROR: super::Error = super::Error(-255);
     pub const ETIMEDOUT: super::Error = super::Error(-libc::ETIMEDOUT);
+    /// A pointer argument did not address memory the caller may touch. Only
+    /// reachable once a caller can be a user process; see `vfs::uptr`.
+    pub const EFAULT: super::Error = super::Error(-libc::EFAULT);
+    /// Too many arguments for the receiving interface (`execve`'s `argv`).
+    pub const E2BIG: super::Error = super::Error(-libc::E2BIG);
+    /// `waitpid` was called with no children to wait for.
+    pub const ECHILD: super::Error = super::Error(-libc::ECHILD);
     pub const ENOSPC: super::Error = super::Error(-libc::ENOSPC);
     pub const ENODATA: super::Error = super::Error(-libc::ENODATA);
     pub const ENOMEM: super::Error = super::Error(-libc::ENOMEM);
@@ -48,6 +55,7 @@ pub mod code {
     pub const EILSEQ: super::Error = super::Error(-libc::EILSEQ);
     pub const ENOTSUP: super::Error = super::Error(-libc::ENOTSUP);
     pub const ENOTTY: super::Error = super::Error(-libc::ENOTTY);
+    pub const EPIPE: super::Error = super::Error(-libc::EPIPE);
 }
 
 const UNKNOW_STR: &CStr = c"EUNKNOWN ";
@@ -79,6 +87,7 @@ const EXDEV_STR: &CStr = c"Cross-device link";
 const EILSEQ_STR: &CStr = c"Invalid data";
 const ENOTSUP_STR: &CStr = c"Not supported";
 const ENOTTY_STR: &CStr = c"Inappropriate ioctl for device";
+const EPIPE_STR: &CStr = c"Broken pipe";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -124,6 +133,7 @@ impl Error {
             code::EILSEQ => EILSEQ_STR,
             code::ENOTSUP => ENOTSUP_STR,
             code::ENOTTY => ENOTTY_STR,
+            code::EPIPE => EPIPE_STR,
             _ => UNKNOW_STR,
         }
     }

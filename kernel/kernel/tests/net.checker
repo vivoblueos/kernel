@@ -1,0 +1,4 @@
+// TOTAL-TIMEOUT: 60
+// CHECK-SUCC: === Net Tcp Stream Example Enter ===
+// ASSERT-SUCC: Connect Server success
+// ASSERT-FAIL: panicked at

@@ -49,6 +49,6 @@ blueos_board("rk3568") {
     ]
   }
 
-  default = [ "//shell" ]
+  default = [ "//apps/shell" ]
   check_all = []
 }

@@ -38,28 +38,27 @@ BOARDS = (
     "raspberry_pico2_cortexm",
 )
 BUILD_TYPES = ("debug", "release")
-SYSCALL_MODES = ("swi", "dsc")
+
+# A profile is made of three ordered stages. `--only` lets callers such as
+# tools/bk.sh run a single stage without restating the GN argument rules, so
+# there is exactly one place that decides how a profile maps to commands.
+STAGES = ("gen", "build", "test")
 
 
 @dataclass(frozen=True)
 class Profile:
     board: str
     build_type: str
-    syscall_mode: str
 
     def validate(self) -> None:
         if self.board not in BOARDS:
             raise ValueError(f"unsupported board: {self.board}")
         if self.build_type not in BUILD_TYPES:
             raise ValueError(f"unsupported build type: {self.build_type}")
-        if self.syscall_mode not in SYSCALL_MODES:
-            raise ValueError(f"unsupported syscall mode: {self.syscall_mode}")
-        if self.board == "none" and self.syscall_mode != "swi":
-            raise ValueError("the host profile only supports swi mode")
 
     @property
     def out_dir(self) -> str:
-        return f"out/{self.board}.{self.build_type}.{self.syscall_mode}"
+        return f"out/{self.board}.{self.build_type}"
 
     @property
     def gn_args(self) -> str:
@@ -67,29 +66,37 @@ class Profile:
             f'board="{self.board}"',
             f'build_type="{self.build_type}"',
         ]
-        if self.board != "none":
-            direct = "true" if self.syscall_mode == "dsc" else "false"
-            args.append(f"direct_syscall_handler={direct}")
         return " ".join(args)
 
 
-def commands_for(profile: Profile) -> tuple[tuple[str, ...], ...]:
-    """Return the commands that make up a profile run."""
+def commands_for(profile: Profile,
+                 stage: str = "all") -> tuple[tuple[str, ...], ...]:
+    """Return the commands that make up a profile run.
+
+    `stage` selects one entry of STAGES; "all" keeps the historical behaviour
+    of running gen, build, and test in order.
+    """
     profile.validate()
-    return (
+    if stage != "all" and stage not in STAGES:
+        raise ValueError(f"unsupported stage: {stage}")
+    commands = (
         ("gn", "gen", profile.out_dir, f"--args={profile.gn_args}"),
         ("ninja", "-C", profile.out_dir, "default"),
         ("ninja", "-C", profile.out_dir, "check_all"),
     )
+    if stage == "all":
+        return commands
+    return (commands[STAGES.index(stage)], )
 
 
 CommandRunner = Callable[..., subprocess.CompletedProcess]
 
 
 def run_profile(profile: Profile,
-                command_runner: CommandRunner = subprocess.run) -> int:
+                command_runner: CommandRunner = subprocess.run,
+                stage: str = "all") -> int:
     """Run a profile and return the first failing command's status."""
-    for command in commands_for(profile):
+    for command in commands_for(profile, stage):
         print(f"+ {shlex.join(command)}", flush=True)
         try:
             result = command_runner(command, cwd=REPO_ROOT, check=False)
@@ -105,17 +112,30 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--board", required=True, choices=BOARDS)
     parser.add_argument("--build-type", required=True, choices=BUILD_TYPES)
-    parser.add_argument("--syscall-mode", required=True, choices=SYSCALL_MODES)
+    parser.add_argument(
+        "--only",
+        choices=STAGES,
+        default=None,
+        help="run a single stage instead of gen + build + test",
+    )
+    parser.add_argument(
+        "--print-commands",
+        action="store_true",
+        help="print the commands for the selected stage without running them",
+    )
     args = parser.parse_args(argv)
-    if args.board == "none" and args.syscall_mode != "swi":
-        parser.error("the host profile only supports --syscall-mode=swi")
     return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    profile = Profile(args.board, args.build_type, args.syscall_mode)
-    return run_profile(profile)
+    profile = Profile(args.board, args.build_type)
+    stage = args.only or "all"
+    if args.print_commands:
+        for command in commands_for(profile, stage):
+            print(shlex.join(command))
+        return 0
+    return run_profile(profile, stage=stage)
 
 
 if __name__ == "__main__":

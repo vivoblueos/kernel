@@ -20,6 +20,7 @@
 
 use crate::{
     devices::{Device, DeviceClass, DeviceId, DeviceManager},
+    error::Error,
     drivers::flash::{
         flash_mmap::{self, DromMapping, ExecMapping, MapError},
         internal_flash::{
@@ -438,14 +439,14 @@ impl Device for Esp32FlashDevice {
         self.write_data(pos, buf)
     }
 
-    fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
+    fn ioctl(&self, request: u32, arg: usize) -> Result<(), Error> {
         match request {
-            ESP32_FLASH_ERASE_RANGE => self.ioctl_erase_range(arg),
-            ESP32_FLASH_MAP_EXEC => self.ioctl_map_exec(arg),
-            ESP32_FLASH_UNMAP => self.ioctl_unmap(),
-            ESP32_FLASH_QUERY_DRAM_SAFE => self.ioctl_query_dram_safe(arg),
-            ESP32_FLASH_MAP_DROM => self.ioctl_map_drom(arg),
-            _ => Err(ErrorKind::Unsupported),
+            ESP32_FLASH_ERASE_RANGE => self.ioctl_erase_range(arg).map_err(Error::from),
+            ESP32_FLASH_MAP_EXEC => self.ioctl_map_exec(arg).map_err(Error::from),
+            ESP32_FLASH_UNMAP => self.ioctl_unmap().map_err(Error::from),
+            ESP32_FLASH_QUERY_DRAM_SAFE => self.ioctl_query_dram_safe(arg).map_err(Error::from),
+            ESP32_FLASH_MAP_DROM => self.ioctl_map_drom(arg).map_err(Error::from),
+            _ => Err(Error::from(ErrorKind::Unsupported)),
         }
     }
 

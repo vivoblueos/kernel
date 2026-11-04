@@ -14,6 +14,9 @@
 
 use crate::{arch, scheduler, thread, thread::Thread};
 
+pub mod delivery;
+pub mod posix;
+
 fn handle_signal_fallback(signum: i32) {
     if signum != libc::SIGTERM {
         return;
@@ -32,10 +35,23 @@ fn handle_signal(t: &Thread, signum: i32) {
 }
 
 pub(crate) fn handle_signals() {
+    // Deliver the POSIX signals first: a program that installed a handler
+    // expects it to run, and the kernel's own mechanism (a Rust closure
+    // registered with `kill_with_once_handler`) is the fallback for the
+    // signals POSIX does not cover.
+    delivery::deliver_pending();
+
     let this = scheduler::current_thread_ref();
     let sigset = this.lock().pending_signals();
-    for i in 0..32 {
-        if sigset & (1 << i) == 0 {
+    // A signal the thread's POSIX mask holds back is *not* this mechanism's
+    // to take: it has to stay pending until `sigprocmask()` unblocks it or a
+    // `sigwait()` consumes it. Clearing it here would make the signal
+    // disappear from `sigpending()` and from the wait that is expecting it.
+    let blocked = this.signal_mask().blocked() as u32;
+    // Signal `n` lives in bit `n`; signal 0 does not exist, so the scan starts
+    // at 1 and stops below `NSIG`.
+    for i in 1..posix::NSIG as i32 {
+        if sigset & (1 << i) == 0 || blocked & (1 << i) != 0 {
             continue;
         }
         handle_signal(this, i);
@@ -48,8 +64,9 @@ pub(crate) fn handle_signals() {
 pub(crate) unsafe extern "C" fn handler_entry(_sp: usize, _old_sp: usize) {
     let current = scheduler::current_thread();
     let sigset = current.lock().pending_signals();
-    for i in 0..32 {
-        if sigset & (1 << i) == 0 {
+    let blocked = current.signal_mask().blocked() as u32;
+    for i in 1..posix::NSIG as i32 {
+        if sigset & (1 << i) == 0 || blocked & (1 << i) != 0 {
             continue;
         }
         handle_signal(&current, i);

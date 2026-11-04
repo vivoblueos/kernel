@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::devices::{Device, DeviceClass, DeviceId, DeviceManager};
+use crate::{
+    devices::{Device, DeviceClass, DeviceId, DeviceManager},
+    error::Error,
+};
 use alloc::{format, string::String, sync::Arc, vec, vec::Vec};
 use blueos_infra::tinyrwlock::RwLock;
 use embedded_io::ErrorKind;
@@ -309,27 +312,38 @@ impl<T: FramebufferOps + 'static> Device for FramebufferDevice<T> {
         self.ops.write().write_bytes(pos, &buf[..write_len])
     }
 
-    fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
+    fn ioctl(&self, request: u32, arg: usize) -> Result<(), Error> {
         match request {
             req if req == FBIOGET_FSCREENINFO => {
-                let fixed_info = self.ops.read().fixed_info()?;
-                unsafe { store_user_fixed_info(arg as *mut FramebufferFixedInfo, &fixed_info) }
+                let fixed_info = self.ops.read().fixed_info().map_err(Error::from)?;
+                unsafe {
+                    store_user_fixed_info(arg as *mut FramebufferFixedInfo, &fixed_info)
+                        .map_err(Error::from)
+                }
             }
             req if req == FBIOGET_VSCREENINFO => {
-                let variable_info = self.ops.read().variable_info()?;
+                let variable_info = self.ops.read().variable_info().map_err(Error::from)?;
                 unsafe {
                     store_user_variable_info(arg as *mut FramebufferVariableInfo, &variable_info)
+                        .map_err(Error::from)
                 }
             }
             req if req == FBIOPUT_VSCREENINFO => {
-                let requested_info =
-                    unsafe { load_user_variable_info(arg as *const FramebufferVariableInfo)? };
-                let effective_info = self.ops.write().set_variable_info(&requested_info)?;
+                let requested_info = unsafe {
+                    load_user_variable_info(arg as *const FramebufferVariableInfo)
+                        .map_err(Error::from)?
+                };
+                let effective_info = self
+                    .ops
+                    .write()
+                    .set_variable_info(&requested_info)
+                    .map_err(Error::from)?;
                 unsafe {
                     store_user_variable_info(arg as *mut FramebufferVariableInfo, &effective_info)
+                        .map_err(Error::from)
                 }
             }
-            _ => Err(ErrorKind::InvalidData),
+            _ => Err(Error::from(ErrorKind::InvalidData)),
         }
     }
 

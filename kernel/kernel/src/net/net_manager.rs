@@ -34,6 +34,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
+use blueos_infra::no_let_underscore::IgnoreResult;
 use blueos_kconfig::CONFIG_NETWORK_STACK_SIZE as NETWORK_STACK_SIZE;
 use core::{cell::RefCell, mem::MaybeUninit, time};
 use smoltcp::{
@@ -157,6 +158,14 @@ impl NetworkManager {
 
         // Loop for request finish
         while is_forever || (sysclk::now().as_millis() as usize) < timeout {
+            // Sampled before the pass over the interfaces and before the
+            // message is taken off the queue: a request pushed at any point
+            // after this makes the counter differ, so the wait at the bottom
+            // returns at once and nothing enqueued during this iteration can
+            // be slept through.
+            let observed_wake = crate::net::connection::NETSTACK_WAKE
+                .load(core::sync::atomic::Ordering::Acquire);
+
             // Step1 : poll smoltcp network stack
             {
                 // Poll all registered NetIface instances from the global list.
@@ -165,6 +174,10 @@ impl NetworkManager {
                         iface.poll(Instant::from_millis(millis_i64));
                     }
                 }
+                // Ingress may have moved a socket into a ready state. Wake
+                // anyone blocked in `poll()` so they re-scan instead of
+                // sleeping until their timeout.
+                crate::thread::bump_poll_epoch();
             }
 
             // Step 2 : handle msg from event queue
@@ -191,14 +204,21 @@ impl NetworkManager {
                     .unwrap_or(DEFAULT_DELAY_TIME_IN_MILLIS);
 
                 // Warning!!! Need to yield or sleep for a while , or other threads may have no chance to insert msg to NETSTACK_QUEUE
-                if sleep_time == 0 {
-                    scheduler::suspend_me_for::<()>(Tick(1), None);
+                //
+                // The wait is on `NETSTACK_WAKE` rather than a bare sleep so
+                // that a thread which enqueues a request while we are asleep
+                // can wake us immediately.
+                let wait_ticks = if sleep_time == 0 {
+                    Tick(1)
                 } else {
-                    scheduler::suspend_me_for::<()>(
-                        Tick::from_millis(sleep_time.min(DEFAULT_DELAY_TIME_IN_MILLIS) as u64),
-                        None,
-                    );
-                }
+                    Tick::from_millis(sleep_time.min(DEFAULT_DELAY_TIME_IN_MILLIS) as u64)
+                };
+                crate::sync::atomic_wait::atomic_wait(
+                    &crate::net::connection::NETSTACK_WAKE,
+                    observed_wake,
+                    wait_ticks,
+                )
+                .ignore_result();
             }
         }
     }

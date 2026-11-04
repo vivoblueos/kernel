@@ -38,7 +38,7 @@ template("tm_case") {
     deps += [
       "//kernel/adapter/thread_metric",
       "//kernel/rsrt",
-      "//libs/librs",
+      "//librs",
     ]
     deps += board_deps
   }

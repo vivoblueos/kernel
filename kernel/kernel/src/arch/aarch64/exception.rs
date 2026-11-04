@@ -168,6 +168,8 @@ extern "C" fn handle_svc(context: &mut Context) -> usize {
     compiler_fence(Ordering::SeqCst);
     let sc = ScContext {
         nr: context.x8,
+        // No user/kernel split on this target yet, so nothing reads the frame.
+        frame: 0,
         args: [
             context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
         ],

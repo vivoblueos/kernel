@@ -81,7 +81,7 @@ def do_gen(config, template, suffix='', need_log=False):
                     semihosting='' if not config.semihosting else
                     '-accel tcg -semihosting-config enable=on',
                     qemu_args=''
-                    if config.qemu_args != "" else config.qemu_args,
+                    if not config.qemu_args != "" else config.qemu_args,
                     block_args=block_args,
                     net_args='' if not config.net_args else config.net_args,
                     logfile=logfile,

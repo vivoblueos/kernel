@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-01T11:53:35+0000",
+  "board": "qemu_virt64_aarch64",
+  "build_type": "debug",
+  "modes": [
+    "swi"
+  ],
+  "runs_per_mode": 5,
+  "toolchain": {
+    "image": "ghcr.io/vivoblueos/kernel:latest",
+    "rustc": "rustc 1.96.0-dev (894b8c318 2026-10-14)",
+    "qemu": "QEMU emulator version 10.0.3"
+  },
+  "measurements": {
+    "syscall_roundtrip_ns": {
+      "swi": 4003,
+      "samples": {
+        "swi": [
+          1431,
+          1411,
+          4094,
+          4003,
+          4195
+        ],
+        "dsc": [
+          122,
+          115,
+          112,
+          2781,
+          121
+        ]
+      },
+      "min": {
+        "swi": 1411,
+        "dsc": 112
+      },
+      "max": {
+        "swi": 4195,
+        "dsc": 2781
+      },
+      "dsc": 121,
+      "dsc_historical": true,
+      "ratio": 33.08
+    },
+    "ctx_switch_ns": {
+      "swi": 49474,
+      "samples": {
+        "swi": [
+          49042,
+          47115,
+          51067,
+          49624,
+          49474
+        ],
+        "dsc": [
+          27281,
+          24794,
+          26140,
+          26140,
+          27327
+        ]
+      },
+      "min": {
+        "swi": 47115,
+        "dsc": 24794
+      },
+      "max": {
+        "swi": 51067,
+        "dsc": 27327
+      },
+      "dsc": 26140,
+      "dsc_historical": true,
+      "ratio": 1.89
+    },
+    "tcp_loopback_mbps": {
+      "swi": null,
+      "status": "unavailable",
+      "reason": "bind:Protocol not available (os error 109)"
+    }
+  },
+  "posix": {
+    "declared": 71,
+    "dispatched": 71,
+    "real": 51,
+    "stub": 8,
+    "noop": 7,
+    "missing": 5,
+    "errno_ok": 2,
+    "tested": 2,
+    "real_ratio": 0.7183
+  },
+  "notes": {
+    "clock_ids": "The toolchain numbers CLOCK_MONOTONIC as 4 while the kernel accepts 0..=3, so std::time::Instant panics with EINVAL. The workload times itself through the raw ClockGetTime syscall instead.",
+    "tcp_loopback": "socket bind returns EPROTONOSUPPORT (109) on 127.0.0.1, so loopback throughput cannot be measured on this build. Recorded as unavailable rather than dropped; it is one of the v1 gaps the v2 plan has to close.",
+    "context_switch": "Measured as a Mutex/Condvar ping-pong between two threads; one iteration is two switches (wake the peer, block again).",
+    "dsc_historical": "P0-08 removed the direct-call syscall switch. The dsc numbers were measured before that change and are kept for the record; they cannot be reproduced on this tree."
+  }
+}

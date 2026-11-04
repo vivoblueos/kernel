@@ -542,12 +542,39 @@ mod tests {
             timer.callback = callback;
             iou = add_hard_timer(&mut timer).unwrap();
             // Run timer multiple times.
+            //
+            // The counter is allowed to run AHEAD of `i`. Under host load the
+            // tick interrupt can lag behind the deadline, and the timer then
+            // catches up by firing more than once before this thread is woken.
+            // Asserting `counter == i` therefore failed with "left: 2,
+            // right: 1" on loaded machines - the timer had done nothing wrong,
+            // the assertion just encoded an assumption the system never made.
+            //
+            // What must hold is that the counter never falls BEHIND `i`. If
+            // reactivation broke, the timer would fire once and then stall, so
+            // `i` would keep growing while the counter stayed at 1 - which this
+            // lower bound still catches.
             for i in 0..5 {
                 assert!(is_active_hard_timer(&iou));
-                assert_eq!(counter.load(Ordering::Relaxed), i);
+                let fired = counter.load(Ordering::Relaxed);
+                assert!(
+                    fired >= i,
+                    "periodic timer fired {} times, expected at least {}",
+                    fired,
+                    i
+                );
                 scheduler::suspend_me_until::<()>(deadline, None);
                 deadline = deadline.add(Tick(7));
             }
+            // Five suspensions against a five-period window: every period must
+            // have fired. This is the assertion that actually pins reactivation
+            // - a timer that fired once and stopped lands at 1, not 5.
+            let fired = counter.load(Ordering::Relaxed);
+            assert!(
+                fired >= 5,
+                "periodic timer fired {} times after 5 periods, expected at least 5",
+                fired
+            );
             iou = remove_hard_timer(iou).unwrap();
         });
     }

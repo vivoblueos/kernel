@@ -1,0 +1,139 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/sysroot.gni")
+import("//build/templates/reload_autoconf_and_build.gni")
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+
+# Whether this board has a C ABI for librs to describe.
+#
+# The headers under //librs/include size the objects for a 64-bit target; on a
+# 32-bit one they describe something the kernel does not have. See
+# build/sysroot.gni for why this is a property of the C toolchain and not of
+# the board.
+_librs_has_c_abi = c_target_is_64_bit
+
+reload_autoconf_and_build("shell") {
+  app_conf = [ "app.conf" ]
+  crate_name = "shell"
+  crate_type = "bin"
+  sources = [ "src/main.rs" ]
+  deps = [
+    "//external/vendor/phf-0.12.1:phf",
+    "//kernel/kconfig:generate_rustflags_file",
+    "//kernel/rsrt:rsrt_std",
+    "//libc",
+    "//librs",
+  ]
+  if (_librs_has_c_abi) {
+    # Built, not linked: the check is a compile-time assertion. It hangs off
+    # the wrapper action rather than the Rust target so that `check_all` -
+    # which builds `//apps/shell:shell` - actually compiles it.
+    extra_deps = [ ":c_abi_check" ]
+  }
+  linker_script = default_linker_script
+  configs = [
+    "//build/boards/${board}:kernel_config",
+    "//kernel/kconfig:kconfigs",
+  ]
+}
+
+# The C side of the shell's ABI, checked at compile time.
+#
+# The shell is Rust, so without a C translation unit of its own there is
+# nothing in this directory that would notice a wrong <pthread.h> - the test
+# image only proves what the *test* target sees. This target compiles with the
+# shell's dependencies, which is how `//librs`'s public include config gets
+# exercised from an application rather than from a test.
+if (_librs_has_c_abi) {
+  static_library("c_abi_check") {
+    sources = [ "src/c_abi_check.c" ]
+    deps = [ "//librs" ]
+    configs += [ "//build/boards/${board}:kernel_config" ]
+
+    # The same switches a POSIX C program is compiled with. Without
+    # `_POSIX_THREADS`, newlib's <pthread.h> declares no types at all and the
+    # check would fail with "undeclared identifier" instead of "4 bytes, not
+    # 24" - the right verdict for the wrong reason.
+    cflags = [ "-D_POSIX_THREADS=202405L" ]
+
+    # RISC-V compiles C with clang, which does not know where newlib lives, so
+    # the sysroot headers have to be named. AArch64's GCC finds them itself and
+    # its -isystem directories would shadow GCC's own headers (see
+    # build/sysroot.gni).
+    if (posix_c_needs_sysroot_include) {
+      cflags += [
+        "-isystem",
+        "$current_sysroot/include",
+      ]
+    }
+  }
+}
+
+# The interactive shell reads commands from stdin, but the QEMU runner sends
+# the serial port to a file, so a checker cannot type into it. This variant
+# keeps the same command table and drives a fixed sequence instead.
+reload_autoconf_and_build("shell_smoke") {
+  app_conf = [ "app.conf" ]
+  crate_name = "shell_smoke"
+  crate_type = "bin"
+  sources = [ "src/main.rs" ]
+  deps = [
+    "//external/vendor/phf-0.12.1:phf",
+    "//kernel/kconfig:generate_rustflags_file",
+    "//kernel/rsrt:rsrt_std",
+    "//libc",
+    "//librs",
+  ]
+  cfgs = [ "shell_smoke" ]
+  linker_script = default_linker_script
+  configs = [
+    "//build/boards/${board}:kernel_config",
+    "//kernel/kconfig:kconfigs",
+  ]
+}
+
+gen_qemu_runner("shell_runner") {
+  img = ":shell"
+  qemu = "$qemu_exe"
+  machine = "$qemu_machine"
+  qemu_args = qemu_extra_args
+  net_args = qemu_net_args
+  block_img = "shell_block.img"
+  block_args = qemu_block_args
+}
+
+gen_qemu_runner("shell_smoke_runner") {
+  img = ":shell_smoke"
+  qemu = "$qemu_exe"
+  machine = "$qemu_machine"
+  qemu_args = qemu_extra_args
+  net_args = qemu_net_args
+  block_img = "shell_smoke_block.img"
+  block_args = qemu_block_args
+}
+
+run_qemu_check("run_shell_boot") {
+  testonly = true
+  runner = ":shell_runner"
+  checker = "//kernel/kernel/tests/boot.checker"
+}
+
+run_qemu_check("run_shell_smoke") {
+  testonly = true
+  runner = ":shell_smoke_runner"
+  checker = "//kernel/kernel/tests/shell.checker"
+}

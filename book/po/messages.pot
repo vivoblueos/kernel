@@ -1,0 +1,1422 @@
+
+msgid ""
+msgstr ""
+"Project-Id-Version: The vivo BlueOS kernel\n"
+"POT-Creation-Date: 2025-07-19T15:48:05+08:00\n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/SUMMARY.md:1
+msgid "Summary"
+msgstr ""
+
+#: src/SUMMARY.md:3
+msgid "Getting started"
+msgstr ""
+
+#: src/SUMMARY.md:7
+msgid "Build and test the kernel"
+msgstr ""
+
+#: src/SUMMARY.md:8
+msgid "Build the kernel toolchain"
+msgstr ""
+
+#: src/SUMMARY.md:9
+msgid "Build the kernel"
+msgstr ""
+
+#: src/SUMMARY.md:10
+msgid "Config rust-analyzer"
+msgstr ""
+
+#: src/SUMMARY.md:11
+msgid "Use QEMU checker to test"
+msgstr ""
+
+#: src/SUMMARY.md:12 src/run-coverage.md:1
+msgid "Run Coverage"
+msgstr ""
+
+#: src/SUMMARY.md:14
+msgid "Install the kernel image to devices"
+msgstr ""
+
+#: src/SUMMARY.md:16
+msgid "Syscalls"
+msgstr ""
+
+#: src/SUMMARY.md:17 src/add-new-syscall.md:1
+msgid "Add a new syscall"
+msgstr ""
+
+#: src/SUMMARY.md:18 src/invoke-syscall.md:1
+msgid "Invoke a syscall"
+msgstr ""
+
+#: src/SUMMARY.md:20
+msgid "Infrastructural data types"
+msgstr ""
+
+#: src/SUMMARY.md:21
+msgid "Introduction"
+msgstr ""
+
+#: src/SUMMARY.md:25
+msgid "Contributing"
+msgstr ""
+
+#: src/SUMMARY.md:26
+msgid "Code style guidelines"
+msgstr ""
+
+#: src/SUMMARY.md:27
+msgid "Code of conduct"
+msgstr ""
+
+#: src/getting-started.md:1
+msgid "Getting Started"
+msgstr ""
+
+#: src/getting-started.md:3
+msgid ""
+"We recommend you develop the kernel in Debian-12.0+ or Ubuntu-24.04+ "
+"environment to get the best tool support."
+msgstr ""
+
+#: src/getting-started.md:5
+msgid "Prepare basic development environment"
+msgstr ""
+
+#: src/getting-started.md:6
+msgid "`repo`"
+msgstr ""
+
+#: src/getting-started.md:7
+msgid ""
+"We are using [repo](https://source.android.com/docs/setup/reference/repo) to "
+"manage the kernel project. Please follow "
+"https://mirrors.tuna.tsinghua.edu.cn/help/git-repo/ to install `repo`."
+msgstr ""
+
+#: src/getting-started.md:10
+msgid "`gn`"
+msgstr ""
+
+#: src/getting-started.md:11
+msgid ""
+"We are using [GN](https://gn.googlesource.com/gn/) to organize and build the "
+"BlueOS project, rather than [cargo](https://doc.rust-lang.org/cargo/) the "
+"official package manager of Rust eco system. `gn` offers better "
+"multi-language support and better build speed than `cargo`. You can download "
+"prebuilt `gn` binaries from "
+"https://gn.googlesource.com/gn/#getting-a-binary. Put the downloaded binary "
+"to a directory and ensure this directory is in your `${PATH}`."
+msgstr ""
+
+#: src/getting-started.md:17
+msgid "Install packages on Linux"
+msgstr ""
+
+#: src/getting-started.md:18
+msgid "Install packages shipped by the distro."
+msgstr ""
+
+#: src/getting-started.md:27
+msgid "Additionally, download and install arm toolchains"
+msgstr ""
+
+#: src/getting-started.md:28
+msgid ""
+"```\n"
+"wget "
+"https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz\n"
+"tar xvf arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz -C "
+"<install-path>\n"
+"wget "
+"https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf.tar.xz\n"
+"tar xvf arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf.tar.xz -C "
+"<install-path>\n"
+"```"
+msgstr ""
+
+#: src/getting-started.md:34
+msgid ""
+"Add `<install-path>/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf/bin` "
+"and `<install-path>/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi/bin` to "
+"your `$PATH`."
+msgstr ""
+
+#: src/getting-started.md:36
+msgid "Install packages on macOS"
+msgstr ""
+
+#: src/getting-started.md:40
+msgid ""
+"For aarch64 toolchain, please have a look at "
+"[arm-gnu-toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). "
+"For RISC-V toolchain on macOS, see "
+"[homebrew-riscv](https://github.com/riscv-software-src/homebrew-riscv?tab=readme-ov-file)."
+msgstr ""
+
+#: src/getting-started.md:43
+msgid "Build and install QEMU"
+msgstr ""
+
+#: src/getting-started.md:44
+msgid "Download QEMU source code tarball,"
+msgstr ""
+
+#: src/getting-started.md:53
+msgid "Add `<install-path>/bin` to your `$PATH`."
+msgstr ""
+
+#: src/getting-started.md:55
+msgid "Code formatters"
+msgstr ""
+
+#: src/getting-started.md:56
+msgid ""
+"We are using code formatters of corresponding programming language to keep "
+"our code style consistent. These formatters can be installed via"
+msgstr ""
+
+#: src/getting-started.md:58
+msgid "# On Linux\n"
+msgstr ""
+
+#: src/getting-started.md:62
+msgid "# On macOS\n"
+msgstr ""
+
+#: src/getting-started.md:65
+msgid ""
+"Here's the table of format command and its corresponding programming "
+"language."
+msgstr ""
+
+#: src/getting-started.md:66
+msgid "lang"
+msgstr ""
+
+#: src/getting-started.md:66
+msgid "format command"
+msgstr ""
+
+#: src/getting-started.md:68
+msgid "Rust"
+msgstr ""
+
+#: src/getting-started.md:68
+msgid "`rustfmt`"
+msgstr ""
+
+#: src/getting-started.md:69
+msgid "C/C++"
+msgstr ""
+
+#: src/getting-started.md:69
+msgid "`clang-format`"
+msgstr ""
+
+#: src/getting-started.md:70
+msgid "Python"
+msgstr ""
+
+#: src/getting-started.md:70
+msgid "`yapf3`"
+msgstr ""
+
+#: src/getting-started.md:71
+msgid "GN"
+msgstr ""
+
+#: src/getting-started.md:71
+msgid "`gn format`"
+msgstr ""
+
+#: src/getting-started.md:73
+msgid "Init and sync the project"
+msgstr ""
+
+#: src/getting-started.md:74
+msgid "Use following command to init the project."
+msgstr ""
+
+#: src/getting-started.md:80
+msgid "Then sync all repositories in the project."
+msgstr ""
+
+#: src/getting-started.md:84
+msgid ""
+"You might accelerate the synchronization by appending `-j$(nproc)` to the "
+"above command."
+msgstr ""
+
+#: src/build-rust-toolchain.md:1
+msgid "Building the Rust toolchain for vivo BlueOS kernel"
+msgstr ""
+
+#: src/build-rust-toolchain.md:3
+msgid ""
+"We have forked upstream [Rust "
+"compiler](https://github.com/rust-lang/rust.git) to support the vivo BlueOS "
+"kernel targeted to `*-vivo-blueos-*` and vivo BlueOS kernel's Rust-std."
+msgstr ""
+
+#: src/build-rust-toolchain.md:6
+msgid ""
+"We'll finally contribute our changes to the upstream repository and make "
+"`*-vivo-blueos-*` a "
+"[tier](https://doc.rust-lang.org/rustc/target-tier-policy.html) Rust target."
+msgstr ""
+
+#: src/build-rust-toolchain.md:9
+msgid "Clone the downstream repository"
+msgstr ""
+
+#: src/build-rust-toolchain.md:10
+msgid "Run"
+msgstr ""
+
+#: src/build-rust-toolchain.md:16
+msgid ""
+"The `blueos-dev` branch is set as default, so no manual branch switching is "
+"required."
+msgstr ""
+
+#: src/build-rust-toolchain.md:18
+msgid "Setup Rust mirror site"
+msgstr ""
+
+#: src/build-rust-toolchain.md:19
+msgid ""
+"In China, we recommend you to use mirror site for `crates.io` and `rustup`. "
+"Add following lines to your `~/.bashrc`"
+msgstr ""
+
+#: src/build-rust-toolchain.md:20
+msgid ""
+"```\n"
+"export RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static\n"
+"export RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup\n"
+"```"
+msgstr ""
+
+#: src/build-rust-toolchain.md:24
+msgid "and then type"
+msgstr ""
+
+#: src/build-rust-toolchain.md:29
+msgid "Install via `x` script"
+msgstr ""
+
+#: src/build-rust-toolchain.md:30
+msgid ""
+"Run the following commands in your bash shell. These instructions work for "
+"both Linux and macOS platforms:"
+msgstr ""
+
+#: src/build-rust-toolchain.md:32
+msgid "true"
+msgstr ""
+
+#: src/build-rust-toolchain.md:33
+msgid "<choose-your-install-prefix>"
+msgstr ""
+
+#: src/build-rust-toolchain.md:49
+msgid "You must also install the host machine's standard library and LLVM tools."
+msgstr ""
+
+#: src/build-rust-toolchain.md:51
+msgid "For Linux:"
+msgstr ""
+
+#: src/build-rust-toolchain.md:57
+msgid "For macOS:"
+msgstr ""
+
+#: src/build-rust-toolchain.md:63
+msgid "To use the kernel toolchain, add the following to your environment:"
+msgstr ""
+
+#: src/build-rust-toolchain.md:65
+msgid "${DESTDIR}/usr/local/bin:${PATH}"
+msgstr ""
+
+#: src/build-kernel.md:1
+msgid "Build kernel image"
+msgstr ""
+
+#: src/build-kernel.md:3
+msgid "The kernel currently supports multiple boards."
+msgstr ""
+
+#: src/build-kernel.md:5
+msgid "qemu_mps2_an385"
+msgstr ""
+
+#: src/build-kernel.md:6
+msgid "qemu_mps3_an547"
+msgstr ""
+
+#: src/build-kernel.md:7
+msgid "qemu_virt64_aarch64"
+msgstr ""
+
+#: src/build-kernel.md:8
+msgid "qemu_riscv64"
+msgstr ""
+
+#: src/build-kernel.md:10
+msgid ""
+"To build a kernel image for specified board, like `qemu_mps2_an385`, use "
+"command"
+msgstr ""
+
+#: src/build-kernel.md:11
+msgid ""
+"```\n"
+"gn gen out/qemu_mps2_an385.release/ --args='build_type=\"release\" "
+"board=\"qemu_mps2_an385\"'\n"
+"ninja -C out/qemu_mps2_an385.release\n"
+"```"
+msgstr ""
+
+#: src/build-kernel.md:15
+msgid "To run tests, type"
+msgstr ""
+
+#: src/build-kernel.md:20
+msgid "Args and their semantics."
+msgstr ""
+
+#: src/build-kernel.md:21
+msgid "arg"
+msgstr ""
+
+#: src/build-kernel.md:21
+msgid "semantics"
+msgstr ""
+
+#: src/build-kernel.md:23
+msgid "build_type"
+msgstr ""
+
+#: src/build-kernel.md:23
+msgid "debug/ release/ coverage/ profile"
+msgstr ""
+
+#: src/build-kernel.md:24
+msgid "board"
+msgstr ""
+
+#: src/build-kernel.md:24
+msgid "Name of the board targeted to"
+msgstr ""
+
+#: src/config-rust-analyzer.md:1
+msgid "Use rust-analyzer in VSCode"
+msgstr ""
+
+#: src/config-rust-analyzer.md:3
+msgid ""
+"We recommend you to use rust-analyzer extension in VSCode to support "
+"development of the vivo BlueOS kernel."
+msgstr ""
+
+#: src/config-rust-analyzer.md:5
+msgid ""
+"However, since we are using `gn`, rather than `Cargo.toml`, to manage our "
+"project, the rust-analyzer extension in VSCode might not work out-of-box. "
+"You should use following commands[^1] to get the extension work"
+msgstr ""
+
+#: src/config-rust-analyzer.md:11
+msgid ""
+"https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/rust.md#using-vscode"
+msgstr ""
+
+#: src/qemu-checker.md:1
+msgid "QEMU checker"
+msgstr ""
+
+#: src/qemu-checker.md:3
+msgid ""
+"Most kernel code are tested via QEMU. We introduce QEMU checker to assist "
+"testing the kernel."
+msgstr ""
+
+#: src/qemu-checker.md:6
+msgid ""
+"QEMU checker must be provided with a QEMU runner script and a input file "
+"containing check directives.  QEMU checker runs the runner script and "
+"captures output lines of it. If output lines match conditions or regex "
+"specified in the check directives, the checker takes corresponding actions. "
+"Directives should be written at the header of the input file."
+msgstr ""
+
+#: src/qemu-checker.md:14
+msgid "directive"
+msgstr ""
+
+#: src/qemu-checker.md:14
+msgid "action"
+msgstr ""
+
+#: src/qemu-checker.md:16
+msgid "// CHECK-FAIL: \\<regex\\>"
+msgstr ""
+
+#: src/qemu-checker.md:16 src/qemu-checker.md:17
+msgid "Record this line and report at exit."
+msgstr ""
+
+#: src/qemu-checker.md:17
+msgid "// CHECK-SUCC: \\<regex\\>"
+msgstr ""
+
+#: src/qemu-checker.md:18
+msgid "// ASSERT-FAIL: \\<regex\\>"
+msgstr ""
+
+#: src/qemu-checker.md:18
+msgid "Exit the runner and report failure."
+msgstr ""
+
+#: src/qemu-checker.md:19
+msgid "// ASSERT-SUCC: \\<regex\\>"
+msgstr ""
+
+#: src/qemu-checker.md:19
+msgid "Exit the runner and report success."
+msgstr ""
+
+#: src/qemu-checker.md:20
+msgid "// NEWLINE-TIMEOUT: \\<number\\>"
+msgstr ""
+
+#: src/qemu-checker.md:20
+msgid ""
+"Timeout when checker reads the next line. Report failure if timeout occurs."
+msgstr ""
+
+#: src/qemu-checker.md:21
+msgid "// TOTAL-TIMEOUT: \\<number\\>"
+msgstr ""
+
+#: src/qemu-checker.md:21
+msgid "Total timeout for this run."
+msgstr ""
+
+#: src/qemu-checker.md:23
+msgid "Example"
+msgstr ""
+
+#: src/qemu-checker.md:24
+msgid ""
+"Suppose we have a kernel image for testing, named `blueos_foo_test`. First "
+"we have to generate a qemu runner script for it."
+msgstr ""
+
+#: src/qemu-checker.md:26
+msgid ""
+"```gn\n"
+"gen_qemu_runner(\"runner_for_blueos_foo_test\") {\n"
+"  img = \":blueos_foo_test\"\n"
+"  qemu = \"$qemu_exe\"\n"
+"  board = \"$board\"\n"
+"}\n"
+"```"
+msgstr ""
+
+#: src/qemu-checker.md:33
+msgid "Then, we make a checker for the above runner."
+msgstr ""
+
+#: src/qemu-checker.md:34
+msgid ""
+"```gn\n"
+"run_qemu_checker(\"check_blueos_foo_test\") {\n"
+"  img = \":blueos_foo_test\"\n"
+"  runner = \":runner_for_blueos_foo_test\"\n"
+"  checker = \"//kernel/kernel/tests/integration_test.rs\"\n"
+"}\n"
+"```"
+msgstr ""
+
+#: src/qemu-checker.md:41
+msgid ""
+"Must be noted, the above two targets must be put in the same `BUILD.gn`. "
+"Check directives should be put at the header of `integration_test.rs`."
+msgstr ""
+
+#: src/qemu-checker.md:44
+msgid ""
+"// NEWLINE-TIMEOUT: 15\n"
+"// ASSERT-SUCC: Kernel test end.\n"
+"// ASSERT-FAIL: Backtrace in Panic.*\n"
+msgstr ""
+
+#: src/qemu-checker.md:49
+msgid "Integrate checks in CI"
+msgstr ""
+
+#: src/qemu-checker.md:50
+msgid ""
+"CI runner only runs two toplevel targets, `default` and `check_all`. To run "
+"check during CI, you have to put your checker target in `deps` of "
+"`check_all` group in the toplevel `BUILD.gn`."
+msgstr ""
+
+#: src/qemu-checker.md:53
+msgid ""
+"```gn\n"
+"group(\"check_all\") {\n"
+"  deps = [ \":check_kernel\" ]\n"
+"}\n"
+"```"
+msgstr ""
+
+#: src/run-coverage.md:3
+msgid ""
+"We generate the code needed for coverage statistics by adding "
+"`-Cinstrument-coverage` during compilation, and generate coverage data "
+"through the integration of [minicov](https://crates.io/crates/minicov) and "
+"[semihosting](https://crates.io/crates/semihosting). Finally, we use the "
+"[grcov](https://crates.io/crates/grcov) tool to generate readable coverage "
+"data in HTML format. All of these have been integrated into our build "
+"system, and coverage data can be generated using the following commands："
+msgstr ""
+
+#: src/run-coverage.md:6
+msgid "'build_type=\"coverage\" board=\"qemu_riscv64\"'"
+msgstr ""
+
+#: src/run-coverage.md:10
+msgid "If you get a prompt that grcov is not found, you can install it via"
+msgstr ""
+
+#: src/run-coverage.md:15
+msgid ""
+"After building and running, you can find merged coverage report in the "
+"`./out/qemu_riscv64.cov/cov_report` directory. Open the `index.html` file in "
+"the directory to view the coverage data."
+msgstr ""
+
+#: src/add-new-syscall.md:3
+msgid "Adding a new syscall in the kernel is easy."
+msgstr ""
+
+#: src/add-new-syscall.md:5
+msgid "There are 3 steps."
+msgstr ""
+
+#: src/add-new-syscall.md:7
+msgid "Add new syscall number for the new syscall in `header/src/syscalls.rs`."
+msgstr ""
+
+#: src/add-new-syscall.md:14
+msgid "Implement the new syscall in `kernel/src/syscall_handlers/mod.rs`."
+msgstr ""
+
+#: src/add-new-syscall.md:16
+msgid ""
+"This is generally done via `define_syscall_handler!` if the syscall is "
+"trivial. For example"
+msgstr ""
+
+#: src/add-new-syscall.md:20
+msgid "// Implement your vfs read.\n"
+msgstr ""
+
+#: src/add-new-syscall.md:24
+msgid "Register the new syscall in `kernel/src/syscall_handlers/mod.rs`."
+msgstr ""
+
+#: src/add-new-syscall.md:26
+msgid "Add a new entry in `syscall_table!`. For example,"
+msgstr ""
+
+#: src/add-new-syscall.md:30
+msgid ""
+"Must be noted, the first operand **MUST** be the unqualified name of the "
+"`NR` enumeration."
+msgstr ""
+
+#: src/invoke-syscall.md:3
+msgid "The vivo BlueOS kernel offers two modes of invoking syscall."
+msgstr ""
+
+#: src/invoke-syscall.md:5
+msgid "Software interruption"
+msgstr ""
+
+#: src/invoke-syscall.md:7
+msgid ""
+"This is generally seen in most OS kernels to switch from user space to "
+"kernel space."
+msgstr ""
+
+#: src/invoke-syscall.md:9
+msgid "Direct invoking"
+msgstr ""
+
+#: src/invoke-syscall.md:11
+msgid "In this mode, syscall handlers are invoked directly via function calls."
+msgstr ""
+
+#: src/invoke-syscall.md:13
+msgid ""
+"In both modes, if you have to invoke a syscall, use the `bk_syscall!` macro "
+"in `blueos_scal` crate. For example,"
+msgstr ""
+
+#: src/invoke-syscall.md:23
+msgid ""
+"There is no need to change your code when switching to another mode. By "
+"default, SWI mode is used. If you want to use the direct invoking mode, what "
+"you have to do is passing `--cfg direct_syscall_handler` to build the kernel."
+msgstr ""
+
+#: src/infra-data-types.md:1
+msgid "Kernel's basic data types"
+msgstr ""
+
+#: src/infra-data-types.md:3
+msgid "Arc"
+msgstr ""
+
+#: src/infra-data-types.md:4
+msgid ""
+"A customized `Arc`(`infra/src/tinyarc.rs`), is implemented for the kernel. "
+"Compared to `alloc::sync::Arc`, there is no much difference, except it has "
+"only `strong_count` thus reduced its size and is friendly to embedded "
+"devices. Also its memory layout is known to `blueos_infra`, so our "
+"instrusive list can cooperate with it easily."
+msgstr ""
+
+#: src/infra-data-types.md:12
+msgid "Intrusive list"
+msgstr ""
+
+#: src/infra-data-types.md:13
+msgid ""
+"`blueos_infra`'s ilist(`infra/src/list/typed_ilist.rs`) is typed and unsafe. "
+"It's like C-style's ilist, however we recommend developers not using it "
+"directly but with smart pointers. We implement `ArcList` on top of the typed "
+"ilst with `Arc` mentioned above and guarantees safety."
+msgstr ""
+
+#: src/SUMMARY.md:26 src/how-to-use-blueos-repo.md:1
+msgid "How to use the blueos repository"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:3
+msgid "Relationship with the component repositories"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:5
+msgid ""
+"Previously, components such as kernel, build, libc, and book were maintained "
+"in separate Git repositories. The manifests repository described their URLs, "
+"revisions, and local paths. Developers used `repo init` and `repo sync` to "
+"assemble a complete source workspace. Each component remained a separate Git "
+"repository with its own branches, commit history, and pull requests (PRs)."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:11
+msgid ""
+"Changes spanning several repositories required a branch and a PR in each "
+"repository, making review and CI validation harder to coordinate."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:14
+msgid ""
+"The blueos repository brings these components together. Its component paths "
+"match those in the workspace created with `repo init`, and Josh preserves the "
+"imported commit history."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:18
+msgid "Basic workflow"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:20
+msgid ""
+"For new work, usually create a branch from the central repository's `main`."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:21
+msgid ""
+"For work already started in a component repository, import the branch and "
+"integrate it with the complete central history. Continue development there "
+"and publish a central branch and PR."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:25
+msgid "Choose where to develop and submit PRs"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:27
+msgid ""
+"Keep the development branch and PR for a task in the central repository where "
+"possible. Avoid maintaining the same branch in both repositories. If several "
+"people share the original branch, agree on how to migrate it and where "
+"further development will take place."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:32
+msgid "Situation"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:32
+msgid "Recommended workflow"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:34
+msgid "New work based on default branches"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:34
+msgid "Start from the complete central `main`."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:35
+msgid "Existing component branch or open PR"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:35
+msgid "Import it and publish a central PR."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:36
+msgid "Dependencies on open branches or PRs"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:36
+msgid "Integrate the work and dependencies."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:37
+msgid "Changes across several components"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:37
+msgid "Develop, validate, and submit centrally."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:39
+msgid ""
+"Changes limited to book or another independent component can also be "
+"submitted directly to that repository. Import and integrate any unmerged "
+"dependencies together. If a dependency is already a complete central branch, "
+"use Git to merge it or transplant its commits. After migrating a PR, close "
+"the original and explain the migration to avoid merging the work twice."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:45 src/how-to-use-blueos-repo.md:396
+msgid "Import component branches"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:47
+msgid "Install the tools"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:49
+msgid ""
+"You need Python 3, Git, `josh`, and `josh-filter`. The following command "
+"installs both Josh programs:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:58
+msgid ""
+"Use a standard Rust toolchain for installation rather than blueos's custom "
+"Cargo."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:61
+msgid "Configure remotes and fetch branches"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:63
+msgid ""
+"A Josh remote places the component's files under the corresponding central "
+"directory. For example, `:prefix=build` maps the component repository's root "
+"to `build/` in the central repository."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:67
+msgid "Component name (`--repo`)"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:67
+msgid "Josh remote filter"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:69
+msgid "`apps_example`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:69
+msgid "`:prefix=apps/example`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:70
+msgid "`apps_shell`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:70
+msgid "`:prefix=apps/shell`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:71
+msgid "`book`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:71
+msgid "`:prefix=book`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:72
+msgid "`build`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:72
+msgid "`:prefix=build`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:73
+msgid "`external`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:73
+msgid "`:prefix=external`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:74
+msgid "`kernel`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:74
+msgid "`:prefix=kernel`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:75
+msgid "`libc`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:75
+msgid "`:prefix=libc`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:76
+msgid "`librs`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:76
+msgid "`:prefix=librs`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:78
+msgid ""
+"Configure the remotes you need. Skip remotes that are already configured:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:80
+msgid "See the [appendix](#appendix) for the complete template."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:93
+msgid ""
+"The remote names `fork-build` and `fork-kernel` are local names you choose. "
+"After fetching, select an imported branch using a remote-tracking reference "
+"such as `fork-build/branch-name`. Configure upstream repositories the same "
+"way, changing the remote name and URL."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:98
+msgid ""
+"`josh fetch` updates remote-tracking references. It does not move your local "
+"development branch or integrate the imported branch into the full central "
+"history."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:102
+msgid "Integrate imported branches with the complete blueos repository"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:104
+msgid ""
+"An imported branch contains only its component's files. Integrate it with the "
+"central history containing all components before using it as a complete "
+"central branch and publishing a central PR."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:108
+msgid ""
+"The early central history imported the component repositories in stages. In "
+"`vivoblueos/blueos`, the commit completing these initial imports is "
+"`a0d6549f6078a624dc513d4d2a34f5cf47e02f13`. Usually start from the central "
+"`main` or a central branch that already integrates the previous imports. "
+"After integration, check that the initial import commit is an ancestor:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:120
+msgid ""
+"An exit code of 0 confirms the ancestry. This checks the history "
+"relationship; you still need to validate the resulting files and build for "
+"your changes."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:123
+msgid ""
+"You can first test a merge or rebase in the component repository. The central "
+"repository may contain changes that have not yet been synchronized back, so "
+"central integration can still require conflict resolution and validation."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:127
+msgid "Integrate with rebase"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:129
+msgid ""
+"Use Git rebase to transplant the imported branch's changes onto the central "
+"`main`. The examples assume that the component `main` changes excluded by "
+"rebase are already present in the central starting point."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:134
+msgid ""
+"# Transplant build's miri/allocator branch onto the full central history.\n"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:136
+msgid "# The result can now be used as a complete central branch.\n"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:138
+msgid "# Add kernel's changes on top of the previous result.\n"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:146
+msgid "Integrate with merge"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:148
+msgid ""
+"Merging a raw Josh import into the central `main` also brings in its full "
+"history. Changes already synchronized to the central repository can have "
+"different SHAs under different transformations, so they may reappear as extra "
+"commits in the branch and PR."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:153
+msgid ""
+"Use `merge-subtree-branches.py` to handle this mapping. Each invocation "
+"integrates one imported branch with a merge. Run it sequentially to import "
+"multiple components:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:158
+msgid "# Import build's miri/allocator branch starting from the central main.\n"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:174 src/how-to-use-blueos-repo.md:279
+msgid "Parameter"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:174 src/how-to-use-blueos-repo.md:279
+msgid "Meaning"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:176 src/how-to-use-blueos-repo.md:283
+msgid "`--repo`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:176
+msgid "Component name; its directory must match the remote prefix."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:177
+msgid "`--source-remote`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:177
+msgid "Configured Josh remote name."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:178
+msgid "`--source-branch`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:178
+msgid "Component branch to import."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:179 src/how-to-use-blueos-repo.md:285
+msgid "`--target-base`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:179
+msgid "Starting central commit; defaults to `main`."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:180 src/how-to-use-blueos-repo.md:286
+msgid "`--target-branch`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:180
+msgid "Local central branch to create or append a merge to."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:181 src/how-to-use-blueos-repo.md:287
+msgid "`--repo-root`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:181 src/how-to-use-blueos-repo.md:287
+msgid "Central checkout; defaults to the script's repository."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:183
+msgid ""
+"`--target-base` accepts branch names, tags, full or unique abbreviated SHAs, "
+"and Git expressions such as `HEAD~1`. Both `branch` parameters accept branch "
+"names only. The script fixes the starting commit before merging, so `--target-"
+"base` may name the target branch itself."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:188
+msgid ""
+"If the target branch does not exist, the script creates it from the starting "
+"commit. Otherwise, it appends a merge, and the starting commit must be an "
+"ancestor of the target branch or its tip. Existing target commits are "
+"preserved; the branch is not reset."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:193
+msgid ""
+"Commit tracked changes or save them with `git stash` before running the "
+"script. It rejects uncommitted tracked changes and ongoing operations such as "
+"merge or rebase. It switches branches and merges in the current working tree, "
+"staying on the target branch after success."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:198
+msgid "Push changes back to a component branch"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:200
+msgid ""
+"Skip this section if you will maintain the branch only in the central "
+"repository. To continue maintaining a component branch, export its directory "
+"with `push-subtree-branch.py`."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:205
+msgid ""
+"# Select commits between --source-base (excluded) and --source-rev "
+"(included).\n"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:206
+msgid ""
+"# Add --push for an actual push, and --force for non-fast-forward updates.\n"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:218
+msgid "Choose the export range and component baseline"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:220
+msgid "Use two central commit parameters to select a range:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:222
+msgid ""
+"`--source-base`: the central baseline before your changes. Exclude this "
+"commit and its ancestors."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:224
+msgid "`--source-rev`: the final central branch tip. Include this commit."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:226
+msgid ""
+"The range is Git's `SOURCE_BASE..SOURCE_REV`. For a merge branch, it also "
+"includes merged commits reachable from the tip but not from the baseline. "
+"Linear and merge branches therefore use the same selection model. Each run "
+"filters one directory, including later changes to that directory made on the "
+"final branch."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:232
+msgid ""
+"Both central parameters accept branch names, tags, full or unique abbreviated "
+"SHAs, and expressions such as `HEAD` or `HEAD~1`. They are resolved to fixed "
+"SHAs at the start. `--source-base` must be an ancestor of `--source-rev` or "
+"the same commit. Equal endpoints select an empty range."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:237
+msgid ""
+"`--target-base` selects the component baseline branch for the replay, usually "
+"the PR's target branch. Use it together with `--source-base`. The selected "
+"directory in the central baseline must contain the same files as the "
+"component baseline. The baselines need not have the same name, and the script "
+"does not choose or record the central baseline automatically."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:243
+msgid ""
+"The script replays the filtered range onto the component baseline and uses "
+"the result to update `--target-branch`. Only that branch is pushed; when it "
+"differs from `--target-base`, the baseline branch stays unchanged. Range mode "
+"flattens filtered merges. If replay causes conflicts or changes the final "
+"files compared with the source directory, the script returns an error without "
+"pushing."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:250
+msgid "Preview and push"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:252
+msgid "First preview the build export:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:265
+msgid ""
+"To export kernel from the same final central branch, change the component and "
+"remote:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:281
+msgid "`--source-base`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:281
+msgid "Excluded central baseline; paired with `--target-base`."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:282
+msgid "`--source-rev`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:282
+msgid "Required final central commit; included in the range."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:283
+msgid "Component name; uses the merge script's directory mapping."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:284
+msgid "`--target-remote`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:284
+msgid "Configured target Josh remote name."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:285
+msgid "Component baseline branch for the replay."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:286
+msgid "Component branch to update or create."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:288
+msgid "`--force` or `-f`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:288
+msgid "Use Josh's force push for non-fast-forward updates."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:289
+msgid "`--push`"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:289
+msgid "Push after a successful preview; omit for a dry run."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:291
+msgid ""
+"The push script's `--target-base` and `--target-branch` accept component "
+"branch names only. The default is a dry run without force. Adding `--force` "
+"still only previews the update. Use it when rewritten history requires a non-"
+"fast-forward update."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:296
+msgid "In the output:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:298
+msgid ""
+"`BEFORE (current remote)` shows the component branch fetched before the "
+"update."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:300
+msgid ""
+"`AFTER (proposed, not pushed)` shows the candidate that has not been pushed."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:302
+msgid ""
+"After checking the preview, add `--push` to the same command. For example, "
+"force-push the build branch:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:316
+msgid ""
+"`Push completed` appears only after an actual successful push. The script "
+"processes committed content without moving the central development branch or "
+"modifying the current working tree. Its detached temporary worktree is "
+"cleaned up automatically; no temporary branch is created. Filtered results "
+"are stored in `refs/export/<remote>/<target-branch>`. Range mode also uses "
+"`refs/export-bases/<remote>/<target-branch>`. These helper refs are "
+"regenerated on each invocation and do not track push progress together with "
+"the import script."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:325
+msgid ""
+"The examples use the merge result `blueos/miri/allocator`. If you followed "
+"the rebase workflow, use `--source-rev blueos/miri/allocator-rebased` instead."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:328
+msgid "Export the full history"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:330
+msgid ""
+"To filter all history reachable from the final commit, omit both baseline "
+"parameters and specify only `--source-rev`:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:341
+msgid ""
+"This mode may retain central import merges and old synchronization commits. "
+"To exclude history before your changes, use range mode with explicit "
+"baselines. A SHA selects one commit; it does not by itself express the start "
+"and end of your changes."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:346
+msgid "Get updates from component repositories"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:348
+msgid ""
+"`josh fetch` updates component remote-tracking references without moving "
+"local development branches. If the branch has migrated and is maintained only "
+"centrally, continue using the normal central workflow. If you still need "
+"component branch updates, distinguish the following cases."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:353
+msgid "The remote advances normally"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:355
+msgid ""
+"For a branch that still uses the original Josh import history, merge the new "
+"remote-tracking reference using ordinary Git commands."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:358
+msgid ""
+"For a development branch already integrated with the full central history, "
+"remap or transplant updates first. Directly merging the raw import reference "
+"can bring back old history. With the merge workflow, run the import script "
+"again using the current central branch as the starting point:"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:372
+msgid ""
+"The script fetches, maps, and merges the source. With the rebase workflow, "
+"identify the last imported component commit and transplant only the new "
+"changes onto the current central branch. The current component `main` is not "
+"necessarily that boundary."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:377
+msgid "The remote is rebased or force-pushed"
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:379
+msgid ""
+"Appending a merge preserves the old version's history in the central branch. "
+"To remove commits deleted or rewritten on the remote, integrate the latest "
+"component branch again from a complete central baseline. Then replay the "
+"local changes and other components' changes that you need to retain."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:384
+msgid ""
+"Keep the original branch for comparison when rebuilding. Check the commit "
+"range, resulting files, and build. This still converts component history to "
+"complete central history; a successful fetch alone does not validate the "
+"integration."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:389
+msgid ""
+"See [Josh branch tools](https://github.com/vivoblueos/blueos/blob/main/tools/"
+"josh/README.md) for the complete parameters and helper ref behavior of both "
+"scripts."
+msgstr ""
+
+#: src/how-to-use-blueos-repo.md:394
+msgid "Appendix"
+msgstr ""
+
+#: src/SUMMARY.md:27 src/prs.md:1
+msgid "Submit pull requests"
+msgstr ""
+
+#: src/prs.md:3
+msgid "New work"
+msgstr ""
+
+#: src/prs.md:5
+msgid ""
+"Fork [vivoblueos/blueos](https://github.com/vivoblueos/blueos) and submit a "
+"PR using the usual GitHub workflow."
+msgstr ""
+
+#: src/prs.md:8
+msgid "Existing component PRs"
+msgstr ""
+
+#: src/prs.md:10
+msgid ""
+"For an existing component branch or unmerged PR, follow [How to use the "
+"blueos repository](./how-to-use-blueos-repo.md) to import the branch and "
+"integrate it with the complete central history before continuing development "
+"and publishing a central PR. Include any unmerged dependencies in the same "
+"central branch."
+msgstr ""
+
+#: src/prs.md:16
+msgid ""
+"After publishing the replacement central PR, close the original component PR "
+"and link to the replacement to avoid merging the same work twice. If the "
+"original branch is shared, agree on the migration and where further "
+"development will take place first."
+msgstr ""

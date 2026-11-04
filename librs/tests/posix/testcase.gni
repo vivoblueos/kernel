@@ -1,0 +1,130 @@
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/sysroot.gni")
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+
+# Builds the C cases and links them against a staticlib that already contains
+# the kernel, librs and the .bk_app_array startup entry.
+#
+# The same case sources build on every board. What differs is the toolchain:
+# AArch64 compiles C with `aarch64-none-elf-gcc`, which knows its own newlib
+# sysroot, while RISC-V compiles with `clang --target=riscv64`, which does not
+# and needs the include and library paths spelled out. `build/sysroot.gni`
+# resolves the newlib prefix per toolchain, so the difference stays in one
+# place instead of leaking into the case files.
+template("posix_case_image") {
+  forward_variables_from(invoker, [ "library", "cases", "testonly" ])
+  not_needed([ "target_name" ])
+
+  executable("posix_image") {
+    testonly = true
+    sources = [ "//librs/tests/posix/runner.c" ] + cases
+    deps = [ library ]
+
+    configs += [ "//build/boards/${board}:kernel_config" ]
+
+    # //librs/include arrives through the runtime archive's public config;
+    # see //librs:librs_include for why it has to precede the sysroot.
+    include_dirs = [ "//librs/tests/posix" ]
+    cflags = [
+      "-D__blueos__",
+      # newlib only declares clock_gettime/pthread_* when the POSIX feature
+      # level is requested; the board config already selects -std=c11.
+      #
+      # 202405L is POSIX.1-2024 (Issue 8). It is the level the plan targets,
+      # and newlib 4.4.0 gates the Issue 8 interfaces on it
+      # (`__POSIX_VISIBLE >= 202405`). Staying on 200809L would hide
+      # timespec_get, sem_clockwait and ppoll from the compiler.
+      "-D_POSIX_C_SOURCE=202405L",
+      # newlib guards the pthread prototypes on _POSIX_THREADS rather than on
+      # _POSIX_C_SOURCE, so both have to be set.
+      "-D_POSIX_THREADS=202405L",
+      "-D_POSIX_TIMERS=202405L",
+      # The reader/writer lock types live behind their own guard in newlib's
+      # <sys/_pthreadtypes.h>, so pthread_rwlock_t is invisible without it.
+      "-D_POSIX_READER_WRITER_LOCKS=202405L",
+      # Same for the barrier types.
+      "-D_POSIX_BARRIERS=202405L",
+      # Same for the spin lock types.
+      "-D_POSIX_SPIN_LOCKS=202405L",
+      # CLOCK_MONOTONIC is only declared under _POSIX_MONOTONIC_CLOCK, which
+      # newlib leaves unset because it cannot know whether the platform has a
+      # monotonic clock. This one does (and the id translation is exactly what
+      # the clock_gettime case checks), so claim it.
+      "-D_POSIX_MONOTONIC_CLOCK=202405L",
+      # newlib keeps the Issue 8 pthread clock variants behind __GNU_VISIBLE
+      # rather than __POSIX_VISIBLE, so _GNU_SOURCE is the only way to see
+      # pthread_cond_clockwait and friends.
+      "-D_GNU_SOURCE",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+    ]
+
+    # The newlib headers and libraries. AArch64's gcc finds the headers on its
+    # own, and its -isystem directories come ahead of GCC's own headers - so
+    # adding the sysroot there would let newlib's broken <stdatomic.h> shadow
+    # GCC's working one. clang on RISC-V does not know where newlib is and
+    # needs the path spelled out.
+    if (posix_c_needs_sysroot_include) {
+      cflags += [
+        "-isystem",
+        "$current_sysroot/include",
+      ]
+    }
+    ldflags = [
+      "-Wl,-T",
+      rebase_path(default_linker_script),
+      # Where this board's newlib libraries live. RISC-V keeps them per
+      # multilib variant; the flat directory holds the toolchain's default
+      # variant, which is rv32 and would not link against rv64 objects.
+      "-L$current_newlib_lib_dir",
+      # libgcc belongs to GCC, not to newlib, and in a multilib build it is
+      # per-variant. clang resolves -lgcc against its own resource directory,
+      # so the directory has to be named explicitly.
+      "-L$current_libgcc_dir",
+    ]
+    libs = [
+      "c",
+      "gcc",
+    ]
+  }
+
+  gen_qemu_runner("posix_runner") {
+    testonly = true
+    img = ":posix_image"
+    qemu = qemu_exe
+    machine = qemu_machine
+    qemu_args = qemu_extra_args
+    net_args = qemu_net_args
+    block_img = "posix_image_block.img"
+    block_args = qemu_block_args
+
+    # Rust panics reach the log through semihosting; without it a panicking
+    # case looks exactly like a hang, because the panic handler just spins.
+    semihosting = true
+  }
+
+  run_qemu_check("run_posix_cases") {
+    testonly = true
+    if (coverage) {
+      img = ":posix_image"
+    }
+    runner = ":posix_runner"
+    checker = "//librs/tests/posix/common_checker.test"
+  }
+}

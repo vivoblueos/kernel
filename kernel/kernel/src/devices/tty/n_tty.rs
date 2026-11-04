@@ -18,6 +18,7 @@ use crate::{
         Device, DeviceClass, DeviceId, DeviceRequest,
     },
     drivers::serial::Serial,
+    error::Error,
 };
 use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use blueos_driver::uart::{DataBits, UartConfig};
@@ -107,19 +108,20 @@ impl Tty {
     }
 }
 
-unsafe fn load_user_termios(ptr: *const Termios) -> Result<Termios, ErrorKind> {
-    if ptr.is_null() {
-        return Err(ErrorKind::InvalidInput);
-    }
-    Ok(*ptr)
+// A `termios` argument is a caller pointer like any other: it goes through
+// `vfs::uptr`, which resolves the caller's page table for a U-mode process
+// and copies through the bounce buffer. Dereferencing it here would be a
+// privileged read of whatever physical address the caller named.
+//
+// The `uptr` error is returned as-is so that an unmapped pointer surfaces as
+// `EFAULT` at the syscall boundary; collapsing it to a generic "bad argument"
+// made `tcgetattr()` report `EINVAL` for a pointer the caller never owned.
+fn load_user_termios(ptr: *const Termios) -> Result<Termios, Error> {
+    crate::vfs::uptr::read_struct(ptr)
 }
 
-unsafe fn store_user_termios(ptr: *mut Termios, termios: &Termios) -> Result<(), ErrorKind> {
-    if ptr.is_null() {
-        return Err(ErrorKind::InvalidInput);
-    }
-    *ptr = *termios;
-    Ok(())
+fn store_user_termios(ptr: *mut Termios, termios: &Termios) -> Result<(), Error> {
+    crate::vfs::uptr::write_struct(ptr, termios)
 }
 
 fn convert_termios_to_uart_config(termios: &Termios) -> UartConfig {
@@ -325,37 +327,36 @@ impl Device for Tty {
         }
     }
 
-    fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
+    fn ioctl(&self, request: u32, arg: usize) -> Result<(), Error> {
         match request {
             TCGETS => {
                 let termios = *self.termios.lock();
-                unsafe { store_user_termios(arg as *mut Termios, &termios) }
+                store_user_termios(arg as *mut Termios, &termios)
             }
-            TCSETS => {
-                let termios = unsafe { load_user_termios(arg as *const Termios)? };
-                self.apply_termios_atomically(termios)
-            }
+            TCSETS => self
+                .apply_termios_atomically(load_user_termios(arg as *const Termios)?)
+                .map_err(Error::from),
             TCSETSW => {
-                let termios = unsafe { load_user_termios(arg as *const Termios)? };
-                self.dev.wait_for_tx_drain_complete()?;
-                self.apply_termios_atomically(termios)
+                let termios = load_user_termios(arg as *const Termios)?;
+                self.dev.wait_for_tx_drain_complete().map_err(Error::from)?;
+                self.apply_termios_atomically(termios).map_err(Error::from)
             }
             TCSETSF => {
-                let termios = unsafe { load_user_termios(arg as *const Termios)? };
-                self.dev.wait_for_tx_drain_complete()?;
-                self.dev.handle_tcflsh(TCIFLUSH)?;
-                self.apply_termios_atomically(termios)
+                let termios = load_user_termios(arg as *const Termios)?;
+                self.dev.wait_for_tx_drain_complete().map_err(Error::from)?;
+                self.dev.handle_tcflsh(TCIFLUSH).map_err(Error::from)?;
+                self.apply_termios_atomically(termios).map_err(Error::from)
             }
-            TCFLSH => self.dev.handle_tcflsh(arg as c_int),
+            TCFLSH => self.dev.handle_tcflsh(arg as c_int).map_err(Error::from),
             TCXONC => {
                 let cc = &self.termios.lock().cc;
-                self.dev.handle_tcxonc(arg as c_int, cc)
+                self.dev.handle_tcxonc(arg as c_int, cc).map_err(Error::from)
             }
-            TCSBRK => self.dev.handle_tcsbrk(arg as c_int),
+            TCSBRK => self.dev.handle_tcsbrk(arg as c_int).map_err(Error::from),
             req => match DeviceRequest::from(req) {
                 DeviceRequest::Config => Ok(()),
                 DeviceRequest::Close => Ok(()),
-                _ => Err(ErrorKind::InvalidData),
+                _ => Err(Error::from(ErrorKind::InvalidData)),
             },
         }
     }

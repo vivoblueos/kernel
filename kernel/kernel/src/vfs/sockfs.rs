@@ -235,6 +235,27 @@ impl FileOps for SocketFile {
         self.open_flags.store(flags.bits(), Ordering::Relaxed);
         self.update_blocking_state(old_flags, flags);
     }
+
+    fn poll(&self, events: u32) -> u32 {
+        use crate::vfs::poll::POLLERR;
+
+        // The readiness of a socket lives in the smoltcp socket set, which
+        // the network thread owns. Ask it for a snapshot rather than
+        // guessing from the descriptor: a caller that gets a stale answer
+        // would either block on data that has already arrived or report a
+        // socket as ready when it is not.
+        match self.socket() {
+            Some(socket) => match socket.query_ready(events) {
+                Ok(revents) => revents,
+                Err(e) => {
+                    debug!("SocketFile poll: query_ready {:?}", e);
+                    POLLERR
+                }
+            },
+            // Created but never connected to a socket object.
+            None => POLLERR,
+        }
+    }
 }
 
 pub fn alloc_sock_fd(flags: i32) -> i32 {

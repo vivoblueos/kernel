@@ -1,0 +1,1592 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: The vivo BlueOS kernel\n"
+"POT-Creation-Date: 2025-07-19T15:48:05+08:00\n"
+"PO-Revision-Date: 2025-07-19T15:48:05+08:00\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/SUMMARY.md:1
+msgid "Summary"
+msgstr "摘要"
+
+#: src/SUMMARY.md:3
+msgid "Getting started"
+msgstr "入门"
+
+#: src/SUMMARY.md:7
+msgid "Build and test the kernel"
+msgstr "构建和测试内核"
+
+#: src/SUMMARY.md:8
+msgid "Build the kernel toolchain"
+msgstr "构建内核工具链"
+
+#: src/SUMMARY.md:9
+msgid "Build the kernel"
+msgstr "构建内核"
+
+#: src/SUMMARY.md:10
+msgid "Config rust-analyzer"
+msgstr "配置 rust-analyzer"
+
+#: src/SUMMARY.md:11
+msgid "Use QEMU checker to test"
+msgstr "使用QEMU检查器进行测试"
+
+#: src/SUMMARY.md:12 src/run-coverage.md:1
+msgid "Run Coverage"
+msgstr "运行覆盖率测试"
+
+#: src/SUMMARY.md:14
+msgid "Install the kernel image to devices"
+msgstr "将内核镜像安装到设备"
+
+#: src/SUMMARY.md:16
+msgid "Syscalls"
+msgstr "系统调用"
+
+#: src/SUMMARY.md:17 src/add-new-syscall.md:1
+msgid "Add a new syscall"
+msgstr "添加一个新的syscall"
+
+#: src/SUMMARY.md:18 src/invoke-syscall.md:1
+msgid "Invoke a syscall"
+msgstr "调用一个syscall"
+
+#: src/SUMMARY.md:20
+msgid "Infrastructural data types"
+msgstr "基础设施数据类型"
+
+#: src/SUMMARY.md:21
+msgid "Introduction"
+msgstr "介绍"
+
+#: src/SUMMARY.md:25
+msgid "Contributing"
+msgstr "贡献"
+
+#: src/SUMMARY.md:26
+msgid "Code style guidelines"
+msgstr "代码风格指南"
+
+#: src/SUMMARY.md:27
+msgid "Code of conduct"
+msgstr "行为准则"
+
+#: src/getting-started.md:1
+msgid "Getting Started"
+msgstr "入门"
+
+#: src/getting-started.md:3
+msgid ""
+"We recommend you develop the kernel in Debian-12.0+ or Ubuntu-24.04+ "
+"environment to get the best tool support."
+msgstr "我们建议您在Debian-12.0+或Ubuntu-24.04+环境中开发内核以获得最佳工具支持。"
+
+#: src/getting-started.md:5
+msgid "Prepare basic development environment"
+msgstr "准备基本的开发环境"
+
+#: src/getting-started.md:6
+msgid "`repo`"
+msgstr "`repo`"
+
+#: src/getting-started.md:7
+msgid ""
+"We are using [repo](https://source.android.com/docs/setup/reference/repo) to"
+" manage the kernel project. Please follow "
+"https://mirrors.tuna.tsinghua.edu.cn/help/git-repo/ to install `repo`."
+msgstr ""
+"我们使用[repo](https://source.android.com/docs/setup/reference/repo)来管理内核项目。请按照https://mirrors.tuna.tsinghua.edu.cn/help/git-"
+"repo/安装`repo`。"
+
+#: src/getting-started.md:10
+msgid "`gn`"
+msgstr "`gn`"
+
+#: src/getting-started.md:11
+msgid ""
+"We are using [GN](https://gn.googlesource.com/gn/) to organize and build the"
+" BlueOS project, rather than [cargo](https://doc.rust-lang.org/cargo/) the "
+"official package manager of Rust eco system. `gn` offers better multi-"
+"language support and better build speed than `cargo`. You can download "
+"prebuilt `gn` binaries from https://gn.googlesource.com/gn/#getting-a-"
+"binary. Put the downloaded binary to a directory and ensure this directory "
+"is in your `${PATH}`."
+msgstr ""
+"我们使用[GN](https://gn.googlesource.com/gn/)来组织和构建BlueOS项目，而不是Rust生态系统的官方包管理器[cargo](https://doc.rust-"
+"lang.org/cargo/)。`gn`提供比`cargo`更好的多语言支持和更快的构建速度。你可以从https://gn.googlesource.com/gn/#getting-"
+"a-binary下载预构建的`gn`二进制文件。将下载的二进制文件放入一个目录，并确保该目录在你的`${PATH}`中。"
+
+#: src/getting-started.md:17
+msgid "Install packages on Linux"
+msgstr "在Linux上安装包"
+
+#: src/getting-started.md:18
+msgid "Install packages shipped by the distro."
+msgstr "安装由发行版提供的软件包。"
+
+#: src/getting-started.md:27
+msgid "Additionally, download and install arm toolchains"
+msgstr "此外，下载并安装arm toolchains"
+
+#: src/getting-started.md:28
+msgid ""
+"```\n"
+"wget https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz\n"
+"tar xvf arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz -C <install-path>\n"
+"wget https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf.tar.xz\n"
+"tar xvf arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf.tar.xz -C <install-path>\n"
+"```"
+msgstr ""
+"```\n"
+"wget https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz\n"
+"tar xvf arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz -C <install-path>\n"
+"wget https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf.tar.xz\n"
+"tar xvf arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf.tar.xz -C <install-path>\n"
+"```"
+
+#: src/getting-started.md:34
+msgid ""
+"Add `<install-path>/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf/bin`"
+" and `<install-path>/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi/bin` "
+"to your `$PATH`."
+msgstr ""
+"将 `<install-path>/arm-gnu-toolchain-14.3.rel1-x86_64-aarch64-none-elf/bin` 和"
+" `<install-path>/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi/bin` 添加到你的"
+" `$PATH` 中。"
+
+#: src/getting-started.md:36
+msgid "Install packages on macOS"
+msgstr "在macOS上安装包"
+
+#: src/getting-started.md:40
+msgid ""
+"For aarch64 toolchain, please have a look at [arm-gnu-"
+"toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-"
+"downloads). For RISC-V toolchain on macOS, see [homebrew-"
+"riscv](https://github.com/riscv-software-src/homebrew-riscv?tab=readme-ov-"
+"file)."
+msgstr ""
+"对于aarch64工具链，请查看[arm-gnu-"
+"toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-"
+"downloads)。对于macOS上的RISC-V工具链，请参阅[homebrew-riscv](https://github.com/riscv-"
+"software-src/homebrew-riscv?tab=readme-ov-file)。"
+
+#: src/getting-started.md:43
+msgid "Build and install QEMU"
+msgstr "构建并安装QEMU"
+
+#: src/getting-started.md:44
+msgid "Download QEMU source code tarball,"
+msgstr "下载QEMU源代码tarball，"
+
+#: src/getting-started.md:53
+msgid "Add `<install-path>/bin` to your `$PATH`."
+msgstr "将 `<install-path>/bin` 添加到你的 `$PATH` 中。"
+
+#: src/getting-started.md:55
+msgid "Code formatters"
+msgstr "代码格式化工具"
+
+#: src/getting-started.md:56
+msgid ""
+"We are using code formatters of corresponding programming language to keep "
+"our code style consistent. These formatters can be installed via"
+msgstr "我们使用相应编程语言的代码格式化工具来保持代码风格一致。这些格式化工具可以通过"
+
+#: src/getting-started.md:58
+msgid "# On Linux\n"
+msgstr "# 在Linux上"
+
+#: src/getting-started.md:62
+msgid "# On macOS\n"
+msgstr "# 在 macOS 上"
+
+#: src/getting-started.md:65
+msgid ""
+"Here's the table of format command and its corresponding programming "
+"language."
+msgstr "以下是格式命令及其对应编程语言的表格。"
+
+#: src/getting-started.md:66
+msgid "lang"
+msgstr "语言"
+
+#: src/getting-started.md:66
+msgid "format command"
+msgstr "格式化命令"
+
+#: src/getting-started.md:68
+msgid "Rust"
+msgstr "Rust"
+
+#: src/getting-started.md:68
+msgid "`rustfmt`"
+msgstr "`rustfmt`"
+
+#: src/getting-started.md:69
+msgid "C/C++"
+msgstr "C/C++"
+
+#: src/getting-started.md:69
+msgid "`clang-format`"
+msgstr "`clang-format`"
+
+#: src/getting-started.md:70
+msgid "Python"
+msgstr "Python"
+
+#: src/getting-started.md:70
+msgid "`yapf3`"
+msgstr "`yapf3`"
+
+#: src/getting-started.md:71
+msgid "GN"
+msgstr "GN"
+
+#: src/getting-started.md:71
+msgid "`gn format`"
+msgstr "`gn format`"
+
+#: src/getting-started.md:73
+msgid "Init and sync the project"
+msgstr "初始化和同步项目"
+
+#: src/getting-started.md:74
+msgid "Use following command to init the project."
+msgstr "使用以下命令初始化项目。"
+
+#: src/getting-started.md:80
+msgid "Then sync all repositories in the project."
+msgstr "然后同步项目中的所有仓库。"
+
+#: src/getting-started.md:84
+msgid ""
+"You might accelerate the synchronization by appending `-j$(nproc)` to the "
+"above command."
+msgstr "您可以通过在上面的命令后添加`-j$(nproc)`来加速同步。"
+
+#: src/build-rust-toolchain.md:1
+msgid "Building the Rust toolchain for vivo BlueOS kernel"
+msgstr "为vivo BlueOS内核构建Rust工具链"
+
+#: src/build-rust-toolchain.md:3
+msgid ""
+"We have forked upstream [Rust compiler](https://github.com/rust-"
+"lang/rust.git) to support the vivo BlueOS kernel targeted to `*-vivo-"
+"blueos-*` and vivo BlueOS kernel's Rust-std."
+msgstr ""
+"我们已分叉上游 [Rust 编译器](https://github.com/rust-lang/rust.git) 以支持针对 `*-vivo-"
+"blueos-*` 的 vivo BlueOS 内核及 vivo BlueOS 内核的 Rust-std。"
+
+#: src/build-rust-toolchain.md:6
+msgid ""
+"We'll finally contribute our changes to the upstream repository and make "
+"`*-vivo-blueos-*` a [tier](https://doc.rust-lang.org/rustc/target-tier-"
+"policy.html) Rust target."
+msgstr ""
+"我们最终将我们的更改贡献给上游仓库，并使`*-vivo-blueos-*`成为Rust的[tier](https://doc.rust-"
+"lang.org/rustc/target-tier-policy.html)目标。"
+
+#: src/build-rust-toolchain.md:9
+msgid "Clone the downstream repository"
+msgstr "克隆下游仓库"
+
+#: src/build-rust-toolchain.md:10
+msgid "Run"
+msgstr "运行"
+
+#: src/build-rust-toolchain.md:16
+msgid ""
+"The `blueos-dev` branch is set as default, so no manual branch switching is "
+"required."
+msgstr "`blueos-dev` 分支已设置为默认，因此无需手动切换分支。"
+
+#: src/build-rust-toolchain.md:18
+msgid "Setup Rust mirror site"
+msgstr "设置Rust镜像站点"
+
+#: src/build-rust-toolchain.md:19
+msgid ""
+"In China, we recommend you to use mirror site for `crates.io` and `rustup`. "
+"Add following lines to your `~/.bashrc`"
+msgstr "在中国，我们推荐你使用 `crates.io` 和 `rustup` 的镜像站点。将以下行添加到你的 `~/.bashrc`"
+
+#: src/build-rust-toolchain.md:20
+msgid ""
+"```\n"
+"export RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static\n"
+"export RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup\n"
+"```"
+msgstr ""
+"```\n"
+"export RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static\n"
+"export RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup\n"
+"```"
+
+#: src/build-rust-toolchain.md:24
+msgid "and then type"
+msgstr "然后输入"
+
+#: src/build-rust-toolchain.md:29
+msgid "Install via `x` script"
+msgstr "通过 `x` 脚本安装"
+
+#: src/build-rust-toolchain.md:30
+msgid ""
+"Run the following commands in your bash shell. These instructions work for "
+"both Linux and macOS platforms:"
+msgstr "在您的bash shell中运行以下命令。这些指令适用于Linux和macOS平台："
+
+#: src/build-rust-toolchain.md:32
+msgid "true"
+msgstr "true"
+
+#: src/build-rust-toolchain.md:33
+msgid "<choose-your-install-prefix>"
+msgstr "<选择您的安装前缀>"
+
+#: src/build-rust-toolchain.md:49
+msgid ""
+"You must also install the host machine's standard library and LLVM tools."
+msgstr "您还必须安装主机的标准库和LLVM工具。"
+
+#: src/build-rust-toolchain.md:51
+msgid "For Linux:"
+msgstr "对于Linux："
+
+#: src/build-rust-toolchain.md:57
+msgid "For macOS:"
+msgstr "对于macOS："
+
+#: src/build-rust-toolchain.md:63
+msgid "To use the kernel toolchain, add the following to your environment:"
+msgstr "要使用内核工具链，请将以下内容添加到您的环境中："
+
+#: src/build-rust-toolchain.md:65
+msgid "${DESTDIR}/usr/local/bin:${PATH}"
+msgstr "${DESTDIR}/usr/local/bin:${PATH}"
+
+#: src/build-kernel.md:1
+msgid "Build kernel image"
+msgstr "构建内核镜像"
+
+#: src/build-kernel.md:3
+msgid "The kernel currently supports multiple boards."
+msgstr "内核目前支持多种板子。"
+
+#: src/build-kernel.md:5
+msgid "qemu_mps2_an385"
+msgstr "qemu_mps2_an385"
+
+#: src/build-kernel.md:6
+msgid "qemu_mps3_an547"
+msgstr "qemu_mps3_an547"
+
+#: src/build-kernel.md:7
+msgid "qemu_virt64_aarch64"
+msgstr "qemu_virt64_aarch64"
+
+#: src/build-kernel.md:8
+msgid "qemu_riscv64"
+msgstr "qemu_riscv64"
+
+#: src/build-kernel.md:10
+msgid ""
+"To build a kernel image for specified board, like `qemu_mps2_an385`, use "
+"command"
+msgstr "为指定板（如 `qemu_mps2_an385`）构建内核镜像，使用命令"
+
+#: src/build-kernel.md:11
+msgid ""
+"```\n"
+"gn gen out/qemu_mps2_an385.release/ --args='build_type=\"release\" board=\"qemu_mps2_an385\"'\n"
+"ninja -C out/qemu_mps2_an385.release\n"
+"```"
+msgstr ""
+"```\n"
+"gn gen out/qemu_mps2_an385.release/ --args='build_type=\"release\" board=\"qemu_mps2_an385\"'\n"
+"ninja -C out/qemu_mps2_an385.release\n"
+"```"
+
+#: src/build-kernel.md:15
+msgid "To run tests, type"
+msgstr "要运行测试，输入"
+
+#: src/build-kernel.md:20
+msgid "Args and their semantics."
+msgstr "参数及其语义。"
+
+#: src/build-kernel.md:21
+msgid "arg"
+msgstr "参数"
+
+#: src/build-kernel.md:21
+msgid "semantics"
+msgstr "语义"
+
+#: src/build-kernel.md:23
+msgid "build_type"
+msgstr "构建类型"
+
+#: src/build-kernel.md:23
+msgid "Configuration for the build"
+msgstr "构建使用的配置"
+
+#: src/build-kernel.md:24
+msgid "board"
+msgstr "开发板"
+
+#: src/build-kernel.md:24
+msgid "Name of the board targeted to"
+msgstr "目标开发板名称"
+
+#: src/config-rust-analyzer.md:1
+msgid "Use rust-analyzer in VSCode"
+msgstr "在VSCode中使用rust-analyzer"
+
+#: src/config-rust-analyzer.md:3
+msgid ""
+"We recommend you to use rust-analyzer extension in VSCode to support "
+"development of the vivo BlueOS kernel."
+msgstr "我们推荐您在VSCode中使用rust-analyzer扩展以支持vivo BlueOS内核的开发。"
+
+#: src/config-rust-analyzer.md:5
+msgid ""
+"However, since we are using `gn`, rather than `Cargo.toml`, to manage our "
+"project, the rust-analyzer extension in VSCode might not work out-of-box. "
+"You should use following commands[^1] to get the extension work"
+msgstr ""
+"然而，由于我们使用`gn`而非`Cargo.toml`来管理项目，VSCode中的rust-"
+"analyzer扩展可能无法开箱即用。你应该使用以下命令[^1]来使扩展正常工作"
+
+#: src/config-rust-analyzer.md:11
+msgid ""
+"https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/rust.md#using-"
+"vscode"
+msgstr ""
+"https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/rust.md#使用-"
+"vscode"
+
+#: src/qemu-checker.md:1
+msgid "QEMU checker"
+msgstr "QEMU检查器"
+
+#: src/qemu-checker.md:3
+msgid ""
+"Most kernel code are tested via QEMU. We introduce QEMU checker to assist "
+"testing the kernel."
+msgstr "大多数内核代码通过QEMU进行测试。我们引入QEMU检查器以协助测试内核。"
+
+#: src/qemu-checker.md:6
+msgid ""
+"QEMU checker must be provided with a QEMU runner script and a input file "
+"containing check directives.  QEMU checker runs the runner script and "
+"captures output lines of it. If output lines match conditions or regex "
+"specified in the check directives, the checker takes corresponding actions. "
+"Directives should be written at the header of the input file."
+msgstr ""
+"QEMU检查器必须提供一个QEMU运行脚本和一个包含检查指令的输入文件。QEMU检查器运行该脚本并捕获其输出行。如果输出行匹配检查指令中指定的条件或正则表达式，检查器将采取相应操作。指令应写在输入文件的头部。"
+
+#: src/qemu-checker.md:14
+msgid "directive"
+msgstr "指令"
+
+#: src/qemu-checker.md:14
+msgid "action"
+msgstr "动作"
+
+#: src/qemu-checker.md:16
+msgid "// CHECK-FAIL: \\<regex\\>"
+msgstr "// 检查-失败: \\<regex\\>"
+
+#: src/qemu-checker.md:16 src/qemu-checker.md:17
+msgid "Record this line and report at exit."
+msgstr "记录此行并在退出时报告。"
+
+#: src/qemu-checker.md:17
+msgid "// CHECK-SUCC: \\<regex\\>"
+msgstr "// 检查-成功: \\<regex\\>"
+
+#: src/qemu-checker.md:18
+msgid "// ASSERT-FAIL: \\<regex\\>"
+msgstr "// 断言失败：\\<regex\\>"
+
+#: src/qemu-checker.md:18
+msgid "Exit the runner and report failure."
+msgstr "退出 runner 并报告失败。"
+
+#: src/qemu-checker.md:19
+msgid "// ASSERT-SUCC: \\<regex\\>"
+msgstr "// 断言-成功: \\<regex\\>"
+
+#: src/qemu-checker.md:19
+msgid "Exit the runner and report success."
+msgstr "退出 runner 并报告成功。"
+
+#: src/qemu-checker.md:20
+msgid "// NEWLINE-TIMEOUT: \\<number\\>"
+msgstr "// 新建行超时: \\<数字\\>"
+
+#: src/qemu-checker.md:20
+msgid ""
+"Timeout when checker reads the next line. Report failure if timeout occurs."
+msgstr "检查器读取下一行时超时。如果发生超时，报告失败。"
+
+#: src/qemu-checker.md:21
+msgid "// TOTAL-TIMEOUT: \\<number\\>"
+msgstr "// 总超时: \\<数字\\>"
+
+#: src/qemu-checker.md:21
+msgid "Total timeout for this run."
+msgstr "本次运行的总超时时间。"
+
+#: src/qemu-checker.md:23
+msgid "Example"
+msgstr "例子"
+
+#: src/qemu-checker.md:24
+msgid ""
+"Suppose we have a kernel image for testing, named `blueos_foo_test`. First "
+"we have to generate a qemu runner script for it."
+msgstr "假设我们有一个用于测试的内核镜像，名为`blueos_foo_test`。首先我们需要为它生成一个qemu运行脚本。"
+
+#: src/qemu-checker.md:26
+msgid ""
+"```gn\n"
+"gen_qemu_runner(\"runner_for_blueos_foo_test\") {\n"
+"  img = \":blueos_foo_test\"\n"
+"  qemu = \"$qemu_exe\"\n"
+"  board = \"$board\"\n"
+"}\n"
+"```"
+msgstr ""
+"```gn\n"
+"gen_qemu_runner(\"runner_for_blueos_foo_test\") {\n"
+"  img = \":blueos_foo_test\"\n"
+"  qemu = \"$qemu_exe\"\n"
+"  board = \"$board\"\n"
+"}\n"
+"```"
+
+#: src/qemu-checker.md:33
+msgid "Then, we make a checker for the above runner."
+msgstr "然后，我们为上述runner制作一个checker。"
+
+#: src/qemu-checker.md:34
+msgid ""
+"```gn\n"
+"run_qemu_checker(\"check_blueos_foo_test\") {\n"
+"  img = \":blueos_foo_test\"\n"
+"  runner = \":runner_for_blueos_foo_test\"\n"
+"  checker = \"//kernel/kernel/tests/integration_test.rs\"\n"
+"}\n"
+"```"
+msgstr ""
+"```gn\n"
+"run_qemu_checker(\"check_blueos_foo_test\") {\n"
+"  img = \":blueos_foo_test\"\n"
+"  runner = \":runner_for_blueos_foo_test\"\n"
+"  checker = \"//kernel/kernel/tests/integration_test.rs\"\n"
+"}\n"
+"```"
+
+#: src/qemu-checker.md:41
+msgid ""
+"Must be noted, the above two targets must be put in the same `BUILD.gn`. "
+"Check directives should be put at the header of `integration_test.rs`."
+msgstr "必须指出，上述两个目标必须放在同一个 `BUILD.gn` 中。检查指令应放在 `integration_test.rs` 的头部。"
+
+#: src/qemu-checker.md:44
+msgid ""
+"// NEWLINE-TIMEOUT: 15\n"
+"// ASSERT-SUCC: Kernel test end.\n"
+"// ASSERT-FAIL: Backtrace in Panic.*\n"
+msgstr ""
+"// NEWLINE-TIMEOUT: 15  \n"
+"// ASSERT-SUCC: Kernel test end.\n"
+"// ASSERT-FAIL: Backtrace in Panic.*\n"
+
+#: src/qemu-checker.md:49
+msgid "Integrate checks in CI"
+msgstr "在CI中集成检查"
+
+#: src/qemu-checker.md:50
+msgid ""
+"CI runner only runs two toplevel targets, `default` and `check_all`. To run "
+"check during CI, you have to put your checker target in `deps` of "
+"`check_all` group in the toplevel `BUILD.gn`."
+msgstr ""
+"CI runner 仅运行两个顶层目标，`default` 和 `check_all`。要在 CI 期间运行检查，你必须将你的检查器目标放入顶层 "
+"`BUILD.gn` 中 `check_all` 组的 `deps` 里。"
+
+#: src/qemu-checker.md:53
+msgid ""
+"```gn\n"
+"group(\"check_all\") {\n"
+"  deps = [ \":check_kernel\" ]\n"
+"}\n"
+"```"
+msgstr ""
+"```gn\n"
+"group(\"check_all\") {\n"
+"  deps = [ \":check_kernel\" ]\n"
+"}\n"
+"```"
+
+#: src/run-coverage.md:3
+msgid ""
+"We generate the code needed for coverage statistics by adding `-Cinstrument-"
+"coverage` during compilation, and generate coverage data through the "
+"integration of [minicov](https://crates.io/crates/minicov) and "
+"[semihosting](https://crates.io/crates/semihosting). Finally, we use the "
+"[grcov](https://crates.io/crates/grcov) tool to generate readable coverage "
+"data in HTML format. All of these have been integrated into our build "
+"system, and coverage data can be generated using the following commands："
+msgstr ""
+"我们在编译时通过添加`-Cinstrument-"
+"coverage`来生成覆盖率统计所需的代码，并通过集成[minicov](https://crates.io/crates/minicov)和[semihosting](https://crates.io/crates/semihosting)来生成覆盖率数据。最后，我们使用[grcov](https://crates.io/crates/grcov)工具生成可读的HTML格式覆盖率数据。所有这些都已集成到我们的构建系统中，可以使用以下命令生成覆盖率数据："
+
+#: src/run-coverage.md:6
+msgid "'build_type=\"coverage\" board=\"qemu_riscv64\"'"
+msgstr "build_type=\"coverage\" board=\"qemu_riscv64\""
+
+#: src/run-coverage.md:10
+msgid "If you get a prompt that grcov is not found, you can install it via"
+msgstr "如果你收到提示说grcov未找到，可以通过"
+
+#: src/run-coverage.md:15
+msgid ""
+"After building and running, you can find merged coverage report in the "
+"`./out/qemu_riscv64.cov/cov_report` directory. Open the `index.html` file in"
+" the directory to view the coverage data."
+msgstr ""
+"构建并运行后，可以在 `./out/qemu_riscv64.cov/cov_report` 目录中找到合并的覆盖率报告。打开该目录中的 "
+"`index.html` 文件以查看覆盖率数据。"
+
+#: src/add-new-syscall.md:3
+msgid "Adding a new syscall in the kernel is easy."
+msgstr "在内核中添加一个新的syscall很容易。"
+
+#: src/add-new-syscall.md:5
+msgid "There are 3 steps."
+msgstr "有3个步骤。"
+
+#: src/add-new-syscall.md:7
+msgid ""
+"Add new syscall number for the new syscall in `header/src/syscalls.rs`."
+msgstr "在 `header/src/syscalls.rs` 中为新的系统调用添加新的系统调用编号。"
+
+#: src/add-new-syscall.md:14
+msgid "Implement the new syscall in `kernel/src/syscall_handlers/mod.rs`."
+msgstr "在`kernel/src/syscall_handlers/mod.rs`中实现新的syscall。"
+
+#: src/add-new-syscall.md:16
+msgid ""
+"This is generally done via `define_syscall_handler!` if the syscall is "
+"trivial. For example"
+msgstr "这通常通过`define_syscall_handler!`完成，如果系统调用是简单的。例如"
+
+#: src/add-new-syscall.md:20
+msgid "// Implement your vfs read.\n"
+msgstr "// 实现你的 vfs 读取。"
+
+#: src/add-new-syscall.md:24
+msgid "Register the new syscall in `kernel/src/syscall_handlers/mod.rs`."
+msgstr "在`kernel/src/syscall_handlers/mod.rs`中注册新的syscall。"
+
+#: src/add-new-syscall.md:26
+msgid "Add a new entry in `syscall_table!`. For example,"
+msgstr "在 `syscall_table!` 中添加一个新条目。例如，"
+
+#: src/add-new-syscall.md:30
+msgid ""
+"Must be noted, the first operand **MUST** be the unqualified name of the "
+"`NR` enumeration."
+msgstr "必须注意，第一个操作数**必须**是 `NR` 枚举的非限定名称。"
+
+#: src/invoke-syscall.md:3
+msgid "The vivo BlueOS kernel offers two modes of invoking syscall."
+msgstr "vivo BlueOS内核提供两种调用syscall的模式。"
+
+#: src/invoke-syscall.md:5
+msgid "Software interruption"
+msgstr "软件中断"
+
+#: src/invoke-syscall.md:7
+msgid ""
+"This is generally seen in most OS kernels to switch from user space to "
+"kernel space."
+msgstr "这通常见于大多数OS内核中，用于从用户空间切换到内核空间。"
+
+#: src/invoke-syscall.md:9
+msgid "Direct invoking"
+msgstr "直接调用"
+
+#: src/invoke-syscall.md:11
+msgid ""
+"In this mode, syscall handlers are invoked directly via function calls."
+msgstr "在此模式下，syscall处理程序通过函数调用直接调用。"
+
+#: src/invoke-syscall.md:13
+msgid ""
+"In both modes, if you have to invoke a syscall, use the `bk_syscall!` macro "
+"in `blueos_scal` crate. For example,"
+msgstr "在两种模式下，如果需要调用syscall，请使用`blueos_scal` crate中的`bk_syscall!`宏。例如，"
+
+#: src/invoke-syscall.md:23
+msgid ""
+"There is no need to change your code when switching to another mode. By "
+"default, SWI mode is used. If you want to use the direct invoking mode, what"
+" you have to do is passing `--cfg direct_syscall_handler` to build the "
+"kernel."
+msgstr ""
+"切换到另一种模式时无需更改代码。默认使用SWI模式。如需使用直接调用模式，只需在构建内核时传入`--cfg "
+"direct_syscall_handler`即可。"
+
+#: src/infra-data-types.md:1
+msgid "Kernel's basic data types"
+msgstr "内核的基本数据类型"
+
+#: src/infra-data-types.md:3
+msgid "Arc"
+msgstr "弧"
+
+#: src/infra-data-types.md:4
+msgid ""
+"A customized `Arc`(`infra/src/tinyarc.rs`), is implemented for the kernel. "
+"Compared to `alloc::sync::Arc`, there is no much difference, except it has "
+"only `strong_count` thus reduced its size and is friendly to embedded "
+"devices. Also its memory layout is known to `blueos_infra`, so our "
+"instrusive list can cooperate with it easily."
+msgstr ""
+"为内核实现了一个定制的`Arc`(`infra/src/tinyarc.rs`)。与`alloc::sync::Arc`相比，差异不大，只是它仅有`strong_count`因而减小了体积，对嵌入式设备更友好。此外其内存布局对`blueos_infra`是已知的，因此我们的侵入式列表可以轻松与之协作。"
+
+#: src/infra-data-types.md:12
+msgid "Intrusive list"
+msgstr "侵入式列表"
+
+#: src/infra-data-types.md:13
+msgid ""
+"`blueos_infra`'s ilist(`infra/src/list/typed_ilist.rs`) is typed and unsafe."
+" It's like C-style's ilist, however we recommend developers not using it "
+"directly but with smart pointers. We implement `ArcList` on top of the typed "
+"ilst with `Arc` mentioned above and guarantees safety."
+msgstr ""
+"`blueos_infra`的ilist(`infra/src/list/typed_ilist.rs`)是类型化且不安全的。它类似于C风格的ilist，但我们建议开发者不要直接使用它，而是使用智能指针。我们在上述提到的`Arc`基础上实现了`ArcList`，并保证了安全性。"
+
+#: src/SUMMARY.md:26 src/how-to-use-blueos-repo.md:1
+msgid "How to use the blueos repository"
+msgstr "如何使用 blueos 仓库"
+
+#: src/how-to-use-blueos-repo.md:3
+msgid "Relationship with the component repositories"
+msgstr "与独立仓库之间的关系"
+
+#: src/how-to-use-blueos-repo.md:5
+msgid ""
+"Previously, components such as kernel, build, libc, and book were maintained "
+"in separate Git repositories. The manifests repository described their URLs, "
+"revisions, and local paths. Developers used `repo init` and `repo sync` to "
+"assemble a complete source workspace. Each component remained a separate Git "
+"repository with its own branches, commit history, and pull requests (PRs)."
+msgstr ""
+"此前, 项目按组件拆分为 kernel、build、libc、book 等多个独立 Git 仓库。 各仓库"
+"的地址、版本和本地目录由 manifests 仓库描述, 开发者通过 `repo init` 和 `repo "
+"sync` 在本地组成完整的源码工作区。 工作区中的每个组件仍是独立 Git 仓库, 分别维"
+"护自己的分支、提交历史和 PR。"
+
+#: src/how-to-use-blueos-repo.md:11
+msgid ""
+"Changes spanning several repositories required a branch and a PR in each "
+"repository, making review and CI validation harder to coordinate."
+msgstr ""
+"但这带来了不便, 如果需要进行多个仓库的修改, 就需要在每个涉及到的仓库中, 都单独"
+"推送分支与PR, 这导致了审查与CI构建检查上的不便."
+
+#: src/how-to-use-blueos-repo.md:14
+msgid ""
+"The blueos repository brings these components together. Its component paths "
+"match those in the workspace created with `repo init`, and Josh preserves the "
+"imported commit history."
+msgstr ""
+"blueos 仓库将这些组件整合在一起, 其组件目录与先前由 `repo init` 构建的本地工作"
+"区一致, 并通过 Josh 保留导入的提交历史。"
+
+#: src/how-to-use-blueos-repo.md:18
+msgid "Basic workflow"
+msgstr "基本使用原则"
+
+#: src/how-to-use-blueos-repo.md:20
+msgid ""
+"For new work, usually create a branch from the central repository's `main`."
+msgstr "对于尚未开始的工作, 通常直接从中心仓库的 `main` 创建分支即可."
+
+#: src/how-to-use-blueos-repo.md:21
+msgid ""
+"For work already started in a component repository, import the branch and "
+"integrate it with the complete central history. Continue development there "
+"and publish a central branch and PR."
+msgstr ""
+"对于已经在子仓库中开展的工作, 推荐将分支导入中心仓库, 并整合完整的中心历史后继"
+"续开发, 随后重新提交中心仓库分支与PR。"
+
+#: src/how-to-use-blueos-repo.md:25
+msgid "Choose where to develop and submit PRs"
+msgstr "选择开发与 PR 入口"
+
+#: src/how-to-use-blueos-repo.md:27
+msgid ""
+"Keep the development branch and PR for a task in the central repository where "
+"possible. Avoid maintaining the same branch in both repositories. If several "
+"people share the original branch, agree on how to migrate it and where "
+"further development will take place."
+msgstr ""
+"尽可能将同一项工作的开发分支和 PR 统一维护在中心仓库, 减少同时在中心仓库和子仓"
+"库维护同一分支。 如果原分支由多人共用, 应先协商迁移方式和后续开发入口。"
+
+#: src/how-to-use-blueos-repo.md:32
+msgid "Situation"
+msgstr "工作情况"
+
+#: src/how-to-use-blueos-repo.md:32
+msgid "Recommended workflow"
+msgstr "建议方式"
+
+#: src/how-to-use-blueos-repo.md:34
+msgid "New work based on default branches"
+msgstr "新工作, 仅依赖各仓库默认分支"
+
+#: src/how-to-use-blueos-repo.md:34
+msgid "Start from the complete central `main`."
+msgstr "从完整的中心 `main` 开始开发。"
+
+#: src/how-to-use-blueos-repo.md:35
+msgid "Existing component branch or open PR"
+msgstr "已有子仓库分支或未合并 PR"
+
+#: src/how-to-use-blueos-repo.md:35
+msgid "Import it and publish a central PR."
+msgstr "按本章流程导入, 再作为中心分支和 PR 发布。"
+
+#: src/how-to-use-blueos-repo.md:36
+msgid "Dependencies on open branches or PRs"
+msgstr "依赖其他尚未合并的分支或 PR"
+
+#: src/how-to-use-blueos-repo.md:36
+msgid "Integrate the work and dependencies."
+msgstr "将当前工作和所需依赖整合到同一个中心分支。"
+
+#: src/how-to-use-blueos-repo.md:37
+msgid "Changes across several components"
+msgstr "同时涉及多个子仓库"
+
+#: src/how-to-use-blueos-repo.md:37
+msgid "Develop, validate, and submit centrally."
+msgstr "在中心仓库统一开发、验证和提交 PR。"
+
+#: src/how-to-use-blueos-repo.md:39
+msgid ""
+"Changes limited to book or another independent component can also be "
+"submitted directly to that repository. Import and integrate any unmerged "
+"dependencies together. If a dependency is already a complete central branch, "
+"use Git to merge it or transplant its commits. After migrating a PR, close "
+"the original and explain the migration to avoid merging the work twice."
+msgstr ""
+"仅修改 book 等不依赖其他仓库的内容时, 也可以直接在子仓库提交 PR。 存在未合并依"
+"赖时, 应将依赖一起导入和整合； 如果依赖已经是完整的中心分支, 可以直接使用 Git "
+"合并或移植相关提交。 迁移已有 PR 后, 应及时关闭原 PR 并进行说明, 避免两边重复"
+"合并。"
+
+#: src/how-to-use-blueos-repo.md:45 src/how-to-use-blueos-repo.md:396
+msgid "Import component branches"
+msgstr "导入子仓库分支"
+
+#: src/how-to-use-blueos-repo.md:47
+msgid "Install the tools"
+msgstr "安装工具"
+
+#: src/how-to-use-blueos-repo.md:49
+msgid ""
+"You need Python 3, Git, `josh`, and `josh-filter`. The following command "
+"installs both Josh programs:"
+msgstr ""
+"需要 Python 3、Git、`josh` 和 `josh-filter`。 以下安装命令会同时安装后两个程"
+"序："
+
+#: src/how-to-use-blueos-repo.md:58
+msgid ""
+"Use a standard Rust toolchain for installation rather than blueos's custom "
+"Cargo."
+msgstr "安装时使用普通 Rust 工具链, 避免使用 blueos 定制的 Cargo。"
+
+#: src/how-to-use-blueos-repo.md:61
+msgid "Configure remotes and fetch branches"
+msgstr "配置远端并获取分支"
+
+#: src/how-to-use-blueos-repo.md:63
+msgid ""
+"A Josh remote places the component's files under the corresponding central "
+"directory. For example, `:prefix=build` maps the component repository's root "
+"to `build/` in the central repository."
+msgstr ""
+"Josh 远端将子仓库内容放到中心仓库对应目录中。 例如, `:prefix=build` 将子仓库根"
+"目录映射到中心仓库的 `build/`。"
+
+#: src/how-to-use-blueos-repo.md:67
+msgid "Component name (`--repo`)"
+msgstr "子仓库名称, 即脚本的 `--repo`"
+
+#: src/how-to-use-blueos-repo.md:67
+msgid "Josh remote filter"
+msgstr "Josh 远端过滤表达式"
+
+#: src/how-to-use-blueos-repo.md:69
+msgid "`apps_example`"
+msgstr "`apps_example`"
+
+#: src/how-to-use-blueos-repo.md:69
+msgid "`:prefix=apps/example`"
+msgstr "`:prefix=apps/example`"
+
+#: src/how-to-use-blueos-repo.md:70
+msgid "`apps_shell`"
+msgstr "`apps_shell`"
+
+#: src/how-to-use-blueos-repo.md:70
+msgid "`:prefix=apps/shell`"
+msgstr "`:prefix=apps/shell`"
+
+#: src/how-to-use-blueos-repo.md:71
+msgid "`book`"
+msgstr "`book`"
+
+#: src/how-to-use-blueos-repo.md:71
+msgid "`:prefix=book`"
+msgstr "`:prefix=book`"
+
+#: src/how-to-use-blueos-repo.md:72
+msgid "`build`"
+msgstr "`build`"
+
+#: src/how-to-use-blueos-repo.md:72
+msgid "`:prefix=build`"
+msgstr "`:prefix=build`"
+
+#: src/how-to-use-blueos-repo.md:73
+msgid "`external`"
+msgstr "`external`"
+
+#: src/how-to-use-blueos-repo.md:73
+msgid "`:prefix=external`"
+msgstr "`:prefix=external`"
+
+#: src/how-to-use-blueos-repo.md:74
+msgid "`kernel`"
+msgstr "`kernel`"
+
+#: src/how-to-use-blueos-repo.md:74
+msgid "`:prefix=kernel`"
+msgstr "`:prefix=kernel`"
+
+#: src/how-to-use-blueos-repo.md:75
+msgid "`libc`"
+msgstr "`libc`"
+
+#: src/how-to-use-blueos-repo.md:75
+msgid "`:prefix=libc`"
+msgstr "`:prefix=libc`"
+
+#: src/how-to-use-blueos-repo.md:76
+msgid "`librs`"
+msgstr "`librs`"
+
+#: src/how-to-use-blueos-repo.md:76
+msgid "`:prefix=librs`"
+msgstr "`:prefix=librs`"
+
+#: src/how-to-use-blueos-repo.md:78
+msgid ""
+"Configure the remotes you need. Skip remotes that are already configured:"
+msgstr "配置所需远端, 已配置过的远端无需重复添加："
+
+#: src/how-to-use-blueos-repo.md:80
+msgid "See the [appendix](#appendix) for the complete template."
+msgstr "完整模板见[附录](#附录)。"
+
+#: src/how-to-use-blueos-repo.md:93
+msgid ""
+"The remote names `fork-build` and `fork-kernel` are local names you choose. "
+"After fetching, select an imported branch using a remote-tracking reference "
+"such as `fork-build/branch-name`. Configure upstream repositories the same "
+"way, changing the remote name and URL."
+msgstr ""
+"这里的远端名 `fork-build` 和 `fork-kernel` 是本地自定义名称。 fetch 后可用 "
+"`fork-build/branch-name` 等远端跟踪引用选定导入的分支。 配置上游仓库时使用同样"
+"的方式, 只需更换远端名和 URL。"
+
+#: src/how-to-use-blueos-repo.md:98
+msgid ""
+"`josh fetch` updates remote-tracking references. It does not move your local "
+"development branch or integrate the imported branch into the full central "
+"history."
+msgstr ""
+"`josh fetch` 更新远端跟踪引用, 不移动当前本地开发分支, 也不会自动将子仓库分支"
+"整合到完整的中心历史。"
+
+#: src/how-to-use-blueos-repo.md:102
+msgid "Integrate imported branches with the complete blueos repository"
+msgstr "将导入分支整合到完整 blueos 仓库"
+
+#: src/how-to-use-blueos-repo.md:104
+msgid ""
+"An imported branch contains only its component's files. Integrate it with the "
+"central history containing all components before using it as a complete "
+"central branch and publishing a central PR."
+msgstr ""
+"导入分支只包含对应子仓库的内容。 需要将它整合到包含所有组件的中心历史上, 再作"
+"为完整的中心分支使用并发布中心仓库 PR。"
+
+#: src/how-to-use-blueos-repo.md:108
+msgid ""
+"The early central history imported the component repositories in stages. In "
+"`vivoblueos/blueos`, the commit completing these initial imports is "
+"`a0d6549f6078a624dc513d4d2a34f5cf47e02f13`. Usually start from the central "
+"`main` or a central branch that already integrates the previous imports. "
+"After integration, check that the initial import commit is an ancestor:"
+msgstr ""
+"中心仓库的早期历史逐步导入了各个子仓库。 在 `vivoblueos/blueos` 中, 完成这些初"
+"始导入的提交是 `a0d6549f6078a624dc513d4d2a34f5cf47e02f13`。 通常选择中心 "
+"`main`, 或上一轮已经整合完成的中心分支作为起点。 整合后, 可以检查该导入完成提"
+"交是否是结果的祖先："
+
+#: src/how-to-use-blueos-repo.md:120
+msgid ""
+"An exit code of 0 confirms the ancestry. This checks the history "
+"relationship; you still need to validate the resulting files and build for "
+"your changes."
+msgstr ""
+"命令退出码为 0 表示祖先关系成立。 这个检查用于确认历史关系, 整合后的文件和构建"
+"仍需按修改内容进行验证。"
+
+#: src/how-to-use-blueos-repo.md:123
+msgid ""
+"You can first test a merge or rebase in the component repository. The central "
+"repository may contain changes that have not yet been synchronized back, so "
+"central integration can still require conflict resolution and validation."
+msgstr ""
+"可以先在子仓库实验对分支的 merge 或 rebase 更新。 中心仓库可能包含尚未同步回子"
+"仓库的修改, 因此中心整合时仍需处理冲突并验证结果。"
+
+#: src/how-to-use-blueos-repo.md:127
+msgid "Integrate with rebase"
+msgstr "使用 rebase 更新导入分支"
+
+#: src/how-to-use-blueos-repo.md:129
+msgid ""
+"Use Git rebase to transplant the imported branch's changes onto the central "
+"`main`. The examples assume that the component `main` changes excluded by "
+"rebase are already present in the central starting point."
+msgstr ""
+"使用 Git rebase 将导入分支的修改移植到中心仓库的 `main` 上。 示例假定被 "
+"rebase 排除的子仓库 `main` 基线修改, 已经包含在中心仓库的整合起点中。"
+
+#: src/how-to-use-blueos-repo.md:134
+msgid ""
+"# Transplant build's miri/allocator branch onto the full central history.\n"
+msgstr "# 将 build 的 miri/allocator 分支移植到完整中心历史。\n"
+
+#: src/how-to-use-blueos-repo.md:136
+msgid "# The result can now be used as a complete central branch.\n"
+msgstr "# 该结果现在可以作为完整的中心分支使用。\n"
+
+#: src/how-to-use-blueos-repo.md:138
+msgid "# Add kernel's changes on top of the previous result.\n"
+msgstr "# 在上一轮结果上叠加 kernel 的业务修改。\n"
+
+#: src/how-to-use-blueos-repo.md:146
+msgid "Integrate with merge"
+msgstr "使用 merge 更新导入分支"
+
+#: src/how-to-use-blueos-repo.md:148
+msgid ""
+"Merging a raw Josh import into the central `main` also brings in its full "
+"history. Changes already synchronized to the central repository can have "
+"different SHAs under different transformations, so they may reappear as extra "
+"commits in the branch and PR."
+msgstr ""
+"直接把josh导入的分支 merge 到中心 `main`, 会将导入分支的完整历史一起带入。 已"
+"经同步到中心仓库的修改, 在不同转换下可能具有不同 SHA, 因而仍可能作为额外提交出"
+"现在分支和 PR 中。"
+
+#: src/how-to-use-blueos-repo.md:153
+msgid ""
+"Use `merge-subtree-branches.py` to handle this mapping. Each invocation "
+"integrates one imported branch with a merge. Run it sequentially to import "
+"multiple components:"
+msgstr ""
+"可以使用 `merge-subtree-branches.py` 脚本来处理这个问题. 每次调用时会使用merge"
+"方式更新一个导入分支, 可以依次导入多个分支："
+
+#: src/how-to-use-blueos-repo.md:158
+msgid "# Import build's miri/allocator branch starting from the central main.\n"
+msgstr "# 以中心仓库 main 为起点导入 build 的 miri/allocator 分支。\n"
+
+#: src/how-to-use-blueos-repo.md:174 src/how-to-use-blueos-repo.md:279
+msgid "Parameter"
+msgstr "参数"
+
+#: src/how-to-use-blueos-repo.md:174 src/how-to-use-blueos-repo.md:279
+msgid "Meaning"
+msgstr "含义"
+
+#: src/how-to-use-blueos-repo.md:176 src/how-to-use-blueos-repo.md:283
+msgid "`--repo`"
+msgstr "`--repo`"
+
+#: src/how-to-use-blueos-repo.md:176
+msgid "Component name; its directory must match the remote prefix."
+msgstr "子仓库名称, 决定中心目录, 必须与远端的 prefix 对应。"
+
+#: src/how-to-use-blueos-repo.md:177
+msgid "`--source-remote`"
+msgstr "`--source-remote`"
+
+#: src/how-to-use-blueos-repo.md:177
+msgid "Configured Josh remote name."
+msgstr "已配置的 Josh 远端名。"
+
+#: src/how-to-use-blueos-repo.md:178
+msgid "`--source-branch`"
+msgstr "`--source-branch`"
+
+#: src/how-to-use-blueos-repo.md:178
+msgid "Component branch to import."
+msgstr "子仓库中需要导入的分支名。"
+
+#: src/how-to-use-blueos-repo.md:179 src/how-to-use-blueos-repo.md:285
+msgid "`--target-base`"
+msgstr "`--target-base`"
+
+#: src/how-to-use-blueos-repo.md:179
+msgid "Starting central commit; defaults to `main`."
+msgstr "完整中心历史中的本轮起点, 默认 `main`。"
+
+#: src/how-to-use-blueos-repo.md:180 src/how-to-use-blueos-repo.md:286
+msgid "`--target-branch`"
+msgstr "`--target-branch`"
+
+#: src/how-to-use-blueos-repo.md:180
+msgid "Local central branch to create or append a merge to."
+msgstr "中心仓库中要创建或追加 merge 的本地分支名。"
+
+#: src/how-to-use-blueos-repo.md:181 src/how-to-use-blueos-repo.md:287
+msgid "`--repo-root`"
+msgstr "`--repo-root`"
+
+#: src/how-to-use-blueos-repo.md:181 src/how-to-use-blueos-repo.md:287
+msgid "Central checkout; defaults to the script's repository."
+msgstr "中心仓库路径, 默认脚本所在仓库。"
+
+#: src/how-to-use-blueos-repo.md:183
+msgid ""
+"`--target-base` accepts branch names, tags, full or unique abbreviated SHAs, "
+"and Git expressions such as `HEAD~1`. Both `branch` parameters accept branch "
+"names only. The script fixes the starting commit before merging, so `--target-"
+"base` may name the target branch itself."
+msgstr ""
+"`--target-base` 支持分支名、标签、完整或唯一缩写 SHA, 以及 `HEAD~1` 等 Git 提"
+"交表达式；两个 `branch` 参数只接受分支名。 脚本在 merge 前固定起点, 因此 `--"
+"target-base` 可以与目标分支同名。"
+
+#: src/how-to-use-blueos-repo.md:188
+msgid ""
+"If the target branch does not exist, the script creates it from the starting "
+"commit. Otherwise, it appends a merge, and the starting commit must be an "
+"ancestor of the target branch or its tip. Existing target commits are "
+"preserved; the branch is not reset."
+msgstr ""
+"目标分支不存在时, 脚本从起点创建分支； 已经存在时追加 merge, 起点必须是目标分"
+"支的祖先或自身。 脚本保留目标分支中已有的提交, 不会重置分支。"
+
+#: src/how-to-use-blueos-repo.md:193
+msgid ""
+"Commit tracked changes or save them with `git stash` before running the "
+"script. It rejects uncommitted tracked changes and ongoing operations such as "
+"merge or rebase. It switches branches and merges in the current working tree, "
+"staying on the target branch after success."
+msgstr ""
+"运行前提交已跟踪文件的修改, 或用 `git stash` 保存。 脚本拒绝已跟踪文件的未提交"
+"修改, 以及正在进行的 merge、rebase 等操作。 它在当前工作区切换分支并合并, 成功"
+"后停留在目标分支。"
+
+#: src/how-to-use-blueos-repo.md:198
+msgid "Push changes back to a component branch"
+msgstr "将修改推回子仓库分支"
+
+#: src/how-to-use-blueos-repo.md:200
+msgid ""
+"Skip this section if you will maintain the branch only in the central "
+"repository. To continue maintaining a component branch, export its directory "
+"with `push-subtree-branch.py`."
+msgstr ""
+"如果后续只在中心仓库维护分支, 可以跳过这一节。 需要继续维护子仓库业务分支时, "
+"使用 `push-subtree-branch.py` 导出对应目录。"
+
+#: src/how-to-use-blueos-repo.md:205
+msgid ""
+"# Select commits between --source-base (excluded) and --source-rev "
+"(included).\n"
+msgstr "# 选择 --source-base(排除) 和 --source-rev(包含) 之间的提交。\n"
+
+#: src/how-to-use-blueos-repo.md:206
+msgid ""
+"# Add --push for an actual push, and --force for non-fast-forward updates.\n"
+msgstr "# 添加 --push 才会实际推送, 非快进更新需要 --force。\n"
+
+#: src/how-to-use-blueos-repo.md:218
+msgid "Choose the export range and component baseline"
+msgstr "选择导出范围和子仓库基线"
+
+#: src/how-to-use-blueos-repo.md:220
+msgid "Use two central commit parameters to select a range:"
+msgstr "用两个中心提交参数指定范围："
+
+#: src/how-to-use-blueos-repo.md:222
+msgid ""
+"`--source-base`: the central baseline before your changes. Exclude this "
+"commit and its ancestors."
+msgstr "`--source-base`：业务修改之前的中心基线, 排除该提交及其祖先。"
+
+#: src/how-to-use-blueos-repo.md:224
+msgid "`--source-rev`: the final central branch tip. Include this commit."
+msgstr "`--source-rev`：最终中心分支头, 包含该提交。"
+
+#: src/how-to-use-blueos-repo.md:226
+msgid ""
+"The range is Git's `SOURCE_BASE..SOURCE_REV`. For a merge branch, it also "
+"includes merged commits reachable from the tip but not from the baseline. "
+"Linear and merge branches therefore use the same selection model. Each run "
+"filters one directory, including later changes to that directory made on the "
+"final branch."
+msgstr ""
+"范围是 Git 的 `SOURCE_BASE..SOURCE_REV`。 对于 merge 分支, 它也包含分支头可"
+"达、但基线不可达的其他合入提交, 因此线性分支和 merge 分支使用同一种表达方式。 "
+"每次只过滤一个目录, 在最终分支上继续开发的相关修改也会包含在导出结果中。"
+
+#: src/how-to-use-blueos-repo.md:232
+msgid ""
+"Both central parameters accept branch names, tags, full or unique abbreviated "
+"SHAs, and expressions such as `HEAD` or `HEAD~1`. They are resolved to fixed "
+"SHAs at the start. `--source-base` must be an ancestor of `--source-rev` or "
+"the same commit. Equal endpoints select an empty range."
+msgstr ""
+"两个中心参数支持分支名、标签、完整或唯一缩写 SHA, 以及 `HEAD`、`HEAD~1` 等提交"
+"表达式, 运行开始时固定为具体 SHA。 `--source-base` 必须是 `--source-rev` 的祖"
+"先或自身； 两者相同表示空范围。"
+
+#: src/how-to-use-blueos-repo.md:237
+msgid ""
+"`--target-base` selects the component baseline branch for the replay, usually "
+"the PR's target branch. Use it together with `--source-base`. The selected "
+"directory in the central baseline must contain the same files as the "
+"component baseline. The baselines need not have the same name, and the script "
+"does not choose or record the central baseline automatically."
+msgstr ""
+"`--target-base` 指定子仓库中承接这些修改的基线分支, 通常是其 PR 目标分支。 它"
+"与 `--source-base` 必须一起使用。 中心基线在所选目录中的文件, 必须与子仓库基线"
+"的文件一致。 两个基线不需要同名, 脚本也不会自动选择或保存中心基线。"
+
+#: src/how-to-use-blueos-repo.md:243
+msgid ""
+"The script replays the filtered range onto the component baseline and uses "
+"the result to update `--target-branch`. Only that branch is pushed; when it "
+"differs from `--target-base`, the baseline branch stays unchanged. Range mode "
+"flattens filtered merges. If replay causes conflicts or changes the final "
+"files compared with the source directory, the script returns an error without "
+"pushing."
+msgstr ""
+"脚本将过滤后的范围重放到子仓库基线上, 再用所得结果更新 `--target-branch`。脚本"
+"只推送该目标分支； 当它与 `--target-base` 不同时, 基线分支不会被修改。 范围模"
+"式会展平过滤后的 merge。 发生重放冲突或最终文件与源目录不一致时, 脚本返回错"
+"误, 不会实际推送。"
+
+#: src/how-to-use-blueos-repo.md:250
+msgid "Preview and push"
+msgstr "预演和推送"
+
+#: src/how-to-use-blueos-repo.md:252
+msgid "First preview the build export:"
+msgstr "先预演 build 的回推结果："
+
+#: src/how-to-use-blueos-repo.md:265
+msgid ""
+"To export kernel from the same final central branch, change the component and "
+"remote:"
+msgstr "从同一个最终中心分支回推 kernel, 只需更换目录和远端："
+
+#: src/how-to-use-blueos-repo.md:281
+msgid "`--source-base`"
+msgstr "`--source-base`"
+
+#: src/how-to-use-blueos-repo.md:281
+msgid "Excluded central baseline; paired with `--target-base`."
+msgstr "排除的中心基线；与 `--target-base` 配对。"
+
+#: src/how-to-use-blueos-repo.md:282
+msgid "`--source-rev`"
+msgstr "`--source-rev`"
+
+#: src/how-to-use-blueos-repo.md:282
+msgid "Required final central commit; included in the range."
+msgstr "最终中心提交, 包含该提交；必填。"
+
+#: src/how-to-use-blueos-repo.md:283
+msgid "Component name; uses the merge script's directory mapping."
+msgstr "子仓库名称, 目录映射与 merge 脚本相同。"
+
+#: src/how-to-use-blueos-repo.md:284
+msgid "`--target-remote`"
+msgstr "`--target-remote`"
+
+#: src/how-to-use-blueos-repo.md:284
+msgid "Configured target Josh remote name."
+msgstr "已配置的目标 Josh 远端名。"
+
+#: src/how-to-use-blueos-repo.md:285
+msgid "Component baseline branch for the replay."
+msgstr "子仓库承接导出范围的基线分支名。"
+
+#: src/how-to-use-blueos-repo.md:286
+msgid "Component branch to update or create."
+msgstr "子仓库中要更新或创建的分支名。"
+
+#: src/how-to-use-blueos-repo.md:288
+msgid "`--force` or `-f`"
+msgstr "`--force` 或 `-f`"
+
+#: src/how-to-use-blueos-repo.md:288
+msgid "Use Josh's force push for non-fast-forward updates."
+msgstr "使用 Josh 普通强推, 允许非快进更新。"
+
+#: src/how-to-use-blueos-repo.md:289
+msgid "`--push`"
+msgstr "`--push`"
+
+#: src/how-to-use-blueos-repo.md:289
+msgid "Push after a successful preview; omit for a dry run."
+msgstr "预演成功后实际推送；省略时只预演。"
+
+#: src/how-to-use-blueos-repo.md:291
+msgid ""
+"The push script's `--target-base` and `--target-branch` accept component "
+"branch names only. The default is a dry run without force. Adding `--force` "
+"still only previews the update. Use it when rewritten history requires a non-"
+"fast-forward update."
+msgstr ""
+"回推脚本的 `--target-base` 和 `--target-branch` 只接受子仓库分支名。 默认只预"
+"演, 也不强制推送；添加 `--force` 仍然只是预演。 历史重写后需要非快进更新时使"
+"用 `--force`."
+
+#: src/how-to-use-blueos-repo.md:296
+msgid "In the output:"
+msgstr "输出中："
+
+#: src/how-to-use-blueos-repo.md:298
+msgid ""
+"`BEFORE (current remote)` shows the component branch fetched before the "
+"update."
+msgstr "`BEFORE (current remote)` 是本次 fetch 得到的更新前子分支。"
+
+#: src/how-to-use-blueos-repo.md:300
+msgid ""
+"`AFTER (proposed, not pushed)` shows the candidate that has not been pushed."
+msgstr "`AFTER (proposed, not pushed)` 是尚未推送的候选结果。"
+
+#: src/how-to-use-blueos-repo.md:302
+msgid ""
+"After checking the preview, add `--push` to the same command. For example, "
+"force-push the build branch:"
+msgstr ""
+"检查预演结果后, 在同一条命令后添加 `--push`。 例如, 实际强推 build 分支："
+
+#: src/how-to-use-blueos-repo.md:316
+msgid ""
+"`Push completed` appears only after an actual successful push. The script "
+"processes committed content without moving the central development branch or "
+"modifying the current working tree. Its detached temporary worktree is "
+"cleaned up automatically; no temporary branch is created. Filtered results "
+"are stored in `refs/export/<remote>/<target-branch>`. Range mode also uses "
+"`refs/export-bases/<remote>/<target-branch>`. These helper refs are "
+"regenerated on each invocation and do not track push progress together with "
+"the import script."
+msgstr ""
+"只有实际推送成功后才会显示 `Push completed`。 脚本仅处理已提交内容, 不移动中心"
+"开发分支, 也不修改当前工作区。 用于重放的 detached 临时工作区会自动清理, 不创"
+"建临时分支。 过滤结果保存在 `refs/export/<remote>/<target-branch>`, 范围模式还"
+"使用 `refs/export-bases/<remote>/<target-branch>`； 这些辅助引用每次重新生成, "
+"与导入脚本没有回推进度联动。"
+
+#: src/how-to-use-blueos-repo.md:325
+msgid ""
+"The examples use the merge result `blueos/miri/allocator`. If you followed "
+"the rebase workflow, use `--source-rev blueos/miri/allocator-rebased` instead."
+msgstr ""
+"示例使用 merge 流程生成的 `blueos/miri/allocator`。 如果采用 rebase 流程, 将 "
+"`--source-rev` 改为 `blueos/miri/allocator-rebased`。"
+
+#: src/how-to-use-blueos-repo.md:328
+msgid "Export the full history"
+msgstr "导出完整历史"
+
+#: src/how-to-use-blueos-repo.md:330
+msgid ""
+"To filter all history reachable from the final commit, omit both baseline "
+"parameters and specify only `--source-rev`:"
+msgstr ""
+"需要过滤最终提交的完整可达历史时, 省略两个基线参数, 只指定 `--source-rev`："
+
+#: src/how-to-use-blueos-repo.md:341
+msgid ""
+"This mode may retain central import merges and old synchronization commits. "
+"To exclude history before your changes, use range mode with explicit "
+"baselines. A SHA selects one commit; it does not by itself express the start "
+"and end of your changes."
+msgstr ""
+"此模式可能保留中心导入 merge 和旧同步提交。 希望排除业务修改之前的历史时, 应使"
+"用明确基线的范围模式。 SHA 只是选定一个提交, 不能单独表达业务修改的起止边界。"
+
+#: src/how-to-use-blueos-repo.md:346
+msgid "Get updates from component repositories"
+msgstr "从子仓库获取更新"
+
+#: src/how-to-use-blueos-repo.md:348
+msgid ""
+"`josh fetch` updates component remote-tracking references without moving "
+"local development branches. If the branch has migrated and is maintained only "
+"centrally, continue using the normal central workflow. If you still need "
+"component branch updates, distinguish the following cases."
+msgstr ""
+"`josh fetch` 更新子仓库的远端跟踪引用, 不移动本地开发分支。 如果分支已经迁移并"
+"只在中心仓库维护, 按普通中心仓库分支继续开发即可。 仍需获取子仓库业务分支更新"
+"时, 要区分下面两种情况。"
+
+#: src/how-to-use-blueos-repo.md:353
+msgid "The remote advances normally"
+msgstr "远端正常快进"
+
+#: src/how-to-use-blueos-repo.md:355
+msgid ""
+"For a branch that still uses the original Josh import history, merge the new "
+"remote-tracking reference using ordinary Git commands."
+msgstr "对于仍沿用josh导入历史的分支, 可以按普通 Git 方式合并新的远端跟踪引用。"
+
+#: src/how-to-use-blueos-repo.md:358
+msgid ""
+"For a development branch already integrated with the full central history, "
+"remap or transplant updates first. Directly merging the raw import reference "
+"can bring back old history. With the merge workflow, run the import script "
+"again using the current central branch as the starting point:"
+msgstr ""
+"对于已经整合完整中心历史的开发分支, 应先重新映射或移植更新, 避免直接 merge 原"
+"始导入引用而带回旧历史。 采用 merge 流程时, 可以以当前中心分支为起点继续调用导"
+"入脚本："
+
+#: src/how-to-use-blueos-repo.md:372
+msgid ""
+"The script fetches, maps, and merges the source. With the rebase workflow, "
+"identify the last imported component commit and transplant only the new "
+"changes onto the current central branch. The current component `main` is not "
+"necessarily that boundary."
+msgstr ""
+"脚本会自行 fetch, 再映射和合并来源。 采用 rebase 流程时, 需明确上次已导入的子"
+"仓库提交, 将它之后的新修改移植到当前中心分支；当前子仓库 `main` 不一定就是这个"
+"边界。"
+
+#: src/how-to-use-blueos-repo.md:377
+msgid "The remote is rebased or force-pushed"
+msgstr "远端发生 rebase 或强推"
+
+#: src/how-to-use-blueos-repo.md:379
+msgid ""
+"Appending a merge preserves the old version's history in the central branch. "
+"To remove commits deleted or rewritten on the remote, integrate the latest "
+"component branch again from a complete central baseline. Then replay the "
+"local changes and other components' changes that you need to retain."
+msgstr ""
+"追加 merge 会保留中心分支中原有的旧版本历史。 如果需要移除远端已经删除或改写的"
+"旧提交, 应从完整中心基线重新整合最新子仓库分支, 再重放需要保留的本地新增修改和"
+"其他子仓库的业务修改。"
+
+#: src/how-to-use-blueos-repo.md:384
+msgid ""
+"Keep the original branch for comparison when rebuilding. Check the commit "
+"range, resulting files, and build. This still converts component history to "
+"complete central history; a successful fetch alone does not validate the "
+"integration."
+msgstr ""
+"重建时应保留原分支供对照, 并核对提交范围、最终文件和构建结果。 这种更新仍涉及"
+"子仓库历史到完整中心历史的转换, 不能只根据 fetch 是否成功判断。"
+
+#: src/how-to-use-blueos-repo.md:389
+msgid ""
+"See [Josh branch tools](https://github.com/vivoblueos/blueos/blob/main/tools/"
+"josh/README.md) for the complete parameters and helper ref behavior of both "
+"scripts."
+msgstr ""
+"两个脚本的完整参数说明和辅助引用行为见 [辅助分支操作工具](https://github.com/"
+"vivoblueos/blueos/blob/main/tools/josh/README.md)。"
+
+#: src/how-to-use-blueos-repo.md:394
+msgid "Appendix"
+msgstr "附录"
+
+#: src/SUMMARY.md:27 src/prs.md:1
+msgid "Submit pull requests"
+msgstr "提交 PR"
+
+#: src/prs.md:3
+msgid "New work"
+msgstr "新工作"
+
+#: src/prs.md:5
+msgid ""
+"Fork [vivoblueos/blueos](https://github.com/vivoblueos/blueos) and submit a "
+"PR using the usual GitHub workflow."
+msgstr ""
+"fork [vivoblueos/blueos](https://github.com/vivoblueos/blueos), 然后按常规 "
+"GitHub 流程提交 PR。"
+
+#: src/prs.md:8
+msgid "Existing component PRs"
+msgstr "已有子仓库 PR"
+
+#: src/prs.md:10
+msgid ""
+"For an existing component branch or unmerged PR, follow [How to use the "
+"blueos repository](./how-to-use-blueos-repo.md) to import the branch and "
+"integrate it with the complete central history before continuing development "
+"and publishing a central PR. Include any unmerged dependencies in the same "
+"central branch."
+msgstr ""
+"对于已有子仓库分支或尚未合并的 PR, 参考[如何使用 blueos 仓库](./how-to-use-"
+"blueos-repo.md)导入分支并整合完整的中心历史, 然后继续开发并提交中心仓库 PR。尚"
+"未合并的依赖也应整合到同一个中心分支中。"
+
+#: src/prs.md:16
+msgid ""
+"After publishing the replacement central PR, close the original component PR "
+"and link to the replacement to avoid merging the same work twice. If the "
+"original branch is shared, agree on the migration and where further "
+"development will take place first."
+msgstr ""
+"发布替代的中心仓库 PR 后, 关闭原子仓库 PR 并附上新 PR 的链接, 避免同一项修改被"
+"重复合并。如果原分支由多人共用, 应先协商迁移方式和后续开发入口。"

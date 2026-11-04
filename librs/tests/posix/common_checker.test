@@ -1,0 +1,62 @@
+// The directives must stay at the very top of the file. DirectiveParser stops
+// at the first line that is not a directive, so a licence header above them
+// silently disables every check below it - the run then never matches an
+// ASSERT-SUCC and waits on QEMU forever instead of failing.
+// NEWLINE-TIMEOUT: 120
+// TOTAL-TIMEOUT: 180
+// ASSERT-SUCC: POSIX-CHECK-DONE
+// ASSERT-FAIL: POSIX-CHECK-FAIL
+// ASSERT-FAIL: POSIX-XPASS
+// ASSERT-FAIL: ASSERT-FAIL
+// ASSERT-FAIL: POSIX-U-FAIL
+// The U-mode probe (`posix_u`) runs as a real process and reports its own
+// markers; `POSIX-U-DONE` means every U-mode assertion held.
+// COUNT: POSIX-U-DONE\b == 1
+// COUNT matches the number of LINES that match, not the value after '='.
+// The expected value therefore has to be part of the pattern, terminated with
+// a word boundary: COUNT matches with search(), so a bare 'passed=4' would
+// also match 'passed=40' and let a wrong count through. The boundary is used
+// instead of '$' because the serial console emits CRLF, and '$' does not
+// match before the carriage return.
+// COUNT: POSIX-COUNT passed=76\b == 1
+// COUNT: POSIX-COUNT failed=0\b == 1
+// COUNT: POSIX-COUNT known-fail=1\b == 1
+// COUNT: POSIX-COUNT stale-xfail=0\b == 1
+// COUNT: POSIX-COUNT skipped=1\b == 1
+//
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//       http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// The runner reports one line per counter and ends with POSIX-CHECK-DONE.
+//
+// The checker's ASSERT-SUCC ends the run the moment it matches, so it can only
+// be used once, on the end-of-run marker. The counters are therefore asserted
+// with COUNT, which is checked once the run ends and compares against an exact
+// expected number.
+//
+//   passed=76      every case that is not a known defect actually passed
+//   failed=0       no unregistered failure
+//   known-fail=1   the known defect is still the only one. A new defect turns
+//                  into failed=1, so registering a known defect does not lower
+//                  the bar for the next one
+//   stale-xfail=0  a known defect that stopped reproducing is a failure: the
+//                  marker has to be deleted, otherwise it hides the next
+//                  regression on the same call path
+//   skipped=1      exactly one case opted out, and it says why: the root
+//                  tmpfs cannot be listed, so `posix_getdents()` has no
+//                  records to translate (see issue8_fdops.c)
+//
+// POSIX-CHECK-FAIL is emitted by the runner when failed or stale is non-zero,
+// and POSIX-XPASS marks a known defect that stopped reproducing. Both are
+// rejected outright, so a case cannot slip past on the counters alone.

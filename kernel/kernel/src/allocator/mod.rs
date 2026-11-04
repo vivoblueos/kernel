@@ -26,6 +26,12 @@ use core::{alloc::GlobalAlloc, ptr};
 
 #[cfg(allocator_buddy)]
 mod buddy;
+
+// Physical frames for the Sv39 page tables. Only meaningful on a target that
+// has an MMU to feed; the 32-bit boards have no Sv39 and no `mmu` module to
+// register with.
+#[cfg(all(target_arch = "riscv64", allocator_buddy))]
+pub mod frame;
 #[cfg(any(allocator = "tlsf", allocator = "slab", allocator = "slab_dynamic"))]
 mod tlsf;
 #[cfg(allocator = "tlsf")]
@@ -214,6 +220,14 @@ pub fn init_heap(start: *mut u8, end: *mut u8) {
             HEAP.init(start_addr, size);
         }
     }
+
+    // Sv39 page-table frames come from the same buddy pool, so the hand-off has
+    // to happen *after* the pool exists. Until it does, every `mmu::new_root`
+    // and every user-image load fails with `NoMemory` — which is the honest
+    // failure, and the reason this is here rather than in a separate init step
+    // that a board could forget to call.
+    #[cfg(all(target_arch = "riscv64", allocator_buddy))]
+    frame::init_frame_allocator();
 }
 
 pub fn memory_info() -> MemoryInfo {

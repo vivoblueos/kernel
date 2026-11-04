@@ -36,6 +36,8 @@ mod inode;
 mod inode_mode;
 mod mount;
 mod path;
+pub mod pipe;
+pub mod poll;
 #[cfg(procfs)]
 mod procfs;
 #[cfg(procfs)]
@@ -44,6 +46,9 @@ mod root;
 #[cfg(enable_net)]
 mod sockfs;
 pub mod syscalls;
+/// Translation of pointers the caller passed in a syscall. See the module docs
+/// for why a bare dereference is not an option once U-mode exists.
+pub mod uptr;
 mod tmpfs;
 mod utils;
 use alloc::string::String;
@@ -56,9 +61,81 @@ fn should_skip_fatfs_mount(policy: crate::boards::BlockStoragePolicy, error: Err
     policy.allows_missing() && error == crate::error::code::ENODEV
 }
 
+/// Read an entire file into memory, refusing anything larger than `max`.
+///
+/// Used by `execve` and by the kernel-side spawn path: both need the whole
+/// image before they can parse it, and both must bound the read so a bogus
+/// size field cannot exhaust the heap in one allocation.
+///
+/// The cap is enforced *while* reading rather than from `stat`, because a file
+/// can grow between the two calls and the reader would then get less than it
+/// promised itself.
+pub fn read_whole_file(path: &str, max: usize) -> Result<alloc::vec::Vec<u8>, Error> {
+    use crate::vfs::file::FileOps;
+    // Fully qualified: the parameter is also named `path`, and a bare `path::`
+    // would resolve to the argument, not the module.
+    let file = crate::vfs::path::open_path(path, libc::O_RDONLY, 0)?;
+    let mut out = alloc::vec::Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if out.len() + n > max {
+            return Err(crate::error::code::EINVAL);
+        }
+        out.extend_from_slice(&buf[..n]);
+    }
+    Ok(out)
+}
+
+/// Create a directory, treating "already there" as success.
+///
+/// The boot path that installs the user images runs once, but it runs on every
+/// reset of a machine whose filesystem may survive the reset; an `EEXIST` here
+/// is the normal case, not an error.
+pub fn ensure_dir(path: &str) -> Result<(), Error> {
+    let Some((dir, name)) = crate::vfs::path::find_parent_and_name(path) else {
+        return Err(crate::error::code::EINVAL);
+    };
+    match dir.new_child(
+        name,
+        InodeFileType::Directory,
+        InodeMode::from(0o755u32),
+        || None,
+    ) {
+        Ok(_) => Ok(()),
+        Err(e) if e == crate::error::code::EEXIST => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Write `bytes` to `path`, creating or truncating it.
+///
+/// One `write` is not guaranteed to consume the whole buffer — a pipe, a
+/// socket and a nearly full filesystem all return short counts — so the loop
+/// is the contract, not defensive coding.
+pub fn install_file(path: &str, bytes: &[u8]) -> Result<(), Error> {
+    use crate::vfs::file::FileOps;
+    let file = crate::vfs::path::open_path(
+        path,
+        libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+        0o755,
+    )?;
+    let mut written = 0;
+    while written < bytes.len() {
+        let n = file.write(&bytes[written..])?;
+        if n == 0 {
+            return Err(crate::error::code::EIO);
+        }
+        written += n;
+    }
+    Ok(())
+}
+
 /// Initialize the virtual file system
-pub fn vfs_init() -> Result<(), Error> {
-    debug!("Initializing VFS...");
+pub fn vfs_init() -> Result<(), Error> {    debug!("Initializing VFS...");
     root::init();
     let cwd = path::get_working_dir();
 

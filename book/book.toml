@@ -1,0 +1,26 @@
+[book]
+title = "BlueOS kernel"
+authors = ["vivo BlueOS Project Developers"]
+description = "A development guide of BlueOS kernel"
+
+[build]
+create-missing = false
+
+[output.html]
+smart-punctuation = true
+additional-js = [
+  "theme/language-picker.js",
+]
+additional-css = [
+  "theme/css/language-picker.css",
+]
+
+[output.html.playground]
+editable = false
+copyable = true
+copy-js = true
+line-numbers = true
+runnable = false
+
+[preprocessor.gettext]
+after = ["links"]

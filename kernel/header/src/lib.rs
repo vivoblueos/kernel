@@ -91,6 +91,31 @@ pub mod syscalls {
         TimerSetTime,
         TimerGetOverrun,
         Rename,
+        ReallocMem,
+        // POSIX signal delivery. These are appended at the end so that the
+        // numbering of the calls above stays as it was.
+        Kill,
+        Raise,
+        SigWait,
+        // POSIX I/O multiplexing. Appended for the same reason as above.
+        Poll,
+        PPoll,
+        // POSIX process model. Appended for the same reason as above: the
+        // numbers of the calls before them are part of the ABI that librs and
+        // every user binary are built against, so new calls go at the end.
+        Fork,
+        Execve,
+        WaitPid,
+        ExitGroup,
+        GetPid,
+        GetPpid,
+        MMap,
+        MUnmap,
+        // Anonymous pipes. Appended for the same ABI reason as above.
+        Pipe,
+        Dup2,
+        Select,
+        SigReturn,
         LastNR,
     }
 }

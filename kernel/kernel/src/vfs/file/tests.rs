@@ -92,6 +92,33 @@ fn positional_reads_preserve_shared_offset() {
 }
 
 #[test]
+fn dup_shares_the_file_offset() {
+    let (_fs, file) = tmp_file(b"abcdefgh", AccessMode::O_RDONLY);
+    let dup = file.dup(false).unwrap();
+    let dup = dup.downcast_ref::<File>().unwrap();
+
+    file.seek(SeekFrom::Start(4)).unwrap();
+    let mut dst = [0; 2];
+    assert_eq!(dup.read(&mut dst).unwrap(), 2);
+    assert_eq!(&dst, b"ef");
+    // The duplicate advanced the offset the original sees.
+    assert_eq!(file.offset(), 6);
+}
+
+#[test]
+fn dup_clears_close_on_exec() {
+    let (_fs, file) = tmp_file(b"abc", AccessMode::O_RDONLY);
+    let cloexec = OpenFlags::O_CLOEXEC;
+    file.set_open_flags(cloexec);
+
+    let dup = file.dup(false).unwrap();
+    assert!(!dup.flags().contains(OpenFlags::O_CLOEXEC));
+
+    let dup_cloexec = file.dup(true).unwrap();
+    assert!(dup_cloexec.flags().contains(OpenFlags::O_CLOEXEC));
+}
+
+#[test]
 fn positional_reads_report_eof_without_moving_offset() {
     let (_fs, file) = tmp_file(b"abc", AccessMode::O_RDONLY);
     file.seek(SeekFrom::Start(1)).unwrap();

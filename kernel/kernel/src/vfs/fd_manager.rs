@@ -16,7 +16,10 @@
 
 use crate::{
     error::{code, Error},
-    vfs::{file::FileOps, path},
+    vfs::{
+        file::{FileOps, OpenFlags},
+        path,
+    },
 };
 use alloc::{sync::Arc, vec, vec::Vec};
 use core::ffi::c_int;
@@ -58,6 +61,47 @@ impl FdManager {
         Ok(())
     }
 
+    /// The child's descriptor table for `fork(2)`.
+    ///
+    /// POSIX: the child inherits the parent's descriptors, and each inherited
+    /// descriptor refers to the *same* open file description — so the cloned
+    /// slots hold the same `Arc<dyn FileOps>` and share the file offset, while
+    /// the table itself is a fresh vector. `close(3)` in the child therefore
+    /// only drops the child's reference and leaves the parent's descriptor
+    /// intact. (`F_SETFL` status flags are still stored per `File`, so they are
+    /// not shared yet; that is a separate gap.)
+    pub fn fork_copy(&self) -> Self {
+        Self {
+            fds: self.fds.clone(),
+            next_fd: self.next_fd,
+        }
+    }
+
+    /// Close every descriptor marked `FD_CLOEXEC`, as a successful `execve`
+    /// must. The table keeps its shape so the surviving descriptors keep their
+    /// numbers.
+    pub fn close_on_exec(&mut self) {
+        for slot in self.fds.iter_mut() {
+            let cloexec = slot
+                .as_ref()
+                .map_or(false, |file| file.flags().contains(OpenFlags::O_CLOEXEC));
+            if cloexec {
+                *slot = None;
+            }
+        }
+        let len = self.fds.len();
+        let next = (FIRST_FD..len).find(|&fd| self.fds[fd].is_none());
+        self.next_fd = match next {
+            Some(fd) => fd,
+            None => {
+                // `alloc_fd` writes at `next_fd`, so it always has to point at
+                // an existing slot.
+                self.fds.push(None);
+                self.fds.len() - 1
+            }
+        };
+    }
+
     /// Allocate new file descriptor
     pub fn alloc_fd(&mut self, file: Arc<dyn FileOps>) -> c_int {
         let fd = self.next_fd;
@@ -72,10 +116,13 @@ impl FdManager {
             return Err(code::EBADF);
         };
 
-        let mut new_fd = minfd as usize;
-        if new_fd < FIRST_FD {
-            new_fd = FIRST_FD;
+        // `F_DUPFD` wants the lowest free descriptor at or above `minfd`. A
+        // negative minimum is EINVAL; casting it to `usize` first would turn
+        // it into a huge index and grow the table to match.
+        if minfd < 0 {
+            return Err(code::EINVAL);
         }
+        let mut new_fd = minfd as usize;
         // find minfd
         let len = self.fds.len();
         while new_fd < len && self.fds[new_fd].is_some() {
@@ -91,6 +138,46 @@ impl FdManager {
         self.fds[new_fd] = Some(file2);
         self.update_next_fd(new_fd);
         Ok(new_fd as c_int)
+    }
+
+    /// `dup2()`: make `newfd` a copy of `oldfd`, closing whatever it named.
+    ///
+    /// The two steps that `dup2` needs and `F_DUPFD` does not are placing the
+    /// copy at an exact index and closing the old occupant. Both happen under
+    /// one lock, so a concurrent `read`/`close` on the process's own table
+    /// cannot observe `newfd` empty in between.
+    pub fn dup2_fd(&mut self, oldfd: c_int, newfd: c_int) -> Result<c_int, Error> {
+        // A negative target cannot be a descriptor; POSIX spells this `EBADF`.
+        if newfd < 0 {
+            return Err(code::EBADF);
+        }
+        let Some(file) = self.get_file_ops(oldfd) else {
+            return Err(code::EBADF);
+        };
+        // Equal descriptors are a no-op, but only after `oldfd` proved valid.
+        if oldfd == newfd {
+            return Ok(newfd);
+        }
+
+        let dup = file.dup(false)?;
+        let newfd = newfd as usize;
+        let replaced = if newfd < self.fds.len() {
+            self.fds[newfd].take()
+        } else {
+            self.fds.resize(newfd + 1, None);
+            None
+        };
+        self.fds[newfd] = Some(dup);
+        if newfd == self.next_fd {
+            // The slot `alloc_fd` was about to hand out is now taken.
+            self.update_next_fd(newfd);
+        }
+        if let Some(replaced) = replaced {
+            // Closing the shadowed descriptor is part of `dup2`; a failure
+            // here is not the caller's to act on (POSIX says so explicitly).
+            replaced.close().ok();
+        }
+        Ok(newfd as c_int)
     }
 
     /// Free file descriptor

@@ -302,6 +302,12 @@ template("run_qemu_check") {
       rebase_path(checker),
     ]
 
+    # A QEMU run owns the serial console and the host forwarding ports baked
+    # into qemu_net_args, so two checks started in parallel fight over them.
+    # The console pool keeps QEMU checks serialized without slowing down the
+    # rest of the build.
+    pool = "//:console($default_toolchain)"
+
     # We always re-run the check.
     outputs = [ "${target_gen_dir}/${qemu_action_name}/dummy" ]
   }

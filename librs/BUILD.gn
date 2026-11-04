@@ -1,0 +1,179 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/build_template.gni")
+import("//build/toolchain/blueos.gni")
+
+# The C headers that belong to this library.
+#
+# Everything under //librs/include describes the objects the kernel really
+# creates: a `pthread_mutex_t` is 24 bytes of mutex, not newlib's 4-byte
+# index into a process-wide table. A translation unit that picks up newlib's
+# <sys/_pthreadtypes.h> instead allocates four bytes and the kernel then
+# writes 24 into them, so the search order matters for every C consumer, not
+# just for this one.
+#
+# The same directory also holds <threads.h>: newlib's copy includes a
+# nonexistent machine/_threads.h and its libc.a has none of the C11 thread
+# symbols, so this one has to be found first. -I precedes -isystem on both
+# compilers, which is what makes that work.
+#
+# It is a *public* config because the consumers are the ones compiling C:
+# putting the path on librs' own command line would do nothing (a rlib has no
+# C in it), and a per-target `-I` in librs/tests/posix only ever fixed the
+# test image. With the config public, `//apps/shell` and every other dependent
+# inherits it through its `deps` edge.
+config("librs_include") {
+  include_dirs = [ "//librs/include" ]
+}
+
+build_rust("librs") {
+  crate_type = "rlib"
+  crate_name = "librs"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/infra:blueos_infra",
+    "//kernel/scal:blueos_scal",
+    "//libc",
+  ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  public_configs += [ ":librs_include" ]
+}
+
+run_clippy("librs_clippy") {
+  deps = [ ":librs" ]
+}
+
+build_rust("librs_swi") {
+  crate_type = "rlib"
+  crate_name = "librs"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/infra:blueos_infra",
+    "//kernel/scal:blueos_scal",
+    "//libc",
+  ]
+
+  # librs_swi will be used in apps dynamically loaded.
+  configs += [ "//build/boards/${board}:app_config" ]
+  public_configs += [ ":librs_include" ]
+}
+
+run_clippy("librs_swi_clippy") {
+  deps = [ ":librs_swi" ]
+}
+
+build_rust("librs_unittest_image") {
+  testonly = true
+  crate_type = "bin"
+  sources = [ "src/lib.rs" ]
+  edition = "2021"
+  deps = [
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/vendor/spin-0.9.8:spin",
+    "//kernel/header:blueos_header",
+    "//kernel/infra:blueos_infra",
+    "//kernel/kernel:blueos",
+    # `rsrt` (not `rsrt_std`): its app entry calls the image's own `main`,
+    # which `src/lib.rs` provides under `#[cfg(test)]`. `rsrt_std` would call
+    # rust-std's `__librs_start_main` instead and the test harness would never
+    # be reached (the image boots and stays silent).
+    "//kernel/rsrt",
+    "//kernel/scal:blueos_scal",
+    "//libc",
+  ]
+  linker_script = default_linker_script
+  proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
+  # `-Zpanic-abort-tests` is what keeps the test harness from defining its own
+  # `panic_impl`: this image also links `rsrt`, which already provides one, and
+  # without the flag the two collide (`duplicate lang item`). `kernel_unittest`
+  # is built the same way for the same reason.
+  rustflags = [
+    "--test",
+    "-Zpanic-abort-tests",
+  ]
+}
+
+run_clippy("librs_unittest_image_clippy") {
+  testonly = true
+  deps = [ ":librs_unittest_image" ]
+}
+
+if (defined(qemu_use_esp32_loader) && qemu_use_esp32_loader) {
+  gen_esp32_qemu_runner("librs_unittest_runner") {
+    testonly = true
+    elf = ":librs_unittest_image"
+    chip = "${chip}"
+    bootloader = qemu_esp32_bootloader_bin
+    partition_table = qemu_esp32_partition_table_bin
+    qemu = "$qemu_exe"
+    machine = "$qemu_machine"
+    semihosting = true
+    qemu_args = qemu_extra_args
+    block_args = qemu_block_args
+  }
+} else {
+  gen_qemu_runner("librs_unittest_runner") {
+    testonly = true
+    img = ":librs_unittest_image"
+    qemu = "$qemu_exe"
+    machine = "$qemu_machine"
+    semihosting = true
+    qemu_args = qemu_extra_args
+    block_img = "librs_unittest_block.img"
+    block_args = qemu_block_args
+  }
+}
+
+run_qemu_check("run_librs_unittest") {
+  testonly = true
+  runner = ":librs_unittest_runner"
+  if (coverage) {
+    img = ":librs_unittest_image"
+    checker = "src/coverage.checker"
+  } else {
+    checker = "src/unittests.checker"
+  }
+}
+
+group("check_librs") {
+  testonly = true
+  deps = [
+    ":run_librs_unittest",
+    "tests/integration_test:run_librs_integration_test",
+
+    # wait for virtio
+    # "tests/posixtestsuite:run_librs_posix_testsuite",
+  ]
+}
+
+group("check_librs_linux_emulation") {
+  testonly = true
+  deps = [ "tests/linux_emulation_test:run_librs_linux_emulation" ]
+}
+
+group("check_librs_by_clippy") {
+  testonly = true
+  deps = [
+    ":librs_clippy",
+    ":librs_swi_clippy",
+    ":librs_unittest_image_clippy",
+  ]
+}

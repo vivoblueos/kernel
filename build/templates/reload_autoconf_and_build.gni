@@ -24,6 +24,9 @@ template("reload_autoconf_and_build") {
                            [
                              "app_conf",
                              "configs",
+                             # Belongs to the wrapper action below, not to the
+                             # Rust target this template builds.
+                             "extra_deps",
                            ])
     configs += invoker.configs
   }
@@ -57,5 +60,13 @@ template("reload_autoconf_and_build") {
       "${pass}",
     ]
     deps = [ "//kernel/kconfig:generate_autoconf" ]
+
+    # Targets the app needs *built* but not linked - a C translation unit that
+    # only has to compile, for instance. Without this the app's Rust target is
+    # the only thing `check_all` waits for, so a build-time check that hangs
+    # off the app would never run.
+    if (defined(invoker.extra_deps)) {
+      deps += invoker.extra_deps
+    }
   }
 }

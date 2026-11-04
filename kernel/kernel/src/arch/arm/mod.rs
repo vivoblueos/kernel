@@ -426,6 +426,8 @@ extern "C" fn syscall_handler(ctx: &mut Context) {
     let sc = ScContext {
         nr: ctx.r7,
         args: [ctx.r0, ctx.r1, ctx.r2, ctx.r3, ctx.r4, ctx.r5],
+        // No user/kernel split on this target yet, so nothing reads the frame.
+        frame: 0,
     };
     // r0 should contain the return value.
     ctx.r0 = dispatch_syscall(&sc);

@@ -12,6 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Whether the C compiler needs the newlib sysroot headers spelled out with
+# -isystem. clang on RISC-V does not know where newlib is, so it needs the
+# explicit path. AArch64 compiles C with GCC, which already knows the sysroot,
+# and its -isystem directories are searched ahead of GCC's own headers - so
+# adding the flag there would let newlib's broken <stdatomic.h> shadow GCC's.
+posix_c_needs_sysroot_include = false
+
+# Whether the C toolchain targets a 64-bit ABI.
+#
+# The C headers under //librs/include size the synchronization objects with
+# `long __opaque[3]`, which is the 24-byte object the kernel has on a 64-bit
+# target. On a 32-bit target the same declaration is 12 bytes and the kernel's
+# Rust objects change with it, so the C view is only meaningful on the 64-bit
+# boards - which are also the only ones that run C programs. Targets that want
+# to compile C against librs (apps/shell's ABI check) gate on this rather than
+# on a board name.
+c_target_is_64_bit = false
+
 if (current_toolchain == "//build/toolchain:blueos_thumbv7m" ||
     current_toolchain == "//build/toolchain:blueos_thumbv8m" ||
     current_toolchain == "//build/toolchain:gcc_fv_thumbv8m") {
@@ -26,4 +44,41 @@ if (current_toolchain == "//build/toolchain:blueos_thumbv7m" ||
   current_sysroot = exec_script("//build/scripts/get_sysroot.py",
                                 [ "riscv-none-elf-gcc" ],
                                 "string")
+} else if (current_toolchain == "//build/toolchain:aarch64" ||
+           current_toolchain == "//build/toolchain:blueos_aarch64") {
+  # The aarch64 newlib sysroot lives next to the compiler that ships it, so the
+  # C test images and bindgen can share the same headers as the Rust side.
+  current_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                                [ "aarch64-none-elf-gcc" ],
+                                "string")
+  c_target_is_64_bit = true
+  # GCC compiles C here, and the toolchain ships the newlib sysroot it knows
+  # about natively, so no -isystem is needed (see posix_c_needs_sysroot_include
+  # above for why adding one would actively break <stdatomic.h>).
+  current_libgcc_dir = exec_script("//build/scripts/get_libgcc_dir.py",
+                                   [ "aarch64-none-elf-gcc", "", "" ],
+                                   "string")
+  # Where the newlib libraries live. AArch64 keeps them in one flat directory.
+  current_newlib_lib_dir = "$current_sysroot/lib"
+} else if (current_toolchain == "//build/toolchain:blueos_riscv64") {
+  # The RISC-V newlib sysroot lives next to the xpack compiler that ships it.
+  # The RISC-V toolchain compiles C with clang, but clang does not know where
+  # newlib is, so the path has to be given explicitly for the C test images
+  # (librs/tests/posix) to find <time.h>, <pthread.h> and libc.a.
+  current_sysroot = exec_script("//build/scripts/get_sysroot.py",
+                                [ "riscv-none-elf-gcc" ],
+                                "string")
+  c_target_is_64_bit = true
+  # Only here the C compiler (clang) needs the newlib headers spelled out.
+  posix_c_needs_sysroot_include = true
+  # clang knows its own headers; state that explicitly for symmetry with the
+  # GCC branch above, whose search order differs.
+  current_libgcc_dir = exec_script("//build/scripts/get_libgcc_dir.py",
+                                   [ "riscv-none-elf-gcc", "rv64i", "lp64" ],
+                                   "string")
+  # The newlib libraries are per-multilib-variant too. The flat lib directory
+  # holds the toolchain's default variant, which is rv32 - linking it against
+  # rv64 objects fails with "incompatible with", so only the rv64i/lp64
+  # directory may be used.
+  current_newlib_lib_dir = "$current_sysroot/lib/rv64i/lp64"
 }

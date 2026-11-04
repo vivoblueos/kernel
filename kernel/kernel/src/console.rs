@@ -55,20 +55,30 @@ impl fmt::Write for Console {
     }
 }
 
+/// Write a single byte to the early console UART, bypassing the console
+/// device layer.
+///
+/// This is the one-byte core of [`EarlyConsole::write_str`]; the SBI
+/// `putchar` passthrough routes through it so both paths share the same
+/// busy-wait / flush sequence instead of growing a second copy.
+pub(crate) fn write_console_uart(ch: u8) {
+    use blueos_hal::{Has8bitDataReg, HasFifo, HasLineStatusReg};
+    let uart = crate::boards::get_device!(console_uart);
+    #[cfg(usb_serial)]
+    if uart.is_bus_busy() {
+        return;
+    }
+
+    while uart.is_bus_busy() {}
+    uart.write_data8(ch);
+    uart.flush_tx_fifo();
+}
+
 pub struct EarlyConsole;
 impl fmt::Write for EarlyConsole {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        use blueos_hal::{Has8bitDataReg, HasFifo, HasLineStatusReg};
-        let uart = crate::boards::get_device!(console_uart);
         for byte in s.as_bytes() {
-            #[cfg(usb_serial)]
-            if uart.is_bus_busy() {
-                continue;
-            }
-
-            while uart.is_bus_busy() {}
-            uart.write_data8(*byte);
-            uart.flush_tx_fifo();
+            write_console_uart(*byte);
         }
         Ok(())
     }

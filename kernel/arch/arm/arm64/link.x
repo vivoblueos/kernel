@@ -31,6 +31,14 @@ SECTIONS
         __rodata_end = .;        
     }
 
+    /* C POSIX cases register themselves here; the runner walks the range. */
+    .posix_cases : ALIGN(8) {
+        PROVIDE(__start_posix_cases = .);
+        KEEP(*(SORT_BY_INIT_PRIORITY(.posix_cases.*)))
+        KEEP(*(.posix_cases))
+        PROVIDE(__stop_posix_cases = .);
+    }
+
     .data : ALIGN(4096) {
         __data_start = .;
         *(.data*)

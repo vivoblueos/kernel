@@ -442,7 +442,7 @@ impl InodeOps for TmpInode {
         let Some(device) = inner.as_device() else {
             return Err(code::ENOTTY);
         };
-        device.ioctl(cmd, arg).map_err(Error::from)?;
+        device.ioctl(cmd, arg)?;
         Ok(0)
     }
 

@@ -50,9 +50,16 @@ blueos_board("qemu_virt64_aarch64") {
   }
 
   default = [
-    "//example:check_apps",
-    "//shell:shell_runner",
+    "//apps/bench:bench_runner",
+    "//apps/example:check_apps",
+    "//apps/shell:shell_runner",
   ]
-  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
+  _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board + [
+                 "//apps/example/fs:run_fs_example",
+                 "//apps/example/net:run_net_example",
+                 "//apps/shell:run_shell_boot",
+                 "//apps/shell:run_shell_smoke",
+                 "//librs/tests/posix:run_posix_cases",
+               ]
   check_all = default + filter_exclude(_check_all, [ "//kernel/adapter*" ])
 }

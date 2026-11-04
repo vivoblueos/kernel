@@ -69,3 +69,6 @@ CONFIG_DNS_MAX_SERVER_COUNT=1
 # os adapter configuration
 #
 # end of os adapter configuration
+
+# User-mode smoke program (see kernel/kernel/src/Kconfig)
+CONFIG_ENABLE_USER_PROGRAMS=y

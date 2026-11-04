@@ -12,6 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-declare_args() {
-  direct_syscall_handler = true
-}
+# v2 引入 EL0 后，「直接函数调用」式 syscall 模式已删除（见 D2）。
+# 本文件仅保留以兼容 kernel/scal/BUILD.gn 的 import。

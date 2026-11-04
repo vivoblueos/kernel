@@ -63,6 +63,12 @@ mod vfs_syscalls {
     pub fn open(_path: *const c_char, _flags: c_int, _mode: mode_t) -> i32 {
         -libc::ENOTSUP
     }
+    pub fn pipe(_fds: *mut c_int, _flags: c_int) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn dup2(_oldfd: c_int, _newfd: c_int) -> c_int {
+        -libc::ENOTSUP
+    }
     pub fn rmdir(_path: *const c_char) -> i32 {
         -libc::ENOTSUP
     }
@@ -118,6 +124,30 @@ mod vfs_syscalls {
         -libc::ENOTSUP
     }
     pub fn ioctl(_fd: c_int, _request: c_ulong, _arg: *mut core::ffi::c_void) -> c_int {
+        -libc::ENOTSUP
+    }
+    pub fn poll(
+        _fds: *mut core::ffi::c_void,
+        _nfds: usize,
+        _timeout_ms: c_int,
+    ) -> core::ffi::c_long {
+        -libc::ENOTSUP as core::ffi::c_long
+    }
+    pub fn ppoll(
+        _fds: *mut core::ffi::c_void,
+        _nfds: usize,
+        _timeout: *const timespec,
+        _sigmask: *const sigset_t,
+    ) -> core::ffi::c_long {
+        -libc::ENOTSUP as core::ffi::c_long
+    }
+    pub fn select(
+        _nfds: c_int,
+        _readfds: *mut core::ffi::c_void,
+        _writefds: *mut core::ffi::c_void,
+        _exceptfds: *mut core::ffi::c_void,
+        _timeout: *mut libc::timeval,
+    ) -> c_int {
         -libc::ENOTSUP
     }
 }
@@ -223,6 +253,18 @@ mod net_syscalls {
 pub struct Context {
     pub nr: usize,
     pub args: [usize; 6],
+    /// Opaque pointer to the architecture's saved trap frame, or null.
+    ///
+    /// Almost no syscall needs it: arguments are in registers, and a result is
+    /// returned in `a0`. `fork` is the exception — it has to copy the parent's
+    /// *entire* register state so the child resumes exactly where the parent
+    /// left off, and that state exists only in the frame the trap entry built.
+    /// Passing the address through here keeps the dispatcher free of any
+    /// architecture-specific type.
+    ///
+    /// Only valid for the duration of the dispatch: it points at the caller's
+    /// own stack frame.
+    pub frame: usize,
 }
 
 /// this signal data structure will be used in signal handling
@@ -269,8 +311,6 @@ pub struct mq_attr {
 // For every syscall number in NR, we have to define a module to
 // handle the syscall request.  `handle_context` serves as the
 // dispatcher if syscall is invoked via software interrupt.
-// bk_syscall! macro should be used by external libraries if syscall
-// is invoked via function call.
 macro_rules! syscall_table {
     ($(($nr:tt, $mod:ident),)*) => {
         pub(crate) fn dispatch_syscall(ctx: &Context) -> usize {
@@ -279,11 +319,6 @@ macro_rules! syscall_table {
                     return $crate::syscalls::$mod::handle_context(ctx) as usize,)*
                 _ => return usize::MAX,
             }
-        }
-
-        #[macro_export]
-        macro_rules! bk_syscall {
-            $(($nr $$(,$arg:expr)*) => { $crate::syscalls::$mod::handle($$($arg),*) });*
         }
     };
 }
@@ -383,6 +418,15 @@ set_sched_param(tid: usize, prio: c_int) -> c_long {
 
 define_syscall_handler!(
 create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
+    // A U-mode caller gets a thread that starts in U-mode, in the caller's own
+    // address space. That is a different construction from the kernel-thread
+    // path below: the entry point and stack belong to user memory, `spawn_hook`
+    // and `cleanup` are user functions that must *not* run in M-mode, and
+    // `SpawnArgs` itself has to be read through the caller's page table.
+    #[cfg(target_arch = "riscv64")]
+    if crate::vfs::uptr::in_user_space() {
+        return create_user_thread(spawn_args_ptr);
+    }
     if spawn_args_ptr.is_null() {
         return -1;
     }
@@ -426,6 +470,95 @@ create_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
     // so it stays value-identical to the previous transmute, but safe.
     handle as c_long
 });
+
+/// Serve `create_thread()` for a U-mode caller (DF-17).
+///
+/// The new thread shares the caller's address space and descriptor table — it
+/// is a thread of the same process, not a child process — but it starts in
+/// U-mode at an address the caller chose. Three things differ from the
+/// kernel-thread path above:
+///
+/// * `SpawnArgs` is read through `uptr`, so an address the caller does not own
+///   is `EFAULT` instead of a privileged read of physical memory;
+/// * `spawn_hook` and `cleanup` are caller-supplied function pointers. Calling
+///   them here would run U-mode code in M-mode, so they are *not* called. The
+///   user-side thread library registers its TCB at the new thread's entry;
+/// * the first instruction is reached through `enter_user_from_frame`, which
+///   restores a synthetic trap frame instead of starting an image: `a0` carries
+///   `arg`, `sp` the top of the caller's stack, and `ra` the exit trampoline, so
+///   a thread entry that simply returns retires that thread.
+///
+/// `tp` is left zero: a new thread has no TLS block until its library installs
+/// one. That is the same contract pthread has — `pthread_create` runs a
+/// trampoline that sets up TLS before calling the user routine.
+#[cfg(target_arch = "riscv64")]
+fn create_user_thread(spawn_args_ptr: *const SpawnArgs) -> c_long {
+    use crate::arch::riscv::mmu::{satp_sv39, Perms};
+    use crate::error::code::{EAGAIN, EFAULT, EINVAL, EPERM};
+
+    // The mirror is defined with plain integers, not `SpawnArgs`' function
+    // pointer types. A `extern "C" fn` field is non-null by contract, so reading
+    // a zero into it is undefined behaviour and the null-entry check below
+    // would be optimised away. Reading the raw words keeps the check meaningful.
+    #[repr(C)]
+    struct UserSpawnArgs {
+        spawn_hook: usize,
+        stack_start: usize,
+        stack_size: usize,
+        entry: usize,
+        arg: usize,
+        cleanup: usize,
+    }
+
+    let Some(proc) = crate::process::current_process() else {
+        return EPERM.to_errno() as c_long;
+    };
+    let Some(root) = crate::user::current_root() else {
+        return EPERM.to_errno() as c_long;
+    };
+    let args: UserSpawnArgs = match crate::vfs::uptr::read_struct(spawn_args_ptr as *const _) {
+        Ok(a) => a,
+        Err(e) => return e.to_errno() as c_long,
+    };
+    let entry = args.entry;
+    if entry == 0 {
+        return EINVAL.to_errno() as c_long;
+    }
+    let Some(stack_top) = (args.stack_start as usize).checked_add(args.stack_size) else {
+        return EINVAL.to_errno() as c_long;
+    };
+    // rv64 expects a 16-byte aligned stack pointer, and a zero-sized stack has
+    // no room for the first frame.
+    if args.stack_size < 16 || stack_top % 16 != 0 {
+        return EINVAL.to_errno() as c_long;
+    }
+    // Prove the top of the stack is writable *in this address space* before
+    // another thread is handed it. This demand-pages the page, so a stack
+    // carved out of a fresh `mmap` works, while an address in a hole is refused
+    // here rather than as a fault on another hart.
+    if !crate::user::fault_in_range(stack_top - 16, 16, Perms::WRITE) {
+        return EFAULT.to_errno() as c_long;
+    }
+
+    let satp = satp_sv39(root);
+    let mut frame = crate::arch::riscv::Context::default();
+    frame.mepc = entry;
+    frame.mscratch = stack_top;
+    frame.a0 = args.arg as usize;
+    frame.ra = crate::user::THREAD_EXIT_TRAMPOLINE_VA;
+    let body = Box::new(move || unsafe {
+        crate::arch::riscv::enter_user_from_frame(&frame, satp)
+    });
+    let node = Builder::new(Entry::Closure(body)).build();
+    if !proc.add_thread(node.clone()) {
+        return EAGAIN.to_errno() as c_long;
+    }
+    let handle = Thread::id(&node);
+    if crate::scheduler::queue_ready_thread(thread::IDLE, node).is_err() {
+        return EAGAIN.to_errno() as c_long;
+    }
+    handle as c_long
+}
 
 define_syscall_handler!(
 atomic_wait(addr: usize, val: usize, timeout: *const timespec) -> c_long {
@@ -516,6 +649,28 @@ free_mem(ptr: *mut c_void) -> c_long {
     0
 });
 
+// realloc has no way to discover the size of the block it is handed, so it
+// cannot be composed out of AllocMem and FreeMem in user space. The Issue 8
+// reallocarray() - and the ordinary realloc() it is built on - therefore needs
+// one kernel entry point rather than a user-side shim.
+define_syscall_handler!(
+realloc_mem(ptr: *mut *mut c_void, old_ptr: *mut c_void, new_size: usize) -> c_long {
+    if ptr.is_null() {
+        return -1;
+    }
+    // realloc(NULL, n) is malloc(n) per the C standard.
+    let addr = if old_ptr.is_null() {
+        crate::allocator::malloc(new_size)
+    } else {
+        crate::allocator::realloc(old_ptr as *mut u8, new_size)
+    };
+    if addr.is_null() {
+        return -1;
+    }
+    unsafe { ptr.write(addr as *mut c_void) };
+    0
+});
+
 define_syscall_handler!(
 write(fd: i32, buf: *const u8, size: usize) -> c_long {
     unsafe {
@@ -532,6 +687,18 @@ define_syscall_handler!(open(path: *const c_char, flags: c_int, mode: mode_t) ->
 define_syscall_handler!(
     close(fd: c_int) -> c_int {
         vfs_syscalls::close(fd)
+    }
+);
+
+define_syscall_handler!(
+    pipe(fds: *mut c_int, flags: c_int) -> c_int {
+        vfs_syscalls::pipe(fds, flags)
+    }
+);
+
+define_syscall_handler!(
+    dup2(oldfd: c_int, newfd: c_int) -> c_int {
+        vfs_syscalls::dup2(oldfd, newfd)
     }
 );
 define_syscall_handler!(
@@ -651,39 +818,76 @@ define_syscall_handler!(
     }
 );
 define_syscall_handler!(
-    signalaction(_signum: c_int, _act: *const c_void, _oact: *mut c_void) -> c_int {
-        // TODO: implement signalaction
-        0
+    signalaction(signum: c_int, act: *const c_void, oact: *mut c_void) -> c_int {
+        crate::signal::posix::syscalls::sigaction(signum, act, oact)
     }
 );
 define_syscall_handler!(
-    signaltstack(_ss: *const c_void, _old_ss: *mut c_void) -> c_int {
-        0
+    signaltstack(ss: *const c_void, old_ss: *mut c_void) -> c_int {
+        crate::signal::posix::syscalls::sigaltstack(ss, old_ss)
     }
 );
 define_syscall_handler!(
-    sigpending(_set: *mut libc::sigset_t) -> c_int {
-        0
+    sigpending(set: *mut libc::sigset_t) -> c_int {
+        crate::signal::posix::syscalls::sigpending(set)
     }
 );
 define_syscall_handler!(
-    sigprocmask(_how: c_int, _set: *const libc::sigset_t, _oldset: *mut libc::sigset_t) -> c_int {
-        0
+    sigprocmask(how: c_int, set: *const libc::sigset_t, oldset: *mut libc::sigset_t) -> c_int {
+        crate::signal::posix::syscalls::sigprocmask(how, set, oldset)
     }
 );
 define_syscall_handler!(
     sigqueueinfo(_pid: c_int, _sig: c_int, _info: *const c_void) -> c_int {
-        0
+        // POSIX lists `sigqueue()` as optional, and the kernel has no way to
+        // deliver a value-carrying signal yet. Reporting ENOSYS is honest:
+        // the caller learns the feature is absent instead of believing the
+        // signal was queued.
+        -libc::ENOSYS as c_int
     }
 );
 define_syscall_handler!(
-    sigsuspend(_set: *const libc::sigset_t) -> c_int {
-        0
+    sigsuspend(set: *const libc::sigset_t) -> c_int {
+        crate::signal::posix::syscalls::sigsuspend(set)
     }
 );
 define_syscall_handler!(
-    sigtimedwait(_set: *const sigset_t, _info: *mut c_void, _timeout: *const timespec) -> c_int {
-        0
+    sigtimedwait(set: *const sigset_t, info: *mut c_void, timeout: *const timespec) -> c_int {
+        crate::signal::posix::syscalls::sigtimedwait(set, info, timeout)
+    }
+);
+define_syscall_handler!(
+    kill(pid: libc::pid_t, sig: c_int) -> c_int {
+        crate::signal::posix::syscalls::kill(pid, sig)
+    }
+);
+define_syscall_handler!(
+    raise(sig: c_int) -> c_int {
+        crate::signal::posix::syscalls::raise(sig)
+    }
+);
+define_syscall_handler!(
+    sigwait(set: *const libc::sigset_t, sig: *mut c_int) -> c_int {
+        crate::signal::posix::syscalls::sigwait(set, sig)
+    }
+);
+
+// POSIX I/O multiplexing. `nfds` is `nfds_t` (`unsigned int`) on the C side;
+// it arrives zero-extended, so it is read as `usize` and range-checked
+// against `POLL_NFDS_MAX`.
+define_syscall_handler!(
+    poll(fds: *mut c_void, nfds: usize, timeout: c_int) -> core::ffi::c_long {
+        vfs_syscalls::poll(fds, nfds, timeout)
+    }
+);
+define_syscall_handler!(
+    ppoll(fds: *mut c_void, nfds: usize, timeout: *const timespec, sigmask: *const sigset_t) -> core::ffi::c_long {
+        vfs_syscalls::ppoll(fds, nfds, timeout, sigmask)
+    }
+);
+define_syscall_handler!(
+    select(nfds: c_int, readfds: *mut c_void, writefds: *mut c_void, exceptfds: *mut c_void, timeout: *mut libc::timeval) -> c_int {
+        vfs_syscalls::select(nfds, readfds, writefds, exceptfds, timeout)
     }
 );
 
@@ -855,6 +1059,183 @@ define_syscall_handler!(
     }
 );
 
+// ---------------------------------------------------------------------------
+// POSIX process model
+//
+// Split in two: the handlers here only unwrap the ABI argument types, and
+// `proc_syscalls` below decides what the call means on a target that has no
+// user/kernel split. Keeping the `cfg` in one place means the table does not
+// need a `cfg` per entry, and a 32-bit board still gets an honest `ENOSYS`
+// rather than a call that silently does nothing.
+// ---------------------------------------------------------------------------
+
+mod proc_syscalls {
+    //! Bodies of the process-model syscalls, gated on there being a U-mode.
+    use super::{c_char, c_int};
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn getpid() -> isize {
+        crate::user::sys_getpid()
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn getppid() -> isize {
+        crate::user::sys_getppid()
+    }
+
+    /// `fork` is the one call that needs the trap frame: the child must resume
+    /// with the parent's registers, and they exist nowhere else.
+    #[cfg(target_arch = "riscv64")]
+    pub fn fork(frame: usize) -> isize {
+        let frame = frame as *const crate::arch::riscv::Context;
+        if frame.is_null() {
+            return crate::error::code::EPERM.to_errno() as isize;
+        }
+        // SAFETY: the frame pointer came from the trap entry for *this* syscall
+        // and is live for the duration of the dispatch.
+        unsafe { crate::user::fork(&*frame) }
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn execve(
+        path: *const c_char,
+        argv: *const *const c_char,
+        envp: *const *const c_char,
+    ) -> isize {
+        crate::user::sys_execve(path, argv, envp)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn waitpid(pid: c_int, status: *mut c_int, options: c_int) -> isize {
+        crate::user::sys_waitpid(pid, status, options)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn exit_group(status: c_int) -> isize {
+        crate::user::sys_exit_group(status)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn mmap(
+        addr: usize,
+        len: usize,
+        prot: usize,
+        flags: usize,
+        fd: c_int,
+        off: usize,
+    ) -> isize {
+        crate::user::sys_mmap(addr, len, prot, flags, fd, off)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn munmap(addr: usize, len: usize) -> isize {
+        crate::user::sys_munmap(addr, len)
+    }
+
+    // --- targets without a user address space ---
+
+    #[cfg(not(target_arch = "riscv64"))]
+    mod nosys {
+        macro_rules! enosys {
+            ($($name:ident($($arg:ty),*) -> $ret:ty;)*) => {
+                $(
+                    pub fn $name($(_: $arg),*) -> $ret {
+                        crate::error::code::ENOSYS.to_errno() as $ret
+                    }
+                )*
+            };
+        }
+        // Types only: the macro takes `$arg:ty`, so the parameters are unnamed
+        // in the source and bound to `_` in the expansion.
+        enosys! {
+            getpid() -> isize;
+            getppid() -> isize;
+            fork(usize) -> isize;
+            execve(*const core::ffi::c_char, *const *const core::ffi::c_char, *const *const core::ffi::c_char) -> isize;
+            waitpid(core::ffi::c_int, *mut core::ffi::c_int, core::ffi::c_int) -> isize;
+            exit_group(core::ffi::c_int) -> isize;
+            mmap(usize, usize, usize, usize, core::ffi::c_int, usize) -> isize;
+            munmap(usize, usize) -> isize;
+        }
+    }
+
+    #[cfg(not(target_arch = "riscv64"))]
+    pub use nosys::*;
+}
+
+define_syscall_handler!(get_pid() -> isize {
+    proc_syscalls::getpid()
+});
+
+define_syscall_handler!(get_ppid() -> isize {
+    proc_syscalls::getppid()
+});
+
+define_syscall_handler!(waitpid(pid: c_int, status: *mut c_int, options: c_int) -> isize {
+    proc_syscalls::waitpid(pid, status, options)
+});
+
+define_syscall_handler!(exit_group(status: c_int) -> isize {
+    proc_syscalls::exit_group(status)
+});
+
+define_syscall_handler!(
+    mmap(addr: usize, len: usize, prot: usize, flags: usize, fd: c_int, off: usize) -> isize {
+        proc_syscalls::mmap(addr, len, prot, flags, fd, off)
+    }
+);
+
+define_syscall_handler!(munmap(addr: usize, len: usize) -> isize {
+    proc_syscalls::munmap(addr, len)
+});
+
+/// `fork(2)`. Hand-written rather than generated because the frame pointer is
+/// not one of the six argument registers.
+pub mod fork {
+    use super::*;
+
+    pub fn handle_context(ctx: &Context) -> usize {
+        proc_syscalls::fork(ctx.frame) as usize
+    }
+}
+
+/// `sigreturn(2)`. Not a user-callable API: the trampoline page issues it
+/// after a signal handler returns. The frame has to be read from user memory,
+/// so it goes through the architecture frame pointer rather than the argument
+/// registers, exactly like `fork`.
+pub mod sigreturn {
+    use super::*;
+
+    pub fn handle_context(ctx: &Context) -> usize {
+        #[cfg(target_arch = "riscv64")]
+        {
+            crate::signal::delivery::sigreturn(
+                ctx.frame as *mut crate::arch::riscv::Context,
+            ) as usize
+        }
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+            let _ = ctx;
+            -libc::ENOSYS as isize as usize
+        }
+    }
+}
+
+/// `execve(2)`. Three pointer arguments, all of which need translating before
+/// the kernel may look at them.
+pub mod execve {
+    use super::*;
+
+    pub fn handle_context(ctx: &Context) -> usize {
+        let args = &ctx.args;
+        proc_syscalls::execve(
+            args[0] as *const c_char,
+            args[1] as *const *const c_char,
+            args[2] as *const *const c_char,
+        ) as usize
+    }
+}
+
 #[cfg(enable_syscall)]
 syscall_table! {
     (Echo, echo),
@@ -877,6 +1258,7 @@ syscall_table! {
     (TimerGetOverrun, timer_getoverrun),
     (AllocMem, alloc_mem),
     (FreeMem, free_mem),
+    (ReallocMem, realloc_mem),
     (Write, write),
     (Close, close),
     (Read, read),
@@ -929,6 +1311,23 @@ syscall_table! {
     (MqTimedReceive, mq_timedreceive),
     (MqGetSetAttr, mq_getsetattr),
     (Ioctl, ioctl),
+    (Kill, kill),
+    (Raise, raise),
+    (SigWait, sigwait),
+    (Poll, poll),
+    (PPoll, ppoll),
+    (Select, select),
+    (SigReturn, sigreturn),
+    (Fork, fork),
+    (Execve, execve),
+    (WaitPid, waitpid),
+    (ExitGroup, exit_group),
+    (GetPid, get_pid),
+    (GetPpid, get_ppid),
+    (MMap, mmap),
+    (MUnmap, munmap),
+    (Pipe, pipe),
+    (Dup2, dup2),
 }
 
 #[cfg(not(enable_syscall))]

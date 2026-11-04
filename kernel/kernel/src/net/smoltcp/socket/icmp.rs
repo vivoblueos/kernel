@@ -373,4 +373,26 @@ impl PosixSocket for IcmpSocket {
     fn is_shutdown(&self) -> bool {
         self.is_shutdown.get()
     }
+
+    fn ready_events(&mut self, events: u32) -> u32 {
+        use crate::vfs::poll::{POLLERR, POLLHUP, POLLIN, POLLOUT};
+
+        let locally_shut_down = self.is_shutdown.get();
+        let mut revents = 0u32;
+        let Ok(_) = self.with(|socket, _| {
+            if socket.can_recv() {
+                revents |= POLLIN;
+            }
+            if socket.can_send() {
+                revents |= POLLOUT;
+            }
+            Ok(0)
+        }) else {
+            return POLLERR;
+        };
+        if locally_shut_down {
+            revents |= POLLHUP;
+        }
+        (revents & events) | (revents & (POLLERR | POLLHUP))
+    }
 }

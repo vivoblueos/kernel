@@ -24,7 +24,7 @@ use alloc::{
     collections::BTreeMap,
     sync::{Arc, Weak},
 };
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
 use spin::Once;
 
 #[repr(transparent)]
@@ -118,23 +118,36 @@ impl ProcessManager {
             return None;
         }
         let proc = self.table.get(pid)?;
-        let st = proc.state();
-        match st {
+        match proc.state() {
             ProcessState::Alive => {
                 proc.become_zombie();
-                if proc.has_no_threads() {
-                    return self.finalize_destroy(&proc);
-                }
-                None
+                self.try_finalize(&proc)
             }
-            ProcessState::Zombie => {
-                if proc.has_no_threads() {
-                    return self.finalize_destroy(&proc);
-                }
-                None
-            }
+            ProcessState::Zombie => self.try_finalize(&proc),
             ProcessState::Dead => None,
         }
+    }
+
+    /// Reclaim `proc` if there is nothing left worth keeping it for.
+    ///
+    /// Two conditions hold a process in the table, and they are independent:
+    /// threads that have not retired yet (they still reach their `Arc<Process>`
+    /// through it), and an **uncollected exit status**. The second one is the
+    /// whole point of a zombie: `waitpid` is the only thing that may discard a
+    /// status, and it stamps `reaped` before asking for the destroy. An orphan
+    /// has nobody left to collect it, so it goes immediately.
+    ///
+    /// A process that never set a status has nothing to collect — that is the
+    /// administrative path (a failed `exec`, a process whose threads all
+    /// vanished), and it is reclaimed as soon as the threads are gone.
+    fn try_finalize(&self, proc: &Arc<Process>) -> Option<Arc<Process>> {
+        if !proc.has_no_threads() {
+            return None;
+        }
+        if proc.exit_code().is_some() && !proc.is_reaped() && proc.parent().is_some() {
+            return None;
+        }
+        self.finalize_destroy(proc)
     }
 
     pub(crate) fn finalize_destroy(&self, proc: &Arc<Process>) -> Option<Arc<Process>> {
@@ -213,6 +226,12 @@ pub enum ProcessState {
     Dead,
 }
 
+/// Sentinel stored in [`Process::exit_code`] for a process that has not exited.
+///
+/// A real status is 0..=255 (plus the signal bits), so no valid value collides
+/// with it, and `Option<i32>` need not be stored in an `AtomicI32`.
+pub const NOT_EXITED: i32 = i32::MIN;
+
 /// Parent/child topology of a process.
 struct ProcessTopology {
     // Weak back-pointer to the parent process.
@@ -234,6 +253,42 @@ pub struct Process {
     // This process's open-file table.
     #[cfg(enable_vfs)]
     fd_manager: SpinLock<FdManager>,
+    /// The user address space, once this process has entered U-mode.
+    ///
+    /// `None` is the normal state for a kernel thread's process: there is no
+    /// page table and no `satp` to install. The lock is `irqsave` because the
+    /// scheduler consults it on every context switch, where interrupts are
+    /// already off.
+    #[cfg(target_arch = "riscv64")]
+    mm: SpinLock<Option<crate::user::AddressSpace>>,
+    // The signal dispositions installed with `sigaction()`. POSIX makes the
+    // disposition a per-process property, so it lives here rather than on
+    // the thread.
+    signals: crate::signal::posix::ProcessSignals,
+
+    /// What the process reported to `exit_group`, or [`NOT_EXITED`] while it
+    /// is still running.
+    ///
+    /// Held on the `Process` rather than in a side table because `waitpid`
+    /// reaches it through the same `children` map it walks to find the child;
+    /// a second registry would be a second thing to keep consistent.
+    exit_code: AtomicI32,
+
+    /// Bumped when one of this process's *children* exits, to wake a
+    /// `waitpid` that is blocked waiting for exactly that.
+    ///
+    /// Per process, not global: a global counter would wake every waiter on
+    /// every exit anywhere in the system.
+    child_exit_epoch: AtomicUsize,
+
+    /// Set once the parent has collected this process's exit status.
+    ///
+    /// A zombie must survive its last thread: the status is the whole point of
+    /// the state, and tearing the process down as soon as the scheduler notices
+    /// no threads are left would throw that status away before `waitpid` could
+    /// read it. Reclamation waits for this flag (or for the parent to
+    /// disappear).
+    reaped: AtomicBool,
 }
 
 // SAFETY: `Process` would otherwise be `!Send` only because `threads` holds a
@@ -264,6 +319,15 @@ impl Process {
 
             #[cfg(enable_vfs)]
             fd_manager: SpinLock::new(FdManager::new()),
+
+            #[cfg(target_arch = "riscv64")]
+            mm: SpinLock::new(None),
+
+            signals: crate::signal::posix::ProcessSignals::default(),
+
+            exit_code: AtomicI32::new(NOT_EXITED),
+            child_exit_epoch: AtomicUsize::new(0),
+            reaped: AtomicBool::new(false),
         });
         // SAFETY: `arc` is the sole strong ref and is not yet observable by any
         // other thread, so this `&mut Process` aliases no live reference.
@@ -351,10 +415,70 @@ impl Process {
         self.topology.irqsave_write().children.remove(&child_pid)
     }
 
+    /// Record the status this process is exiting with.
+    ///
+    /// Written before the process becomes a zombie, so a parent that finds
+    /// the zombie is guaranteed to see the code that made it one.
+    pub fn set_exit_code(&self, code: i32) {
+        self.exit_code.store(code, Ordering::Release);
+    }
+
+    /// The exit status, or `None` while the process is still running.
+    pub fn exit_code(&self) -> Option<i32> {
+        match self.exit_code.load(Ordering::Acquire) {
+            NOT_EXITED => None,
+            code => Some(code),
+        }
+    }
+
+    /// Record that the parent collected this process's status, which is what
+    /// makes the zombie eligible for teardown.
+    pub fn mark_reaped(&self) {
+        self.reaped.store(true, Ordering::Release);
+    }
+
+    /// Whether the parent has collected this process's exit status.
+    pub fn is_reaped(&self) -> bool {
+        self.reaped.load(Ordering::Acquire)
+    }
+
+    /// Handle a blocked `waitpid` is watching.
+    pub fn child_exit_epoch(&self) -> &AtomicUsize {
+        &self.child_exit_epoch
+    }
+
+    /// Announce that a child of this process exited, waking any `waitpid`.
+    ///
+    /// Returns after the wake so callers can combine it with a status store
+    /// without holding a lock: `atomic_wake` queues threads and must not run
+    /// with interrupts disabled.
+    pub fn notify_child_exited(&self) {
+        self.child_exit_epoch.fetch_add(1, Ordering::Release);
+        crate::sync::atomic_wait::atomic_wake(&self.child_exit_epoch, usize::MAX).ok();
+    }
+
     /// This process's open-file table. Only present when VFS is enabled.
     #[cfg(enable_vfs)]
     pub fn fd_manager(&self) -> &SpinLock<FdManager> {
         &self.fd_manager
+    }
+
+    /// This process's user address space, if it has entered U-mode.
+    #[cfg(target_arch = "riscv64")]
+    pub fn mm(&self) -> &SpinLock<Option<crate::user::AddressSpace>> {
+        &self.mm
+    }
+
+    /// Root page table of this process's address space, i.e. the value `satp`
+    /// must name while one of its threads runs. `None` for a kernel thread.
+    #[cfg(target_arch = "riscv64")]
+    pub fn mm_root(&self) -> Option<usize> {
+        self.mm.irqsave_lock().as_ref().map(|mm| mm.root())
+    }
+
+    /// This process's signal dispositions.
+    pub fn signals(&self) -> &crate::signal::posix::ProcessSignals {
+        &self.signals
     }
 
     /// Add a thread to this process's thread list.
@@ -849,15 +973,15 @@ mod tests {
         assert_eq!(child.state(), ProcessState::Zombie);
 
         // Release the worker. It retires; the retire path removes it from the
-        // child's thread list, sees `has_no_threads()`, and calls
-        // `destroy_process` — whose `Zombie` arm finalizes, completing the
-        // deferred reclamation.
+        // child's thread list and calls `destroy_process`. This child never set
+        // an exit status, so there is nothing for a parent to collect and the
+        // reclamation completes on the spot — the administrative path.
         release.wait();
 
-        // Poll until the child reaches `Dead`. `become_dead()` is the last step
-        // of `finalize_destroy`, so once state is `Dead` the pid has already
-        // been removed from the table and from root's children. The retire path
-        // runs asynchronously once the worker is dispatched to exit, so yield
+        // Poll until `Dead`. `become_dead()` is the last step of
+        // `finalize_destroy`, so once state is `Dead` the pid has already been
+        // removed from the table and from root's children. The retire path runs
+        // asynchronously once the worker is dispatched to exit, so yield
         // between checks. The bound turns a hang into a loud failure. (Polling
         // `child()` or `process_table()` instead would race the ordering
         // between `remove_child`/`table.remove` and `become_dead`.)
@@ -883,6 +1007,10 @@ mod tests {
                 .expect("create_process failed");
             let child_pid = child.pid();
             assert_eq!(child.state(), ProcessState::Alive);
+            // A status is what makes a process worth keeping after its threads
+            // are gone, so this iteration exercises the collectable path: the
+            // process must survive as a zombie until the parent collects it.
+            child.set_exit_code(0);
 
             // `Builder::build` creates the worker but does NOT enqueue it for
             // running (unlike `spawn`/`start`, which call `queue_ready_thread`
@@ -906,17 +1034,30 @@ mod tests {
             assert_eq!(_ok, Ok(()));
 
             // Race: the main thread requests destroy while the worker may
-            // already be retiring (or retired) on another CPU. Regardless of
-            // interleaving, the child must end up reaped: `destroy_process`
-            // commits `Zombie` first, so exactly one of {destroy fast-path,
-            // retire-path finalize} reclaims it.
+            // already be retiring (or retired) on another CPU. Whichever order
+            // the two land in, the process must end up a zombie that still
+            // carries its status: `destroy_process` either sees `Alive` and
+            // commits `Zombie`, or sees `Zombie` and refuses because nobody has
+            // collected the status yet.
             let _ = mgr.destroy_process(child_pid);
+            while !child.has_no_threads() {
+                crate::scheduler::yield_me();
+            }
+            assert_eq!(child.state(), ProcessState::Zombie);
+            assert!(mgr.destroy_process(child_pid).is_none());
 
-            // Poll until Dead: `become_dead` is the final step of
-            // `finalize_destroy`, so Dead implies the pid is already gone from
-            // the table and root's children.
+            // Collect it the way `waitpid` does, and only then expect `Dead`.
+            child.mark_reaped();
+            // Either this call or the retiring thread's cleanup finalizes
+            // it — `mark_reaped` is exactly what unblocks the latter — so the
+            // return value is not a reliable signal, and the invariant is the end
+            // state rather than who produced it.
+            let _ = mgr.destroy_process(child_pid);
+            let mut spins = 0u32;
             while child.state() != ProcessState::Dead {
                 crate::scheduler::yield_me();
+                spins += 1;
+                assert!(spins < 100_000, "reaped zombie never finalized");
             }
             assert!(mgr.process_table().get(child_pid).is_none());
             assert!(root.child(child_pid).is_none());
@@ -1042,7 +1183,9 @@ mod tests {
         // never linked since `add_thread` returned false).
         assert!(crate::thread::GlobalQueueVisitor::remove(&mut reject));
 
-        // Release the keeper so the Zombie child finalizes and reaps.
+        // Release the keeper so the Zombie child finalizes and reaps. This
+        // child carries no exit status (nothing ever waited on it), so the
+        // last thread's retire path reclaims it outright.
         release.wait();
         let mut spins = 0u32;
         while root.child(zombie_pid).is_some() {

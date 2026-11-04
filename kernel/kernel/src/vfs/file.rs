@@ -184,6 +184,31 @@ pub trait FileOps: Send + Sync + Any {
     fn stat(&self) -> FileAttr;
     fn flags(&self) -> OpenFlags;
     fn set_flags(&self, flags: OpenFlags);
+
+    /// Reports which of the requested events are ready right now.
+    ///
+    /// `events` is the caller's `events` mask ([`crate::vfs::poll`]); the
+    /// return value is the matching `revents` mask. Devices that cannot
+    /// answer the question inherit the default below, which is what POSIX
+    /// prescribes for regular files: they are always readable and writable,
+    /// so `poll()` must not block on them.
+    ///
+    /// `POLLERR`, `POLLHUP` and `POLLNVAL` are reported whether or not the
+    /// caller asked for them, because the caller cannot act on a condition
+    /// it never hears about.
+    fn poll(&self, events: u32) -> u32 {
+        use crate::vfs::poll::{POLLIN, POLLOUT};
+
+        let _ = self;
+        let mut revents = 0u32;
+        if events & POLLIN != 0 {
+            revents |= POLLIN;
+        }
+        if events & POLLOUT != 0 {
+            revents |= POLLOUT;
+        }
+        revents
+    }
 }
 
 // system file handler
@@ -191,7 +216,14 @@ pub trait FileOps: Send + Sync + Any {
 pub struct File {
     dcache: Arc<Dcache>,
     open_flags: AtomicI32,
-    offset: Mutex<usize>, // also lock for read/ write
+    /// File offset, shared by every descriptor produced by `dup()`.
+    ///
+    /// POSIX models `dup()` as handing out a second handle to the *same* open
+    /// file description, so a `read()` on either descriptor advances the
+    /// offset seen by both. Keeping the counter behind an `Arc` is what makes
+    /// that true; a plain field would give each duplicate its own starting
+    /// point of zero.
+    offset: Arc<Mutex<usize>>, // also lock for read/ write
 }
 
 impl File {
@@ -215,7 +247,7 @@ impl File {
         Ok(Self {
             dcache,
             open_flags: AtomicI32::new(access_mode as i32 | flags.bits()),
-            offset: Mutex::new(0),
+            offset: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -373,17 +405,21 @@ impl FileOps for File {
     }
 
     fn dup(&self, close_on_exec: bool) -> Result<Arc<dyn FileOps>, Error> {
-        let flags = self.open_flags();
-        let flags = if close_on_exec {
-            flags | OpenFlags::O_CLOEXEC
-        } else {
-            flags
-        };
-        Ok(Arc::new(File::new(
-            self.dcache(),
-            self.access_mode(),
-            flags,
-        )?))
+        let mut flags = self.open_flags();
+        // POSIX: the duplicate starts with `FD_CLOEXEC` clear; only the
+        // `F_DUPFD_CLOEXEC` form sets it again.
+        flags = flags & !OpenFlags::O_CLOEXEC;
+        if close_on_exec {
+            flags |= OpenFlags::O_CLOEXEC;
+        }
+        // Share the offset rather than building a fresh `File`: the two
+        // descriptors name one open file description, and `lseek`/`read` on
+        // either must move the other too.
+        Ok(Arc::new(File {
+            dcache: self.dcache(),
+            open_flags: AtomicI32::new(self.access_mode() as i32 | flags.bits()),
+            offset: Arc::clone(&self.offset),
+        }))
     }
 
     fn stat(&self) -> FileAttr {

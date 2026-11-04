@@ -36,6 +36,7 @@ use crate::{
     },
 };
 use alloc::{boxed::Box, sync::Weak};
+use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
     alloc::Layout,
     cell::Cell,
@@ -45,6 +46,31 @@ use core::{
 
 mod builder;
 pub use builder::*;
+
+/// Bumped whenever the world may have made a polled file descriptor ready.
+///
+/// `poll()` reads this before scanning, then blocks on it only while the
+/// value is unchanged. Anything that changes descriptor state - the network
+/// stack after a pass over the interfaces, or a signal arriving for a thread
+/// that is asleep in `poll()` - increments it and wakes waiters, so a poller
+/// cannot miss a transition that happens between its scan and its sleep: if
+/// the counter moved in that window the wait returns immediately and the
+/// scan runs again.
+///
+/// It lives here rather than in the poll code so that the signal path can
+/// reach it without depending on the VFS, which some targets leave out.
+pub static POLL_EPOCH: AtomicUsize = AtomicUsize::new(0);
+
+/// Announces that a descriptor may have become ready.
+pub fn bump_poll_epoch() {
+    POLL_EPOCH.fetch_add(1, Ordering::Release);
+    crate::sync::atomic_wait::atomic_wake(&POLL_EPOCH, usize::MAX).ignore_result();
+}
+
+/// The current epoch value, for a poller to compare against after scanning.
+pub fn poll_epoch() -> usize {
+    POLL_EPOCH.load(Ordering::Acquire)
+}
 
 pub type ThreadNode = Arc<Thread>;
 
@@ -184,7 +210,11 @@ pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, Glo
 
 #[derive(Default)]
 pub(crate) struct SignalContext {
-    pending_signals: u32,
+    // The set of signals that have been delivered to this thread but not
+    // yet handled. An atomic so that a thread can be inspected through a
+    // shared reference - `sigpending()` and the delivery path both need to
+    // look at another thread's pending set.
+    pending_signals: core::sync::atomic::AtomicU32,
     active: bool,
     // Will recover thread_context at recover_sp on exiting of signal handler.
     recover_sp: usize,
@@ -246,6 +276,35 @@ pub struct Thread {
     // - Check mutex's pending queue
     acquired_mutexes: SpinLock<MutexList>,
     signal_context: Option<Box<SignalContext>>,
+    // The set of signals this thread is currently blocking (`sigprocmask`).
+    // Separate from `SignalContext`, which holds the *pending* set: the mask
+    // is consulted at delivery time, the pending set records what arrived.
+    signal_mask: crate::signal::posix::ThreadSignalMask,
+    // A futex word that is woken whenever a signal is delivered to this
+    // thread. `sigsuspend()` and `sigwait()` block on it, so a signal
+    // arriving for a thread that is asleep has to wake it up.
+    signal_futex: core::sync::atomic::AtomicUsize,
+    // How many signals have had their disposition applied on this thread -
+    // a user handler run, or the default action taken. `poll()` compares two
+    // readings of this to tell that a signal was caught while it was asleep:
+    // by the time the waiter is scheduled again the pending bit is already
+    // clear and the handler has already run, so the pending set alone cannot
+    // answer the question.
+    signals_delivered: core::sync::atomic::AtomicUsize,
+    // The `Context` this thread's most recent U-mode trap saved, or 0 when
+    // that trap came from kernel mode. Signal delivery needs it to redirect
+    // the eventual `mret` into a handler instead of calling the handler from
+    // the kernel stack, which would run it with kernel privileges. It is not
+    // cleared when the thread returns to U-mode: the frame stays valid until
+    // the next trap overwrites it, and nested kernel-mode traps must not hide
+    // the U-mode frame underneath.
+    #[cfg(target_arch = "riscv64")]
+    trap_frame: core::sync::atomic::AtomicUsize,
+    // Set when a trap-frame signal delivery has rewritten `a0`/`mepc` in the
+    // frame. The ecall return path would otherwise overwrite the handler
+    // argument with the syscall result.
+    #[cfg(target_arch = "riscv64")]
+    signal_redirect: core::sync::atomic::AtomicBool,
     // A weak reference to the process this thread belongs to. Kernel/system
     // threads that are not owned by any process carry a dangling `Weak`
     // (constructed via `Weak::new()`, whose `upgrade()` returns `None`).
@@ -255,6 +314,13 @@ pub struct Thread {
     process_node: ThreadListNode,
     #[cfg(round_robin)]
     rr: RoundRobin,
+    // Redirect written by `execve` and consumed by the trap layer when this
+    // syscall returns. It lives on the thread, not in a global: with SMP, a
+    // global slot let any other thread on any hart "return into" a program it
+    // never exec'd — observed as a user fault at the new entry point with a
+    // stale `satp`.
+    #[cfg(target_arch = "riscv64")]
+    pending_exec: SpinLock<Option<crate::user::ExecOutcome>>,
 }
 
 #[cfg(round_robin)]
@@ -478,11 +544,32 @@ impl Thread {
             pending_on_mutex: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
             signal_context: None,
+            signal_mask: crate::signal::posix::ThreadSignalMask::new(),
+            signal_futex: core::sync::atomic::AtomicUsize::new(0),
+            signals_delivered: core::sync::atomic::AtomicUsize::new(0),
+            #[cfg(target_arch = "riscv64")]
+            trap_frame: core::sync::atomic::AtomicUsize::new(0),
+            #[cfg(target_arch = "riscv64")]
+            signal_redirect: core::sync::atomic::AtomicBool::new(false),
             process: Weak::new(),
             process_node: ThreadListNode::new(),
             #[cfg(round_robin)]
             rr: RoundRobin::new(),
+            #[cfg(target_arch = "riscv64")]
+            pending_exec: SpinLock::new(None),
         }
+    }
+
+    /// Record the redirect produced by a successful `execve` on this thread.
+    #[cfg(target_arch = "riscv64")]
+    pub(crate) fn set_pending_exec(&self, outcome: crate::user::ExecOutcome) {
+        *self.pending_exec.irqsave_lock() = Some(outcome);
+    }
+
+    /// Consume this thread's pending `execve` redirect, if any.
+    #[cfg(target_arch = "riscv64")]
+    pub fn take_pending_exec(&self) -> Option<crate::user::ExecOutcome> {
+        self.pending_exec.irqsave_lock().take()
     }
 
     #[inline]
@@ -555,19 +642,115 @@ impl Thread {
     }
 
     pub fn kill(&mut self, signum: i32) -> bool {
+        // Signal 0 does not exist and the pending set is 32 bits wide, so a
+        // number outside `1..NSIG` cannot be marked pending. Callers reach
+        // here either from a syscall that already validated the number or
+        // from kernel code naming one of its own constants.
+        if !crate::signal::posix::valid_signum(signum) {
+            return false;
+        }
+        let flag = crate::signal::posix::bit(signum as usize);
         let sig_ctx = self.get_or_create_signal_context();
-        let old = sig_ctx.pending_signals;
-        sig_ctx.pending_signals |= 1 << signum;
+        let old = sig_ctx.pending_signals.load(core::sync::atomic::Ordering::Acquire);
+        sig_ctx
+            .pending_signals
+            .fetch_or(flag as u32, core::sync::atomic::Ordering::AcqRel);
         // Return false if there is signum pending.
-        (old & 1 << signum) == 0
+        //
+        // Waking a sleeper is the *caller's* job and has to happen after the
+        // thread lock is dropped: `wake_signal_waiters()` asks the scheduler
+        // for a re-schedule, and this thread is normally inspected while its
+        // lock - or the process's thread-list lock - is held, which runs with
+        // interrupts disabled.
+        (old as usize & flag) != 0
+    }
+
+    /// Wakes a thread that is waiting for a signal.
+    ///
+    /// The futex word is bumped so that a waiter blocked on the old value
+    /// returns, and the word is reset so the next waiter blocks again.
+    pub(crate) fn wake_signal_waiters(&self) {
+        self.signal_futex
+            .fetch_add(1, core::sync::atomic::Ordering::Release);
+        crate::sync::atomic_wait::atomic_wake(&self.signal_futex, usize::MAX).ignore_result();
+        // A signal also has to interrupt a thread that is sitting in
+        // `poll()`, but the wake cannot happen here: this runs under the
+        // thread lock, with interrupts off, and putting a thread back on the
+        // ready queue is not legal from inside a critical section. The
+        // callers that raise a signal do it once they have dropped the lock -
+        // see `signal::posix::syscalls`.
+    }
+
+    /// The futex word a thread waits on for signal delivery.
+    pub fn signal_futex(&self) -> &core::sync::atomic::AtomicUsize {
+        &self.signal_futex
+    }
+
+    /// Records that a signal's disposition has just been applied on this
+    /// thread. See the field comment for why `poll()` needs to count these.
+    pub fn note_signal_delivered(&self) {
+        self.signals_delivered
+            .fetch_add(1, core::sync::atomic::Ordering::Release);
+    }
+
+    /// How many signals have been delivered to this thread so far.
+    pub fn signals_delivered(&self) -> usize {
+        self.signals_delivered
+            .load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Records the trap frame of the most recent U-mode trap. Kernel-mode
+    /// traps leave the previous value in place.
+    #[cfg(target_arch = "riscv64")]
+    pub fn set_trap_frame(&self, frame: usize) {
+        self.trap_frame
+            .store(frame, core::sync::atomic::Ordering::Release);
+    }
+
+    /// The trap frame recorded by the last U-mode trap, or 0.
+    #[cfg(target_arch = "riscv64")]
+    pub fn trap_frame(&self) -> usize {
+        self.trap_frame.load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Marks that the saved frame now returns into a signal handler.
+    #[cfg(target_arch = "riscv64")]
+    pub fn set_signal_redirect(&self) {
+        self.signal_redirect
+            .store(true, core::sync::atomic::Ordering::Release);
+    }
+
+    /// Consumes the signal redirect, if any.
+    #[cfg(target_arch = "riscv64")]
+    pub fn take_signal_redirect(&self) -> bool {
+        self.signal_redirect
+            .swap(false, core::sync::atomic::Ordering::AcqRel)
+    }
+
+    /// Wakes a thread that is blocked in `poll()` / `ppoll()`.
+    ///
+    /// Called when a signal arrives for a thread that is asleep waiting for
+    /// a descriptor: POSIX says `poll()` returns `EINTR` in that case rather
+    /// than sleeping out its timeout. The wake goes through the global poll
+    /// epoch, which is what `poll()` actually waits on.
+    pub fn wake_poll_waiters(&self) {
+        bump_poll_epoch();
     }
 
     pub fn register_once_signal_handler(&mut self, signum: i32, f: impl FnOnce() + 'static) {
+        // The table is indexed by the signal number and has `NSIG` slots, so
+        // an out-of-range number would index past the end.
+        if !crate::signal::posix::valid_signum(signum) {
+            return;
+        }
         let sig_ctx = self.get_or_create_signal_context();
         sig_ctx.once_action[signum as usize] = Some(Box::new(f));
     }
 
     pub fn take_signal_handler(&mut self, signum: i32) -> Option<Box<dyn FnOnce()>> {
+        if !crate::signal::posix::valid_signum(signum) {
+            return None;
+        }
         let sig_ctx = self.get_or_create_signal_context();
         sig_ctx.once_action[signum as usize].take()
     }
@@ -767,23 +950,32 @@ impl Thread {
     }
 
     #[inline]
-    pub fn pending_signals(&mut self) -> u32 {
+    pub fn pending_signals(&self) -> u32 {
         self.signal_context
             .as_ref()
-            .map_or_else(|| 0, |c| c.pending_signals)
+            .map_or_else(|| 0, |c| {
+                c.pending_signals.load(core::sync::atomic::Ordering::Acquire)
+            })
     }
 
     #[inline]
-    pub fn has_pending_signals(&mut self) -> bool {
+    pub fn has_pending_signals(&self) -> bool {
         self.pending_signals() != 0
     }
 
+    /// The set of signals this thread is blocking.
     #[inline]
-    pub fn clear_signal(&mut self, signum: i32) -> &Self {
-        let Some(c) = &mut self.signal_context else {
+    pub fn signal_mask(&self) -> &crate::signal::posix::ThreadSignalMask {
+        &self.signal_mask
+    }
+
+    #[inline]
+    pub fn clear_signal(&self, signum: i32) -> &Self {
+        let Some(c) = &self.signal_context else {
             return self;
         };
-        c.pending_signals &= !(1 << signum);
+        c.pending_signals
+            .fetch_and(!(1 << signum), core::sync::atomic::Ordering::AcqRel);
         self
     }
 
@@ -792,7 +984,8 @@ impl Thread {
         let Some(c) = &mut self.signal_context else {
             return self;
         };
-        c.pending_signals = 0;
+        c.pending_signals
+            .store(0, core::sync::atomic::Ordering::Release);
         self
     }
 

@@ -216,6 +216,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
     let mut old = set_current_thread(next);
+    // Install the incoming thread's address space *before* its context is
+    // restored. Without this a second user process would return from its trap
+    // into the first one's tables: each would see the other's memory and
+    // neither its own. A kernel thread maps to `satp = 0`, which is also how
+    // the tables of a dead process stop being used.
+    #[cfg(target_arch = "riscv64")]
+    crate::user::switch_satp_for(current_thread_ref());
     #[cfg(thread_stats)]
     old.increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
@@ -234,6 +241,8 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         let elapsed = now.since(start);
         old.elapse_time_slices(elapsed);
     }
+    #[cfg(thread_stats)]
+    old.increment_cycles(cycles);
     if old.state() == thread::RETIRED {
         cleanup_retired_thread(&mut old);
     }

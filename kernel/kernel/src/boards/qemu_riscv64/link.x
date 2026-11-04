@@ -67,6 +67,15 @@ SECTIONS
     PROVIDE_HIDDEN(__bk_app_array_end = .);
   }
 
+  /* POSIX conformance cases self-register here; the runner walks the range
+   * between the two symbols. Same contract as the AArch64 script. */
+  .posix_cases : ALIGN(8) {
+    PROVIDE(__start_posix_cases = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.posix_cases.*)))
+    KEEP(*(.posix_cases))
+    PROVIDE(__stop_posix_cases = .);
+  }
+
   .heap : {
     . = ALIGN(4096);
     __heap_start = .;

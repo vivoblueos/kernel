@@ -76,6 +76,7 @@ pub mod console;
 pub mod coverage;
 pub(crate) mod devices;
 pub(crate) mod drivers;
+pub mod elf;
 pub mod error;
 pub mod ffi;
 pub mod irq;
@@ -91,6 +92,11 @@ pub mod syscall_handlers;
 pub mod thread;
 pub mod time;
 pub mod types;
+/// User address spaces and the U-mode entry path. Only the 64-bit RISC-V
+/// targets have Sv39 (and therefore a user/kernel boundary); the 32-bit and
+/// no-MMU boards compile this module out entirely.
+#[cfg(target_arch = "riscv64")]
+pub mod user;
 #[cfg(enable_vfs)]
 pub mod vfs;
 

@@ -95,8 +95,12 @@ class Checker(object):
 
     def __init__(self, script, test_dir):
         self.script = os.path.abspath(script)
-        self.timeout = 1 << 30
-        self.total_timeout = 1 << 30
+        # Bounded even when a checker omits the directives: an unbounded wait
+        # turns a missing directive into a CI job that hangs for hours rather
+        # than a check that fails. Checkers that set the directives explicitly
+        # override these, and those values are tighter than the defaults.
+        self.timeout = 180
+        self.total_timeout = 600
         self.rules = []
         self.succ_lines = []
         self.fail_lines = []
@@ -293,6 +297,15 @@ class DirectiveParser(object):
                 m = TOTAL_TIMEOUT.match(line)
                 if m:
                     self.checker.set_total_timeout(int(m.group(1)))
+                    continue
+                # Not a directive. Documentation - a blank line or a comment
+                # line - is skipped so that a licence header or an explanatory
+                # note above the directives does not silently disable the whole
+                # check: with no ASSERT-SUCC the run never matches and waits on
+                # QEMU forever instead of failing. Anything else still ends
+                # the directive block.
+                stripped = line.strip()
+                if not stripped or stripped.startswith('//'):
                     continue
                 break
         return True

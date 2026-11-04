@@ -49,6 +49,22 @@ config THREAD_STATS
     default n
     bool "Enable statistics of thread"
 
+config ENABLE_USER_PROGRAMS
+    default n
+    bool "Run the embedded user-mode smoke program at boot"
+    depends on ENABLE_VFS && RISCV
+    help
+      Install the user images compiled into the kernel into /bin and start one
+      from a thread once the scheduler is up, then reap it with waitpid.
+
+      This is the only boot-time exercise of the U-mode entry path, the
+      trap-from-user path and the syscall boundary, so it is the difference
+      between "the code compiles" and "the code runs". It is off by default
+      because a production image should not start a fixture.
+
+      Only 64-bit RISC-V has a user address space today; on any other target
+      the boot hook is compiled out, so enabling this is harmless but inert.
+
 config ENABLE_BLOCK
     default n
     bool "Enable block device support"

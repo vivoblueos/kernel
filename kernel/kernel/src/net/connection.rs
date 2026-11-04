@@ -427,6 +427,22 @@ impl Connection {
         self.ipc_reply.queue_and_wait(control_task)
     }
 
+    /// Snapshots the socket's `poll()` readiness.
+    ///
+    /// `events` is the caller's request mask; the returned mask is the
+    /// matching `revents` from [`crate::vfs::poll`]. The question is answered
+    /// on the network thread, which owns the smoltcp sockets, but the call
+    /// does **not** wait for the socket to become ready - it reports what is
+    /// ready right now and returns.
+    pub fn query_ready(&self, events: u32) -> Result<u32, ConnectionError> {
+        let task = Operation::QueryReady {
+            socket_fd: self.socket_fd,
+            events,
+            ipc_reply: self.ipc_reply.clone(),
+        };
+        self.ipc_reply.queue_and_wait(task).map(|mask| mask as u32)
+    }
+
     // Set recv timeout : ref to libc::SO_RCVTIMEO
     pub fn set_recv_timeout(&self, timeout: Duration) {
         self.recv_timeout.lock().replace(timeout);
@@ -882,6 +898,24 @@ impl Connection {
                     });
                     ipc_reply.wakeup_client(result, 0);
                 }
+                Operation::QueryReady {
+                    socket_fd,
+                    events,
+                    ipc_reply,
+                } => {
+                    log::debug!("[Connection] handle QueryReady socket_fd={}", socket_fd);
+
+                    Connection::with_posix_socket(
+                        network_manager.clone(),
+                        socket_fd,
+                        ipc_reply.clone(),
+                        |posix_socket| {
+                            let mut posix_socket = posix_socket.borrow_mut();
+                            let revents = posix_socket.ready_events(events);
+                            Some(Ok(revents as usize))
+                        },
+                    );
+                }
             }
         }
         true
@@ -891,6 +925,21 @@ impl Connection {
 // MPSC Queue from heapless requires CAS atomic instructions which are not available on all architectures
 pub static NETSTACK_QUEUE: heapless::mpmc::MpMcQueue<Operation, 32> =
     heapless::mpmc::MpMcQueue::<Operation, 32>::new();
+
+/// Bumped whenever a request is pushed onto [`NETSTACK_QUEUE`].
+///
+/// The network thread sleeps between passes over the queue, so a request
+/// enqueued while it is asleep has to wake it up. Without this the thread
+/// would only notice the request at its next timer tick - up to
+/// `DEFAULT_DELAY_TIME_IN_MILLIS` later - which would make a non-blocking
+/// `poll()` block on the network stack instead of returning immediately.
+pub static NETSTACK_WAKE: AtomicUsize = AtomicUsize::new(0);
+
+/// Wakes the network thread so it drains [`NETSTACK_QUEUE`] now.
+pub fn wake_netstack() {
+    NETSTACK_WAKE.fetch_add(1, Ordering::Release);
+    crate::sync::atomic_wait::atomic_wake(&NETSTACK_WAKE, usize::MAX).ignore_result();
+}
 
 // for socket operation
 pub type OperationResult = Result<usize, SocketError>;
@@ -932,6 +981,10 @@ impl OperationIPCReply {
 
             ConnectionError::NetStackQueueFull
         })?;
+
+        // The network thread may be asleep until its next timer tick. Kick it
+        // so this request is handled now, not up to 100ms from now.
+        wake_netstack();
 
         self.queue_and_wait_timeout(IPC_REPLY_TIMEOUT)
     }
@@ -1108,6 +1161,18 @@ pub enum Operation {
     /// Network control operation (type-safe ioctl replacement).
     NetControl {
         cmd: NetIfaceControl,
+        ipc_reply: Arc<OperationIPCReply>,
+    },
+
+    /// Snapshot of a socket's `poll()` readiness.
+    ///
+    /// Replies with `Ok(revents)`: the ready event mask, computed on the
+    /// network thread because it owns the smoltcp sockets. The call does not
+    /// wait for readiness - it answers what is ready right now, so a
+    /// `poll()` with a zero timeout still returns immediately.
+    QueryReady {
+        socket_fd: SocketFd,
+        events: u32,
         ipc_reply: Arc<OperationIPCReply>,
     },
 }

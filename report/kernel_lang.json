@@ -1,0 +1,11 @@
+{
+  "allowlist": {
+    "kernel/adapter/cmsis/cmsis_header/RTOS1/cmsis_os.h": "ARM CMSIS-RTOS v1 API header; ABI description consumed by bindgen.",
+    "kernel/adapter/cmsis/cmsis_header/RTOS2/cmsis_os2.h": "ARM CMSIS-RTOS v2 API header; ABI description consumed by bindgen.",
+    "kernel/adapter/cmsis/cmsis_header/RTOS2/os_tick.h": "ARM CMSIS-RTOS tick type header; ABI description consumed by bindgen.",
+    "kernel/adapter/cmsis/cmsis_header/RTOS2/wrapper.h": "CMSIS-RTOS v2 header that includes cmsis_os2.h; ABI description only."
+  },
+  "rust_file_count": 372,
+  "violation_count": 0,
+  "violations": []
+}

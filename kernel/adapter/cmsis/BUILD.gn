@@ -24,7 +24,7 @@ adapter_deps = [
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kernel:blueos",
-  "//libs/libc",
+  "//libc",
 ]
 
 build_rust("cmsis_adapter") {
@@ -116,7 +116,7 @@ build_rust("adapter_validation") {
     "//kernel/kconfig:generate_rustflags_file",
 
     # in fact, validation_cases need an c library
-    # "//libs/librs:librs",
+    # "//librs:librs",
   ]
   deps += board_deps
   configs += [

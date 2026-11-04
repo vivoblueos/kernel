@@ -1,0 +1,124 @@
+#
+# POSIX.1-2024 (IEEE Std 1003.1-2024, The Open Group Base Specifications
+# Issue 8) interfaces that Issue 7 did not have.
+#
+# Issue 7 (2017) was a reprint of the 2008 edition plus two technical
+# corrigenda and added no interfaces, so this file is the complete delta
+# between the two most recent POSIX revisions.
+#
+# Format: one interface per line.
+#   <header> <symbol> <tier>
+#
+# tier:
+#   required  POSIX.1-2024 conformance needs it. Omitting one of these means
+#             the implementation is not Issue 8 conformant.
+#   optional  Part of Issue 8, but it depends on a capability that is not a
+#             kernel capability, so it can be scheduled later without
+#             blocking a conformance claim.
+#   deferred  Part of Issue 8, but it needs a kernel capability that is still
+#             on the roadmap (process model, credentials, ELF loading).
+#
+# The audit tool reports, for each interface, whether librs exports it and
+# whether a conformance case covers it.
+#
+threads.h call_once required
+threads.h cnd_init required
+threads.h cnd_destroy required
+threads.h cnd_signal required
+threads.h cnd_broadcast required
+threads.h cnd_wait required
+threads.h cnd_timedwait required
+threads.h mtx_init required
+threads.h mtx_destroy required
+threads.h mtx_lock required
+threads.h mtx_trylock required
+threads.h mtx_timedlock required
+threads.h mtx_unlock required
+threads.h thrd_create required
+threads.h thrd_current required
+threads.h thrd_detach required
+threads.h thrd_equal required
+threads.h thrd_exit required
+threads.h thrd_join required
+threads.h thrd_sleep required
+threads.h thrd_yield required
+threads.h tss_create required
+threads.h tss_delete required
+threads.h tss_get required
+threads.h tss_set required
+pthread.h pthread_cond_clockwait required
+pthread.h pthread_mutex_clocklock required
+pthread.h pthread_rwlock_clockrdlock required
+pthread.h pthread_rwlock_clockwrlock required
+signal.h sig2str required
+signal.h str2sig required
+unistd.h posix_close required
+fcntl.h posix_devctl required
+dirent.h posix_getdents required
+stdatomic.h atomic_init required
+stdatomic.h atomic_is_lock_free required
+stdatomic.h atomic_load required
+stdatomic.h atomic_load_explicit required
+stdatomic.h atomic_store required
+stdatomic.h atomic_store_explicit required
+stdatomic.h atomic_exchange required
+stdatomic.h atomic_exchange_explicit required
+stdatomic.h atomic_compare_exchange_strong required
+stdatomic.h atomic_compare_exchange_strong_explicit required
+stdatomic.h atomic_compare_exchange_weak required
+stdatomic.h atomic_compare_exchange_weak_explicit required
+stdatomic.h atomic_fetch_add required
+stdatomic.h atomic_fetch_add_explicit required
+stdatomic.h atomic_fetch_sub required
+stdatomic.h atomic_fetch_sub_explicit required
+stdatomic.h atomic_fetch_or required
+stdatomic.h atomic_fetch_or_explicit required
+stdatomic.h atomic_fetch_xor required
+stdatomic.h atomic_fetch_xor_explicit required
+stdatomic.h atomic_fetch_and required
+stdatomic.h atomic_fetch_and_explicit required
+stdatomic.h atomic_flag_test_and_set required
+stdatomic.h atomic_flag_test_and_set_explicit required
+stdatomic.h atomic_flag_clear required
+stdatomic.h atomic_flag_clear_explicit required
+stdatomic.h atomic_thread_fence required
+stdatomic.h atomic_signal_fence required
+time.h timespec_get required
+semaphore.h sem_clockwait required
+poll.h ppoll required
+stdlib.h aligned_alloc required
+stdlib.h reallocarray required
+stdlib.h at_quick_exit required
+stdlib.h quick_exit required
+stdlib.h qsort_r required
+string.h memmem required
+string.h strlcpy required
+string.h strlcat required
+wchar.h wcslcpy required
+wchar.h wcslcat required
+unistd.h _Fork deferred
+unistd.h getentropy deferred
+unistd.h getresuid deferred
+unistd.h getresgid deferred
+unistd.h setresuid deferred
+unistd.h setresgid deferred
+dlfcn.h dladdr deferred
+stdlib.h gettext optional
+stdlib.h dgettext optional
+stdlib.h dcgettext optional
+stdlib.h ngettext optional
+stdlib.h dngettext optional
+stdlib.h dcngettext optional
+stdlib.h gettext_l optional
+stdlib.h dgettext_l optional
+stdlib.h dcgettext_l optional
+stdlib.h ngettext_l optional
+stdlib.h dngettext_l optional
+stdlib.h dcngettext_l optional
+stdlib.h bindtextdomain optional
+stdlib.h bind_textdomain_codeset optional
+stdlib.h textdomain optional
+wchar.h mbrtoc16 optional
+wchar.h mbrtoc32 optional
+wchar.h c16rtomb optional
+wchar.h c32rtomb optional

@@ -148,6 +148,18 @@ extern "C" fn init() {
 
     init_apps();
 
+    // Last thing before the scheduler takes over: queue a thread that starts
+    // the embedded user image and reaps it. Everything it needs — VFS, the
+    // frame allocator, the trap path — is already up.
+    #[cfg(all(enable_vfs, target_arch = "riscv64", enable_user_programs))]
+    crate::user::programs::start_smoke();
+
+    // A second U-mode program that drives the process model (fork/waitpid/
+    // execve): the POSIX harness runs in M-mode and cannot reach these, so this
+    // is the only automated check for them.
+    #[cfg(all(enable_vfs, target_arch = "riscv64", enable_user_programs))]
+    crate::user::programs::start_proc_smoke();
+
     arch::start_schedule(scheduler::schedule);
     unreachable!("We should have jumped to the schedule loop!");
 }

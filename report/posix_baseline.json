@@ -1,0 +1,2110 @@
+{
+  "schema": 2,
+  "status_rule": {
+    "real": "handler has real logic and librs issues the call",
+    "stub": "handler returns a constant, TODO, or -1 without doing work",
+    "noop": "handler is real but the librs method returns Ok(()) without calling",
+    "missing": "not dispatched, no handler, or librs does not expose the call"
+  },
+  "summary": {
+    "declared": 85,
+    "dispatched": 85,
+    "real": 84,
+    "stub": 1,
+    "noop": 0,
+    "missing": 0,
+    "errno_ok": 2,
+    "tested": 2,
+    "real_ratio": 0.9882
+  },
+  "syscalls": [
+    {
+      "nr": "Nop",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "stub",
+      "errno_ok": false,
+      "test": [
+        "librs/tests/integration_test/scal.rs"
+      ],
+      "detail": {
+        "kernel_impl": "stub",
+        "librs_kind": "missing",
+        "handler": "nop"
+      }
+    },
+    {
+      "nr": "Echo",
+      "declared": true,
+      "dispatched": true,
+      "backend": "echo",
+      "status": "real",
+      "errno_ok": false,
+      "test": [
+        "librs/tests/integration_test/scal.rs"
+      ],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "echo"
+      }
+    },
+    {
+      "nr": "GetTid",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "get_tid"
+      }
+    },
+    {
+      "nr": "GetSchedParam",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": true,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "get_sched_param"
+      }
+    },
+    {
+      "nr": "SetSchedParam",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": true,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "set_sched_param"
+      }
+    },
+    {
+      "nr": "CreateThread",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "create_thread"
+      }
+    },
+    {
+      "nr": "ExitThread",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "exit_thread"
+      }
+    },
+    {
+      "nr": "AtomicWait",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "atomic_wait"
+      }
+    },
+    {
+      "nr": "AtomicWake",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "atomic_wake"
+      }
+    },
+    {
+      "nr": "AllocMem",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "alloc_mem"
+      }
+    },
+    {
+      "nr": "FreeMem",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "free_mem"
+      }
+    },
+    {
+      "nr": "Write",
+      "declared": true,
+      "dispatched": true,
+      "backend": "write",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "write"
+      }
+    },
+    {
+      "nr": "Close",
+      "declared": true,
+      "dispatched": true,
+      "backend": "close",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "close"
+      }
+    },
+    {
+      "nr": "Read",
+      "declared": true,
+      "dispatched": true,
+      "backend": "read",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "read"
+      }
+    },
+    {
+      "nr": "Open",
+      "declared": true,
+      "dispatched": true,
+      "backend": "open",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "open"
+      }
+    },
+    {
+      "nr": "Lseek",
+      "declared": true,
+      "dispatched": true,
+      "backend": "lseek",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "lseek"
+      }
+    },
+    {
+      "nr": "SchedYield",
+      "declared": true,
+      "dispatched": true,
+      "backend": "sched_yield",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sched_yield"
+      }
+    },
+    {
+      "nr": "Fcntl",
+      "declared": true,
+      "dispatched": true,
+      "backend": "fcntl",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "fcntl"
+      }
+    },
+    {
+      "nr": "Mkdir",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mkdir",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mkdir"
+      }
+    },
+    {
+      "nr": "Rmdir",
+      "declared": true,
+      "dispatched": true,
+      "backend": "rmdir",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "rmdir"
+      }
+    },
+    {
+      "nr": "Stat",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "stat"
+      }
+    },
+    {
+      "nr": "FStat",
+      "declared": true,
+      "dispatched": true,
+      "backend": "fstat",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "fstat"
+      }
+    },
+    {
+      "nr": "Statfs",
+      "declared": true,
+      "dispatched": true,
+      "backend": "statfs",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "statfs"
+      }
+    },
+    {
+      "nr": "FStatfs",
+      "declared": true,
+      "dispatched": true,
+      "backend": "fstatvfs",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "fstatfs"
+      }
+    },
+    {
+      "nr": "Link",
+      "declared": true,
+      "dispatched": true,
+      "backend": "link",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "link"
+      }
+    },
+    {
+      "nr": "Unlink",
+      "declared": true,
+      "dispatched": true,
+      "backend": "unlink",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "unlink"
+      }
+    },
+    {
+      "nr": "Ftruncate",
+      "declared": true,
+      "dispatched": true,
+      "backend": "ftruncate",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "ftruncate"
+      }
+    },
+    {
+      "nr": "GetDents",
+      "declared": true,
+      "dispatched": true,
+      "backend": "getdents",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "getdents"
+      }
+    },
+    {
+      "nr": "Chdir",
+      "declared": true,
+      "dispatched": true,
+      "backend": "chdir",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "chdir"
+      }
+    },
+    {
+      "nr": "Getcwd",
+      "declared": true,
+      "dispatched": true,
+      "backend": "getcwd",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "getcwd"
+      }
+    },
+    {
+      "nr": "Mount",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mount"
+      }
+    },
+    {
+      "nr": "Umount",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "umount"
+      }
+    },
+    {
+      "nr": "RtSigAction",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "signalaction"
+      }
+    },
+    {
+      "nr": "SigAltStack",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "signaltstack"
+      }
+    },
+    {
+      "nr": "RtSigPending",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sigpending"
+      }
+    },
+    {
+      "nr": "RtSigProcmask",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sigprocmask"
+      }
+    },
+    {
+      "nr": "RtSigQueueInfo",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sigqueueinfo"
+      }
+    },
+    {
+      "nr": "RtSigSuspend",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sigsuspend"
+      }
+    },
+    {
+      "nr": "RtSigTimedWait",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sigtimedwait"
+      }
+    },
+    {
+      "nr": "Socket",
+      "declared": true,
+      "dispatched": true,
+      "backend": "socket",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "socket"
+      }
+    },
+    {
+      "nr": "Bind",
+      "declared": true,
+      "dispatched": true,
+      "backend": "bind",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "bind"
+      }
+    },
+    {
+      "nr": "Connect",
+      "declared": true,
+      "dispatched": true,
+      "backend": "connect",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "connect"
+      }
+    },
+    {
+      "nr": "Listen",
+      "declared": true,
+      "dispatched": true,
+      "backend": "listen",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "listen"
+      }
+    },
+    {
+      "nr": "Accept",
+      "declared": true,
+      "dispatched": true,
+      "backend": "accept",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "accept"
+      }
+    },
+    {
+      "nr": "Send",
+      "declared": true,
+      "dispatched": true,
+      "backend": "send",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "send"
+      }
+    },
+    {
+      "nr": "Sendto",
+      "declared": true,
+      "dispatched": true,
+      "backend": "sendto",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sendto"
+      }
+    },
+    {
+      "nr": "Recv",
+      "declared": true,
+      "dispatched": true,
+      "backend": "recv",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "recv"
+      }
+    },
+    {
+      "nr": "Recvfrom",
+      "declared": true,
+      "dispatched": true,
+      "backend": "recvfrom",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "recvfrom"
+      }
+    },
+    {
+      "nr": "Shutdown",
+      "declared": true,
+      "dispatched": true,
+      "backend": "shutdown",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "shutdown"
+      }
+    },
+    {
+      "nr": "Setsockopt",
+      "declared": true,
+      "dispatched": true,
+      "backend": "setsockopt",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "setsockopt"
+      }
+    },
+    {
+      "nr": "Getsockopt",
+      "declared": true,
+      "dispatched": true,
+      "backend": "getsockopt",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "getsockopt"
+      }
+    },
+    {
+      "nr": "Sendmsg",
+      "declared": true,
+      "dispatched": true,
+      "backend": "sendmsg",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sendmsg"
+      }
+    },
+    {
+      "nr": "Recvmsg",
+      "declared": true,
+      "dispatched": true,
+      "backend": "recvmsg",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "recvmsg"
+      }
+    },
+    {
+      "nr": "GetAddrinfo",
+      "declared": true,
+      "dispatched": true,
+      "backend": "getaddrinfo",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "getaddrinfo"
+      }
+    },
+    {
+      "nr": "FreeAddrinfo",
+      "declared": true,
+      "dispatched": true,
+      "backend": "freeaddrinfo",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "freeaddrinfo"
+      }
+    },
+    {
+      "nr": "MqOpen",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mq_open",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mq_open"
+      }
+    },
+    {
+      "nr": "MqClose",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mq_close",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mq_close"
+      }
+    },
+    {
+      "nr": "MqUnlink",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mq_unlink",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mq_unlink"
+      }
+    },
+    {
+      "nr": "MqTimedSend",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mq_timedsend",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mq_timedsend"
+      }
+    },
+    {
+      "nr": "MqTimedReceive",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mq_timedreceive",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mq_timedreceive"
+      }
+    },
+    {
+      "nr": "MqGetSetAttr",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mq_getsetattr",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mq_getsetattr"
+      }
+    },
+    {
+      "nr": "Ioctl",
+      "declared": true,
+      "dispatched": true,
+      "backend": "ioctl",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "ioctl"
+      }
+    },
+    {
+      "nr": "ClockGetTime",
+      "declared": true,
+      "dispatched": true,
+      "backend": "clock_gettime",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "clock_gettime"
+      }
+    },
+    {
+      "nr": "ClockSetTime",
+      "declared": true,
+      "dispatched": true,
+      "backend": "clock_settime",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "clock_settime"
+      }
+    },
+    {
+      "nr": "ClockNanoSleep",
+      "declared": true,
+      "dispatched": true,
+      "backend": "clock_nanosleep",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "clock_nanosleep"
+      }
+    },
+    {
+      "nr": "TimerCreate",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "timer_create"
+      }
+    },
+    {
+      "nr": "TimerDelete",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "timer_delete"
+      }
+    },
+    {
+      "nr": "TimerGetTime",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "timer_gettime"
+      }
+    },
+    {
+      "nr": "TimerSetTime",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "timer_settime"
+      }
+    },
+    {
+      "nr": "TimerGetOverrun",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "timer_getoverrun"
+      }
+    },
+    {
+      "nr": "Rename",
+      "declared": true,
+      "dispatched": true,
+      "backend": "rename",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "rename"
+      }
+    },
+    {
+      "nr": "ReallocMem",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "realloc_mem"
+      }
+    },
+    {
+      "nr": "Kill",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "kill"
+      }
+    },
+    {
+      "nr": "Raise",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "raise"
+      }
+    },
+    {
+      "nr": "SigWait",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "sigwait"
+      }
+    },
+    {
+      "nr": "Poll",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "poll"
+      }
+    },
+    {
+      "nr": "PPoll",
+      "declared": true,
+      "dispatched": true,
+      "backend": "",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "ppoll"
+      }
+    },
+    {
+      "nr": "Fork",
+      "declared": true,
+      "dispatched": true,
+      "backend": "fork",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "fork"
+      }
+    },
+    {
+      "nr": "Execve",
+      "declared": true,
+      "dispatched": true,
+      "backend": "execve",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "execve"
+      }
+    },
+    {
+      "nr": "WaitPid",
+      "declared": true,
+      "dispatched": true,
+      "backend": "wait_pid",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "waitpid"
+      }
+    },
+    {
+      "nr": "ExitGroup",
+      "declared": true,
+      "dispatched": true,
+      "backend": "exit_group",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "exit_group"
+      }
+    },
+    {
+      "nr": "GetPid",
+      "declared": true,
+      "dispatched": true,
+      "backend": "get_pid",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "get_pid"
+      }
+    },
+    {
+      "nr": "GetPpid",
+      "declared": true,
+      "dispatched": true,
+      "backend": "get_ppid",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "get_ppid"
+      }
+    },
+    {
+      "nr": "MMap",
+      "declared": true,
+      "dispatched": true,
+      "backend": "mmap",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "mmap"
+      }
+    },
+    {
+      "nr": "MUnmap",
+      "declared": true,
+      "dispatched": true,
+      "backend": "munmap",
+      "status": "real",
+      "errno_ok": false,
+      "test": [],
+      "detail": {
+        "kernel_impl": "real",
+        "librs_kind": "real",
+        "handler": "munmap"
+      }
+    }
+  ],
+  "cases": {
+    "files": 14,
+    "registered": 72,
+    "names": [
+      "c11_threads.c",
+      "clock_gettime.c",
+      "issue8_clock.c",
+      "issue8_fdops.c",
+      "issue8_poll.c",
+      "issue8_signal.c",
+      "issue8_stdlib.c",
+      "issue8_string.c",
+      "open.c",
+      "pthread_create.c",
+      "socket.c",
+      "statvfs.c",
+      "stdatomic.c",
+      "write.c"
+    ]
+  },
+  "issue8": {
+    "summary": {
+      "total": 101,
+      "required": 75,
+      "required_exported": 37,
+      "required_covered": 37,
+      "optional": 19,
+      "optional_exported": 0,
+      "optional_covered": 0,
+      "deferred": 7,
+      "deferred_exported": 0,
+      "deferred_covered": 0,
+      "required_ratio": 0.4933
+    },
+    "interfaces": [
+      {
+        "header": "threads.h",
+        "symbol": "call_once",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "cnd_init",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "cnd_destroy",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "cnd_signal",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "cnd_broadcast",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "cnd_wait",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "cnd_timedwait",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "mtx_init",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "mtx_destroy",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "mtx_lock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "mtx_trylock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "mtx_timedlock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "mtx_unlock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_create",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_current",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_detach",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_equal",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_exit",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_join",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_sleep",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "thrd_yield",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "tss_create",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "tss_delete",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "tss_get",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "threads.h",
+        "symbol": "tss_set",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/c11_threads.c"
+        ]
+      },
+      {
+        "header": "pthread.h",
+        "symbol": "pthread_cond_clockwait",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_clock.c"
+        ]
+      },
+      {
+        "header": "pthread.h",
+        "symbol": "pthread_mutex_clocklock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_clock.c"
+        ]
+      },
+      {
+        "header": "pthread.h",
+        "symbol": "pthread_rwlock_clockrdlock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_clock.c"
+        ]
+      },
+      {
+        "header": "pthread.h",
+        "symbol": "pthread_rwlock_clockwrlock",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_clock.c"
+        ]
+      },
+      {
+        "header": "signal.h",
+        "symbol": "sig2str",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_string.c"
+        ]
+      },
+      {
+        "header": "signal.h",
+        "symbol": "str2sig",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_string.c"
+        ]
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "posix_close",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_fdops.c"
+        ]
+      },
+      {
+        "header": "fcntl.h",
+        "symbol": "posix_devctl",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_fdops.c"
+        ]
+      },
+      {
+        "header": "dirent.h",
+        "symbol": "posix_getdents",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_fdops.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_init",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_is_lock_free",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_load",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_load_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_store",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_store_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_exchange",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_exchange_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_compare_exchange_strong",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_compare_exchange_strong_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_compare_exchange_weak",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_compare_exchange_weak_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_add",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_add_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_sub",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_sub_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_or",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_or_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_xor",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_xor_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_and",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_fetch_and_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_flag_test_and_set",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_flag_test_and_set_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_flag_clear",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_flag_clear_explicit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_thread_fence",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "stdatomic.h",
+        "symbol": "atomic_signal_fence",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/stdatomic.c"
+        ]
+      },
+      {
+        "header": "time.h",
+        "symbol": "timespec_get",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_clock.c"
+        ]
+      },
+      {
+        "header": "semaphore.h",
+        "symbol": "sem_clockwait",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_clock.c"
+        ]
+      },
+      {
+        "header": "poll.h",
+        "symbol": "ppoll",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_poll.c"
+        ]
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "aligned_alloc",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "reallocarray",
+        "tier": "required",
+        "exported": true,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "at_quick_exit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "quick_exit",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "qsort_r",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "string.h",
+        "symbol": "memmem",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_string.c"
+        ]
+      },
+      {
+        "header": "string.h",
+        "symbol": "strlcpy",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_string.c"
+        ]
+      },
+      {
+        "header": "string.h",
+        "symbol": "strlcat",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_string.c"
+        ]
+      },
+      {
+        "header": "wchar.h",
+        "symbol": "wcslcpy",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "wchar.h",
+        "symbol": "wcslcat",
+        "tier": "required",
+        "exported": false,
+        "case": [
+          "cases/issue8_stdlib.c"
+        ]
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "_Fork",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "getentropy",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "getresuid",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "getresgid",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "setresuid",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "unistd.h",
+        "symbol": "setresgid",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "dlfcn.h",
+        "symbol": "dladdr",
+        "tier": "deferred",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "gettext",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dgettext",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dcgettext",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "ngettext",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dngettext",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dcngettext",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "gettext_l",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dgettext_l",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dcgettext_l",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "ngettext_l",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dngettext_l",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "dcngettext_l",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "bindtextdomain",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "bind_textdomain_codeset",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "stdlib.h",
+        "symbol": "textdomain",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "wchar.h",
+        "symbol": "mbrtoc16",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "wchar.h",
+        "symbol": "mbrtoc32",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "wchar.h",
+        "symbol": "c16rtomb",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      },
+      {
+        "header": "wchar.h",
+        "symbol": "c32rtomb",
+        "tier": "optional",
+        "exported": false,
+        "case": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+<nav class="language-picker" aria-label="Language"
+     data-language="{{ language }}" data-root="{{ path_to_root }}" data-page="{{ path }}">
+    <button type="button" class="icon-button" title="Change language" aria-label="Change language"
+            aria-expanded="false" aria-controls="language-list" hidden>
+        {{fa "solid" "globe"}}
+    </button>
+    <ul id="language-list" class="language-menu">
+    {{#if (eq language "zh")}}
+        <li><a href="{{ path_to_root }}../" lang="en" hreflang="en">English</a></li>
+        <li><a href="{{ path_to_root }}" lang="zh" hreflang="zh" aria-current="true">中文</a></li>
+    {{else}}
+        <li><a href="{{ path_to_root }}" lang="en" hreflang="en" aria-current="true">English</a></li>
+        <li><a href="{{ path_to_root }}zh/" lang="zh" hreflang="zh">中文</a></li>
+    {{/if}}
+    </ul>
+</nav>

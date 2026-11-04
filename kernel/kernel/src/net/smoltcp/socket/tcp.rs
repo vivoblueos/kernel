@@ -517,4 +517,62 @@ impl PosixSocket for TcpSocket {
     fn is_shutdown(&self) -> bool {
         self.is_shutdown.get()
     }
+
+    fn ready_events(&mut self, events: u32) -> u32 {
+        use crate::vfs::poll::{POLLERR, POLLHUP, POLLIN, POLLOUT};
+
+        let locally_shut_down = self.is_shutdown.get();
+        let Ok(revents) = self.with(|socket, _| {
+            let mut revents = 0u32;
+            let state = socket.state();
+
+            // A listening socket becomes readable when a connection is ready
+            // to be accepted: `accept()` completes on Established / CloseWait.
+            if socket.is_listening() {
+                if matches!(state, State::Established | State::CloseWait) {
+                    revents |= POLLIN;
+                }
+                return Ok(revents);
+            }
+
+            if socket.can_recv() {
+                revents |= POLLIN;
+            }
+            if socket.can_send() {
+                revents |= POLLOUT;
+            }
+
+            // The peer closed (or we did): a read returns 0, which the caller
+            // learns about only if it is woken up. POSIX wants POLLHUP here,
+            // and POLLIN as well so a reader is not left waiting forever.
+            let hung_up = locally_shut_down
+                || matches!(
+                    state,
+                    State::Closed
+                        | State::CloseWait
+                        | State::FinWait1
+                        | State::FinWait2
+                        | State::LastAck
+                        | State::TimeWait
+                );
+            if hung_up {
+                revents |= POLLHUP | POLLIN;
+            }
+            // Closed with nothing left to read and not a listener: the
+            // connection is gone rather than merely half-closed.
+            if matches!(state, State::Closed) && !socket.can_recv() {
+                revents |= POLLERR;
+            }
+
+            Ok(revents)
+        }) else {
+            // No interface / no handle yet: the socket cannot be ready.
+            return 0;
+        };
+
+        // POLLERR and POLLHUP are reported whether or not the caller asked
+        // for them, because the caller cannot act on a condition it never
+        // hears about. The rest is masked by the request.
+        (revents & events) | (revents & (POLLERR | POLLHUP))
+    }
 }

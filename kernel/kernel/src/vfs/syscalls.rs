@@ -16,6 +16,7 @@
 use crate::{
     error::code,
     vfs::{
+        uptr,
         dcache::Dcache,
         dirent::DirBufferReader,
         file::{File, FileAttr, FileOps, OpenFlags},
@@ -25,12 +26,11 @@ use crate::{
         utils::SeekFrom,
     },
 };
-use alloc::{slice, string::String, sync::Arc};
+use alloc::{string::String, sync::Arc};
 use blueos_infra::no_let_underscore::IgnoreResult;
 use core::{
-    ffi::{c_char, c_int, c_ulong, c_void, CStr},
+    ffi::{c_char, c_int, c_ulong, c_void},
     mem::size_of,
-    ptr::copy_nonoverlapping,
     time::Duration,
 };
 use log::{debug, error, warn};
@@ -74,6 +74,9 @@ macro_rules! current_fd {
 }
 pub(crate) use current_fd;
 
+/// POSIX `poll()` / `ppoll()`, implemented in [`crate::vfs::poll`].
+pub use super::poll::{poll, ppoll, select};
+
 pub fn mount(
     device_name: *const c_char,
     path: *const c_char,
@@ -85,26 +88,26 @@ pub fn mount(
         return -libc::EINVAL;
     }
 
-    let target = match unsafe { CStr::from_ptr(path).to_str() } {
+    let target = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
-    let fs_type = match unsafe { CStr::from_ptr(filesystemtype).to_str() } {
+    let fs_type = match uptr::cstr(filesystemtype) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
     let device = if device_name.is_null() {
         None
     } else {
-        match unsafe { CStr::from_ptr(device_name).to_str() } {
+        match uptr::cstr(device_name) {
             Ok(s) => Some(s),
-            Err(_) => return -libc::EINVAL,
+            Err(e) => return e.to_errno(),
         }
     };
 
-    let Some(dir) = path::lookup_path(target) else {
+    let Some(dir) = path::lookup_path(&target) else {
         warn!("[mount] Invalid target path: {}", target);
         return -libc::EINVAL;
     };
@@ -119,7 +122,7 @@ pub fn mount(
         return -libc::EEXIST;
     }
 
-    let fs = match mount::get_fs(fs_type, device.unwrap_or("")) {
+    let fs = match mount::get_fs(&fs_type, device.as_deref().unwrap_or("")) {
         Some(fs) => fs,
         None => {
             warn!("[mount] Invalid filesystem type: {}", fs_type);
@@ -147,12 +150,12 @@ pub fn umount(path: *const c_char) -> c_int {
         return -libc::EINVAL;
     }
 
-    let target = match unsafe { CStr::from_ptr(path).to_str() } {
+    let target = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
-    let Some(dir) = path::lookup_path(target) else {
+    let Some(dir) = path::lookup_path(&target) else {
         warn!("[unmount] Invalid target path: {}", target);
         return -libc::EINVAL;
     };
@@ -172,9 +175,9 @@ pub fn open(path: *const c_char, flags: c_int, mode: libc::mode_t) -> c_int {
         return -libc::EINVAL;
     }
 
-    let file_path = match unsafe { CStr::from_ptr(path).to_str() } {
+    let file_path = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
     debug!(
         "[open] path = {}, flags = {}, mode = {:o}",
@@ -184,7 +187,7 @@ pub fn open(path: *const c_char, flags: c_int, mode: libc::mode_t) -> c_int {
     );
 
     let file = {
-        match path::open_path(file_path, flags, mode) {
+        match path::open_path(&file_path, flags, mode) {
             Ok(file) => Arc::new(file),
             Err(e) => return e.to_errno(),
         }
@@ -218,6 +221,54 @@ pub fn close(fd: i32) -> i32 {
     }
 }
 
+/// `pipe2(2)`: create a pipe and return both ends in `fds`.
+///
+/// The only flags POSIX defines for a new pipe are `O_CLOEXEC` and
+/// `O_NONBLOCK`; anything else is `EINVAL` rather than silently dropped, since
+/// a caller that asked for an unsupported property would otherwise believe it
+/// had it.
+pub fn pipe(fds: *mut c_int, flags: c_int) -> c_int {
+    if fds.is_null() {
+        return -libc::EINVAL;
+    }
+    const PIPE_FLAGS: c_int = libc::O_CLOEXEC | libc::O_NONBLOCK;
+    if flags & !PIPE_FLAGS != 0 {
+        return -libc::EINVAL;
+    }
+
+    let (read_end, write_end) = crate::vfs::pipe::create(OpenFlags::from(flags));
+
+    let (rfd, wfd) = {
+        current_fd!(mut fd_manager, err: -libc::EMFILE);
+        let rfd = fd_manager.alloc_fd(read_end);
+        let wfd = fd_manager.alloc_fd(write_end);
+        (rfd, wfd)
+    };
+
+    // Publish both descriptors at once. If the caller's buffer is not
+    // writable, the pipe has never become visible, so take it back apart
+    // instead of leaking two descriptors into a process that cannot name them.
+    if let Err(e) = uptr::write_struct(fds as *mut [c_int; 2], &[rfd, wfd]) {
+        current_fd!(mut fd_manager, err: -e.to_errno());
+        let _ = fd_manager.free_fd(rfd);
+        let _ = fd_manager.free_fd(wfd);
+        return e.to_errno();
+    }
+    0
+}
+
+/// `dup2(2)`: duplicate `oldfd` onto the exact number `newfd`.
+///
+/// Unlike `dup`, this replaces an existing descriptor and must therefore close
+/// it, which is why it lives in the fd table rather than on `FileOps`.
+pub fn dup2(oldfd: c_int, newfd: c_int) -> c_int {
+    current_fd!(mut fd_manager, err: -libc::EBADF);
+    match fd_manager.dup2_fd(oldfd, newfd) {
+        Ok(fd) => fd,
+        Err(e) => e.to_errno(),
+    }
+}
+
 /// Read from a file
 pub fn read(fd: i32, buf: *mut u8, count: usize) -> isize {
     if buf.is_null() {
@@ -236,8 +287,7 @@ pub fn read(fd: i32, buf: *mut u8, count: usize) -> isize {
         }
     };
 
-    let slice = unsafe { slice::from_raw_parts_mut(buf, count) };
-    match file_ops.read(slice) {
+    match uptr::with_out(buf, count.min(uptr::MAX_XFER), |b| file_ops.read(b)) {
         Ok(n) => n as isize,
         Err(e) => e.to_errno() as isize,
     }
@@ -261,9 +311,10 @@ pub fn write(fd: i32, buf: *const u8, count: usize) -> isize {
         }
     };
 
-    let slice = unsafe { slice::from_raw_parts(buf, count) };
-    match file_ops.write(slice) {
-        Ok(n) => n as isize,
+    match uptr::with_in(buf, count.min(uptr::MAX_XFER), |b| {
+        file_ops.write(b).map(|n| n as isize)
+    }) {
+        Ok(n) => n,
         Err(e) => e.to_errno() as isize,
     }
 }
@@ -317,13 +368,13 @@ pub fn truncate(path: *const c_char, length: libc::off_t) -> c_int {
         return -libc::EINVAL;
     }
 
-    let file_path = match unsafe { CStr::from_ptr(path).to_str() } {
+    let file_path = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
     debug!("truncate: path = {}, length = {}", file_path, length);
 
-    let file = match path::lookup_path(file_path) {
+    let file = match path::lookup_path(&file_path) {
         Some(entry) => entry,
         None => return -libc::EINVAL,
     };
@@ -437,14 +488,14 @@ pub fn link(old_path: *const c_char, new_path: *const c_char) -> c_int {
         return -libc::EINVAL;
     }
 
-    let old_path = match unsafe { CStr::from_ptr(old_path).to_str() } {
+    let old_path = match uptr::cstr(old_path) {
         Ok(s) => s,
-        Err(_) => return -libc::ENOENT,
+        Err(e) => return e.to_errno(),
     };
 
-    let new_path = match unsafe { CStr::from_ptr(new_path).to_str() } {
+    let new_path = match uptr::cstr(new_path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
     if old_path.ends_with('/') {
@@ -457,11 +508,11 @@ pub fn link(old_path: *const c_char, new_path: *const c_char) -> c_int {
         return -libc::ENOENT;
     }
 
-    let old_dentry = match path::lookup_path(old_path) {
+    let old_dentry = match path::lookup_path(&old_path) {
         Some(dentry) => dentry,
         None => return -libc::ENOENT,
     };
-    let (new_dir, new_name) = match path::find_parent_and_name(new_path) {
+    let (new_dir, new_name) = match path::find_parent_and_name(&new_path) {
         Some(result) => result,
         None => return -libc::ENOENT,
     };
@@ -477,14 +528,15 @@ pub fn rename(old_path: *const c_char, new_path: *const c_char) -> c_int {
         return -libc::EINVAL;
     }
 
-    let old_path = match unsafe { CStr::from_ptr(old_path).to_str() } {
+    let old_path = match uptr::cstr(old_path) {
         Ok(path) => path,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
-    let new_path = match unsafe { CStr::from_ptr(new_path).to_str() } {
+    let new_path = match uptr::cstr(new_path) {
         Ok(path) => path,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
+    let (old_path, new_path) = (old_path.as_str(), new_path.as_str());
 
     let (old_dir, old_name) = match path::find_parent_and_name(old_path) {
         Some(result) => result,
@@ -507,9 +559,9 @@ pub fn unlink(path: *const c_char) -> c_int {
         return -libc::EINVAL;
     }
 
-    let file_path = match unsafe { CStr::from_ptr(path).to_str() } {
+    let file_path = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
     if file_path.ends_with('/') {
@@ -517,7 +569,7 @@ pub fn unlink(path: *const c_char) -> c_int {
         return -libc::EISDIR;
     }
 
-    let Some((dir, name)) = path::find_parent_and_name(file_path) else {
+    let Some((dir, name)) = path::find_parent_and_name(&file_path) else {
         warn!("[unlink] Invalid path: {}", file_path);
         return -libc::EINVAL;
     };
@@ -535,12 +587,12 @@ pub fn mkdir(path: *const c_char, mode: libc::mode_t) -> i32 {
         return -libc::EINVAL;
     }
 
-    let file_path = match unsafe { CStr::from_ptr(path).to_str() } {
+    let file_path = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
-    let (dir, name) = match path::find_parent_and_name(file_path) {
+    let (dir, name) = match path::find_parent_and_name(&file_path) {
         Some((dir, name)) => (dir, name),
         None => return -libc::EINVAL,
     };
@@ -561,9 +613,9 @@ pub fn rmdir(path: *const c_char) -> c_int {
         return -libc::EINVAL;
     }
 
-    let file_path = match unsafe { CStr::from_ptr(path).to_str() } {
+    let file_path = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
     if file_path == "/" {
@@ -571,7 +623,7 @@ pub fn rmdir(path: *const c_char) -> c_int {
         return -libc::EBUSY;
     }
 
-    let Some((dir, name)) = path::find_parent_and_name(file_path) else {
+    let Some((dir, name)) = path::find_parent_and_name(&file_path) else {
         warn!("Invalid path: {}", file_path);
         return -libc::EINVAL;
     };
@@ -599,11 +651,12 @@ pub fn getdents(fd: i32, buf: *mut u8, buf_len: usize) -> c_int {
         return -libc::ENOTDIR;
     }
 
-    let buf = unsafe { slice::from_raw_parts_mut(buf, buf_len) };
-    let mut reader = DirBufferReader::new(buf);
-
-    match file.getdents(&mut reader) {
-        Ok(_) => reader.recv_len() as c_int,
+    match uptr::with_out(buf, buf_len.min(uptr::MAX_XFER), |b| {
+        let mut reader = DirBufferReader::new(b);
+        file.getdents(&mut reader)?;
+        Ok(reader.recv_len())
+    }) {
+        Ok(n) => n as c_int,
         Err(e) => e.to_errno(),
     }
 }
@@ -681,22 +734,22 @@ pub fn stat(path: *const c_char, buf: *mut Stat) -> c_int {
         return -libc::EINVAL;
     }
 
-    let path_str = match unsafe { CStr::from_ptr(path).to_str() } {
+    let path_str = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
-    let dir_entry = match path::lookup_path(path_str) {
+    let dir_entry = match path::lookup_path(&path_str) {
         Some(entry) => entry,
         None => return -libc::EINVAL,
     };
     let file_attr = dir_entry.inode().file_attr();
 
     let stat = Stat::from(file_attr);
-    unsafe {
-        copy_nonoverlapping(&stat, buf, 1);
+    match uptr::write_struct(buf, &stat) {
+        Ok(()) => 0,
+        Err(e) => e.to_errno(),
     }
-    0
 }
 
 pub fn fstat(fd: i32, buf: *mut Stat) -> c_int {
@@ -712,13 +765,10 @@ pub fn fstat(fd: i32, buf: *mut Stat) -> c_int {
 
     let file_attr = file_ops.stat();
     let stat = Stat::from(file_attr);
-    if buf.is_null() {
-        return -1;
+    match uptr::write_struct(buf, &stat) {
+        Ok(()) => 0,
+        Err(e) => e.to_errno(),
     }
-    unsafe {
-        copy_nonoverlapping(&stat, buf, 1);
-    }
-    0
 }
 
 #[repr(C)]
@@ -762,14 +812,17 @@ pub fn statfs(path: *const c_char, buf: *mut Statfs) -> c_int {
         return -libc::EINVAL;
     }
 
-    let path_str = match unsafe { CStr::from_ptr(path).to_str() } {
+    let path_str = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
-    let dir_entry = match path::lookup_path(path_str) {
+    let dir_entry = match path::lookup_path(&path_str) {
         Some(entry) => entry,
-        None => return -libc::EINVAL,
+        // A path that does not resolve is ENOENT, which is what both statfs(2)
+        // and POSIX statvfs() specify. It used to be EINVAL, as if the caller
+        // had passed a malformed path rather than a missing one.
+        None => return -libc::ENOENT,
     };
     let fs_info = if let Some(fs) = dir_entry.fs() {
         fs.fs_info()
@@ -778,10 +831,10 @@ pub fn statfs(path: *const c_char, buf: *mut Statfs) -> c_int {
     };
 
     let statvfs = Statfs::from(fs_info);
-    unsafe {
-        copy_nonoverlapping(&statvfs, buf, 1);
+    match uptr::write_struct(buf, &statvfs) {
+        Ok(()) => 0,
+        Err(e) => e.to_errno(),
     }
-    0
 }
 
 pub fn fstatfs(fd: i32, buf: *mut Statfs) -> c_int {
@@ -801,10 +854,10 @@ pub fn fstatfs(fd: i32, buf: *mut Statfs) -> c_int {
 
     let fs_info = file.fs_info();
     let statvfs = Statfs::from(fs_info);
-    unsafe {
-        copy_nonoverlapping(&statvfs, buf, 1);
+    match uptr::write_struct(buf, &statvfs) {
+        Ok(()) => 0,
+        Err(e) => e.to_errno(),
     }
-    0
 }
 
 pub fn chdir(path: *const c_char) -> c_int {
@@ -812,12 +865,12 @@ pub fn chdir(path: *const c_char) -> c_int {
         return -libc::EINVAL;
     }
 
-    let path_str = match unsafe { CStr::from_ptr(path).to_str() } {
+    let path_str = match uptr::cstr(path) {
         Ok(s) => s,
-        Err(_) => return -libc::EINVAL,
+        Err(e) => return e.to_errno(),
     };
 
-    let dir_entry = match path::lookup_path(path_str) {
+    let dir_entry = match path::lookup_path(&path_str) {
         Some(entry) => entry,
         None => return -libc::EINVAL,
     };
@@ -839,11 +892,14 @@ pub fn getcwd(buf: *mut c_char, len: usize) -> c_int {
     if cwd_str_len > len - 1 {
         return -libc::ERANGE;
     }
-    unsafe {
-        core::ptr::copy_nonoverlapping(cwd_str.as_ptr(), buf as *mut u8, cwd_str_len);
-        *(buf as *mut u8).add(cwd_str_len) = 0;
+    // The terminator goes out in the same copy: writing it separately would be
+    // a second chance to fault with half a path already published.
+    let mut out = cwd_str.into_bytes();
+    out.push(0);
+    match uptr::write_bytes(buf as *mut u8, &out) {
+        Ok(()) => cwd_str_len as c_int,
+        Err(e) => e.to_errno(),
     }
-    cwd_str_len as c_int
 }
 
 /// Convert open flags to readable string for debugging
@@ -893,6 +949,7 @@ fn flags_to_string(flags: c_int) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ffi::CStr;
     use crate::vfs::dirent::{Dirent, DirentType};
     use blueos_test_macro::test;
     use libc;

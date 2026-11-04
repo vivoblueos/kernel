@@ -70,14 +70,16 @@ _shared_deps = [
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kconfig:generate_rustflags_file",
-  "//libs/libc",
+  "//libc",
 ]
 
 # GCC provides __atomic builtins natively; skip the clang-derived libatomic for
 # GCC toolchains.
-if (current_toolchain != "//build/toolchain:gcc_fv_thumbv8m") {
-  _shared_deps += [ ":atomic" ]
-}
+#
+# The 64-bit atomic fallback itself is Rust: kernel/kernel/src/sync/libatomic.rs
+# provides the __atomic_* symbols that 32-bit targets (thumbv8m, riscv32imc)
+# need because they have no native 64-bit CAS. On 64-bit targets that module
+# compiles to nothing, so there is no separate static library to link in.
 _shared_deps += board_deps
 
 if (coverage || profile) {
@@ -111,6 +113,11 @@ build_rust("kernel_unittest") {
   rustflags = [
     "--test",
     "-Zpanic-abort-tests",
+    # riscv32imc: the prebuilt `std` for this target carries a `panic_impl`
+    # of its own, so `-Zpanic-abort-tests` alone leaves two of them
+    # ("duplicate lang item"). Naming the strategy explicitly makes rustc pick
+    # the abort variant for the harness.
+    "-Cpanic=abort",
   ]
   linker_script = default_linker_script
   if (defined(chip)) {
@@ -139,7 +146,7 @@ build_rust("kernel_integration_test") {
            "//kernel/infra:blueos_infra",
            "//kernel/rsrt",
            "//kernel/scal:blueos_scal",
-           "//libs/libc",
+           "//libc",
          ] + board_deps
   if (coverage || profile) {
     deps += [ "//external/vendor/minicov-0.3.7:minicov" ]
@@ -277,8 +284,4 @@ run_qemu_check("run_unittest") {
   } else {
     checker = "src/unittests.checker"
   }
-}
-
-static_library("atomic") {
-  sources = [ "src/sync/libatomic/atomic.c" ]
 }

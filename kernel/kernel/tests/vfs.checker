@@ -1,0 +1,4 @@
+// TOTAL-TIMEOUT: 60
+// CHECK-SUCC: Contents of /fat/test_dir:
+// ASSERT-SUCC: === File System Example Completed Successfully ===
+// ASSERT-FAIL: panicked at

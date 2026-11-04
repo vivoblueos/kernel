@@ -197,8 +197,14 @@ pub trait Device: Send + Sync {
     }
     fn read(&self, pos: u64, buf: &mut [u8], is_nonblocking: bool) -> Result<usize, ErrorKind>;
     fn write(&self, pos: u64, buf: &[u8], is_nonblocking: bool) -> Result<usize, ErrorKind>;
-    fn ioctl(&self, request: u32, arg: usize) -> Result<(), ErrorKind> {
-        Err(ErrorKind::Unsupported)
+    /// Device-specific control.
+    ///
+    /// Returns the syscall-facing [`Error`] rather than an `embedded_io`
+    /// `ErrorKind`: the kinds are a networking/IO taxonomy with no way to say
+    /// "the caller's pointer is not mapped", and losing that distinction
+    /// turned `tcgetattr`'s `EFAULT` into `EINVAL` (DF-08).
+    fn ioctl(&self, request: u32, arg: usize) -> Result<(), Error> {
+        Err(crate::error::code::ENOSYS)
     }
     /// Returns the device capacity.
     /// For block devices, returns the number of sectors

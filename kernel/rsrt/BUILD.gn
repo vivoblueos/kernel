@@ -29,6 +29,20 @@ build_rust("rsrt") {
   deps = [ "//kernel/kernel:blueos" ]
 }
 
+# Everything an app needs except the app entry: the global allocator and the
+# panic handler. For images that register their own `.bk_app_array` entry from
+# C (librs/tests/posix), where a second entry would start the program twice.
+build_rust("rsrt_no_entry") {
+  crate_type = "rlib"
+  crate_name = "rsrt"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//kernel/kernel:blueos",
+  ]
+  features = [ "no_app_entry" ]
+}
+
 run_clippy("rsrt_clippy") {
   deps = [ ":rsrt" ]
 }

@@ -16,6 +16,7 @@ pub mod atomic_wait;
 pub use atomic_wait::{atomic_wait, atomic_wake};
 pub mod delay;
 pub use delay::KernelDelay;
+pub mod libatomic;
 pub mod mqueue;
 pub mod mutex;
 pub mod posix_mqueue;

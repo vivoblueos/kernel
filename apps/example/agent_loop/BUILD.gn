@@ -1,0 +1,73 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/boards/${board}.gni")
+import("//build/templates/reload_autoconf_and_build.gni")
+import("//build/templates/rust.gni")
+import("//build/toolchain/blueos.gni")
+
+reload_autoconf_and_build("agent_loop") {
+  app_conf = [ "app.conf" ]
+  crate_name = "agent_loop"
+  crate_type = "bin"
+
+  sources = [ "src/main.rs" ]
+  inputs = [ "capabilities.json" ]
+  deps = [
+    "//external/vendor/embedded-io-0.6.1:embedded_io",
+    "//external/vendor/embedded-tls-0.16.3:embedded_tls",
+    "//external/vendor/fastrand-2.3.0:fastrand",
+    "//external/vendor/httparse-1.10.1:httparse",
+    "//external/vendor/rand_core-0.6.4:rand_core",
+    "//external/vendor/serde-1.0.228:serde",
+    "//external/vendor/serde_json-1.0.135:serde_json",
+    "//kernel/adapter/esp_radio_sys",
+    "//kernel/kconfig:blueos_kconfig",
+    "//kernel/rsrt:rsrt_std",
+    "//libc",
+    "//librs",
+  ]
+  linker_script = default_linker_script
+  configs = [ "//build/boards/${board}:kernel_config" ]
+
+  wifi_ldflags = [
+    "-L" + rebase_path("${root_build_dir}/obj/external/vendor/esp-phy-0.2.0"),
+    "-L" +
+        rebase_path("${root_build_dir}/obj/external/vendor/esp-radio-0.18.0"),
+    "-L" + rebase_path("//external/vendor/esp-wifi-sys-esp32c3-0.2.0/libs"),
+    "-L" + rebase_path("//external/vendor/esp-rom-sys-0.1.4/ld/esp32c3"),
+    "-L" + rebase_path("//external/vendor/esp-radio-0.18.0"),
+    "-L" + rebase_path("//external/vendor/esp-phy-0.2.0"),
+    "-L" + rebase_path("//external/vendor/embedded-tls-0.16.3"),
+    "-lesp-phy",
+    "-lesp_rom_sys",
+    "-lbtbb",
+    "-lbtdm_app",
+    "-lcoexist",
+    "-lespnow",
+    "-lmesh",
+    "-lnet80211",
+    "-lcore",
+    "-lsmartconfig",
+    "-lwapi",
+    "-lwpa_supplicant",
+    "-lregulatory",
+    "-lphy",
+    "-lpp",
+  ]
+  rustflags = []
+  foreach(item, wifi_ldflags) {
+    rustflags += [ "-Clink-arg=${item}" ]
+  }
+}
