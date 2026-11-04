@@ -29,6 +29,10 @@ declare_args() {
   # GN doesn't use target_cpu & target_os internally either, so it
   # should be safe for us to use "board" to make build decision.
   board = "none"
+
+  # Build mode for gnrt declaration templates: `build` compiles normally,
+  # `collect` emits metadata-only targets for `gnrt sync`.
+  gnrt_mode = "build"
 }
 
 declare_args() {
@@ -47,43 +51,146 @@ debug = "${build_type}" == "debug"
 profile = "${build_type}" == "profile"
 
 import("//build/boards/${board}.gni")
+import("//build/config/build_config.gni")
+import("//build/toolchain/toolchain_info.gni")
 
-# Check if the ${board}.gni is valid.
-assert(defined(board_default_toolchain))
+# The board .gni selects one entry from toolchain_info.
+assert(defined(board_default_toolchain),
+       "${board}.gni must set board_default_toolchain")
+board_toolchain_info = toolchain_info[board_default_toolchain]
 
-set_default_toolchain(board_default_toolchain)
+set_default_toolchain(board_toolchain_info.label)
+
+# Board build context. BUILDCONFIG.gn is the only writer of these names; do not
+# assign them in any other file.
+assert(!defined(build_ctx), "build_ctx is owned by BUILDCONFIG.gn")
+_build_config = build_type_config[build_type]
+build_ctx = {
+  toolchain_llvm_target = board_toolchain_info.llvm_target
+  toolchain_target_triple = board_toolchain_info.target_triple
+  toolchain_cc = board_toolchain_info.cc
+  toolchain_cxx = board_toolchain_info.cxx
+  toolchain_ld = board_toolchain_info.ld
+  toolchain_ar = board_toolchain_info.ar
+  toolchain_arflags = []
+  if (defined(board_toolchain_info.arflags)) {
+    toolchain_arflags = board_toolchain_info.arflags
+  }
+  toolchain_objcopy = board_toolchain_info.objcopy
+  toolchain_rustc = board_toolchain_info.rustc
+  toolchain_clippy_driver = board_toolchain_info.clippy_driver
+  toolchain_cfgs = exec_script("//build/scripts/run_rustc_print_cfg.py",
+                               [
+                                 "--rustc-cmd",
+                                 board_toolchain_info.rustc,
+                                 "--target",
+                                 board_toolchain_info.target_triple,
+                               ],
+                               "list lines")
+  build_config_cflags = _build_config.cflags
+  build_config_cflags_c = _build_config.cflags_c
+  build_config_cflags_cc = []
+  if (defined(_build_config.cflags_cc)) {
+    build_config_cflags_cc = _build_config.cflags_cc
+  }
+  build_config_rustflags = _build_config.rustflags
+  build_config_rust_profile = _build_config.rust_profile
+}
+
+# `llvm_target` is kept as a compatibility alias for the board LLVM target.
+assert(!defined(llvm_target), "llvm_target is owned by BUILDCONFIG.gn")
+llvm_target = build_ctx.toolchain_llvm_target
+
+# Existing C targets use this name for the clang target triple.
+rust_abi_target = build_ctx.toolchain_llvm_target
+
+# Host build context, described by the host toolchain's own rustc and triple.
+_host_info = toolchain_info.host
+_host_target_triple = exec_script("//build/scripts/run_rustc_print_cfg.py",
+                                  [
+                                    "--rustc-cmd",
+                                    _host_info.rustc,
+                                    "--host-triple",
+                                  ],
+                                  "string")
+assert(!defined(host_build_ctx), "host_build_ctx is owned by BUILDCONFIG.gn")
+host_build_ctx = {
+  toolchain_llvm_target = _host_info.llvm_target
+  toolchain_target_triple = _host_target_triple
+  toolchain_cc = _host_info.cc
+  toolchain_cxx = _host_info.cxx
+  toolchain_ld = _host_info.ld
+  toolchain_ar = _host_info.ar
+  toolchain_arflags = []
+  if (defined(_host_info.arflags)) {
+    toolchain_arflags = _host_info.arflags
+  }
+  toolchain_objcopy = _host_info.objcopy
+
+  # Pin rustc so crate-local rust-toolchain.toml files cannot switch build.rs's
+  # compiler.
+  toolchain_rustc = exec_script("//build/scripts/resolve_rustc.py",
+                                [ _host_info.rustc ],
+                                "string")
+  toolchain_clippy_driver = _host_info.clippy_driver
+  toolchain_cfgs = exec_script("//build/scripts/run_rustc_print_cfg.py",
+                               [
+                                 "--rustc-cmd",
+                                 _host_info.rustc,
+                                 "--target",
+                                 _host_target_triple,
+                               ],
+                               "list lines")
+  build_config_cflags = _build_config.cflags
+  build_config_cflags_c = _build_config.cflags_c
+  build_config_cflags_cc = []
+  if (defined(_build_config.cflags_cc)) {
+    build_config_cflags_cc = _build_config.cflags_cc
+  }
+  build_config_rustflags = _build_config.rustflags
+  build_config_rust_profile = _build_config.rust_profile
+}
+
 set_defaults("source_set") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("static_library") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("shared_library") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("executable") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("rust_library") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("rust_proc_macro") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("build_rust") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("bindgen") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
 }
+
 set_defaults("cargo_crate") {
   configs = [ "//build/config:${build_type}" ]
   public_configs = [ "//build/config:${build_type}" ]
