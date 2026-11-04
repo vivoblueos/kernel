@@ -25,49 +25,26 @@ reload_autoconf_and_build("agent_loop") {
   sources = [ "src/main.rs" ]
   inputs = [ "capabilities.json" ]
   deps = [
-    "//external/vendor/embedded-io-0.6.1:embedded_io",
-    "//external/vendor/embedded-tls-0.16.3:embedded_tls",
-    "//external/vendor/fastrand-2.3.0:fastrand",
-    "//external/vendor/httparse-1.10.1:httparse",
-    "//external/vendor/rand_core-0.6.4:rand_core",
-    "//external/vendor/serde-1.0.228:serde",
-    "//external/vendor/serde_json-1.0.135:serde_json",
+    "//external/rust:embedded-io",
+    "//external/rust:embedded-tls",
+    "//external/rust:esp-phy",
+    "//external/rust:esp-rom-sys",
+    "//external/rust:fastrand",
+    "//external/rust:httparse",
+    "//external/rust:rand_core",
+    "//external/rust:serde",
+    "//external/rust:serde_json",
     "//kernel/adapter/esp_radio_sys",
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/rsrt:rsrt_std",
     "//libs/libc",
     "//libs/librs",
   ]
+  if (chip == "esp32c6") {
+    deps += [ "//external/rust:esp-wifi-sys-esp32c6" ]
+  } else {
+    deps += [ "//external/rust:esp-wifi-sys-esp32c3" ]
+  }
   linker_script = default_linker_script
   configs = [ "//build/boards/${board}:kernel_config" ]
-
-  wifi_ldflags = [
-    "-L" + rebase_path("${root_build_dir}/obj/external/vendor/esp-phy-0.2.0"),
-    "-L" +
-        rebase_path("${root_build_dir}/obj/external/vendor/esp-radio-0.18.0"),
-    "-L" + rebase_path("//external/vendor/esp-wifi-sys-esp32c3-0.2.0/libs"),
-    "-L" + rebase_path("//external/vendor/esp-rom-sys-0.1.4/ld/esp32c3"),
-    "-L" + rebase_path("//external/vendor/esp-radio-0.18.0"),
-    "-L" + rebase_path("//external/vendor/esp-phy-0.2.0"),
-    "-L" + rebase_path("//external/vendor/embedded-tls-0.16.3"),
-    "-lesp-phy",
-    "-lesp_rom_sys",
-    "-lbtbb",
-    "-lbtdm_app",
-    "-lcoexist",
-    "-lespnow",
-    "-lmesh",
-    "-lnet80211",
-    "-lcore",
-    "-lsmartconfig",
-    "-lwapi",
-    "-lwpa_supplicant",
-    "-lregulatory",
-    "-lphy",
-    "-lpp",
-  ]
-  rustflags = []
-  foreach(item, wifi_ldflags) {
-    rustflags += [ "-Clink-arg=${item}" ]
-  }
 }
