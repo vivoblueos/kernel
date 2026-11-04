@@ -1,0 +1,4 @@
+interface:
+  display_name: "Using GNRT"
+  short_description: "Manage and troubleshoot BlueKernel GNRT dependencies"
+  default_prompt: "Use $using-gnrt to add or update a BlueKernel Rust dependency, configure synchronization, maintain patches, or diagnose a sync failure."
