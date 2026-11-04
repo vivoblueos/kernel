@@ -1,0 +1,772 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Central third-party crate declarations for gnrt.
+#
+# Declarations share Cargo resolution unless explicit isolation is requested.
+import("//build/templates/cargo.gni")
+
+# Kernel & drivers
+cargo_spec("bitflags") {
+  package = "bitflags"
+  version = "=2.10.0"
+  default_features = false
+}
+
+cargo_spec("cfg-if") {
+  package = "cfg-if"
+  version = "=1.0.4"
+  default_features = false
+}
+
+cargo_spec("byteorder") {
+  package = "byteorder"
+  version = "=1.5.0"
+  default_features = false
+}
+
+cargo_spec("const-default") {
+  package = "const-default"
+  version = "=1.0.0"
+  default_features = false
+}
+
+cargo_spec("delegate") {
+  package = "delegate"
+  version = "=0.13.4"
+  default_features = false
+}
+
+cargo_spec("embedded-hal") {
+  package = "embedded-hal"
+  version = "=1.0.0"
+  default_features = false
+}
+
+cargo_spec("embedded-hal-bus") {
+  package = "embedded-hal-bus"
+  version = "=0.3.0"
+  default_features = false
+}
+
+cargo_spec("embedded-io") {
+  package = "embedded-io"
+  version = "=0.6.1"
+  default_features = false
+  features = [ "alloc" ]
+}
+
+cargo_spec("heapless") {
+  package = "heapless"
+  version = "=0.8.0"
+  default_features = false
+}
+
+cargo_spec("log") {
+  package = "log"
+  version = "=0.4.28"
+  default_features = false
+}
+
+cargo_spec("memchr") {
+  package = "memchr"
+  version = "=2.7.6"
+  default_features = false
+}
+
+cargo_spec("safe-mmio") {
+  package = "safe-mmio"
+  version = "=0.2.5"
+  default_features = false
+}
+
+cargo_spec("spin") {
+  package = "spin"
+  version = "=0.9.8"
+  default_features = false
+  features = [
+    "barrier",
+    "lazy",
+    "lock_api",
+    "lock_api_crate",
+    "mutex",
+    "once",
+    "rwlock",
+    "spin_mutex",
+  ]
+}
+
+cargo_spec("thiserror") {
+  package = "thiserror"
+  version = "=2.0.17"
+  default_features = false
+  patches = [ "//external/rust/patches/thiserror-2.0.17/001-preserve-no-std-default.patch" ]
+}
+
+cargo_spec("tock-registers") {
+  package = "tock-registers"
+  version = "=0.10.1"
+  default_features = false
+  features = [ "register_types" ]
+}
+
+cargo_spec("zerocopy") {
+  package = "zerocopy"
+  version = "=0.8.27"
+  default_features = false
+  features = [
+    "alloc",
+    "derive",
+    "zerocopy-derive",
+  ]
+}
+
+# Proc macros
+cargo_spec("num-derive") {
+  package = "num-derive"
+  version = "=0.4.2"
+  default_features = false
+}
+
+cargo_spec("num-traits") {
+  package = "num-traits"
+  version = "=0.2.19"
+  default_features = false
+  patches =
+      [ "//external/rust/patches/num-traits-0.2.19/001-local-no-autocfg.patch" ]
+}
+
+cargo_spec("paste") {
+  package = "paste"
+  version = "=1.0.15"
+  default_features = false
+}
+
+cargo_spec("portable-atomic") {
+  patches = [ "//external/rust/patches/portable-atomic-1.13.1/001-public-source-compat.patch" ]
+  package = "portable-atomic"
+  version = "=1.13.1"
+  default_features = false
+  features = [ "fallback" ]
+}
+
+cargo_spec("serde_derive") {
+  package = "serde_derive"
+  version = "=1.0.228"
+  default_features = false
+}
+
+cargo_spec("proc-macro2") {
+  package = "proc-macro2"
+  version = "=1.0.103"
+  default_features = false
+  features = [ "proc-macro" ]
+}
+
+cargo_spec("quote") {
+  package = "quote"
+  version = "=1.0.41"
+  default_features = false
+  features = [ "proc-macro" ]
+}
+
+cargo_spec("unicode-ident") {
+  package = "unicode-ident"
+  version = "=1.0.22"
+  default_features = false
+}
+
+cargo_spec("syn") {
+  package = "syn"
+  version = "=2.0.108"
+  default_features = false
+  features = [
+    "clone-impls",
+    "derive",
+    "extra-traits",
+    "full",
+    "parsing",
+    "printing",
+    "proc-macro",
+    "visit-mut",
+  ]
+}
+
+# Board & network
+cargo_spec("arm-gic") {
+  package = "arm-gic"
+  version = "=0.4.0"
+  default_features = false
+}
+
+cargo_spec("bme280") {
+  package = "bme280"
+  version = "=0.5.1"
+  default_features = false
+  features = [ "sync" ]
+}
+
+cargo_spec("cortex-m") {
+  package = "cortex-m"
+  version = "=0.7.7"
+  default_features = false
+  features = [ "inline-asm" ]
+  patches = [
+    "//external/rust/patches/cortex-m-0.7.7/001-skip-prebuilt-asm-lib.patch",
+  ]
+}
+
+cargo_spec("cortex-m-rt") {
+  package = "cortex-m-rt"
+  version = "=0.7.5"
+  default_features = false
+}
+
+cargo_spec("cortex-m-semihosting") {
+  package = "cortex-m-semihosting"
+  version = "=0.5.0"
+  default_features = false
+}
+
+cargo_spec("bytemuck") {
+  package = "bytemuck"
+  version = "=1.25.0"
+  default_features = false
+}
+
+cargo_spec("critical-section") {
+  package = "critical-section"
+  version = "=1.2.0"
+  default_features = false
+}
+
+cargo_spec("defmt") {
+  package = "defmt"
+  version = "=1.0.1"
+  default_features = false
+  features = [
+    "alloc",
+    "ip_in_core",
+  ]
+}
+
+cargo_spec("defmt-rtt") {
+  package = "defmt-rtt"
+  version = "=1.1.0"
+  default_features = false
+}
+
+cargo_spec("defmt-test") {
+  package = "defmt-test"
+  version = "=0.4.0"
+  default_features = false
+}
+
+cargo_spec("document-features") {
+  patches = [ "//external/rust/patches/document-features-0.2.12/001-public-source-compat.patch" ]
+  package = "document-features"
+  version = "=0.2.12"
+  default_features = false
+}
+
+cargo_spec("embassy-futures") {
+  package = "embassy-futures"
+  version = "=0.1.2"
+  default_features = false
+}
+
+cargo_spec("embassy-sync") {
+  package = "embassy-sync"
+  version = "=0.8.0"
+  default_features = false
+}
+
+cargo_spec("embedded-hal-async") {
+  package = "embedded-hal-async"
+  version = "=1.0.0"
+  default_features = false
+}
+
+cargo_spec("embedded-io-async") {
+  package = "embedded-io-async"
+  version = "=0.7.0"
+  default_features = false
+}
+
+cargo_spec("esp-config") {
+  package = "esp-config"
+  version = "=0.7.0"
+  default_features = false
+  features = [ "build" ]
+}
+
+# Chip-dependent esp crate declarations. Each chip feature is gated on a GN
+# condition so a single declaration serves every esp board: exactly one
+# condition holds per build.
+cargo_spec("esp-hal") {
+  package = "esp-hal"
+  version = "=1.1.1"
+  default_features = false
+  features = [
+    {
+      condition = "board == \"esp32c6_devkitc_1\""
+      values = [ "esp32c6" ]
+    },
+    {
+      condition = "board == \"seeed_xiao_esp32c3\""
+      values = [ "esp32c3" ]
+    },
+  ]
+}
+
+cargo_spec("esp-hal-procmacros") {
+  package = "esp-hal-procmacros"
+  version = "=0.22.0"
+  default_features = false
+}
+
+cargo_spec("esp-metadata-generated") {
+  package = "esp-metadata-generated"
+  version = "=0.4.0"
+  default_features = false
+  features = [
+    "build-script",
+    {
+      condition = "board == \"esp32c6_devkitc_1\""
+      values = [ "esp32c6" ]
+    },
+    {
+      condition = "board == \"seeed_xiao_esp32c3\""
+      values = [ "esp32c3" ]
+    },
+  ]
+}
+
+cargo_spec("esp-phy") {
+  package = "esp-phy"
+  version = "=0.2.0"
+  default_features = false
+  features = [
+    {
+      condition = "board == \"esp32c6_devkitc_1\""
+      values = [ "esp32c6" ]
+    },
+    {
+      condition = "board == \"seeed_xiao_esp32c3\""
+      values = [ "esp32c3" ]
+    },
+  ]
+}
+
+cargo_spec("esp-radio-rtos-driver") {
+  package = "esp-radio-rtos-driver"
+  version = "=0.3.0"
+  default_features = false
+  features = [
+    "ipc-implementations",
+    {
+      condition = "board == \"esp32c6_devkitc_1\""
+      values = [ "esp32c6" ]
+    },
+    {
+      condition = "board == \"seeed_xiao_esp32c3\""
+      values = [ "esp32c3" ]
+    },
+  ]
+}
+
+cargo_spec("esp-rom-sys") {
+  package = "esp-rom-sys"
+  version = "=0.1.4"
+  default_features = false
+  features = [
+    {
+      condition = "board == \"esp32c6_devkitc_1\""
+      values = [ "esp32c6" ]
+    },
+    {
+      condition = "board == \"seeed_xiao_esp32c3\""
+      values = [ "esp32c3" ]
+    },
+  ]
+}
+
+cargo_spec("esp-sync") {
+  patches = [
+    "//external/rust/patches/esp-sync-0.2.1/001-public-source-compat.patch",
+  ]
+  package = "esp-sync"
+  version = "=0.2.1"
+  default_features = false
+  features = [
+    {
+      condition = "board == \"esp32c6_devkitc_1\""
+      values = [ "esp32c6" ]
+    },
+    {
+      condition = "board == \"seeed_xiao_esp32c3\""
+      values = [ "esp32c3" ]
+    },
+  ]
+}
+
+cargo_spec("esp-wifi-sys-esp32c3") {
+  package = "esp-wifi-sys-esp32c3"
+  version = "=0.2.0"
+  default_features = false
+}
+
+cargo_spec("esp-wifi-sys-esp32c6") {
+  package = "esp-wifi-sys-esp32c6"
+  version = "=0.2.0"
+  default_features = false
+}
+
+cargo_spec("esp32c3") {
+  package = "esp32c3"
+  version = "=0.32.2"
+  default_features = false
+  features = [ "critical-section" ]
+}
+
+cargo_spec("esp32c6") {
+  package = "esp32c6"
+  version = "=0.23.0"
+  default_features = false
+  features = [ "critical-section" ]
+}
+
+cargo_spec("fugit") {
+  package = "fugit"
+  version = "=0.3.9"
+  default_features = false
+}
+
+cargo_spec("futures-core") {
+  package = "futures-core"
+  version = "=0.3.34"
+  default_features = false
+}
+
+cargo_spec("futures-sink") {
+  package = "futures-sink"
+  version = "=0.3.34"
+  default_features = false
+}
+
+cargo_spec("futures-task") {
+  package = "futures-task"
+  version = "=0.3.34"
+  default_features = false
+}
+
+cargo_spec("futures-util") {
+  package = "futures-util"
+  version = "=0.3.34"
+  default_features = false
+}
+
+cargo_spec("pin-project-lite") {
+  package = "pin-project-lite"
+  version = "=0.2.17"
+  default_features = false
+}
+
+cargo_spec("indoc") {
+  package = "indoc"
+  version = "=2.0.7"
+  default_features = false
+}
+
+cargo_spec("instability") {
+  package = "instability"
+  version = "=0.3.12"
+  default_features = false
+}
+
+cargo_spec("riscv") {
+  package = "riscv"
+  version = "=0.15.0"
+  default_features = false
+}
+
+cargo_spec("riscv-pac") {
+  package = "riscv-pac"
+  version = "=0.2.0"
+  default_features = false
+}
+
+cargo_spec("strum") {
+  package = "strum"
+  version = "=0.27.2"
+  default_features = false
+  features = [
+    "derive",
+    "strum_macros",
+  ]
+}
+
+cargo_spec("vcell") {
+  package = "vcell"
+  version = "=0.1.3"
+  default_features = false
+}
+
+cargo_spec("zeroize") {
+  package = "zeroize"
+  version = "=1.9.0"
+  default_features = false
+}
+
+cargo_spec("stable_deref_trait") {
+  package = "stable_deref_trait"
+  version = "=1.2.1"
+  default_features = false
+}
+
+cargo_spec("serde_yaml") {
+  package = "serde_yaml"
+  version = "=0.9.34"
+  default_features = false
+}
+
+cargo_spec("itoa") {
+  package = "itoa"
+  version = "=1.0.18"
+  default_features = false
+}
+
+cargo_spec("ryu") {
+  package = "ryu"
+  version = "=1.0.23"
+  default_features = false
+}
+
+cargo_spec("unsafe-libyaml") {
+  package = "unsafe-libyaml"
+  version = "=0.2.11"
+  default_features = false
+}
+
+cargo_spec("somni-expr") {
+  package = "somni-expr"
+  version = "=0.2.0"
+  default_features = false
+}
+
+cargo_spec("termcolor") {
+  package = "termcolor"
+  version = "=1.4.1"
+  default_features = false
+}
+
+cargo_spec("enumset") {
+  package = "enumset"
+  version = "=1.1.13"
+  default_features = false
+}
+
+cargo_spec("flat_device_tree") {
+  package = "flat_device_tree"
+  version = "=3.1.1"
+  default_features = false
+}
+
+cargo_spec("gd32e5") {
+  package = "gd32e5"
+  version = "=0.9.1"
+  default_features = false
+  features = [ "gd32e507" ]
+}
+
+cargo_spec("mipidsi") {
+  package = "mipidsi"
+  version = "=0.10.0"
+  default_features = false
+  features = [
+    "batch",
+    "heapless",
+  ]
+}
+
+cargo_spec("smoltcp") {
+  package = "smoltcp"
+  version = "=0.12.0"
+  default_features = false
+  features = [
+    "_proto-fragmentation",
+    "alloc",
+    "async",
+    "medium-ethernet",
+    "medium-ieee802154",
+    "medium-ip",
+    "multicast",
+    "packetmeta-id",
+    "proto-dhcpv4",
+    "proto-dns",
+    "proto-ipv4",
+    "proto-ipv4-fragmentation",
+    "proto-ipv6",
+    "proto-sixlowpan",
+    "proto-sixlowpan-fragmentation",
+    "socket",
+    "socket-dhcpv4",
+    "socket-dns",
+    "socket-icmp",
+    "socket-mdns",
+    "socket-raw",
+    "socket-tcp",
+    "socket-udp",
+  ]
+}
+
+cargo_spec("unwinding") {
+  patches = [
+    "//external/rust/patches/unwinding-0.2.4/001-public-source-compat.patch",
+  ]
+  package = "unwinding"
+  version = "=0.2.4"
+  default_features = false
+  features = [ "unwinder" ]
+}
+
+cargo_spec("virtio-drivers") {
+  package = "virtio-drivers"
+  version = "=0.11.0"
+  default_features = false
+  features = [
+    "alloc",
+    "embedded-io",
+  ]
+}
+
+# Debugging & testing
+cargo_spec("minicov") {
+  package = "minicov"
+  version = "=0.3.7"
+  default_features = false
+  features = [ "alloc" ]
+}
+
+cargo_spec("semihosting") {
+  package = "semihosting"
+  version = "=0.1.20"
+  default_features = false
+  features = [
+    "alloc",
+    "fs",
+    "stdio",
+  ]
+}
+
+# Apps
+cargo_spec("embedded-graphics") {
+  package = "embedded-graphics"
+  version = "=0.8.2"
+  default_features = false
+}
+
+cargo_spec("embedded-graphics-core") {
+  package = "embedded-graphics-core"
+  version = "=0.4.1"
+  default_features = false
+}
+
+cargo_spec("embedded-tls") {
+  package = "embedded-tls"
+  version = "=0.16.3"
+  default_features = false
+  features = [ "log" ]
+  patches = [ "//external/rust/patches/embedded-tls-0.16.3/001-preserve-unknown-supported-groups.patch" ]
+}
+
+cargo_spec("fastrand") {
+  package = "fastrand"
+  version = "=2.3.0"
+  default_features = false
+}
+
+cargo_spec("goblin") {
+  package = "goblin"
+  version = "=0.9.3"
+  default_features = false
+  features = [
+    "alloc",
+    "archive",
+    "elf32",
+    "elf64",
+    "endian_fd",
+    "log",
+  ]
+}
+
+cargo_spec("httparse") {
+  patches = [
+    "//external/rust/patches/httparse-1.10.1/001-public-source-compat.patch",
+  ]
+  package = "httparse"
+  version = "=1.10.1"
+  default_features = false
+  features = [ "std" ]
+}
+
+cargo_spec("phf") {
+  package = "phf"
+  version = "=0.12.1"
+  default_features = false
+  features = [
+    "macros",
+    "phf_macros",
+  ]
+}
+
+cargo_spec("rand_core") {
+  package = "rand_core"
+  version = "=0.6.4"
+  default_features = false
+}
+
+cargo_spec("serde") {
+  package = "serde"
+  version = "=1.0.228"
+  default_features = false
+  features = [
+    "derive",
+    "std",
+  ]
+}
+
+cargo_spec("serde_json") {
+  package = "serde_json"
+  version = "=1.0.135"
+  default_features = false
+  features = [
+    "alloc",
+    "std",
+  ]
+}
+
+cargo_spec("aarch64-cpu") {
+  package = "aarch64-cpu"
+  version = "=11.2.0"
+  default_features = false
+}
+
+cargo_spec("libc") {
+  patches =
+      [ "//external/rust/patches/libc-0.2.186/001-public-source-compat.patch" ]
+  package = "libc"
+  version = "=0.2.186"
+  default_features = false
+}

@@ -57,7 +57,7 @@ build_rust("librs_newlib_c_cc") {
   crate_name = "librs"
   sources = [ "//libs/librs/src/newlib.rs" ]
   deps = [
-    "//external/vendor/spin-0.9.8:spin",
+    "//external/rust:spin",
     "//kernel/header:blueos_header",
     "//kernel/kconfig:blueos_kconfig",
     "//kernel/kernel:blueos",

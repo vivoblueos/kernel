@@ -755,6 +755,154 @@ mod tests {
         scheduler::yield_me();
     }
 
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum SignalDelivery {
+        Yield,
+        Wake,
+        Timeout,
+    }
+
+    fn check_signal_delivery(delivery: SignalDelivery) {
+        let ready = Arc::new(AtomicBool::new(false));
+        let resume = Arc::new(AtomicUsize::new(0));
+        let handled = Arc::new(AtomicUsize::new(0));
+        let finished = Arc::new(AtomicBool::new(false));
+        let t = thread::spawn({
+            let ready = ready.clone();
+            let resume = resume.clone();
+            let handled = handled.clone();
+            let finished = finished.clone();
+            move || {
+                ready.store(true, Ordering::Release);
+                match delivery {
+                    SignalDelivery::Wake => {
+                        sync::atomic_wait(&resume, 0, Tick::MAX).unwrap();
+                    }
+                    SignalDelivery::Timeout => {
+                        assert!(scheduler::suspend_me_for::<()>(Tick(10), None));
+                    }
+                    SignalDelivery::Yield => loop {
+                        scheduler::yield_me();
+                        if handled.load(Ordering::Acquire) != 0 {
+                            break;
+                        }
+                    },
+                }
+                assert_eq!(handled.load(Ordering::Acquire), 1);
+                let current = scheduler::current_thread_ref();
+                assert_eq!(current.preempt_count(), 0);
+                assert_eq!(current.saved_sp(), 0);
+                assert!(!current.lock().has_pending_signals());
+                finished.store(true, Ordering::Release);
+            }
+        })
+        .unwrap();
+        while !ready.load(Ordering::Acquire)
+            || (delivery != SignalDelivery::Yield && t.state() != thread::SUSPENDED)
+        {
+            scheduler::yield_me();
+        }
+        let target_id = Thread::id(&t);
+        {
+            let handled = handled.clone();
+            let mut l = t.lock();
+            assert!(l.kill_with_once_handler(libc::SIGHUP, move || {
+                assert_eq!(scheduler::current_thread_id(), target_id);
+                assert_eq!(scheduler::current_thread_ref().preempt_count(), 0);
+                handled.fetch_add(1, Ordering::Release);
+            }));
+            assert!(!l.kill(libc::SIGHUP));
+        }
+        resume.store(1, Ordering::Release);
+        if delivery == SignalDelivery::Wake {
+            assert_eq!(sync::atomic_wake(&resume, 1).unwrap(), 1);
+        }
+        while !finished.load(Ordering::Acquire) {
+            scheduler::yield_me();
+        }
+    }
+
+    #[test]
+    fn test_signal_delivery_after_yield() {
+        check_signal_delivery(SignalDelivery::Yield);
+    }
+
+    #[test]
+    fn test_signal_delivery_after_wake() {
+        check_signal_delivery(SignalDelivery::Wake);
+    }
+
+    #[test]
+    fn test_signal_delivery_after_timeout() {
+        check_signal_delivery(SignalDelivery::Timeout);
+    }
+
+    #[test]
+    fn test_signal_with_blocking_handler() {
+        let phase = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(AtomicUsize::new(0));
+        let handled = Arc::new(AtomicUsize::new(0));
+        let finished = Arc::new(AtomicBool::new(false));
+        // Send before queueing. The thread starts normally and delivers the
+        // request on resumption from its first yield.
+        let t = thread::Builder::new(Entry::Closure(alloc::boxed::Box::new({
+            let phase = phase.clone();
+            let handled = handled.clone();
+            let finished = finished.clone();
+            move || {
+                assert_eq!(phase.load(Ordering::Acquire), 0);
+                while phase.load(Ordering::Acquire) != 2 || handled.load(Ordering::Acquire) != 1 {
+                    scheduler::yield_me();
+                }
+                assert_eq!(phase.load(Ordering::Acquire), 2);
+                assert_eq!(handled.load(Ordering::Acquire), 1);
+                let current = scheduler::current_thread_ref();
+                assert_eq!(current.state(), thread::RUNNING);
+                assert_eq!(current.saved_sp(), 0);
+                assert_eq!(current.preempt_count(), 0);
+                assert!(!current.lock().has_pending_signals());
+                finished.store(true, Ordering::Release);
+            }
+        })))
+        .build();
+        let target_id = Thread::id(&t);
+        assert!(t.disable_preempt());
+        {
+            let phase = phase.clone();
+            let gate = gate.clone();
+            assert!(t.lock().kill_with_once_handler(libc::SIGTERM, move || {
+                assert_eq!(scheduler::current_thread_id(), target_id);
+                phase.store(1, Ordering::Release);
+                sync::atomic_wait(&gate, 0, Tick::MAX).unwrap();
+                phase.store(2, Ordering::Release);
+            }));
+        }
+        assert_eq!(t.preempt_count(), 1);
+        assert!(!t.is_preemptable());
+        assert!(t.enable_preempt());
+        assert_eq!(t.preempt_count(), 0);
+        scheduler::queue_ready_thread(thread::IDLE, t.clone()).unwrap();
+        while phase.load(Ordering::Acquire) != 1 || t.state() != thread::SUSPENDED {
+            scheduler::yield_me();
+        }
+        {
+            let phase = phase.clone();
+            let handled = handled.clone();
+            assert!(t.lock().kill_with_once_handler(libc::SIGHUP, move || {
+                // A new signal must wait for the existing handler to finish,
+                // even though that handler resumes from its own atomic wait.
+                assert_eq!(scheduler::current_thread_id(), target_id);
+                assert_eq!(phase.load(Ordering::Acquire), 2);
+                handled.fetch_add(1, Ordering::Release);
+            }));
+        }
+        gate.store(1, Ordering::Release);
+        assert_eq!(sync::atomic_wake(&gate, 1).unwrap(), 1);
+        while !finished.load(Ordering::Acquire) {
+            scheduler::yield_me();
+        }
+    }
+
     async fn foo(i: usize) -> usize {
         i
     }

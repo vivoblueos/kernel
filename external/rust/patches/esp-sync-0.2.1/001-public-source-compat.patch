@@ -1,0 +1,15 @@
+# Patch: Restore the RISC-V interrupt-enable bit directly through mstatus.
+# Reason: BlueOS uses machine-mode interrupts and needs only the MIE bit
+# restored.
+
+--- a/src/raw.rs
++++ b/src/raw.rs
+@@ -68,7 +68,7 @@
+             if #[cfg(riscv)] {
+                 if token != 0 {
+                     unsafe {
+-                        riscv::interrupt::enable();
++                        core::arch::asm!("csrs mstatus, 8");
+                     }
+                 }
+             } else if #[cfg(xtensa)] {

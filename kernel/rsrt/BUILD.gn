@@ -38,7 +38,7 @@ build_rust("rsrt_std") {
   crate_name = "rsrt"
   sources = [ "src/lib.rs" ]
   deps = [
-    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/rust:semihosting",
     "//kernel/kernel:blueos",
   ]
   features = [ "std" ]

@@ -1,0 +1,124 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Declares third-party crate dependencies for gnrt. These targets carry
+# metadata only: no compilation, no dependencies. Full sync reads every
+# declaration in registered BUILD files; scoped sync follows the product graph.
+
+import("//build/config/gnrt_sync.gni")
+
+template("cargo_spec") {
+  _label = get_label_info(":" + target_name, "label_no_toolchain")
+  assert(filter_include([ _label ],
+                        [
+                          "//external/rust:*",
+                          "//external/rust/*",
+                        ]) != [],
+         "cargo_spec must be declared in an approved central directory")
+  assert(defined(invoker.package), "cargo_spec requires package")
+  assert(defined(invoker.version), "cargo_spec requires version")
+
+  # Only features and rustflags support strings mixed with conditional scopes:
+  # { condition = "board == \"foo\"" values = [ "extra" ] }
+  # Scopes require a condition string and a values list of strings.
+  # All matching scopes append values in the generated BUILD.gn.
+  _features = []
+  if (defined(invoker.features)) {
+    _features = invoker.features
+  }
+
+  _rustflags = []
+  if (defined(invoker.rustflags)) {
+    _rustflags = invoker.rustflags
+  }
+
+  _default_features = true
+  if (defined(invoker.default_features)) {
+    _default_features = invoker.default_features
+  }
+  _isolation = "none"
+  if (defined(invoker.isolation)) {
+    assert(invoker.isolation == "none" || invoker.isolation == "root" ||
+               invoker.isolation == "closure",
+           "cargo_spec isolation must be none, root, or closure")
+    _isolation = invoker.isolation
+  }
+  _patches = []
+  if (defined(invoker.patches)) {
+    _patches = invoker.patches
+  }
+
+  # Optional git source. When set, the crate is resolved from the given
+  # repository instead of crates.io; exactly one of rev/branch/tag may be
+  # supplied to pin the checkout.
+  _git = ""
+  _rev = ""
+  _branch = ""
+  _tag = ""
+  if (defined(invoker.git)) {
+    _git = invoker.git
+  }
+  if (defined(invoker.rev)) {
+    _rev = invoker.rev
+  }
+  if (defined(invoker.branch)) {
+    _branch = invoker.branch
+  }
+  if (defined(invoker.tag)) {
+    _tag = invoker.tag
+  }
+
+  _prepared = gnrt_mode == "collect"
+  foreach(_entry, gnrt_crate_index.crates) {
+    if (_entry.proxy == _label) {
+      _prepared = true
+    }
+  }
+  if (!_prepared) {
+    action("${target_name}_gnrt_missing") {
+      script = "//build/scripts/check_gnrt_sync.py"
+      args = [
+        "--missing-proxy",
+        _label,
+      ]
+      outputs = [ "$target_gen_dir/${target_name}.gnrt-missing" ]
+    }
+  }
+
+  group(target_name) {
+    if (!_prepared) {
+      deps = [ ":${target_name}_gnrt_missing" ]
+    }
+    metadata = {
+      gnrt_declarations = [
+        {
+          type = "crate"
+          origin = "cargo"
+          label = _label
+          package = invoker.package
+          version = invoker.version
+          features = _features
+          rustflags = _rustflags
+          default_features = _default_features
+          isolation = _isolation
+          patches = _patches
+          git = _git
+          rev = _rev
+          branch = _branch
+          tag = _tag
+        },
+      ]
+    }
+  }
+}

@@ -28,34 +28,83 @@ template("reload_autoconf_and_build") {
     configs += invoker.configs
   }
 
-  action(app_name) {
-    script = "//build/scripts/reload_autoconf_and_build.py"
-    pool = "//:console($default_toolchain)"
-    inputs = [ "${root_gen_dir}/.config" ]
-    inputs += invoker.app_conf
-    defconfig_list = []
-    foreach(defconfig, inputs) {
-      defconfig_list += [ rebase_path(defconfig) ]
+  if (gnrt_mode == "collect") {
+    _defconfigs = []
+    foreach(_defconfig, string_split(defconfig_files, ",")) {
+      _defconfigs += [ rebase_path(_defconfig, "", root_build_dir) ]
     }
-    defconfig_files = string_join(",", defconfig_list)
-    outputs = [
-      "${root_build_dir}/bin/${app_name}",
-      "${root_build_dir}/bin/${app_name}.bin",
-      "${root_build_dir}/${app_name}.stamp",
-    ]
-    args = [
-      "--defconfig_files",
-      defconfig_files,
-      "--board",
-      "${board}",
-      "--build_type",
-      "${build_type}",
-      "--ninja_dir",
-      rebase_path("${target_gen_dir}"),
-      "--output_dir",
-      rebase_path("${root_build_dir}/bin"),
-      "${pass}",
-    ]
-    deps = [ "//kernel/kconfig:generate_autoconf" ]
+
+    # Normalize the parent config before applying app.conf, as native builds do.
+    _parent_config =
+        exec_script("//kernel/kconfig/src/generate_artifacts.py",
+                    [
+                      "--kconfig",
+                      rebase_path("//kernel/kconfig/config/Kconfig"),
+                      "--board",
+                      board,
+                      "--build_type",
+                      build_type,
+                      "--defconfig_files",
+                      defconfig_files,
+                      "--output_dir",
+                      rebase_path(root_gen_dir),
+                      "--collect-inputs",
+                    ],
+                    "json",
+                    _defconfigs + [ "//kernel/kconfig/config/Kconfig" ])
+    _child_defconfigs = [ _parent_config.config ]
+    _inputs = _parent_config.inputs
+    foreach(_app_conf, invoker.app_conf) {
+      _child_defconfigs += [ rebase_path(_app_conf) ]
+      _inputs += [ rebase_path(_app_conf) ]
+    }
+    _defconfig_files = string_join(",", _child_defconfigs)
+
+    group(app_name) {
+      metadata = {
+        gnrt_nested_builds = [
+          {
+            entry = get_label_info(":$pass", "label_no_toolchain")
+            args = [
+              "board=\"${board}\"",
+              "build_type=\"${build_type}\"",
+              "defconfig_files=\"${_defconfig_files}\"",
+            ]
+            inputs = _inputs
+          },
+        ]
+      }
+    }
+  } else {
+    action(app_name) {
+      script = "//build/scripts/reload_autoconf_and_build.py"
+      pool = "//:console($default_toolchain)"
+      inputs = [ "${root_gen_dir}/.config" ]
+      inputs += invoker.app_conf
+      defconfig_list = []
+      foreach(defconfig, inputs) {
+        defconfig_list += [ rebase_path(defconfig) ]
+      }
+      defconfig_files = string_join(",", defconfig_list)
+      outputs = [
+        "${root_build_dir}/bin/${app_name}",
+        "${root_build_dir}/bin/${app_name}.bin",
+        "${root_build_dir}/${app_name}.stamp",
+      ]
+      args = [
+        "--defconfig_files",
+        defconfig_files,
+        "--board",
+        "${board}",
+        "--build_type",
+        "${build_type}",
+        "--ninja_dir",
+        rebase_path("${target_gen_dir}"),
+        "--output_dir",
+        rebase_path("${root_build_dir}/bin"),
+        "${pass}",
+      ]
+      deps = [ "//kernel/kconfig:generate_autoconf" ]
+    }
   }
 }

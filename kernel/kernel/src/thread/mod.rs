@@ -186,6 +186,7 @@ pub(crate) type GlobalQueueListHead = UniqueListHead<Thread, OffsetOfGlobal, Glo
 pub(crate) struct SignalContext {
     pending_signals: u32,
     active: bool,
+    handling: bool,
     // Will recover thread_context at recover_sp on exiting of signal handler.
     recover_sp: usize,
     thread_context: arch::Context,
@@ -215,6 +216,8 @@ pub struct Thread {
     // This is the static priority of this thread.
     origin_priority: ThreadPriority,
     state: AtomicUint,
+    // The high bit records a signal delivery request. The remaining bits
+    // count preemption guards, including a suspended scheduler operation.
     preempt_count: AtomicUint,
     // FIXME: Using a rusty lock looks not flexible. Now we are using
     // a C-style intrusive lock. It's conventional to declare which
@@ -293,6 +296,9 @@ extern "C" fn run_closure(raw: *mut Box<dyn FnOnce()>) {
 }
 
 impl Thread {
+    const SIGNAL_PENDING: Uint = 1 << (Uint::BITS - 1);
+    const PREEMPT_COUNT_MASK: Uint = Self::SIGNAL_PENDING - 1;
+
     #[cfg(thread_stats)]
     #[inline]
     pub fn stats(&self) -> &ThreadStats {
@@ -507,7 +513,7 @@ impl Thread {
 
     #[inline]
     pub fn is_preemptable(&self) -> bool {
-        self.preempt_count.load(Ordering::Relaxed) == 0
+        self.preempt_count.load(Ordering::Relaxed) & Self::PREEMPT_COUNT_MASK == 0
     }
 
     #[inline]
@@ -558,6 +564,8 @@ impl Thread {
         let sig_ctx = self.get_or_create_signal_context();
         let old = sig_ctx.pending_signals;
         sig_ctx.pending_signals |= 1 << signum;
+        self.preempt_count
+            .fetch_or(Self::SIGNAL_PENDING, Ordering::Release);
         // Return false if there is signum pending.
         (old & 1 << signum) == 0
     }
@@ -673,21 +681,43 @@ impl Thread {
 
     #[inline]
     pub fn disable_preempt(&self) -> bool {
-        self.preempt_count.fetch_add(1, Ordering::Release) == 0
+        let previous = self.preempt_count.fetch_add(1, Ordering::Release);
+        debug_assert_ne!(
+            previous & Self::PREEMPT_COUNT_MASK,
+            Self::PREEMPT_COUNT_MASK
+        );
+        previous & Self::PREEMPT_COUNT_MASK == 0
     }
 
     #[inline]
     pub fn enable_preempt(&self) -> bool {
-        self.preempt_count.fetch_sub(1, Ordering::Release) == 1
+        self.preempt_count.fetch_sub(1, Ordering::Release) & Self::PREEMPT_COUNT_MASK == 1
+    }
+
+    /// Complete a scheduler operation in the resumed thread. A sender marks
+    /// the existing counter, so the usual decrement also tells us whether
+    /// delivery is needed, without a separate load or thread lock on yield.
+    #[inline]
+    pub(crate) fn finish_resumption(&self) {
+        let previous = self.preempt_count.fetch_sub(1, Ordering::Release);
+        debug_assert_ne!(previous & Self::PREEMPT_COUNT_MASK, 0);
+        if core::intrinsics::unlikely(previous == (Self::SIGNAL_PENDING | 1)) {
+            crate::signal::handle_signals();
+        }
     }
 
     #[inline]
     pub fn preempt_count(&self) -> Uint {
-        self.preempt_count.load(Ordering::Acquire)
+        self.preempt_count.load(Ordering::Acquire) & Self::PREEMPT_COUNT_MASK
     }
 
     pub unsafe fn set_preempt_count(&self, val: Uint) -> &Self {
-        self.preempt_count.store(val, Ordering::Release);
+        debug_assert_eq!(val & Self::SIGNAL_PENDING, 0);
+        self.preempt_count
+            .fetch_update(Ordering::Release, Ordering::Relaxed, |old| {
+                Some((old & Self::SIGNAL_PENDING) | val)
+            })
+            .unwrap();
         self
     }
 
@@ -784,6 +814,10 @@ impl Thread {
             return self;
         };
         c.pending_signals &= !(1 << signum);
+        if c.pending_signals == 0 {
+            self.preempt_count
+                .fetch_and(Self::PREEMPT_COUNT_MASK, Ordering::Release);
+        }
         self
     }
 
@@ -793,7 +827,27 @@ impl Thread {
             return self;
         };
         c.pending_signals = 0;
+        self.preempt_count
+            .fetch_and(Self::PREEMPT_COUNT_MASK, Ordering::Release);
         self
+    }
+
+    pub(crate) fn begin_signal_handling(&mut self) -> bool {
+        let ctx = self.get_or_create_signal_context();
+        if ctx.handling || ctx.pending_signals == 0 {
+            return false;
+        }
+        ctx.handling = true;
+        true
+    }
+
+    pub(crate) fn finish_signal_handling(&mut self) -> bool {
+        let ctx = self.get_or_create_signal_context();
+        if ctx.pending_signals != 0 {
+            return false;
+        }
+        ctx.handling = false;
+        true
     }
 
     #[inline]
