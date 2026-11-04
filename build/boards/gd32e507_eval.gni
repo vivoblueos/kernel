@@ -18,27 +18,27 @@ declare_args() {
   use_defmt_test = false
 }
 
-board_default_toolchain = "//build/toolchain:blueos_thumbv8m"
+board_default_toolchain = "blueos_thumbv8m"
 default_linker_script = "${root_gen_dir}/link.pre.ld"
 qemu_exe = ""
 qemu_machine = ""
-rust_abi_target = "thumbv8m.main-none-eabihf"
+
 qemu_extra_args = []
 qemu_net_args = []
 qemu_block_args = []
 board_deps = [
   "//build/boards/${board}:default_linker_script",
-  "//external/vendor/cortex-m-0.7.7:cortex_m",
-  "//external/vendor/gd32e5-0.9.1:gd32e5",
+  "//external/rust:cortex-m",
+  "//external/rust:gd32e5",
 ]
 
 if (use_defmt) {
   board_deps += [
-    "//external/vendor/defmt/v1.0.1:defmt",
-    "//external/vendor/defmt_rtt/v1.0.0:defmt_rtt",
+    "//external/rust:defmt",
+    "//external/rust:defmt-rtt",
   ]
 }
 
 if (use_defmt_test) {
-  board_deps += [ "//external/defmt_test/v0.4.0:defmt_test" ]
+  board_deps += [ "//external/rust:defmt-test" ]
 }

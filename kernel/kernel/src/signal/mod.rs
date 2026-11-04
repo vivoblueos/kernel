@@ -33,13 +33,23 @@ fn handle_signal(t: &Thread, signum: i32) {
 
 pub(crate) fn handle_signals() {
     let this = scheduler::current_thread_ref();
-    let sigset = this.lock().pending_signals();
-    for i in 0..32 {
-        if sigset & (1 << i) == 0 {
-            continue;
+    if !this.lock().begin_signal_handling() {
+        return;
+    }
+    loop {
+        let sigset = this.lock().pending_signals();
+        for i in 0..32 {
+            if sigset & (1 << i) == 0 {
+                continue;
+            }
+            handle_signal(this, i);
+            this.lock().clear_signal(i);
         }
-        handle_signal(this, i);
-        this.lock().clear_signal(i);
+        // Include signals arriving while a handler runs or blocks, without
+        // recursively entering the handler on each scheduler resumption.
+        if this.lock().finish_signal_handling() {
+            break;
+        }
     }
 }
 

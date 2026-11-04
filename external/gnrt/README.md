@@ -1,4 +1,6 @@
-gnrt: GN from Rust third_party (pronounced "generate")
+# gnrt: GN from Rust third_party (pronounced "generate")
 
-gnrt is a tool to generate GN build rules from vendored Rust crates in
-//third_party/rust.
+GN rules for vendored Rust crates.
+
+`gnrt sync` reads Cargo declarations from GN, resolves crate versions, vendors
+sources and generates GN rules.

@@ -37,32 +37,6 @@ use scheduler::ContextSwitchHookHolder;
 
 pub(crate) const NR_SWITCH: usize = !0;
 
-// FIXME: After adapting to other AArch64 platforms, the
-// hardcoded board-specific configuration should be removed.
-#[cfg(target_board = "qemu_virt64_aarch64")]
-macro_rules! clear_ttbr0_el1 {
-    () => {
-        "
-                // clear ttbr0_el1
-                msr ttbr0_el1, xzr
-                dsb ish
-                isb
-                tlbi vmalle1
-                dsb ish
-                isb
-        "
-    };
-}
-
-// FIXME: After adapting to other AArch64 platforms, the
-// hardcoded board-specific configuration should be removed.
-#[cfg(not(target_board = "qemu_virt64_aarch64"))]
-macro_rules! clear_ttbr0_el1 {
-    () => {
-        ""
-    };
-}
-
 // Temporary stack used during early boot (before MMU is enabled).
 #[repr(C, align(16))]
 pub struct TempBootStack([u8; 4096]);
@@ -510,20 +484,25 @@ pub(crate) extern "C" fn jump_to_high_va() -> ! {
 #[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
-        core::arch::naked_asm!(concat!(
+        core::arch::naked_asm!(
             "
                 // set sp
                 mrs x8, mpidr_el1
                 and x8, x8, #0Xff
                 lsl x8, x8, #14
-                sub sp, x1, x8 
-                ",
-            clear_ttbr0_el1!(),
-            "
+                sub sp, x1, x8
+                // Code, stack and runtime MMIO now use the TTBR1 high mapping.
+                // Drop the TTBR0 boot identity mapping on every platform.
+                msr ttbr0_el1, xzr
+                dsb ish
+                isb
+                tlbi vmalle1
+                dsb ish
+                isb
                 // branch to a far address
                 br x2
                 "
-        ))
+        )
     }
 }
 

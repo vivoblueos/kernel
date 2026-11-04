@@ -1,5 +1,0 @@
-error: `#[panic_handler]` attribute cannot be used together with `#[no_mangle]`
- --> $DIR/panic-handler-no-mangle.rs:5:1
-  |
-5 | #[no_mangle]
-  | ^^^^^^^^^^^^

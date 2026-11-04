@@ -1,0 +1,55 @@
+# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Proxy index from `gnrt sync`: `cargo_spec` label -> generated crate label.
+# Build mode reads it, collect mode runs before it exists.
+if (gnrt_mode == "build") {
+  gnrt_crate_index_path = "//external/vendor/gnrt_crate_index.json"
+  _gnrt_state_path = "//external/vendor/gnrt_sync_state.json"
+  _gnrt_check_args = [
+    "--root",
+    rebase_path("//"),
+    "--state",
+    "external/vendor/gnrt_sync_state.json",
+    "--args-file",
+    rebase_path("$root_build_dir/args.gn"),
+  ]
+
+  # Read the file list needed by the next exec_script's file_dependencies.
+  _gnrt_inputs = exec_script("//build/scripts/check_gnrt_sync.py",
+                             _gnrt_check_args + [ "--inputs-only" ],
+                             "json",
+                             [ _gnrt_state_path ])
+  assert(_gnrt_inputs.valid,
+         _gnrt_inputs.reason + " " + _gnrt_inputs.sync_command)
+  _gnrt_dependencies = []
+  foreach(_input, _gnrt_inputs.inputs) {
+    _gnrt_dependencies += [ "//" + _input ]
+  }
+
+  # Validate sync and register these files with GN to trigger regeneration.
+  _gnrt_state_check = exec_script("//build/scripts/check_gnrt_sync.py",
+                                  _gnrt_check_args,
+                                  "json",
+                                  _gnrt_dependencies)
+  assert(_gnrt_state_check.valid,
+         _gnrt_state_check.reason + " " + _gnrt_state_check.sync_command)
+  gnrt_crate_index = read_file(gnrt_crate_index_path, "json")
+  assert(gnrt_crate_index.version == 1,
+         "Unsupported crate index. Run gnrt sync.")
+} else {
+  gnrt_crate_index = {
+    crates = []
+  }
+}

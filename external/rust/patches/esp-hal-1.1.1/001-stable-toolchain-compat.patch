@@ -1,0 +1,431 @@
+# Patch: Accept BlueOS targets and preserve local esp-hal source adaptations.
+# Reason: Upstream target checks reject BlueOS triples, and BlueKernel uses
+# its own interrupt runtime and HAL integration.
+
+--- a/build.rs
++++ b/build.rs
+@@ -18,10 +18,10 @@
+         .contains("rust-analyzer");
+ 
+     println!("cargo:rustc-check-cfg=cfg(is_debug_build)");
+-    if let Ok(level) = std::env::var("OPT_LEVEL")
+-        && (level == "0" || level == "1")
+-    {
+-        println!("cargo:rustc-cfg=is_debug_build");
++    if let Ok(level) = std::env::var("OPT_LEVEL") {
++        if level == "0" || level == "1" {
++            println!("cargo:rustc-cfg=is_debug_build");
++        }
+     }
+ 
+     // If some library required unstable make sure unstable is actually enabled.
+@@ -39,13 +39,27 @@
+     // Ensure that exactly one chip has been specified:
+     let chip = esp_metadata_generated::Chip::from_cargo_feature()?;
+ 
+-    if !suppress_panics && chip.target() != std::env::var("TARGET").unwrap_or_default().as_str() {
+-        panic!("
++    if !suppress_panics {
++        let target = std::env::var("TARGET").unwrap_or_default();
++        let chip_target = chip.target();
++        // BlueOS uses custom target triples for the same chips, so the upstream
++        // bare-metal target names do not match TARGET.
++        let blueos_target = matches!(
++            (chip.name(), target.as_str()),
++            ("esp32c3", "riscv32imc-vivo-blueos") | ("esp32c6", "riscv32-vivo-blueos")
++        );
++        if chip_target != target.as_str()
++            && !target.is_empty()
++            && !chip_target.starts_with(target.as_str())
++            && !blueos_target
++        {
++            panic!("
+         Seems you are building for an unsupported or wrong target (e.g. the host environment).
+         Maybe you are missing the `target` in `.cargo/config.toml` or you have configs overriding it?
+ 
+         See https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure
+         ");
++        }
+     }
+ 
+     // Define all necessary configuration symbols for the configured device:
+--- a/src/clock/mod.rs
++++ b/src/clock/mod.rs
+@@ -75,9 +75,9 @@
+ #[instability::unstable]
+ pub use crate::soc::clocks::ClockConfig;
+ pub use crate::soc::clocks::CpuClock;
+-use crate::{ESP_HAL_LOCK, soc::clocks, time::Rate};
+ #[cfg(soc_has_clock_node_timg_calibration_clock)]
+ use crate::{peripherals::TIMG0, soc::clocks::ClockTree};
++use crate::{soc::clocks, time::Rate, ESP_HAL_LOCK};
+ 
+ impl CpuClock {
+     #[procmacros::doc_replace]
+@@ -452,19 +452,19 @@
+                 .modify(|_, w| w.tick_enable().clear_bit());
+         }
+ 
+-        if let Some(calib_clock) = current_calib_clock
+-            && calib_clock != rtc_clock
+-        {
+-            clocks::configure_timg_calibration_clock(clocks, calib_clock);
++        if let Some(calib_clock) = current_calib_clock {
++            if calib_clock != rtc_clock {
++                clocks::configure_timg_calibration_clock(clocks, calib_clock);
++            }
+         }
+         clocks::release_timg_calibration_clock(clocks);
+ 
+         #[cfg(soc_has_clock_node_timg_function_clock)]
+         {
+-            if let Some(func_clock) = current_function_clock
+-                && func_clock != function_clock
+-            {
+-                clocks::TimgInstance::Timg0.configure_function_clock(clocks, func_clock);
++            if let Some(func_clock) = current_function_clock {
++                if func_clock != function_clock {
++                    clocks::TimgInstance::Timg0.configure_function_clock(clocks, func_clock);
++                }
+             }
+             clocks::TimgInstance::Timg0.release_function_clock(clocks);
+         }
+--- a/src/debugger.rs
++++ b/src/debugger.rs
+@@ -27,7 +27,7 @@
+ /// # Safety
+ /// The address must be word aligned.
+ pub unsafe fn set_stack_watchpoint(addr: usize) {
+-    assert!(addr.is_multiple_of(4));
++    assert!(addr % 4 == 0);
+ 
+     if cfg!(stack_guard_monitoring_with_debugger_connected)
+         || !crate::debugger::debugger_connected()
+@@ -194,7 +194,7 @@
+ pub(crate) unsafe fn set_watchpoint(id: u8, addr: usize, len: usize) {
+     assert!(id < 4);
+     assert!(len.is_power_of_two());
+-    assert!(addr.is_multiple_of(len));
++    assert!(addr % len == 0);
+ 
+     let z = len.trailing_zeros();
+     let mask = {
+--- a/src/dma/buffers.rs
++++ b/src/dma/buffers.rs
+@@ -302,14 +302,14 @@
+         direction: TransferDirection,
+     ) -> Result<(), DmaAlignmentError> {
+         let alignment = self.min_alignment(buffer, direction);
+-        if !(buffer.as_ptr() as usize).is_multiple_of(alignment) {
++        if (buffer.as_ptr() as usize) % alignment != 0 {
+             return Err(DmaAlignmentError::Address);
+         }
+ 
+         // NB: the TRMs suggest that buffer length don't need to be aligned, but
+         // for IN transfers, we configure the DMA descriptors' size field, which needs
+         // to be aligned.
+-        if direction == TransferDirection::In && !buffer.len().is_multiple_of(alignment) {
++        if direction == TransferDirection::In && buffer.len() % alignment != 0 {
+             return Err(DmaAlignmentError::Size);
+         }
+ 
+@@ -1649,7 +1649,7 @@
+     let alignment =
+         BurstConfig::DEFAULT.min_alignment(unsafe { data.as_ref() }, TransferDirection::Out);
+ 
+-    if !data.addr().get().is_multiple_of(alignment) {
++    if data.addr().get() % alignment != 0 {
+         // ESP32 has word alignment requirement on the TX descriptors, too.
+         return Err(DmaError::InvalidAlignment(DmaAlignmentError::Address));
+     }
+--- a/src/efuse/esp32c3/mod.rs
++++ b/src/efuse/esp32c3/mod.rs
+@@ -19,7 +19,7 @@
+ pub fn flash_encryption() -> bool {
+     !super::read_field_le::<u8>(SPI_BOOT_CRYPT_CNT)
+         .count_ones()
+-        .is_multiple_of(2)
++        % 2 == 0
+ }
+ 
+ /// Get the multiplier for the timeout value of the RWDT STAGE 0 register.
+--- a/src/gpio/dedicated.rs
++++ b/src/gpio/dedicated.rs
+@@ -218,7 +218,7 @@
+                     let mut signals = [[core::mem::MaybeUninit::uninit(); CHANNEL_COUNT]; Cpu::COUNT];
+ 
+                     $(
+-                        signals[$cpu][$signal_idx].write(InputSignal::$signal_name);
++                        unsafe { core::ptr::write(signals[$cpu][$signal_idx].as_mut_ptr(), InputSignal::$signal_name); }
+                     )*
+ 
+                     unsafe { core::mem::transmute(signals) }
+@@ -248,7 +248,7 @@
+                     let mut signals = [[core::mem::MaybeUninit::uninit(); CHANNEL_COUNT]; Cpu::COUNT];
+ 
+                     $(
+-                        signals[$cpu][$signal_idx].write(OutputSignal::$signal_name);
++                        unsafe { core::ptr::write(signals[$cpu][$signal_idx].as_mut_ptr(), OutputSignal::$signal_name); }
+                     )*
+ 
+                     unsafe { core::mem::transmute(signals) }
+--- a/src/i2c/master/mod.rs
++++ b/src/i2c/master/mod.rs
+@@ -115,6 +115,7 @@
+ //! [embedded-hal-async]: embedded_hal_async::i2c
+ 
+ use core::{
++    future::Future,
+     marker::PhantomData,
+     pin::Pin,
+     task::{Context, Poll},
+@@ -124,26 +125,18 @@
+ use enumset::{EnumSet, EnumSetType};
+ 
+ use crate::{
+-    Async,
+-    Blocking,
+-    DriverMode,
+     asynch::AtomicWaker,
+     gpio::{
+-        DriveMode,
+-        InputSignal,
+-        OutputConfig,
+-        OutputSignal,
+-        PinGuard,
+-        Pull,
+         interconnect::{self, PeripheralInput, PeripheralOutput},
++        DriveMode, InputSignal, OutputConfig, OutputSignal, PinGuard, Pull,
+     },
+     handler,
+     interrupt::InterruptHandler,
+-    pac::i2c0::{COMD, RegisterBlock},
+-    private,
+-    ram,
++    pac::i2c0::{RegisterBlock, COMD},
++    private, ram,
+     system::PeripheralGuard,
+     time::{Duration, Instant, Rate},
++    Async, Blocking, DriverMode,
+ };
+ 
+ const I2C_FIFO_SIZE: usize = property!("i2c_master.fifo_size");
+@@ -244,7 +237,11 @@
+                     let to_peri = (cycles * 2 * half_bus_cycle).max(1);
+                     let log2 = to_peri.ilog2();
+                     // If not a power of 2, round up so that we don't shorten timeouts.
+-                    if to_peri != 1 << log2 { log2 + 1 } else { log2 }
++                    if to_peri != 1 << log2 {
++                        log2 + 1
++                    } else {
++                        log2
++                    }
+                 } else {
+                     cycles * 2 * half_bus_cycle
+                 };
+@@ -562,12 +559,12 @@
+ 
+ enum OperationType {
+     Write = 0,
+-    Read  = 1,
++    Read = 1,
+ }
+ 
+ #[derive(Eq, PartialEq, Copy, Clone, Debug)]
+ enum Ack {
+-    Ack  = 0,
++    Ack = 0,
+     Nack = 1,
+ }
+ 
+@@ -904,11 +901,13 @@
+             Poll::Ready(result)
+         } else if error.is_err() {
+             Poll::Ready(error)
+-        } else if let Some(deadline) = self.deadline
+-            && now > deadline
+-        {
+-            // If the deadline is reached, we return an error.
+-            Poll::Ready(Err(Error::Timeout))
++        } else if let Some(deadline) = self.deadline {
++            if now > deadline {
++                // If the deadline is reached, we return an error.
++                Poll::Ready(Err(Error::Timeout))
++            } else {
++                Poll::Pending
++            }
+         } else {
+             Poll::Pending
+         };
+@@ -2327,10 +2326,10 @@
+             // if there is a valid command which is not END, check if it's marked as done
+             if cmd.bits() != 0x0 && !cmd.opcode().is_end() && !cmd.command_done().bit_is_set() {
+                 // Let's retry
+-                if let Some(deadline) = deadline
+-                    && now > deadline
+-                {
+-                    return Err(Error::ExecutionIncomplete);
++                if let Some(deadline) = deadline {
++                    if now > deadline {
++                        return Err(Error::ExecutionIncomplete);
++                    }
+                 }
+ 
+                 return Ok(false);
+--- a/src/interrupt/mod.rs
++++ b/src/interrupt/mod.rs
+@@ -266,13 +266,14 @@
+ // Peripheral interrupt API.
+ 
+ fn vector_entry(interrupt: Interrupt) -> &'static pac::Vector {
+-    cfg_if::cfg_if! {
+-        if #[cfg(xtensa)] {
+-            &pac::__INTERRUPTS[interrupt as usize]
+-        } else {
+-            &pac::__EXTERNAL_INTERRUPTS[interrupt as usize]
+-        }
+-    }
++    todo!("unsupported")
++    // cfg_if::cfg_if! {
++    //     if #[cfg(xtensa)] {
++    //         &pac::__INTERRUPTS[interrupt as usize]
++    //     } else {
++    //         &pac::__EXTERNAL_INTERRUPTS[interrupt as usize]
++    //     }
++    // }
+ }
+ 
+ /// Returns the currently bound interrupt handler.
+@@ -529,11 +530,12 @@
+ #[inline(always)]
+ #[cfg(feature = "rt")]
+ fn should_handle(core: Cpu, interrupt_nr: u32, level: u32) -> bool {
+-    if let Some(cpu_interrupt) = crate::interrupt::mapped_to_raw(core, interrupt_nr)
+-        && cpu_interrupt.is_vectored()
+-        && cpu_interrupt.level() == level
+-    {
+-        true
++    if let Some(cpu_interrupt) = crate::interrupt::mapped_to_raw(core, interrupt_nr) {
++        if cpu_interrupt.is_vectored() && cpu_interrupt.level() == level {
++            true
++        } else {
++            false
++        }
+     } else {
+         false
+     }
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -313,7 +313,8 @@
+ #[instability::unstable]
+ pub use procmacros::handler;
+ #[instability::unstable]
+-#[cfg(any(lp_core, ulp_riscv_core))]
++
++#[cfg(all(any(lp_core, ulp_riscv_core), any(feature = "has-lp-core", feature = "has-ulp-core")))]
+ pub use procmacros::load_lp_code;
+ pub use procmacros::ram;
+ 
+--- a/src/spi/master/mod.rs
++++ b/src/spi/master/mod.rs
+@@ -53,25 +53,16 @@
+ pub use dma::*;
+ use embedded_hal::spi::SpiBus;
+ use embedded_hal_async::spi::SpiBus as SpiBusAsync;
+-use enumset::{EnumSet, EnumSetType, enum_set};
++use enumset::{enum_set, EnumSet, EnumSetType};
+ use procmacros::doc_replace;
+ 
+ use super::{BitOrder, Error, Mode};
+ use crate::{
+-    Async,
+-    Blocking,
+-    DriverMode,
+-    RegisterToggle,
+     asynch::AtomicWaker,
+     clock::Clocks,
+     gpio::{
+-        InputConfig,
+-        InputSignal,
+-        NoPin,
+-        OutputConfig,
+-        OutputSignal,
+-        PinGuard,
+         interconnect::{self, PeripheralInput, PeripheralOutput},
++        InputConfig, InputSignal, NoPin, OutputConfig, OutputSignal, PinGuard,
+     },
+     handler,
+     interrupt::InterruptHandler,
+@@ -80,6 +71,7 @@
+     ram,
+     system::PeripheralGuard,
+     time::Rate,
++    Async, Blocking, DriverMode, RegisterToggle,
+ };
+ 
+ /// Enumeration of possible SPI interrupt events.
+@@ -2015,16 +2007,16 @@
+             }
+         }
+         let rem = c_iter.remainder();
+-        if !rem.is_empty()
+-            && let Some(w_reg) = w_iter.next()
+-        {
+-            let word = match rem.len() {
+-                3 => (rem[0] as u32) | ((rem[1] as u32) << 8) | ((rem[2] as u32) << 16),
+-                2 => (rem[0] as u32) | ((rem[1] as u32) << 8),
+-                1 => rem[0] as u32,
+-                _ => unreachable!(),
+-            };
+-            w_reg.write(|w| w.buf().set(word));
++        if !rem.is_empty() {
++            if let Some(w_reg) = w_iter.next() {
++                let word = match rem.len() {
++                    3 => (rem[0] as u32) | ((rem[1] as u32) << 8) | ((rem[2] as u32) << 16),
++                    2 => (rem[0] as u32) | ((rem[1] as u32) << 8),
++                    1 => rem[0] as u32,
++                    _ => unreachable!(),
++                };
++                w_reg.write(|w| w.buf().set(word));
++            }
+         }
+     }
+ 
+@@ -2127,7 +2119,7 @@
+ 
+     // Check if the bus is busy and if it is wait for it to be idle
+     #[cfg_attr(place_spi_master_driver_in_ram, ram)]
+-    fn flush_async(&self) -> impl Future<Output = ()> {
++    fn flush_async(&self) -> impl Future<Output = ()> + use<'_> {
+         SpiFuture { driver: self }
+     }
+ 
+--- a/src/work_queue.rs
++++ b/src/work_queue.rs
+@@ -12,7 +12,7 @@
+ //! the work item has been processed. Dropping the handle will cancel the work item.
+ #![cfg_attr(not(feature = "unstable"), allow(unused))]
+ 
+-use core::{future::poll_fn, marker::PhantomData, ptr::NonNull, task::Context};
++use core::{future::Future, future::poll_fn, marker::PhantomData, ptr::NonNull, task::Context};
+ 
+ use embassy_sync::waitqueue::WakerRegistration;
+ use esp_sync::NonReentrantMutex;
+@@ -565,7 +565,7 @@
+     }
+ 
+     /// Waits until the work item is completed.
+-    pub fn wait(&mut self) -> impl Future<Output = Status> {
++    pub fn wait<'a>(&'a mut self) -> impl Future<Output = Status> + use<'a, 't, T> {
+         poll_fn(|ctx| {
+             unsafe { self.work_item.as_mut() }
+                 .waker
+@@ -627,7 +627,7 @@
+     }
+ 
+     /// Shuts down the driver.
+-    pub fn stop(self) -> impl Future<Output = ()> {
++    pub fn stop(self) -> impl Future<Output = ()> + use<'t, D, T> {
+         let mut suspended = false;
+         poll_fn(move |ctx| {
+             self.queue.inner.with(|inner| {

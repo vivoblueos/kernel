@@ -81,13 +81,14 @@ bindgen("newlib_reent") {
 }
 
 _reent_out = get_target_outputs(":newlib_reent")
+
 build_rust("librs_newlib") {
   crate_type = "staticlib"
   crate_name = "librs"
   sources = [ "//libs/librs/src/newlib.rs" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
   deps = [
-    "//external/vendor/spin-0.9.8:spin",
+    "//external/rust:spin",
     "//kernel/header:blueos_header",
     "//kernel/kernel:blueos",
     "//kernel/scal:blueos_scal",

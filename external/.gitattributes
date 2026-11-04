@@ -1,1 +1,4 @@
 * text=auto eol=lf
+rust/patches/** -whitespace
+# Preserve CRLF patch hunks to match the upstream ESP Wi-Fi sources.
+rust/patches/esp-wifi*/*.patch -text

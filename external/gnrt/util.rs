@@ -2,15 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::paths::ChromiumPaths;
-use handlebars::handlebars_helper;
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
-use std::process;
-use std::{fmt::Write, path::PathBuf};
+use crate::paths::GnrtPaths;
 
-use anyhow::{format_err, Context, Result};
+use anyhow::{ensure, format_err, Context, Result};
+use handlebars::{handlebars_helper, Renderable};
+use serde::Serialize;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Write,
+    fs,
+    path::{Path, PathBuf},
+    process,
+};
 
 pub fn check_spawn(cmd: &mut process::Command, cmd_msg: &str) -> Result<process::Child> {
     cmd.spawn()
@@ -51,6 +55,12 @@ pub fn check_exit_ok(output: &process::Output, cmd_msg: &str) -> Result<()> {
         };
         write!(
             msg,
+            " stdout:\n\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+        .unwrap();
+        write!(
+            msg,
             " stderr:\n\n{}",
             String::from_utf8_lossy(&output.stderr)
         )
@@ -82,11 +92,11 @@ pub fn create_dirs_if_needed(path: &Path) -> Result<()> {
 /// instead of using our vendor/ directory as the source of truth. It should
 /// only be done for actions like adding or updating crates.
 pub fn without_cargo_config_toml<T>(
-    paths: &ChromiumPaths,
+    paths: &dyn GnrtPaths,
     f: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
     let config_file = paths
-        .third_party_cargo_root
+        .third_party_cargo_root()
         .join(".cargo")
         .join("config.toml");
     let config_contents =
@@ -103,140 +113,26 @@ pub fn without_cargo_config_toml<T>(
     r
 }
 
-/// Find and fix edition2024 in cargo registry cache
-fn fix_edition_in_cargo_cache() -> Result<()> {
-    use std::io::Write;
-    println!("Fixing edition2024 in cargo cache");
-    // Try to get cargo home directory
-    let registry_path = match std::env::var("CARGO_HOME") {
-        Ok(cargo_home) => std::path::Path::new(&cargo_home)
-            .join("registry")
-            .join("src"),
-        Err(_) => {
-            // Fallback to HOME/.cargo
-            let home = std::env::var("HOME")?;
-            std::path::Path::new(&home)
-                .join(".cargo")
-                .join("registry")
-                .join("src")
-        }
-    };
-
-    // Check if registry directory exists
-    if !registry_path.exists() {
-        println!("Registry directory does not exist");
-        return Ok(());
-    }
-
-    // Find all index.crates.io-* directories
-    if let Ok(entries) = std::fs::read_dir(&registry_path) {
-        for entry in entries {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue, // Skip entries we can't read
-            };
-
-            let index_dir = entry.path();
-
-            // Check if it's an index directory (index.crates.io-*)
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("index.crates.io-")
-            {
-                // Find all crate directories
-                if let Ok(crate_dirs) = std::fs::read_dir(&index_dir) {
-                    for crate_entry in crate_dirs {
-                        let crate_entry = match crate_entry {
-                            Ok(e) => e,
-                            Err(_) => continue,
-                        };
-
-                        let metadata = match crate_entry.metadata() {
-                            Ok(m) => m,
-                            Err(_) => continue,
-                        };
-
-                        if metadata.is_dir() {
-                            let cargo_toml = crate_entry.path().join("Cargo.toml");
-
-                            if cargo_toml.exists() {
-                                if let Ok(mut content) = std::fs::read_to_string(&cargo_toml) {
-                                    if content.contains("edition = \"2024\"")
-                                        || content.contains("edition=\"2024\"")
-                                    {
-                                        content = content
-                                            .replace("edition = \"2024\"", "edition = \"2021\"")
-                                            .replace("edition=\"2024\"", "edition=\"2021\"");
-
-                                        if let Ok(mut file) = std::fs::File::create(&cargo_toml) {
-                                            if let Err(e) = file.write_all(content.as_bytes()) {
-                                                log::warn!(
-                                                    "Failed to write fixed Cargo.toml in cache: {}",
-                                                    e
-                                                );
-                                            } else {
-                                                let crate_name = crate_entry
-                                                    .file_name()
-                                                    .to_string_lossy()
-                                                    .to_string();
-                                                log::info!("Fixed edition2024 -> edition2021 in cargo cache for {}", crate_name);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Run cargo metadata command, optionally with extra flags and environment.
-pub fn run_cargo_metadata(
+/// Same as `run_cargo_metadata` but built on top of `guppy`.
+pub fn get_guppy_package_graph(
     workspace_path: PathBuf,
     mut extra_options: Vec<String>,
     extra_env: HashMap<std::ffi::OsString, std::ffi::OsString>,
-) -> Result<cargo_metadata::Metadata> {
-    // fixme: kernel toolchain not supported edition22024 yet
-    // First, try to fix any edition2024 issues in the cargo cache
-    let _ = fix_edition_in_cargo_cache();
-
-    let mut command = cargo_metadata::MetadataCommand::new();
-    command.current_dir(workspace_path);
-
-    // Allow the binary dependency on cxxbridge-cmd.
+) -> Result<guppy::graph::PackageGraph> {
+    // See the `[dependencies.cxxbridge-cmd]` section in
+    // `third_party/rust/chromium_crates_io/Cargo.toml` for explanation why
+    // `-Zbindeps` flag is needed.
     extra_options.push("-Zbindeps".to_string());
+
+    let mut command = guppy::MetadataCommand::new();
+    command.current_dir(workspace_path);
     command.other_options(extra_options);
     for (k, v) in extra_env.into_iter() {
         command.env(k, v);
     }
 
     log::debug!("invoking cargo with:\n`{:?}`", command.cargo_command());
-
-    // Try to run cargo metadata, and if it fails with edition2024 error, retry after fixing
-    let max_retries = 5;
-    for attempt in 0..max_retries {
-        match command.exec() {
-            Ok(metadata) => return Ok(metadata),
-            Err(e) => {
-                let error_msg = e.to_string();
-                if error_msg.contains("edition2024") || error_msg.contains("edition `2024`") {
-                    log::warn!("Detected edition2024 error (attempt {}/{}), fixing cargo cache and retrying...", attempt + 1, max_retries);
-                    fix_edition_in_cargo_cache().context("fixing cargo cache")?;
-                    // Continue to retry
-                } else {
-                    return Err(e).context("running cargo metadata");
-                }
-            }
-        }
-    }
-    // If we exhausted retries and still fail, try one more time and propagate the error
-    command.exec().context("running cargo metadata after fix")
+    command.build_graph().context("running cargo metadata")
 }
 
 /// Run a cargo command, other than metadata which should use
@@ -261,10 +157,10 @@ pub fn run_cargo_command(
         command.env(k, v);
     }
 
-    log::debug!("invoking cargo {}", subcommand);
+    log::debug!("invoking cargo {subcommand}");
     let mut handle = command
         .spawn()
-        .with_context(|| format!("running cargo {}", subcommand))?;
+        .with_context(|| format!("running cargo {subcommand}"))?;
     let code = handle.wait().context("waiting for cargo process")?;
     if !code.success() {
         Err(format_err!(
@@ -290,20 +186,130 @@ pub fn remove_checksums_from_lock(cargo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn init_handlebars(template_path: &Path) -> Result<handlebars::Handlebars> {
+struct IfKeyPresentHelper();
+
+impl handlebars::HelperDef for IfKeyPresentHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &handlebars::Helper<'rc>,
+        r: &'reg handlebars::Handlebars<'reg>,
+        ctx: &'rc handlebars::Context,
+        rc: &mut handlebars::RenderContext<'reg, 'rc>,
+        out: &mut dyn handlebars::Output,
+    ) -> handlebars::HelperResult {
+        let param_not_found =
+            |idx| handlebars::RenderErrorReason::ParamNotFoundForIndex("is_key_present", idx);
+        let key = h
+            .param(0)
+            .and_then(|v| v.value().as_str())
+            .ok_or(param_not_found(0))?;
+        let maybe_dict = h.param(1).ok_or(param_not_found(1))?;
+        let contains_key = match maybe_dict.value().as_object() {
+            None => false,
+            Some(dict) => dict.contains_key(key),
+        };
+        let template = if contains_key {
+            h.template()
+        } else {
+            h.inverse()
+        };
+        match template {
+            None => Ok(()),
+            Some(t) => t.render(r, ctx, rc, out),
+        }
+    }
+}
+
+pub fn init_handlebars<'reg>() -> handlebars::Handlebars<'reg> {
     let mut handlebars = handlebars::Handlebars::new();
+    handlebars.set_strict_mode(true);
 
     // Don't escape output strings; the default is to escape for HTML output. Do
     // not auto-escape for GN either, so that non-string GN may also be passed.
     handlebars.register_escape_fn(handlebars::no_escape);
-    handlebars
-        .register_template_file("template", template_path)
-        .context("loading gn template")?;
 
     // Install helper to escape inputs pasted in GN `".."` strings.
     handlebars_helper!(gn_escape: |x: String| escape_for_handlebars(&x));
     handlebars.register_helper("gn_escape", Box::new(gn_escape));
+
+    // Install helper to detect presence of dictionary keys (which works even if
+    // the corresponding value is "false-y / non-truth-y" - i.e. the helper
+    // distinguishes "missing" / "none" VS `false` / `0` / empty-string, etc.).
+    handlebars.register_helper("if_key_present", Box::new(IfKeyPresentHelper()));
+
+    handlebars
+}
+
+fn template_path_to_registration_name(template_path: &Path) -> String {
+    let filename = template_path
+        .file_name()
+        .map(|filename| filename.to_string_lossy())
+        .unwrap_or(Cow::Borrowed("???no-filename???"));
+    let hash = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        template_path.hash(&mut h);
+        h.finish()
+    };
+    format!("{filename}#{hash:#x}")
+}
+
+pub fn init_handlebars_with_template_paths<'a>(
+    template_paths: &[&'a Path],
+) -> Result<handlebars::Handlebars<'a>> {
+    let mut handlebars = init_handlebars();
+    for path in template_paths.iter() {
+        // Explicitly check `path.exists()` to get a better error message, even though
+        // TOCTOU means that we may still get an error below.
+        ensure!(path.exists(), "File doesn't exist: {}", path.display());
+
+        let template_name = template_path_to_registration_name(path);
+        handlebars
+            .register_template_file(&template_name, path)
+            .with_context(|| format!("Loading handlebars template: {}", path.display()))?;
+    }
     Ok(handlebars)
+}
+
+pub fn render_handlebars(
+    handlebars: &handlebars::Handlebars,
+    template_path: &Path,
+    data: &impl Serialize,
+    output_path: &Path,
+) -> Result<()> {
+    render_handlebars_named_template(
+        handlebars,
+        &template_path_to_registration_name(template_path),
+        data,
+        output_path,
+    )
+    .with_context(|| {
+        format!(
+            "Expanding handlebars template `{}`",
+            template_path.display(),
+        )
+    })
+}
+
+pub fn render_handlebars_named_template(
+    handlebars: &handlebars::Handlebars,
+    template_name: &str,
+    data: &impl Serialize,
+    output_path: &Path,
+) -> Result<()> {
+    std::fs::File::create(output_path)
+        .map_err(anyhow::Error::new)
+        .and_then(|output_file| {
+            let buffered_output_file = std::io::BufWriter::new(output_file);
+            handlebars.render_to_write(template_name, data, buffered_output_file)?;
+            Ok(())
+        })
+        .with_context(|| {
+            format!(
+                "Expanding handlebars template into `{}`",
+                output_path.display(),
+            )
+        })
 }
 
 fn escape_for_handlebars(x: &str) -> String {
@@ -329,7 +335,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn string_excaping() {
+    fn test_string_excaping() {
         assert_eq!("foo bar", format!("{}", escape_for_handlebars("foo bar")));
         assert_eq!(
             "foo bar ",
@@ -342,6 +348,31 @@ mod tests {
         assert_eq!(
             "foo 'bar'",
             format!("{}", escape_for_handlebars("foo 'bar'"))
+        );
+    }
+
+    #[test]
+    fn test_handlebars_helper_is_key_present() {
+        fn render(data: serde_json::Value) -> String {
+            let mut h = init_handlebars();
+            h.register_template_string(
+                "template",
+                r#"
+                    {{#if_key_present "foo" dict}}
+                        true
+                    {{else}}
+                        false
+                    {{/if_key_present}}
+                "#,
+            )
+            .unwrap();
+            h.render("template", &data).unwrap().trim().to_string()
+        }
+
+        assert_eq!("true", render(serde_json::json!({ "dict": { "foo": 456 }})));
+        assert_eq!(
+            "false",
+            render(serde_json::json!({ "dict": { "bar": 456 }}))
         );
     }
 }

@@ -16,11 +16,11 @@ declare_args() {
   chip = "gd32vw55x"
 }
 
-board_default_toolchain = "//build/toolchain:blueos_riscv32imac"
+board_default_toolchain = "blueos_riscv32imac"
 default_linker_script = "//kernel/kernel/src/boards/${board}/link.x"
 qemu_exe = ""
 qemu_machine = ""
-rust_abi_target = "riscv32"
+
 qemu_extra_args = []
 qemu_net_args = []
 qemu_block_args = []

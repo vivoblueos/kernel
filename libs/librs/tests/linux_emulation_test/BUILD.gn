@@ -19,7 +19,7 @@ build_rust("librs_linux_emulation") {
   crate_name = "librs"
   sources = [ "//libs/librs/src/lib.rs" ]
   deps = [
-    "//external/vendor/spin-0.9.8:spin",
+    "//external/rust:spin",
     "//kernel/header:blueos_header",
     "//kernel/scal:blueos_scal",
     "//libs/libc",
@@ -40,10 +40,13 @@ build_rust("librs_linux_emulation_shell_example") {
 
 librs_linux_emulation_case("clock") {
 }
+
 librs_linux_emulation_case("time") {
 }
+
 librs_linux_emulation_case("sched") {
 }
+
 librs_linux_emulation_case("mqueue") {
 }
 
