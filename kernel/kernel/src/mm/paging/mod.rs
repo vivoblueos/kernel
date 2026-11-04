@@ -170,17 +170,23 @@ pub enum FrameDeallocationError {
 
 /// Exclusive ownership of physical page frames.
 ///
+/// Methods use shared references; implementations must synchronize concurrent
+/// access to shared allocator state internally, including access through
+/// different handles to the same frame pool. Callers do not need an external
+/// lock to serialize allocation, deallocation, or usage queries.
+///
 /// # Safety
 /// Allocations must be aligned, disjoint, writable through the kernel direct
 /// map, and remain live until explicitly freed. Failed allocation must not
-/// consume frames. Reserved memory must never be returned or freed.
+/// consume frames. Reserved memory must never be returned or freed. These
+/// guarantees must hold under concurrent calls as well.
 pub unsafe trait FrameAllocator {
-    fn alloc_frame(&mut self) -> Option<PhysicalAddress>;
+    fn alloc_frame(&self) -> Option<PhysicalAddress>;
 
     /// # Safety
     /// The caller must own this live allocation, with no remaining users or
     /// hardware translations, and must release it exactly once.
-    fn free_frame(&mut self, frame: PhysicalAddress) -> Result<(), FrameDeallocationError>;
+    fn free_frame(&self, frame: PhysicalAddress) -> Result<(), FrameDeallocationError>;
 
     fn usage(&self) -> FrameUsage;
 }

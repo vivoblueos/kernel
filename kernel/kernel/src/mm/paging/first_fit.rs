@@ -368,11 +368,11 @@ impl Drop for FrameAllocation<'_> {
 // requires exclusive ownership of free pages and succeeds only once. Allocated
 // pages are marked before returning, so concurrent calls cannot overlap.
 unsafe impl FrameAllocator for &FirstFitFrameAllocator {
-    fn alloc_frame(&mut self) -> Option<PhysicalAddress> {
+    fn alloc_frame(&self) -> Option<PhysicalAddress> {
         FirstFitFrameAllocator::alloc_frame(self)
     }
 
-    fn free_frame(&mut self, frame: PhysicalAddress) -> Result<(), FrameDeallocationError> {
+    fn free_frame(&self, frame: PhysicalAddress) -> Result<(), FrameDeallocationError> {
         unsafe { FirstFitFrameAllocator::free_frame(self, frame) }
     }
 
