@@ -1,0 +1,22 @@
+# Patch: Link libcore.a after the ESP32-C6 Wi-Fi libraries.
+# Reason: libnet80211.a references NVS symbols provided by libcore.a.
+
+--- a/build.rs
++++ b/build.rs
+@@ -8,7 +8,6 @@
+         "ble_app",
+         "btbb",
+         "coexist",
+-        "core",
+         "espnow",
+         "mesh",
+         "net80211",
+@@ -19,6 +18,8 @@
+         "wpa_supplicant",
+         "printf",
+         "regulatory",
++        // libnet80211.a uses NVS symbols from libcore.a, which must follow it.
++        "core",
+     ];
+ 
+     for lib in libs {

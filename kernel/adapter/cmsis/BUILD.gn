@@ -19,7 +19,7 @@ import("//build/toolchain/blueos.gni")
 adapter_deps = [
   "cmsis_header:cmsis_os",
   "cmsis_header:cmsis_os2",
-  "//external/vendor/log-0.4.28:log",
+  "//external/rust:log",
   "//kernel/adapter/common:blueos_adapter",
   "//kernel/infra:blueos_infra",
   "//kernel/kconfig:blueos_kconfig",
@@ -30,7 +30,7 @@ adapter_deps = [
 build_rust("cmsis_adapter") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
-  proc_macro_deps = [ "//external/vendor/delegate-0.13.4:delegate" ]
+  proc_macro_deps = [ "//external/rust:delegate" ]
   deps = adapter_deps
   deps += [ "//kernel/kconfig:generate_rustflags_file" ]
   configs += [ "//kernel/kconfig:kconfigs" ]
@@ -47,14 +47,14 @@ build_rust("cmsis_adapter_unittest") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/vendor/delegate-0.13.4:delegate",
+    "//external/rust:delegate",
     "//kernel/test_harness:blueos_test_macro",
   ]
   deps = adapter_deps
   linker_script = default_linker_script
   deps += [
     ":cmsis_adapter",
-    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/rust:semihosting",
     "//kernel/kconfig:generate_rustflags_file",
   ]
   configs += [
@@ -104,7 +104,7 @@ build_rust("adapter_validation") {
   sources = [ "src/validation.rs" ]
   edition = "2021"
   proc_macro_deps = [
-    "//external/vendor/delegate-0.13.4:delegate",
+    "//external/rust:delegate",
     "//kernel/test_harness:blueos_test_macro",
   ]
   deps = validation_deps
@@ -112,7 +112,7 @@ build_rust("adapter_validation") {
   deps += [
     ":cmsis_adapter",
     ":validation_cases",
-    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/rust:semihosting",
     "//kernel/kconfig:generate_rustflags_file",
 
     # in fact, validation_cases need an c library

@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Error, Formatter};
 
 /// Privilege group for a crate. They are ordered with higher values being
 /// higher privilege.
-#[derive(Copy, Clone, Debug, Deserialize, Hash, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Deserialize, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Group {
     /// Test-only code (or for tools that don't contribute directly to the
@@ -20,6 +21,14 @@ pub enum Group {
     Safe,
 }
 
+impl Display for Group {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        // Using `gnrt_config.toml` syntax/formatting when displaying a `Group`.
+        let s = toml::to_string(self).unwrap();
+        f.write_str(&s)
+    }
+}
+
 #[derive(Debug)]
 pub struct GroupParseError;
 impl std::error::Error for GroupParseError {}
@@ -27,7 +36,7 @@ impl std::fmt::Display for GroupParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
             f,
-            "failed ot parse group, should be one of: safe|sandbox|test"
+            "failed to parse group, should be one of: safe|sandbox|test"
         )
     }
 }
@@ -43,10 +52,7 @@ mod test {
         assert_eq!(std::cmp::min(Group::Sandbox, Group::Safe), Group::Sandbox);
         assert_eq!(std::cmp::min(Group::Safe, Group::Test), Group::Test);
         assert_eq!(std::cmp::min(Group::Test, Group::Safe), Group::Test);
-        assert_eq!(
-            std::cmp::min(Group::Sandbox, Group::Sandbox),
-            Group::Sandbox
-        );
+        assert_eq!(std::cmp::min(Group::Sandbox, Group::Sandbox), Group::Sandbox);
         assert_eq!(std::cmp::min(Group::Sandbox, Group::Test), Group::Test);
         assert_eq!(std::cmp::min(Group::Test, Group::Sandbox), Group::Test);
         assert_eq!(std::cmp::min(Group::Test, Group::Test), Group::Test);

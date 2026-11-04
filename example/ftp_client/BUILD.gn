@@ -23,8 +23,8 @@ build_rust("ftp_client_example") {
 
   sources = [ "src/main.rs" ]
   deps = [
+    "//external/rust:log",
     "//external/rust-ftp/master:ftp",
-    "//external/vendor/log-0.4.28:log",
     "//kernel/rsrt:rsrt_std",
     "//libs/librs",
   ]

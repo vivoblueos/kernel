@@ -1,0 +1,13 @@
+# Patch: Disable thiserror's default features in defmt-parser.
+# Reason: Its default std feature is unavailable on embedded BlueOS targets.
+
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -41,6 +41,7 @@
+ 
+ [dependencies.thiserror]
+ version = "2"
++default-features = false
+ 
+ [dev-dependencies.rstest]
+ version = "0.19"

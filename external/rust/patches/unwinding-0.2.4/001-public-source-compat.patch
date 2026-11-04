@@ -1,0 +1,64 @@
+# Patch: Select the naked attribute syntax with compatible_old_toolchain.
+# Reason: Current Rust requires unsafe(naked), while older toolchains use
+# naked.
+
+--- a/src/unwinder/arch/aarch64.rs
++++ b/src/unwinder/arch/aarch64.rs
+@@ -111,7 +111,8 @@
+     (maybesavefp()) => { "" };
+ }
+ 
+-#[naked]
++#[cfg_attr(compatible_old_toolchain, naked)]
++#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+ pub extern "C-unwind" fn save_context(f: extern "C" fn(&mut Context, *mut ()), ptr: *mut ()) {
+     unsafe {
+         #[cfg(target_feature = "neon")]
+--- a/src/unwinder/arch/riscv32.rs
++++ b/src/unwinder/arch/riscv32.rs
+@@ -169,7 +169,8 @@
+     };
+ }
+ 
+-#[naked]
++#[cfg_attr(compatible_old_toolchain, naked)]
++#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+ pub extern "C-unwind" fn save_context(f: extern "C" fn(&mut Context, *mut ()), ptr: *mut ()) {
+     // No need to save caller-saved registers here.
+     #[cfg(target_feature = "d")]
+--- a/src/unwinder/arch/riscv64.rs
++++ b/src/unwinder/arch/riscv64.rs
+@@ -169,7 +169,8 @@
+     };
+ }
+ 
+-#[naked]
++#[cfg_attr(compatible_old_toolchain, naked)]
++#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+ pub extern "C-unwind" fn save_context(f: extern "C" fn(&mut Context, *mut ()), ptr: *mut ()) {
+     // No need to save caller-saved registers here.
+     #[cfg(target_feature = "d")]
+--- a/src/unwinder/arch/x86.rs
++++ b/src/unwinder/arch/x86.rs
+@@ -56,7 +56,8 @@
+     }
+ }
+ 
+-#[naked]
++#[cfg_attr(compatible_old_toolchain, naked)]
++#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+ pub extern "C-unwind" fn save_context(f: extern "C" fn(&mut Context, *mut ()), ptr: *mut ()) {
+     // No need to save caller-saved registers here.
+     unsafe {
+--- a/src/unwinder/arch/x86_64.rs
++++ b/src/unwinder/arch/x86_64.rs
+@@ -58,7 +58,8 @@
+     }
+ }
+ 
+-#[naked]
++#[cfg_attr(compatible_old_toolchain, naked)]
++#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+ pub extern "C-unwind" fn save_context(f: extern "C" fn(&mut Context, *mut ()), ptr: *mut ()) {
+     // No need to save caller-saved registers here.
+     unsafe {

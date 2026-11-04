@@ -49,7 +49,3 @@ if (current_toolchain == default_toolchain) {
     depth = 1
   }
 }
-
-group("run_gnrt") {
-  deps = [ "//external/gnrt:gen_gnrt" ]
-}

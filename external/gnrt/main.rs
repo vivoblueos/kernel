@@ -6,14 +6,18 @@
 #![forbid(unsafe_code)]
 
 mod add;
-mod gen;
+mod fmt;
+mod r#gen;
+mod sync;
 mod update;
 mod util;
 mod vendor;
 
-use anyhow::{Context, Result};
-use clap::{arg, command, Parser, Subcommand};
+use crate::paths;
+use anyhow::Result;
+use clap::{Parser, Subcommand};
 use gnrt_lib::*;
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 struct GnrtArgs {
@@ -25,12 +29,21 @@ struct GnrtArgs {
 enum Command {
     #[command(about = "Add a new third-party crate dependency in //third_party/rust")]
     Add(AddCommandArgs),
+
+    #[command(about = "Format chromium_crates_io/gnrt_config.toml and Cargo.toml")]
+    Fmt,
+
     #[command(about = "Generate GN build rules from third_party/rust crates")]
     Gen(GenCommandArgs),
+
     #[command(about = "Update the Cargo.lock to newer versions for //third_party/rust")]
     Update(UpdateCommandArgs),
+
     #[command(about = "Download all third-party crate dependencies in //third_party/rust")]
     Vendor(VendorCommandArgs),
+
+    #[command(about = "Prepare Rust dependencies and generate GN build rules")]
+    Sync(SyncCommandArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -75,8 +88,10 @@ struct VendorCommandArgs {
         num_args = 0..,
         help = "\
         Don't apply patches from the chromium_crates_io/patches directory \
-        to newly vendored crates. If a crate name is given as a value for the \
-        flag, patches will only not be applied for that crate."
+        to newly vendored crates. If directory names are passed as a value \
+        of the flag, only patches from those directories will be ignored.  \
+        For example, `--no-patches=temporal_rs-v0_1` can be used to skip \
+        patches for this single crate."
     )]
     no_patches: Option<Vec<String>>,
     #[arg(
@@ -86,6 +101,47 @@ struct VendorCommandArgs {
         engine input and write it to files named `gnrt-template-input.json`."
     )]
     dump_template_input: bool,
+    #[arg(
+        long,
+        name = "CRATE_WILDCARD",
+        help = "\
+        Force re-vendoring of crates matching <CRATE_WILDCARD>
+        (without this flag crates where `Cargo.toml` already specifies
+        the expected version would not be re-vendored)."
+    )]
+    force: Option<glob::Pattern>,
+}
+
+#[derive(Debug, Parser)]
+struct SyncCommandArgs {
+    #[arg(
+        short = 'o',
+        long,
+        name = "OUT",
+        default_value = "out/gnrt-sync",
+        help = "Store intermediate synchronization files in this directory, relative to the project root."
+    )]
+    out: PathBuf,
+    #[arg(
+        long,
+        help = "Synchronize dependencies from all registered crate declarations."
+    )]
+    all: bool,
+    // FIXME: Enable --target only when nested GN graphs can be collected completely.
+    #[arg(skip)]
+    target: Option<String>,
+    #[arg(
+        long,
+        help = "Validate the saved synchronization record without downloading dependency sources or generating GN build files."
+    )]
+    check: bool,
+    #[arg(
+        long,
+        name = "ARGS",
+        num_args = 0..,
+        help = "GN build arguments passed to `gn gen --args=`."
+    )]
+    args: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -98,13 +154,27 @@ fn main() -> Result<()> {
 
     let args = GnrtArgs::parse();
 
-    let paths = paths::ChromiumPaths::new().context("Could not find chromium checkout paths")?;
+    let root_paths = paths::BlueOsPaths::new()?;
+    let paths: &dyn paths::GnrtPaths = &root_paths;
 
     match args.command {
-        Command::Add(args) => add::add(args, &paths),
-        Command::Gen(args) => gen::generate(args, &paths),
-        Command::Update(args) => update::update(args, &paths),
-        Command::Vendor(args) => vendor::vendor(args, &paths),
+        Command::Add(args) => add::add(args, paths),
+        Command::Fmt => fmt::format(paths),
+        Command::Gen(args) => {
+            if args.for_std.is_some() {
+                #[cfg(feature = "chromium")]
+                {
+                    let chromium_paths = paths::ChromiumPaths::new()?;
+                    return r#gen::generate_for_std(args, &chromium_paths);
+                }
+                #[cfg(not(feature = "chromium"))]
+                anyhow::bail!("`--for-std` is only supported with the chromium feature enabled");
+            }
+            r#gen::generate(args, paths)
+        }
+        Command::Update(args) => update::update(args, paths),
+        Command::Vendor(args) => vendor::vendor(args, paths),
+        Command::Sync(args) => sync::sync(args, paths),
     }
 }
 
@@ -114,7 +184,7 @@ fn format_log_entry(
 ) -> std::io::Result<()> {
     use std::io::Write;
 
-    let level = fmt.default_styled_level(record.level());
+    let level = fmt.default_level_style(record.level());
     write!(fmt, "[{level}")?;
     if let Some(f) = record.file() {
         write!(fmt, " {f}")?;
@@ -123,4 +193,62 @@ fn format_log_entry(
         }
     }
     writeln!(fmt, "] {msg}", msg = record.args())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_defaults_to_full_collection() {
+        let Command::Sync(args) = GnrtArgs::try_parse_from(["gnrt", "sync"]).unwrap().command
+        else {
+            panic!("expected sync");
+        };
+        assert_eq!(args.out, PathBuf::from("out/gnrt-sync"));
+        assert!(args.target.is_none());
+        assert!(!args.check);
+        assert!(args.args.is_empty());
+    }
+
+    #[test]
+    fn sync_target_flag_is_disabled() {
+        let error =
+            GnrtArgs::try_parse_from(["gnrt", "sync", "--target", "//app:app"]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn sync_check_accepts_full_catalog_validation() {
+        let Command::Sync(args) = GnrtArgs::try_parse_from(["gnrt", "sync", "--all", "--check"])
+            .unwrap()
+            .command
+        else {
+            panic!("expected sync");
+        };
+        assert!(args.all);
+        assert!(args.check);
+        assert!(args.target.is_none());
+        assert!(GnrtArgs::try_parse_from(["gnrt", "verify"]).is_err());
+    }
+
+    #[test]
+    fn sync_preserves_gn_arguments_in_all_mode() {
+        let Command::Sync(args) = GnrtArgs::try_parse_from([
+            "gnrt",
+            "sync",
+            "--all",
+            "--args",
+            "board=\"example\"",
+            "build_type=\"release\"",
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("expected sync");
+        };
+        assert!(args.all);
+        assert!(args.target.is_none());
+        assert_eq!(args.args, ["board=\"example\"", "build_type=\"release\""]);
+    }
 }
