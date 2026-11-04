@@ -38,7 +38,7 @@ build_rust("blueos_adapter_unittest") {
   sources = [ "src/lib.rs" ]
   edition = "2021"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
-  deps = [ "//external/vendor/semihosting-0.1.20:semihosting" ] + shared_deps
+  deps = [ "//external/rust:semihosting" ] + shared_deps
   deps += [ "//kernel/kconfig:generate_rustflags_file" ]
   linker_script = default_linker_script
   configs += [
