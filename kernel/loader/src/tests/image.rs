@@ -17,8 +17,8 @@ use blueos_test_macro::test;
 use core::cell::Cell;
 use goblin::elf::{
     header::{
-        EI_ABIVERSION, EI_CLASS, EI_DATA, EI_OSABI, EI_VERSION, ELFDATA2MSB, EM_AARCH64, EM_RISCV,
-        ET_DYN, ET_EXEC, ET_REL,
+        EI_ABIVERSION, EI_CLASS, EI_DATA, EI_OSABI, EI_VERSION, ELFDATA2MSB, ELFOSABI_FREEBSD,
+        ELFOSABI_GNU, ELFOSABI_NONE, EM_AARCH64, EM_RISCV, ET_DYN, ET_EXEC, ET_REL,
     },
     program_header::{
         PF_R, PF_W, PF_X, PT_DYNAMIC, PT_GNU_EH_FRAME, PT_GNU_RELRO, PT_GNU_STACK, PT_INTERP,
@@ -108,6 +108,40 @@ fn admission_accepts_dyn_and_exec_for_all_public_profiles() {
 }
 
 #[test]
+fn admission_accepts_supported_osabis_for_all_public_profiles() {
+    for profile in PROFILES {
+        for elf_type in [ET_DYN, ET_EXEC] {
+            for osabi in [ELFOSABI_NONE, ELFOSABI_GNU] {
+                let mut bytes = fixture(profile, elf_type).build();
+                bytes[EI_OSABI] = osabi;
+                assert!(loader(&bytes, profile).admit().unwrap().inspect().is_ok());
+            }
+        }
+    }
+}
+
+#[test]
+fn admission_rejects_nonzero_abi_versions_for_supported_osabis() {
+    for profile in PROFILES {
+        for elf_type in [ET_DYN, ET_EXEC] {
+            for osabi in [ELFOSABI_NONE, ELFOSABI_GNU] {
+                for abi_version in [1, u8::MAX] {
+                    let mut bytes = fixture(profile, elf_type).build();
+                    bytes[EI_OSABI] = osabi;
+                    bytes[EI_ABIVERSION] = abi_version;
+                    assert_header_error(
+                        &bytes,
+                        profile,
+                        LoadErrorKind::UnsupportedByProfile,
+                        HeaderField::AbiVersion,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn admission_reports_invalid_ident_fields() {
     for (offset, value, kind, field) in [
         (0, 0, LoadErrorKind::BadElf, HeaderField::Magic),
@@ -116,7 +150,7 @@ fn admission_reports_invalid_ident_fields() {
         (EI_VERSION, 0, LoadErrorKind::BadElf, HeaderField::Version),
         (
             EI_OSABI,
-            3,
+            ELFOSABI_FREEBSD,
             LoadErrorKind::UnsupportedByProfile,
             HeaderField::OsAbi,
         ),
