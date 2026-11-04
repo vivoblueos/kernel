@@ -17,6 +17,7 @@
 
 mod header;
 mod program_header;
+mod segment;
 
 use crate::{
     error::{ErrorContext, LoadErrorKind},
@@ -27,6 +28,7 @@ use goblin::{elf32, elf64};
 
 pub(crate) use header::ElfHeaderInfo;
 pub(crate) use program_header::ProgramHeaderInfo;
+pub(crate) use segment::LoadSegmentInfo;
 
 pub(crate) const ELF_IDENT_SIZE: usize = 16;
 pub(crate) const ELF32_HEADER_SIZE: usize = elf32::header::SIZEOF_EHDR;

@@ -14,6 +14,7 @@
 
 use crate::{
     elf::{read_u32, read_u64},
+    memory::TargetAddress,
     profile::{ElfClass, ElfData},
     LoadResult,
 };
@@ -22,7 +23,7 @@ pub(crate) struct ProgramHeaderInfo {
     r#type: u32,
     flags: u32,
     file_offset: u64,
-    vaddr: u64,
+    vaddr: TargetAddress,
     file_size: u64,
     memory_size: u64,
     align: u64,
@@ -45,7 +46,7 @@ impl ProgramHeaderInfo {
     }
 
     #[inline]
-    pub const fn vaddr(&self) -> u64 {
+    pub const fn vaddr(&self) -> TargetAddress {
         self.vaddr
     }
 
@@ -69,7 +70,7 @@ impl ProgramHeaderInfo {
             ElfClass::Elf32 => Self {
                 r#type: read_u32(bytes, 0, endian)?,
                 file_offset: u64::from(read_u32(bytes, 4, endian)?),
-                vaddr: u64::from(read_u32(bytes, 8, endian)?),
+                vaddr: TargetAddress::new(u64::from(read_u32(bytes, 8, endian)?)),
                 file_size: u64::from(read_u32(bytes, 16, endian)?),
                 memory_size: u64::from(read_u32(bytes, 20, endian)?),
                 flags: read_u32(bytes, 24, endian)?,
@@ -79,7 +80,7 @@ impl ProgramHeaderInfo {
                 r#type: read_u32(bytes, 0, endian)?,
                 flags: read_u32(bytes, 4, endian)?,
                 file_offset: read_u64(bytes, 8, endian)?,
-                vaddr: read_u64(bytes, 16, endian)?,
+                vaddr: TargetAddress::new(read_u64(bytes, 16, endian)?),
                 file_size: read_u64(bytes, 32, endian)?,
                 memory_size: read_u64(bytes, 40, endian)?,
                 align: read_u64(bytes, 48, endian)?,

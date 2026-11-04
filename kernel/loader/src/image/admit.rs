@@ -70,6 +70,7 @@ impl<R: ElfReader> AdmittedImage<R> {
         let entry_size = usize::from(self.header.program_header_entry_size());
         let mut raw = [0; ELF64_PROGRAM_HEADER_SIZE];
         let mut seen_singletons = 0u8;
+        let mut load_segment_count = 0usize;
 
         for index in 0..count {
             // Admission checked this complete table's extent and entry size.
@@ -89,6 +90,14 @@ impl<R: ElfReader> AdmittedImage<R> {
             if kind == PT_NULL {
                 program_headers.push(header);
                 continue;
+            }
+            if kind == PT_LOAD {
+                // Metadata headers consume only the program-header budget.
+                // Empty PT_LOAD entries still consume the load-segment budget.
+                load_segment_count += 1;
+                self.request
+                    .limits()
+                    .check_load_segment_count(load_segment_count)?;
             }
             let singleton = match kind {
                 PT_DYNAMIC => Some((0b0001, ProgramHeaderField::DuplicateDynamic)),
@@ -130,12 +139,13 @@ impl<R: ElfReader> AdmittedImage<R> {
             }
             header
                 .vaddr()
+                .get()
                 .checked_add(header.memory_size())
                 .ok_or_else(|| {
                     program_header_error(
                         index,
                         ProgramHeaderField::VirtualRange,
-                        header.vaddr(),
+                        header.vaddr().get(),
                         LoadErrorKind::IntegerOverflow,
                     )
                 })?;
@@ -156,7 +166,7 @@ impl<R: ElfReader> AdmittedImage<R> {
     }
 }
 
-fn program_header_error(
+pub(super) fn program_header_error(
     index: u16,
     field: ProgramHeaderField,
     value: u64,

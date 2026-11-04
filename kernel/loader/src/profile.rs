@@ -16,6 +16,7 @@
 
 use crate::{
     error::{ErrorContext, LimitKind, LoadErrorKind, ProgramHeaderField},
+    memory::MemoryPermissions,
     LoadError, LoadResult,
 };
 use goblin::elf::{
@@ -23,8 +24,8 @@ use goblin::elf::{
         ELFCLASS32, ELFCLASS64, ELFDATA2LSB, ELFDATA2MSB, EM_AARCH64, EM_RISCV, ET_DYN, ET_EXEC,
     },
     program_header::{
-        PF_X, PT_DYNAMIC, PT_GNU_EH_FRAME, PT_GNU_RELRO, PT_GNU_STACK, PT_INTERP, PT_LOAD, PT_NOTE,
-        PT_NULL, PT_PHDR, PT_TLS,
+        PF_R, PF_W, PF_X, PT_DYNAMIC, PT_GNU_EH_FRAME, PT_GNU_RELRO, PT_GNU_STACK, PT_INTERP,
+        PT_LOAD, PT_NOTE, PT_NULL, PT_PHDR, PT_TLS,
     },
 };
 
@@ -199,6 +200,57 @@ impl ProgramHeaderPolicy {
     }
 }
 
+/// Admission policy for exact PT_LOAD permission combinations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SegmentPermissionPolicy {
+    // Eight bits cover all combinations of the three logical R/W/X flags.
+    allowed_combinations: u8,
+}
+
+impl SegmentPermissionPolicy {
+    pub const DEFAULT: Self = Self::new(&[
+        MemoryPermissions::READ,
+        MemoryPermissions::READ.bitor(MemoryPermissions::EXECUTE),
+        MemoryPermissions::READ.bitor(MemoryPermissions::WRITE),
+    ]);
+
+    /// Replace the whitelist; the input slice is consumed into a bit set.
+    pub const fn new(allowed: &[MemoryPermissions]) -> Self {
+        let mut policy = Self {
+            allowed_combinations: 0,
+        };
+        let mut index = 0;
+        while index < allowed.len() {
+            policy = policy.with_permissions(allowed[index], true);
+            index += 1;
+        }
+        policy
+    }
+
+    /// Allow or deny one exact combination without changing the others.
+    #[inline]
+    pub const fn with_permissions(mut self, permissions: MemoryPermissions, allowed: bool) -> Self {
+        let bit = 1u8 << permissions.bits();
+        if allowed {
+            self.allowed_combinations |= bit;
+        } else {
+            self.allowed_combinations &= !bit;
+        }
+        self
+    }
+
+    #[inline]
+    pub const fn accepts(self, permissions: MemoryPermissions) -> bool {
+        self.allowed_combinations & (1u8 << permissions.bits()) != 0
+    }
+}
+
+impl Default for SegmentPermissionPolicy {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 /// Native entry address alignment and the minimum instruction span.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntryMode {
@@ -246,6 +298,7 @@ pub struct LoadProfile {
     header_flags: HeaderFlagsPolicy,
     entry_mode: EntryMode,
     program_headers: ProgramHeaderPolicy,
+    segment_permissions: SegmentPermissionPolicy,
 }
 
 impl LoadProfile {
@@ -263,6 +316,7 @@ impl LoadProfile {
             machine,
             header_flags,
             entry_mode,
+            segment_permissions: SegmentPermissionPolicy::DEFAULT,
             program_headers: ProgramHeaderPolicy::new(
                 match machine {
                     ElfMachine::Riscv => DEFAULT_PROGRAM_HEADERS,
@@ -356,6 +410,18 @@ impl LoadProfile {
         self
     }
 
+    #[inline]
+    pub const fn segment_permission_policy(&self) -> SegmentPermissionPolicy {
+        self.segment_permissions
+    }
+
+    /// Change PT_LOAD admission without changing program-header or stack policy.
+    #[inline]
+    pub const fn with_segment_permission_policy(mut self, policy: SegmentPermissionPolicy) -> Self {
+        self.segment_permissions = policy;
+        self
+    }
+
     /// Configure additional types while retaining the base whitelist and stack policy.
     /// Calling this again replaces the extension list; an empty list clears it.
     pub const fn with_additional_program_headers(mut self, types: &'static [u32]) -> Self {
@@ -382,6 +448,41 @@ impl LoadProfile {
         ))
     }
 
+    pub(crate) fn check_segment_permissions(
+        &self,
+        index: u16,
+        flags: u32,
+    ) -> LoadResult<MemoryPermissions> {
+        let mut permissions = MemoryPermissions::NONE;
+        for (flag, permission) in [
+            (PF_R, MemoryPermissions::READ),
+            (PF_W, MemoryPermissions::WRITE),
+            (PF_X, MemoryPermissions::EXECUTE),
+        ] {
+            if flags & flag != 0 {
+                permissions = permissions.bitor(permission);
+            }
+        }
+        if self.segment_permissions.accepts(permissions) {
+            return Ok(permissions);
+        }
+        let kind = if permissions.contains(MemoryPermissions::WRITE)
+            && permissions.contains(MemoryPermissions::EXECUTE)
+        {
+            LoadErrorKind::PermissionConflict
+        } else {
+            LoadErrorKind::UnsupportedByProfile
+        };
+        Err(LoadError::new(
+            kind,
+            ErrorContext::ProgramHeader {
+                index,
+                field: ProgramHeaderField::Permissions,
+                value: u64::from(flags),
+            },
+        ))
+    }
+
     pub(crate) fn check_stack_flags(&self, index: u16, flags: u32) -> LoadResult<()> {
         if self.program_headers.accepts_stack_flags(flags) {
             return Ok(());
@@ -397,21 +498,70 @@ impl LoadProfile {
     }
 }
 
-/// Per-image bounds checked before reading or retaining header metadata.
+/// Per-image resource bounds; these limits do not preallocate image backing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LoadLimits {
     max_file_len: u64,
     max_program_headers: u16,
+    max_load_segments: u16,
+    max_image_span: u64,
+    max_segment_alignment: u64,
 }
 
 impl LoadLimits {
-    pub const DEFAULT: Self = Self::new(64 * 1024 * 1024, 128);
+    pub const DEFAULT: Self = Self::new(
+        64 * 1024 * 1024,
+        128,
+        32,
+        64 * 1024 * 1024,
+        1024 * 1024 * 1024,
+    );
 
-    pub const fn new(max_file_len: u64, max_program_headers: u16) -> Self {
+    #[inline]
+    pub const fn new(
+        max_file_len: u64,
+        max_program_headers: u16,
+        max_load_segments: u16,
+        max_image_span: u64,
+        max_segment_alignment: u64,
+    ) -> Self {
         Self {
             max_file_len,
             max_program_headers,
+            max_load_segments,
+            max_image_span,
+            max_segment_alignment,
         }
+    }
+
+    #[inline]
+    pub const fn with_max_file_len(mut self, maximum: u64) -> Self {
+        self.max_file_len = maximum;
+        self
+    }
+
+    #[inline]
+    pub const fn with_max_program_headers(mut self, maximum: u16) -> Self {
+        self.max_program_headers = maximum;
+        self
+    }
+
+    #[inline]
+    pub const fn with_max_load_segments(mut self, maximum: u16) -> Self {
+        self.max_load_segments = maximum;
+        self
+    }
+
+    #[inline]
+    pub const fn with_max_image_span(mut self, maximum: u64) -> Self {
+        self.max_image_span = maximum;
+        self
+    }
+
+    #[inline]
+    pub const fn with_max_segment_alignment(mut self, maximum: u64) -> Self {
+        self.max_segment_alignment = maximum;
+        self
     }
 
     pub fn check_file_len(&self, actual: u64) -> LoadResult<()> {
@@ -424,6 +574,32 @@ impl LoadLimits {
             u64::from(actual),
             u64::from(self.max_program_headers),
         )
+    }
+
+    pub fn check_load_segment_count(&self, actual: usize) -> LoadResult<()> {
+        check_limit(
+            LimitKind::LoadSegmentCount,
+            actual as u64,
+            u64::from(self.max_load_segments),
+        )
+    }
+
+    pub fn check_image_span(&self, actual: u64) -> LoadResult<()> {
+        check_limit(LimitKind::ImageSpan, actual, self.max_image_span)
+    }
+
+    pub fn check_segment_alignment(&self, actual: u64) -> LoadResult<()> {
+        check_limit(
+            LimitKind::SegmentAlignment,
+            actual,
+            self.max_segment_alignment,
+        )
+    }
+}
+
+impl Default for LoadLimits {
+    fn default() -> Self {
+        Self::DEFAULT
     }
 }
 

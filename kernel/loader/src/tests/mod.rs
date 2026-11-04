@@ -14,8 +14,10 @@
 
 //! Reader, ABI-policy and staged ELF-inspection tests.
 
+mod address;
 mod fixture;
 mod image;
+mod plan;
 
 use blueos_test_macro::test;
 use goblin::elf::{

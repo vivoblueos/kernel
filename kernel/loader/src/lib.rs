@@ -19,13 +19,14 @@
 #![cfg_attr(test, test_runner(loader_test_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "loader_test_main")]
 
-//! ELF loader foundations and read-only image inspection.
+//! ELF loader foundations, read-only image inspection and layout planning.
 //!
 //! `ImageLoader<R: ElfReader>` reads and validates ELF headers through a
 //! source-independent reader. The `elf` and `image` stages stay crate-private
 //! while the legacy [`load_elf`] entry remains available during migration.
 
 pub mod error;
+pub mod memory;
 pub mod profile;
 pub mod reader;
 pub use error::{LoadError, LoadResult};
@@ -45,8 +46,9 @@ use goblin::elf::{
     reloc::R_RISCV_RELATIVE,
     Elf, Reloc,
 };
+pub use memory::MemoryPermissions;
 use memory_mapper::MappingModeKind;
-pub use memory_mapper::{MemoryMapper, MemoryPermissions, MemoryRegion};
+pub use memory_mapper::{MemoryMapper, MemoryRegion};
 
 pub type Result = core::result::Result<(), &'static str>;
 

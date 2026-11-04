@@ -13,11 +13,13 @@
 // limitations under the License.
 
 //! Read-only stages of single-image ELF loading.
-//! Follow `ImageLoader::admit` then `AdmittedImage::inspect` before planning
-//! the memory layout. Neither stage allocates or writes image backing.
+//! Follow `ImageLoader::admit`, `AdmittedImage::inspect`, then
+//! `InspectedImage::plan`. These stages never allocate or write image backing.
 
 mod admit;
 mod image_loader;
 mod inspect;
+mod plan;
 
 pub(crate) use image_loader::ImageLoader;
+pub(crate) use plan::PlannedImage;

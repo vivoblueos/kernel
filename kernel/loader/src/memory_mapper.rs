@@ -12,28 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Legacy backing mapper retained for `load_elf()` during staged migration.
+//! The common memory module owns logical addresses and permissions. The new
+//! ImageMemory backend contract is introduced with allocation in stage four.
+
+use crate::memory::MemoryPermissions;
 use blueos_infra::storage::Storage;
 use core::alloc::Layout;
 
 pub type Result<T> = core::result::Result<T, &'static str>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MemoryPermissions(u8);
-
-impl MemoryPermissions {
-    pub const NONE: Self = Self(0);
-    pub const READ: Self = Self(1 << 0);
-    pub const WRITE: Self = Self(1 << 1);
-    pub const EXECUTE: Self = Self(1 << 2);
-
-    pub const fn bitor(self, rhs: Self) -> Self {
-        Self(self.0 | rhs.0)
-    }
-
-    pub(crate) const fn contains(self, requested: Self) -> bool {
-        self.0 & requested.0 == requested.0
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MemoryRegion {
@@ -73,6 +60,7 @@ enum MappingMode {
 }
 
 #[derive(Debug)]
+#[must_use = "keep the mapper alive while its loaded image is in use"]
 pub struct MemoryMapper {
     virtual_entry: usize,
     virtual_start: usize,

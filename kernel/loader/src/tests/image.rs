@@ -31,6 +31,7 @@ use super::fixture::{ElfFixtureBuilder, ProgramHeaderFixture, SliceElfReader};
 use crate::{
     error::{ErrorContext, HeaderField, LimitKind, LoadErrorKind, LoadStage, ProgramHeaderField},
     image::ImageLoader,
+    memory::TargetAddress,
     profile::{
         ElfClass, ElfData, ElfMachine, LoadLimits, LoadProfile, LoadRequest, ProgramHeaderPolicy,
     },
@@ -192,7 +193,12 @@ fn admission_rejects_extended_program_header_numbering() {
         };
         bytes[count_offset..count_offset + 2].copy_from_slice(&u16::MAX.to_le_bytes());
         // Even a permissive count limit must not interpret PN_XNUM literally.
-        let request = LoadRequest::new(profile, LoadLimits::new(u64::MAX, u16::MAX));
+        let request = LoadRequest::new(
+            profile,
+            LoadLimits::DEFAULT
+                .with_max_file_len(u64::MAX)
+                .with_max_program_headers(u16::MAX),
+        );
         let error = failure(ImageLoader::new(SliceElfReader::new(&bytes), request).admit());
         assert_error(
             &error,
@@ -364,7 +370,7 @@ fn endian_decoding_is_independent_of_the_native_profiles() {
         );
         let image = loader(&bytes, profile).admit().unwrap().inspect().unwrap();
         assert_eq!(image.header().entry(), 0x1234_5678);
-        assert_eq!(image.program_headers()[0].vaddr(), 0x1000);
+        assert_eq!(image.program_headers()[0].vaddr().get(), 0x1000);
         assert_eq!(image.program_headers()[0].file_size(), 4);
         assert_eq!(image.program_headers()[0].flags(), PF_R | PF_X);
     }
@@ -409,8 +415,18 @@ fn file_and_header_count_limits_precede_further_reads() {
         .with_program_header(ProgramHeaderFixture::load())
         .build();
     for (limits, expected_reads, resource) in [
-        (LoadLimits::new(0, 128), 0, LimitKind::FileLength),
-        (LoadLimits::new(1024, 0), 2, LimitKind::ProgramHeaderCount),
+        (
+            LoadLimits::DEFAULT.with_max_file_len(0),
+            0,
+            LimitKind::FileLength,
+        ),
+        (
+            LoadLimits::DEFAULT
+                .with_max_file_len(1024)
+                .with_max_program_headers(0),
+            2,
+            LimitKind::ProgramHeaderCount,
+        ),
     ] {
         let reads = Cell::new(0);
         let reader = ProbeReader {
@@ -441,7 +457,9 @@ fn file_and_header_count_limits_precede_further_reads() {
             )
         ));
     }
-    let exact_limits = LoadLimits::new(bytes.len() as u64, 1);
+    let exact_limits = LoadLimits::DEFAULT
+        .with_max_file_len(bytes.len() as u64)
+        .with_max_program_headers(1);
     ImageLoader::new(
         SliceElfReader::new(&bytes),
         LoadRequest::new(profile, exact_limits),
@@ -474,7 +492,7 @@ fn admission_rejects_overlapping_truncated_and_overflowing_header_tables() {
         let error = failure(
             ImageLoader::new(
                 reader,
-                LoadRequest::new(profile, LoadLimits::new(u64::MAX, 128)),
+                LoadRequest::new(profile, LoadLimits::DEFAULT.with_max_file_len(u64::MAX)),
             )
             .admit(),
         );
@@ -563,7 +581,7 @@ fn inspected_program_headers_match_an_independent_parser() {
     for profile in PROFILES {
         let bytes = fixture(profile, ET_DYN)
             .with_program_header(ProgramHeaderFixture {
-                vaddr: 0x8123_4560,
+                vaddr: TargetAddress::new(0x8123_4560),
                 flags: PF_R | PF_W,
                 ..ProgramHeaderFixture::load()
             })
@@ -579,7 +597,7 @@ fn inspected_program_headers_match_an_independent_parser() {
             assert_eq!(actual.r#type(), expected.p_type);
             assert_eq!(actual.flags(), expected.p_flags);
             assert_eq!(actual.file_offset(), expected.p_offset);
-            assert_eq!(actual.vaddr(), expected.p_vaddr);
+            assert_eq!(actual.vaddr().get(), expected.p_vaddr);
             assert_eq!(actual.file_size(), expected.p_filesz);
             assert_eq!(actual.memory_size(), expected.p_memsz);
             assert_eq!(actual.align(), expected.p_align);
@@ -624,7 +642,7 @@ fn inspection_rejects_segment_file_and_virtual_range_errors() {
         let bytes = fixture(profile, ET_DYN)
             .with_program_header(ProgramHeaderFixture {
                 offset,
-                vaddr,
+                vaddr: TargetAddress::new(vaddr),
                 ..ProgramHeaderFixture::load()
             })
             .build();
@@ -1055,7 +1073,7 @@ fn inspection_ignores_undefined_fields_in_null_entries() {
         .with_program_header(ProgramHeaderFixture {
             kind: PT_NULL,
             offset: u64::MAX,
-            vaddr: u64::MAX,
+            vaddr: TargetAddress::new(u64::MAX),
             filesz: u64::MAX,
             memsz: u64::MAX,
             ..ProgramHeaderFixture::load()
