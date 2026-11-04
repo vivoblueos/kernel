@@ -148,8 +148,8 @@ impl HeaderFlagsPolicy {
 
 /// Caller-defined program-header admission policy.
 ///
-/// `new()` replaces the base whitelist. A profile can also retain that list
-/// and configure additional types for one load. Accepting metadata does not
+/// `new()` replaces the base whitelist. `with_additional_types()` retains
+/// that list and configures additional types. Accepting metadata does not
 /// implement its runtime semantics; matching loading and stack support are
 /// still required before executing the image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -175,6 +175,13 @@ impl ProgramHeaderPolicy {
 
     pub const fn additional_types(&self) -> &'static [u32] {
         self.additional_types
+    }
+
+    /// Replace additional types while retaining the base whitelist and stack policy.
+    /// An empty slice clears the extension list.
+    pub const fn with_additional_types(mut self, types: &'static [u32]) -> Self {
+        self.additional_types = types;
+        self
     }
 
     /// Change stack admission while retaining the program-header whitelist.
@@ -349,15 +356,10 @@ impl LoadProfile {
         self
     }
 
-    /// Set additional accepted types while retaining the base whitelist and stack policy.
+    /// Configure additional types while retaining the base whitelist and stack policy.
     /// Calling this again replaces the extension list; an empty list clears it.
-    pub const fn set_additional_program_headers(&mut self, types: &'static [u32]) {
-        self.program_headers.additional_types = types;
-    }
-
-    /// Configure additional types when constructing a profile.
     pub const fn with_additional_program_headers(mut self, types: &'static [u32]) -> Self {
-        self.set_additional_program_headers(types);
+        self.program_headers = self.program_headers.with_additional_types(types);
         self
     }
 

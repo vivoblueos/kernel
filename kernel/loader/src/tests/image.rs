@@ -875,8 +875,7 @@ fn inspection_uses_the_callers_program_header_whitelist() {
 #[test]
 fn additional_program_headers_extend_one_profile_without_replacing_defaults() {
     for base in PROFILES {
-        let mut profile = base;
-        profile.set_additional_program_headers(&[PT_TLS]);
+        let profile = base.with_additional_program_headers(&[PT_TLS]);
         let bytes = fixture(profile, ET_DYN)
             .with_program_header(ProgramHeaderFixture::load())
             .with_program_header(ProgramHeaderFixture {
@@ -909,7 +908,7 @@ fn additional_program_headers_extend_one_profile_without_replacing_defaults() {
                 ..
             }
         ));
-        profile.set_additional_program_headers(&[]);
+        let profile = profile.with_additional_program_headers(&[]);
         let error = failure(loader(&bytes, profile).admit().unwrap().inspect());
         assert_error(
             &error,
@@ -922,39 +921,44 @@ fn additional_program_headers_extend_one_profile_without_replacing_defaults() {
 #[test]
 fn additional_program_header_configuration_preserves_other_policy_settings() {
     const CUSTOM_HEADER: u32 = 0x6000_0042;
+    const POLICY: ProgramHeaderPolicy = ProgramHeaderPolicy::new(&[PT_GNU_STACK], true)
+        .with_additional_types(&[CUSTOM_HEADER, PT_TLS]);
     for base in PROFILES {
-        let profile = base
-            .with_program_header_policy(ProgramHeaderPolicy::new(&[PT_GNU_STACK], true))
-            .with_additional_program_headers(&[CUSTOM_HEADER, PT_TLS]);
-        let mut builder = fixture(profile, ET_DYN);
-        for kind in [PT_GNU_STACK, CUSTOM_HEADER, PT_TLS] {
-            builder = builder.with_program_header(ProgramHeaderFixture {
-                kind,
-                flags: PF_R | PF_W | PF_X,
-                ..ProgramHeaderFixture::load()
-            });
+        for profile in [
+            base.with_program_header_policy(ProgramHeaderPolicy::new(&[PT_GNU_STACK], true))
+                .with_additional_program_headers(&[CUSTOM_HEADER, PT_TLS]),
+            base.with_program_header_policy(POLICY),
+        ] {
+            let mut builder = fixture(profile, ET_DYN);
+            for kind in [PT_GNU_STACK, CUSTOM_HEADER, PT_TLS] {
+                builder = builder.with_program_header(ProgramHeaderFixture {
+                    kind,
+                    flags: PF_R | PF_W | PF_X,
+                    ..ProgramHeaderFixture::load()
+                });
+            }
+            let bytes = builder.build();
+            assert_eq!(
+                loader(&bytes, profile)
+                    .admit()
+                    .unwrap()
+                    .inspect()
+                    .unwrap()
+                    .program_headers()
+                    .len(),
+                3
+            );
+            // Extra types must not restore types excluded by a custom base policy.
+            let bytes = fixture(profile, ET_DYN)
+                .with_program_header(ProgramHeaderFixture::load())
+                .build();
+            let error = failure(loader(&bytes, profile).admit().unwrap().inspect());
+            assert_error(
+                &error,
+                LoadStage::Inspect,
+                LoadErrorKind::UnsupportedByProfile,
+            );
         }
-        let bytes = builder.build();
-        assert_eq!(
-            loader(&bytes, profile)
-                .admit()
-                .unwrap()
-                .inspect()
-                .unwrap()
-                .program_headers()
-                .len(),
-            3
-        );
-        // Extra types must not restore types excluded by a custom base policy.
-        let bytes = fixture(profile, ET_DYN)
-            .with_program_header(ProgramHeaderFixture::load())
-            .build();
-        let error = failure(loader(&bytes, profile).admit().unwrap().inspect());
-        assert_error(
-            &error,
-            LoadStage::Inspect,
-            LoadErrorKind::UnsupportedByProfile,
-        );
     }
 }
 
