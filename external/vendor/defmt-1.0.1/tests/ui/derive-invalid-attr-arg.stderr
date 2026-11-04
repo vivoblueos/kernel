@@ -1,5 +1,0 @@
-error: expected `Debug2Format` or `Display2Format`
- --> $DIR/derive-invalid-attr-arg.rs:3:13
-  |
-3 |     #[defmt(FooBar)]
-  |             ^^^^^^

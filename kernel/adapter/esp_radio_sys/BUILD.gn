@@ -17,7 +17,7 @@ import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
 
 adapter_deps = [
-  "//external/vendor/esp-radio-rtos-driver-0.3.0:esp_radio_rtos_driver",
+  "//external/rust:esp-radio-rtos-driver",
   "//kernel/arch:arch_crate",
   "//kernel/kconfig:blueos_kconfig",
   "//kernel/kernel:blueos",
@@ -48,7 +48,7 @@ build_rust("esp_radio_sys_unittest") {
   deps = adapter_deps
   deps += [
     ":esp_radio_sys",
-    "//external/vendor/semihosting-0.1.20:semihosting",
+    "//external/rust:semihosting",
     "//kernel/kconfig:generate_rustflags_file",
   ]
   linker_script = default_linker_script

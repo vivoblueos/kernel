@@ -20,6 +20,8 @@ on:
     types: [checks_requested]
 permissions:
   contents: read
+env:
+  GNRT_BIN: ${{ github.workspace }}/out/host-tools/gnrt
 concurrency:
   group: bluekernel-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -46,8 +48,84 @@ jobs:
           python3 tools/ci/check_changes.py \
             --base "$BASE_SHA" \
             --head "$HEAD_SHA"
+  resolve-dependencies:
+    name: Resolve Rust dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/vivoblueos/kernel:latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Add Cargo binaries to PATH
+        run: echo "${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}/bin" >> "$GITHUB_PATH"
+      - name: Read Cargo cache inputs
+        id: cache-inputs
+        run: |
+          echo "cargo-home=${CARGO_HOME:-$HOME/.cargo}" >> "$GITHUB_OUTPUT"
+          gnrt_key=$(
+            {
+              rustc -vV
+              cargo -vV
+              printf '%s\n' "${RUSTFLAGS+x}:${RUSTFLAGS-}" \
+                "${CARGO_ENCODED_RUSTFLAGS+x}:${CARGO_ENCODED_RUSTFLAGS-}" \
+                "${CARGO_BUILD_RUSTFLAGS+x}:${CARGO_BUILD_RUSTFLAGS-}"
+            } | sha256sum | cut -d ' ' -f 1
+          )
+          echo "gnrt-key=$gnrt_key" >> "$GITHUB_OUTPUT"
+      - name: Restore GNRT cache
+        id: cache-gnrt
+        uses: actions/cache@v4
+        with:
+          path: out/host-tools/gnrt
+          key: gnrt-bin-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-inputs.outputs.gnrt-key }}-${{ hashFiles('external/gnrt/**') }}
+      - name: Restore Cargo downloads
+        id: cache-cargo-downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ steps.cache-inputs.outputs.cargo-home }}/registry/index
+            ${{ steps.cache-inputs.outputs.cargo-home }}/registry/cache
+            ${{ steps.cache-inputs.outputs.cargo-home }}/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ hashFiles('external/gnrt/Cargo.lock', 'external/rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-${{ runner.os }}-
+      - name: Install GNRT
+        if: steps.cache-gnrt.outputs.cache-hit != 'true'
+        run: |
+          cargo install --path external/gnrt --locked --bin gnrt \
+            --target-dir out/host-tools/cargo
+          cp "$(command -v gnrt)" out/host-tools/gnrt
+      - name: Resolve Rust dependencies
+        run: |
+          "$GNRT_BIN" sync --all
+      - name: Cache Cargo downloads
+        if: steps.cache-cargo-downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ steps.cache-inputs.outputs.cargo-home }}/registry/index
+            ${{ steps.cache-inputs.outputs.cargo-home }}/registry/cache
+            ${{ steps.cache-inputs.outputs.cargo-home }}/git/db
+          key: ${{ steps.cache-cargo-downloads.outputs.cache-primary-key }}
+      - name: Archive Rust dependencies and GNRT
+        run: |
+          tar -czf out/rust-dependencies.tar.gz \
+            external/vendor \
+            out/host-tools/gnrt
+      - name: Upload Rust dependencies and GNRT
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-dependencies
+          path: out/rust-dependencies.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
   build-esp32c3:
     name: ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
+    needs: resolve-dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
@@ -64,6 +142,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Download Rust dependencies and GNRT
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-dependencies
+          path: out
+      - name: Restore Rust dependencies and GNRT
+        run: |
+          tar -xzf out/rust-dependencies.tar.gz
       - name: Build and test profile
         env:
           BOARD: ${{ matrix.board }}
@@ -76,6 +162,7 @@ jobs:
             --syscall-mode "$SYSCALL_MODE"
   build:
     name: ${{ matrix.board }}.${{ matrix.build_type }}.${{ matrix.syscall_mode }}
+    needs: resolve-dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
@@ -105,6 +192,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Download Rust dependencies and GNRT
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-dependencies
+          path: out
+      - name: Restore Rust dependencies and GNRT
+        run: |
+          tar -xzf out/rust-dependencies.tar.gz
       - name: Build and test profile
         env:
           BOARD: ${{ matrix.board }}
@@ -117,6 +212,7 @@ jobs:
             --syscall-mode "$SYSCALL_MODE"
   miri:
     name: allocator Miri
+    needs: resolve-dependencies
     timeout-minutes: 90
     runs-on: ubuntu-latest
     container:
@@ -126,6 +222,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Download Rust dependencies and GNRT
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-dependencies
+          path: out
+      - name: Restore Rust dependencies and GNRT
+        run: |
+          tar -xzf out/rust-dependencies.tar.gz
       - name: Check allocator with Miri Tree Borrows
         env:
           MIRI_PATH: /opt/sysroot/usr/local/bin/miri
@@ -138,7 +242,7 @@ jobs:
   gate:
     name: BlueKernel CI
     if: ${{ always() }}
-    needs: [static-checks, build-esp32c3, build, miri]
+    needs: [static-checks, resolve-dependencies, build-esp32c3, build, miri]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -146,15 +250,18 @@ jobs:
       - name: Require every PR CI job to pass
         env:
           STATIC_CHECKS_RESULT: ${{ needs.static-checks.result }}
+          DEPENDENCIES_RESULT: ${{ needs.resolve-dependencies.result }}
           ESP32C3_BUILD_RESULT: ${{ needs.build-esp32c3.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           MIRI_RESULT: ${{ needs.miri.result }}
         run: |
           if [[ "$STATIC_CHECKS_RESULT" != "success" || \
+                "$DEPENDENCIES_RESULT" != "success" || \
                 "$ESP32C3_BUILD_RESULT" != "success" || \
                 "$BUILD_RESULT" != "success" || \
                 "$MIRI_RESULT" != "success" ]]; then
             echo "static-checks: $STATIC_CHECKS_RESULT"
+            echo "resolve-dependencies: $DEPENDENCIES_RESULT"
             echo "build-esp32c3: $ESP32C3_BUILD_RESULT"
             echo "build: $BUILD_RESULT"
             echo "miri: $MIRI_RESULT"

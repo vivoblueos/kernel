@@ -1,0 +1,36 @@
+# Patch: Emit empty feature documentation when Cargo metadata is unavailable.
+# Reason: GN builds may lack CARGO_MANIFEST_DIR or a readable Cargo.toml.
+
+--- a/lib.rs
++++ b/lib.rs
+@@ -249,9 +249,27 @@
+ }
+ 
+ fn document_features_impl(args: &Args) -> Result<TokenStream, TokenStream> {
+-    let path = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+-    let mut cargo_toml = std::fs::read_to_string(Path::new(&path).join("Cargo.toml"))
+-        .map_err(|e| error(&format!("Can't open Cargo.toml: {:?}", e)))?;
++    let path = match std::env::var("CARGO_MANIFEST_DIR") {
++        Ok(path) => path,
++        Err(_) => {
++            // CARGO_MANIFEST_DIR is not set (e.g. GN build), return empty docs
++            return Ok(std::iter::once(proc_macro::TokenTree::from(
++                proc_macro::Literal::string(""),
++            ))
++            .collect());
++        }
++    };
++    let mut cargo_toml = match std::fs::read_to_string(Path::new(&path).join("Cargo.toml")) {
++        Ok(content) => content,
++        Err(_) => {
++            // Cargo.toml not found at CARGO_MANIFEST_DIR (e.g. GN build with bad CWD),
++            // return empty docs
++            return Ok(std::iter::once(proc_macro::TokenTree::from(
++                proc_macro::Literal::string(""),
++            ))
++            .collect());
++        }
++    };
+ 
+     if !has_doc_comments(&cargo_toml) {
+         // On crates.io, Cargo.toml is usually "normalized" and stripped of all comments.
