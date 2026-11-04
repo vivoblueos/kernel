@@ -1,0 +1,14 @@
+# Patch: Link the target toolchain's libm for ESP32-C6 Wi-Fi.
+# Reason: libpp.a references floor, which is provided by libm.
+
+diff --git a/build.rs b/build.rs
+index 4a68637..e7739a4 100644
+--- a/build.rs
++++ b/build.rs
+@@ -31,4 +31,6 @@ fn main() {
+     }
+ 
+     println!("cargo:rustc-link-search={}", out.display());
++    // `libpp.a` calls `floor`, which the target toolchain provides in `libm`.
++    println!("cargo:rustc-link-lib=m");
+ }
