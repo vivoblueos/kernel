@@ -12,40 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Legacy backing mapper retained for `load_elf()` during staged migration.
-//! The common memory module owns logical addresses and permissions. The new
-//! ImageMemory backend contract is introduced with allocation in stage four.
+//! Legacy flat mapper retained for `load_elf()` during staged migration.
+//! The common memory module owns logical addresses and permissions.
+//! The new backend and shared region type live in `memory::flat_memory_mapper`.
+//! This legacy type remains until the public loading entry and its callers
+//! are migrated.
 
-use crate::memory::MemoryPermissions;
+use crate::memory::{MemoryPermissions, MemoryRegion};
 use blueos_infra::storage::Storage;
 use core::alloc::Layout;
 
 pub type Result<T> = core::result::Result<T, &'static str>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MemoryRegion {
-    start: usize,
-    end: usize,
-    permissions: MemoryPermissions,
-}
-
-impl MemoryRegion {
-    /// Authorizes a fixed address range for accesses described by `permissions`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `[start, end)` is a valid mapped range for every
-    /// advertised permission and remains so for the lifetime of any mapper that uses
-    /// this region. While a mapper accesses the range, it must not alias Rust references
-    /// or receive conflicting accesses.
-    pub const unsafe fn new(start: usize, end: usize, permissions: MemoryPermissions) -> Self {
-        Self {
-            start,
-            end,
-            permissions,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MappingModeKind {

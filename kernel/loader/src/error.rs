@@ -25,6 +25,8 @@ pub enum LoadStage {
     Admit,
     Inspect,
     Plan,
+    Allocate,
+    Map,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,6 +34,7 @@ pub enum LoadErrorKind {
     BadElf,
     UnsupportedByProfile,
     InvalidAlignment,
+    IncorrectLayout,
     PermissionConflict,
     OutOfBounds,
     IntegerOverflow,
@@ -101,6 +104,18 @@ pub enum ErrorContext {
     TargetBounds {
         start: TargetAddress,
         end: TargetAddress,
+    },
+    Allocation {
+        base: TargetAddress,
+        len: u64,
+        align: u64,
+    },
+    MemoryAccess {
+        allocation_base: TargetAddress,
+        allocation_len: u64,
+        allocation_align: u64,
+        offset: u64,
+        len: u64,
     },
     HeaderField {
         field: HeaderField,

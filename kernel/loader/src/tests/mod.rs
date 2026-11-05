@@ -17,6 +17,8 @@
 mod address;
 mod fixture;
 mod image;
+mod mapping;
+mod memory;
 mod plan;
 
 use blueos_test_macro::test;

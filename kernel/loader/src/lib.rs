@@ -19,17 +19,23 @@
 #![cfg_attr(test, test_runner(loader_test_runner))]
 #![cfg_attr(test, reexport_test_harness_main = "loader_test_main")]
 
-//! ELF loader foundations, read-only image inspection and layout planning.
+//! ELF inspection, layout planning and memory-backed single-image loading.
 //!
 //! `ImageLoader<R: ElfReader>` reads and validates ELF headers through a
 //! source-independent reader. The `elf` and `image` stages stay crate-private
 //! while the legacy [`load_elf`] entry remains available during migration.
+//! Host backends implement [`ElfReader`], [`ImageMemory`] and [`ImageMapping`],
+//! available directly from the crate root. Memory support types remain in [`memory`].
+//! New stages use [`memory::MemoryMapper`]; the root [`MemoryMapper`] keeps
+//! the legacy loading API until its callers have migrated.
 
 pub mod error;
 pub mod memory;
 pub mod profile;
 pub mod reader;
 pub use error::{LoadError, LoadResult};
+pub use memory::{ImageMapping, ImageMemory, MemoryPermissions, MemoryRegion};
+pub use reader::ElfReader;
 
 extern crate alloc;
 mod elf;
@@ -40,15 +46,14 @@ extern crate rsrt;
 #[cfg(test)]
 mod tests;
 
-mod memory_mapper;
+mod legacy_memory_mapper;
 use goblin::elf::{
     header::{ET_DYN, ET_EXEC},
     reloc::R_RISCV_RELATIVE,
     Elf, Reloc,
 };
-pub use memory::MemoryPermissions;
-use memory_mapper::MappingModeKind;
-pub use memory_mapper::{MemoryMapper, MemoryRegion};
+use legacy_memory_mapper::MappingModeKind;
+pub use legacy_memory_mapper::MemoryMapper;
 
 pub type Result = core::result::Result<(), &'static str>;
 

@@ -180,12 +180,12 @@ impl<R: ElfReader> InspectedImage<R> {
             ));
         }
 
-        if let Some(header) = self
+        let relro = self
             .program_headers
             .iter()
             .find(|header| header.r#type() == PT_GNU_RELRO)
-        {
-            let relro = TargetRange::new(header.vaddr(), header.memory_size());
+            .map(|header| TargetRange::new(header.vaddr(), header.memory_size()));
+        if let Some(relro) = relro {
             if !segments.iter().any(|segment| {
                 segment.permissions().contains(MemoryPermissions::WRITE)
                     && TargetRange::new(segment.vaddr(), segment.memory_size())
@@ -201,12 +201,14 @@ impl<R: ElfReader> InspectedImage<R> {
                 ));
             }
         }
+        // Layout validation is complete; the raw program-header table is no
+        // longer needed and is dropped rather than retained by later stages.
         Ok(PlannedImage {
             reader: self.reader,
             request: self.request,
             header: self.header,
-            program_headers: self.program_headers,
             segments,
+            relro,
             image_range,
             max_alignment,
         })
