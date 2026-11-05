@@ -240,6 +240,36 @@ impl BuddyHeap {
         self.allocator.irqsave_lock().free_pages_pfn(pfn, order);
     }
 
+    /// Release a physical block after obtaining its order from buddy metadata.
+    /// Returns the size of the released block.
+    ///
+    /// # Safety
+    ///
+    /// `phys_addr` must be the head of a live allocation from this heap and
+    /// the block must be released exactly once.
+    pub(in crate::allocator) unsafe fn free_pages_phys_addr_unknown_order(
+        &self,
+        phys_addr: usize,
+    ) -> Option<usize> {
+        let pfn = self.phys_to_pfn(phys_addr)?;
+        let mut allocator = self.allocator.irqsave_lock();
+        let order = allocator.pfn_to_order(pfn)?;
+        allocator.free_pages_pfn(pfn, order);
+        Some(PAGE_SIZE << order)
+    }
+
+    pub(in crate::allocator) fn phys_to_size(&self, phys_addr: usize) -> Option<usize> {
+        let pfn = self.phys_to_pfn(phys_addr)?;
+        self.allocator
+            .irqsave_lock()
+            .pfn_to_order(pfn)
+            .map(|order| PAGE_SIZE << order)
+    }
+
+    pub(in crate::allocator) fn get_max_free_block_size(&self) -> usize {
+        self.allocator.irqsave_lock().max_free_block_size()
+    }
+
     /// Release pages by PFN.
     ///
     /// # Safety

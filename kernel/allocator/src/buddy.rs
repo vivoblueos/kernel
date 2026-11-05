@@ -28,7 +28,7 @@ pub const PAGE_SHIFT: usize = 12;
 /// Size of one page in bytes.
 pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
 /// Largest allocation order supported by the allocator.
-pub const MAX_ORDER: usize = 11;
+pub const MAX_ORDER: usize = blueos_kconfig::CONFIG_BUDDY_MAX_ORDER as usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PageState {
@@ -78,7 +78,7 @@ impl Page {
 //   +--> manageable_start (first PFN managed by the buddy allocator)
 //        |
 //        |  Usable region is split into the largest possible buddy-aligned
-//        |  blocks (up to MAX_ORDER=11, 8 MB). The head page of each block
+//        |  blocks (up to the configured MAX_ORDER). The head page of each block
 //        |  has state=Free and its actual order; all other pages have
 //        |  state=Unavailable and order=0. The first block's order may be
 //        |  < MAX_ORDER if manageable_start is not MAX_ORDER-aligned.
@@ -86,7 +86,7 @@ impl Page {
 //        |  +---------------+  +---------------+       +---------------+  +---------------+
 //        |  | pfn=N         |  | pfn=N+1       |  ...  | pfn=M         |  | pfn=M+1       |  ...
 //        |  | Free          |  | Unavailable   |       | Free          |  | Unavailable   |
-//        |  | order=11      |  | order=0       |       | order=11      |  | order=0       |
+//        |  | order=MAX     |  | order=0       |       | order=MAX     |  | order=0       |
 //        |  +---------------+  +---------------+       +---------------+  +---------------+
 //        |       ^ chunk 0 head                         ^ chunk 1 head
 //        |
@@ -97,9 +97,9 @@ impl Page {
 //        |  | Free          |         | Unavailable   |
 //        |  | order=K       |         | order=0       |
 //        |  +---------------+         +---------------+
-//        |       ^ last chunk head (order=K < 11 if size < 8 MB)
+//        |       ^ last chunk head (order=K < MAX_ORDER if size < 2^MAX_ORDER pages)
 //        |
-//        +--> each MAX_ORDER chunk spans 2048 pages; only the head page
+//        +--> each MAX_ORDER chunk spans 2^MAX_ORDER pages; only the head page
 //             has state=Free and a block order. An allocated block's head has
 //             state=Allocated and retains its allocation order.
 //
@@ -416,6 +416,29 @@ impl BuddyAllocator {
     /// exactly once.
     pub unsafe fn free_pages_pfn(&mut self, pfn: usize, order: usize) {
         self.free_pages(PageFrame(pfn), order);
+    }
+
+    /// Return the order of a live allocation whose head is `pfn`.
+    pub fn pfn_to_order(&self, pfn: usize) -> Option<usize> {
+        if !self.initialized || pfn >= self.total_pages {
+            return None;
+        }
+        let page = unsafe { &*self.pfn_to_page(pfn) };
+        (page.state == PageState::Allocated).then_some(page.order as usize)
+    }
+
+    /// Allow callers to query the size of the largest contiguous memory block
+    /// they can currently allocate.
+    pub fn max_free_block_size(&self) -> usize {
+        if !self.initialized {
+            return 0;
+        }
+        for order in (0..=MAX_ORDER).rev() {
+            if self.free_lists[order].front().is_some() {
+                return PAGE_SIZE << order;
+            }
+        }
+        0
     }
 
     /// Return current page accounting information.
