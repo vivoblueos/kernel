@@ -162,9 +162,12 @@ impl ThreadStats {
     }
 
     pub fn increment_cycles(&self, cycles: u64) {
-        let cycles = self.get_cycles();
-        self.cycles
-            .set(cycles + cycles.saturating_sub(self.start.get()));
+        let elapsed = cycles.saturating_sub(self.start.get());
+        self.cycles.set(
+            self.get_cycles()
+                .checked_add(elapsed)
+                .expect("cycles overflow"),
+        );
     }
 
     pub fn set_start_cycles(&self, start: u64) {
