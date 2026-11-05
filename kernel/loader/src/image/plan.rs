@@ -19,7 +19,7 @@ use crate::{
     elf::{ElfHeaderInfo, LoadSegmentInfo},
     error::{ErrorContext, LoadErrorKind, LoadStage},
     memory::{
-        AllocationOffset, ImageLayout, ImageMapping, ImageMemory, Placement, SegmentLayout,
+        AllocationOffset, ImageAllocator, ImageLayout, ImageMapping, Placement, SegmentLayout,
         TargetAddress, TargetRange,
     },
     profile::{ElfClass, ElfType, LoadRequest},
@@ -87,7 +87,7 @@ impl<R: ElfReader> PlannedImage<R> {
         )
     }
 
-    pub(crate) fn allocate<M: ImageMemory>(
+    pub(crate) fn allocate<M: ImageAllocator>(
         self,
         memory: M,
     ) -> LoadResult<AllocatedImage<R, M::Allocation>> {
@@ -95,7 +95,7 @@ impl<R: ElfReader> PlannedImage<R> {
             .map_err(|error| error.at_stage(LoadStage::Allocate))
     }
 
-    fn allocate_inner<M: ImageMemory>(
+    fn allocate_inner<M: ImageAllocator>(
         self,
         mut memory: M,
     ) -> LoadResult<AllocatedImage<R, M::Allocation>> {

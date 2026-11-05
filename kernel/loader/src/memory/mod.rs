@@ -14,7 +14,7 @@
 
 //! Image memory preparation and owning mappings.
 //!
-//! Submit one complete `ImageLayout` to `ImageMemory::prepare_image`. The
+//! Submit one complete `ImageLayout` to `ImageAllocator::prepare_image`. The
 //! returned `ImageMapping` owns its backing or the exclusive use of borrowed
 //! storage. Moving it retains that storage; dropping it releases the resources.
 
@@ -33,7 +33,7 @@ pub use layout::{AllocationOffset, ImageLayout, MemoryPermissions, Placement, Se
 /// The allocation type is backend-specific: it may own heap storage, page
 /// mappings, or an exclusive claim on a fixed region. It must retain everything
 /// needed for access and cleanup independently of this factory's lifetime.
-pub trait ImageMemory {
+pub trait ImageAllocator {
     type Allocation: ImageMapping;
 
     /// Prepare the complete logical reservation and every listed segment.
@@ -81,7 +81,7 @@ pub trait ImageMapping {
     fn zero(&mut self, offset: AllocationOffset, len: u64) -> LoadResult<()>;
 }
 
-impl<M: ImageMemory + ?Sized> ImageMemory for &mut M {
+impl<M: ImageAllocator + ?Sized> ImageAllocator for &mut M {
     type Allocation = M::Allocation;
 
     fn prepare_image(&mut self, layout: &ImageLayout) -> LoadResult<Self::Allocation> {

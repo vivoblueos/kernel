@@ -23,7 +23,7 @@ use core::{
 use crate::{
     error::{ErrorContext, LoadErrorKind},
     memory::{
-        AllocationOffset, ImageLayout, ImageMapping, ImageMemory, MemoryPermissions, Placement,
+        AllocationOffset, ImageAllocator, ImageLayout, ImageMapping, MemoryPermissions, Placement,
         TargetAddress,
     },
     LoadError, LoadResult,
@@ -170,7 +170,7 @@ impl FlatImageAllocation {
     }
 }
 
-impl ImageMemory for MemoryMapper {
+impl ImageAllocator for MemoryMapper {
     type Allocation = FlatImageAllocation;
 
     fn prepare_image(&mut self, layout: &ImageLayout) -> LoadResult<Self::Allocation> {

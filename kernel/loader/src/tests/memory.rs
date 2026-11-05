@@ -17,8 +17,8 @@
 use crate::{
     error::{ErrorContext, LoadErrorKind},
     memory::{
-        AllocationOffset, ImageLayout, ImageMapping, ImageMemory, MemoryMapper, MemoryPermissions,
-        MemoryRegion, Placement, SegmentLayout, TargetAddress, TargetRange,
+        AllocationOffset, ImageAllocator, ImageLayout, ImageMapping, MemoryMapper,
+        MemoryPermissions, MemoryRegion, Placement, SegmentLayout, TargetAddress, TargetRange,
     },
 };
 use alloc::{boxed::Box, vec};

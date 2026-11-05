@@ -24,7 +24,7 @@
 //! `ImageLoader<R: ElfReader>` reads and validates ELF headers through a
 //! source-independent reader. The `elf` and `image` stages stay crate-private
 //! while the legacy [`load_elf`] entry remains available during migration.
-//! Host backends implement [`ElfReader`], [`ImageMemory`] and [`ImageMapping`],
+//! Host backends implement [`ElfReader`], [`ImageAllocator`] and [`ImageMapping`],
 //! available directly from the crate root. Memory support types remain in [`memory`].
 //! New stages use [`memory::MemoryMapper`]; the root [`MemoryMapper`] keeps
 //! the legacy loading API until its callers have migrated.
@@ -34,7 +34,7 @@ pub mod memory;
 pub mod profile;
 pub mod reader;
 pub use error::{LoadError, LoadResult};
-pub use memory::{ImageMapping, ImageMemory, MemoryPermissions, MemoryRegion};
+pub use memory::{ImageAllocator, ImageMapping, MemoryPermissions, MemoryRegion};
 pub use reader::ElfReader;
 
 extern crate alloc;

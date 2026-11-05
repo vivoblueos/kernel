@@ -23,7 +23,7 @@ use crate::{
         SegmentLayout, TargetAddress, TargetRange,
     },
     profile::{ElfClass, LoadLimits, LoadProfile, LoadRequest},
-    ElfReader, ImageMapping, ImageMemory, LoadError, LoadResult,
+    ElfReader, ImageAllocator, ImageMapping, LoadError, LoadResult,
 };
 use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 use blueos_test_macro::test;
@@ -172,7 +172,7 @@ impl MockAllocation {
     }
 }
 
-impl ImageMemory for MockMemory {
+impl ImageAllocator for MockMemory {
     type Allocation = MockAllocation;
 
     fn prepare_image(&mut self, layout: &ImageLayout) -> LoadResult<Self::Allocation> {
