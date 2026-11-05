@@ -76,25 +76,25 @@ impl<T, A: const Adapter<T>> MinHeapNode<T, A> {
     }
 
     fn node_of_mut(this: &mut T) -> &mut Self {
-        let ptr = this as *mut T as *mut u8;
+        let ptr = (&raw mut *this).cast::<u8>();
         let node_ptr = unsafe { ptr.add(A::offset()) } as *mut Self;
         unsafe { &mut *node_ptr }
     }
 
     fn node_of_link_mut(link: &mut LinkType<T, A>) -> &mut Self {
-        let ptr = link as *mut _ as *mut u8;
+        let ptr = (&raw mut *link).cast::<u8>();
         let node_ptr = unsafe { ptr.sub(Link::<T, A>::offset()) } as *mut Self;
         unsafe { &mut *node_ptr }
     }
 
     fn node_of_link(link: &LinkType<T, A>) -> &Self {
-        let ptr = link as *const _ as *const u8;
+        let ptr = (&raw const *link).cast::<u8>();
         let node_ptr = unsafe { ptr.sub(Link::<T, A>::offset()) } as *const Self;
         unsafe { &*node_ptr }
     }
 
     fn owner(node: &Self) -> &T {
-        let ptr = node as *const _ as *const u8;
+        let ptr = (&raw const *node).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *const T };
         unsafe { &*base }
     }
@@ -187,7 +187,7 @@ where
             if (self.compare)(val, parent_val) != core::cmp::Ordering::Less {
                 break;
             }
-            unsafe { self.swap_nodes(NonNull::from_mut(unsafe { parent.as_mut() }), nonnull_node) };
+            unsafe { self.swap_nodes(parent, nonnull_node) };
         }
     }
 
@@ -243,22 +243,26 @@ where
         self.size += 1;
         let Some(mut parent) = node.parent else {
             debug_assert_eq!(path.0, 0);
-            self.root = Some(NonNull::from_mut(node));
+            // Convert once: another mutable reborrow would invalidate the stored pointer.
+            let node = NonNull::from_mut(node);
+            self.root = Some(node);
             return Some(IouMinHeapNodeMut {
-                node: Some(node.into()),
+                node: Some(node),
                 _lt: PhantomData,
             });
         };
         if (1 << (path.0 - 1)) & path.1 == 0 {
             debug_assert_eq!(unsafe { parent.as_ref() }.link.left(), None);
-            unsafe { parent.as_mut() }
-                .link
-                .set_left(Some(NonNull::from_mut(&mut node.link)));
+            unsafe { parent.as_mut() }.link.set_left(Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked(&raw mut node.link)
+            }));
         } else {
             debug_assert_eq!(unsafe { parent.as_ref() }.link.right(), None);
-            unsafe { parent.as_mut() }
-                .link
-                .set_right(Some(NonNull::from_mut(&mut node.link)));
+            unsafe { parent.as_mut() }.link.set_right(Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked(&raw mut node.link)
+            }));
         }
         // We create a new node here, since we're unable to use split borrows with
         // Self::node_of_mut.
@@ -300,15 +304,17 @@ where
         };
         let mut set_left = |mut p: NonNull<MinHeapNode<T, A>>,
                             n: Option<NonNull<MinHeapNode<T, A>>>| {
-            p.as_mut()
-                .link
-                .set_left(n.map(|n| NonNull::from_ref(&n.as_ref().link)));
+            p.as_mut().link.set_left(n.map(|n| {
+                // SAFETY: n points to a live node with a non-null, in-bounds link field.
+                NonNull::new_unchecked((&raw const (*n.as_ptr()).link).cast_mut())
+            }));
         };
         let mut set_right = |mut p: NonNull<MinHeapNode<T, A>>,
                              n: Option<NonNull<MinHeapNode<T, A>>>| {
-            p.as_mut()
-                .link
-                .set_right(n.map(|n| NonNull::from_ref(&n.as_ref().link)));
+            p.as_mut().link.set_right(n.map(|n| {
+                // SAFETY: n points to a live node with a non-null, in-bounds link field.
+                NonNull::new_unchecked((&raw const (*n.as_ptr()).link).cast_mut())
+            }));
         };
 
         let lx = get_left(x);
@@ -456,13 +462,19 @@ where
             if is_left {
                 debug_assert_eq!(
                     last_parent_mut.link.left(),
-                    Some(NonNull::from_mut(&mut node_mut.link))
+                    Some(unsafe {
+                        // SAFETY: The live field or local has a non-null address.
+                        NonNull::new_unchecked(&raw mut node_mut.link)
+                    })
                 );
                 last_parent_mut.link.set_left(None);
             } else {
                 debug_assert_eq!(
                     last_parent_mut.link.right(),
-                    Some(NonNull::from_mut(&mut node_mut.link))
+                    Some(unsafe {
+                        // SAFETY: The live field or local has a non-null address.
+                        NonNull::new_unchecked(&raw mut node_mut.link)
+                    })
                 );
                 last_parent_mut.link.set_right(None);
             }
@@ -524,14 +536,23 @@ where
         debug_assert!(ok);
         debug_assert_eq!(
             self.popped.right(),
-            Some(NonNull::from_ref(&unsafe { node.as_ref() }.link))
+            Some(unsafe {
+                // SAFETY: node points to a live node with a non-null, in-bounds link field.
+                NonNull::new_unchecked((&raw const (*node.as_ptr()).link).cast_mut())
+            })
         );
         debug_assert_eq!(
             self.popped.next,
-            Some(NonNull::from_ref(&unsafe { node.as_ref() }.link))
+            Some(unsafe {
+                // SAFETY: node points to a live node with a non-null, in-bounds link field.
+                NonNull::new_unchecked((&raw const (*node.as_ptr()).link).cast_mut())
+            })
         );
         debug_assert_eq!(
-            Some(NonNull::from_ref(&self.popped)),
+            Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.popped).cast_mut())
+            }),
             unsafe { node.as_ref() }.link.prev
         );
         self
@@ -607,12 +628,18 @@ where
             if is_left {
                 assert_eq!(
                     parent_ref.link.left(),
-                    Some(NonNull::from_ref(&current_mut.link))
+                    Some(unsafe {
+                        // SAFETY: The live field or local has a non-null address.
+                        NonNull::new_unchecked((&raw const current_mut.link).cast_mut())
+                    })
                 );
             } else {
                 assert_eq!(
                     parent_ref.link.right(),
-                    Some(NonNull::from_ref(&current_mut.link))
+                    Some(unsafe {
+                        // SAFETY: The live field or local has a non-null address.
+                        NonNull::new_unchecked((&raw const current_mut.link).cast_mut())
+                    })
                 );
             }
         }

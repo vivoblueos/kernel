@@ -263,13 +263,17 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.head.next() == Some(NonNull::from_ref(&self.tail))
+        self.head.next()
+            == Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.tail).cast_mut())
+            })
     }
 
     #[inline]
     pub fn list_head_of_mut(this: &mut TinyArc<T>) -> Option<&mut AtomicListHead<T, A>> {
         let this_val = TinyArc::<T>::get_mut(this)?;
-        let ptr = this_val as *mut _ as *mut u8;
+        let ptr = (&raw mut *this_val).cast::<u8>();
         let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut AtomicListHead<T, A> };
         Some(unsafe { &mut *list_head_ptr })
     }
@@ -277,14 +281,14 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     #[inline]
     pub unsafe fn list_head_of_mut_unchecked(this: &mut TinyArc<T>) -> &mut AtomicListHead<T, A> {
         let this_val = TinyArc::<T>::get_mut_unchecked(this);
-        let ptr = this_val as *mut _ as *mut u8;
+        let ptr = (&raw mut *this_val).cast::<u8>();
         let list_head_ptr = ptr.add(A::offset()) as *mut AtomicListHead<T, A>;
         &mut *list_head_ptr
     }
 
     #[inline]
     pub unsafe fn from_mut(node: &mut AtomicListHead<T, A>) -> TinyArc<T> {
-        let ptr = node as *mut _ as *mut u8;
+        let ptr = (&raw mut *node).cast::<u8>();
         let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
         let inner = ptr.sub(offset) as *mut TinyArcInner<T>;
         TinyArc::from_inner(NonNull::new_unchecked(inner))
@@ -292,10 +296,11 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
 
     #[inline]
     pub unsafe fn clone_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
-        let ptr = node as *const _ as *const u8;
+        let ptr = (&raw const *node).cast::<u8>();
         let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
-        let inner = &*(ptr.sub(offset) as *const TinyArcInner<T>);
-        TinyArc::clone_from_inner(NonNull::from_ref(inner))
+        let inner = ptr.sub(offset) as *const TinyArcInner<T>;
+        // SAFETY: node belongs to a live TinyArc allocation, whose base is non-null.
+        TinyArc::clone_from_inner(NonNull::new_unchecked(inner.cast_mut()))
     }
 
     pub fn insert_after(other_node: &mut AtomicListHead<T, A>, mut me: TinyArc<T>) -> bool {
@@ -369,8 +374,13 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
 
     pub fn clear(&mut self) -> usize {
         let mut c = 0;
-        for val in TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
-        {
+        for val in TinyArcListIterator::<T, A>::new(
+            &self.head,
+            Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.tail).cast_mut())
+            }),
+        ) {
             Self::detach(&mut unsafe { TinyArc::clone_from(val) });
             c += 1;
         }
@@ -378,7 +388,13 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     }
 
     pub fn iter(&self) -> TinyArcListIterator<'_, T, A> {
-        TinyArcListIterator::<T, A>::new(&self.head, Some(NonNull::from_ref(&self.tail)))
+        TinyArcListIterator::<T, A>::new(
+            &self.head,
+            Some(unsafe {
+                // SAFETY: The live field or local has a non-null address.
+                NonNull::new_unchecked((&raw const self.tail).cast_mut())
+            }),
+        )
     }
 
     // Find a stable sorting position.
@@ -427,7 +443,13 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
     {
         let Some(other_val) = Self::find_insert_position_by(
             compare,
-            TinyArcListIterator::new(&self.head, Some(NonNull::from_ref(&self.tail))),
+            TinyArcListIterator::new(
+                &self.head,
+                Some(unsafe {
+                    // SAFETY: The live field or local has a non-null address.
+                    NonNull::new_unchecked((&raw const self.tail).cast_mut())
+                }),
+            ),
             &val,
         ) else {
             return Self::insert_after(&mut self.head, val);
@@ -646,12 +668,15 @@ mod tests {
     #[test]
     fn test_basic() {
         let mut t = TinyArc::new(Thread::default());
-        assert_eq!(&t.control_status_list as *const _, unsafe {
-            ControlStatusList::list_head_of_mut_unchecked(&mut t)
-        } as *const _,);
-        assert_eq!(&t.timer_list as *const _, unsafe {
-            TimerList::list_head_of_mut_unchecked(&mut t)
-        } as *const _,);
+        // SAFETY: as_ptr points to t's live Thread; project without calling Deref.
+        assert_eq!(
+            unsafe { &raw const (*TinyArc::as_ptr(&t)).control_status_list },
+            unsafe { ControlStatusList::list_head_of_mut_unchecked(&mut t) } as *const _,
+        );
+        assert_eq!(
+            unsafe { &raw const (*TinyArc::as_ptr(&t)).timer_list },
+            unsafe { TimerList::list_head_of_mut_unchecked(&mut t) } as *const _,
+        );
     }
 
     #[test]
@@ -873,7 +898,13 @@ mod tests {
                 assert_eq!(TinyArc::strong_count(&t), 2);
             }
             let mut counter = (n - 1) as isize;
-            for val in TinyArcListIterator::new(&head, Some(NonNull::from_ref(&tail))) {
+            for val in TinyArcListIterator::new(
+                &head,
+                Some(unsafe {
+                    // SAFETY: The live field or local has a non-null address.
+                    NonNull::new_unchecked((&raw const tail).cast_mut())
+                }),
+            ) {
                 let mut i = unsafe { TinyArc::clone_from(val) };
                 assert_eq!(i.id, counter as usize);
                 assert_eq!(TinyArc::strong_count(&i), 2);

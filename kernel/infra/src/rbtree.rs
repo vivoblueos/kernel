@@ -828,20 +828,14 @@ mod tests {
     struct NoSentinelAdapter1;
     impl Adapter<NoSentinelNode> for NoSentinelAdapter1 {
         fn offset() -> usize {
-            let dummy = std::mem::MaybeUninit::<NoSentinelNode>::uninit();
-            unsafe {
-                (std::ptr::addr_of!((*dummy.as_ptr()).link1) as usize) - (dummy.as_ptr() as usize)
-            }
+            core::mem::offset_of!(NoSentinelNode, link1)
         }
     }
     #[derive(Clone, Copy)]
     struct NoSentinelAdapter2;
     impl Adapter<NoSentinelNode> for NoSentinelAdapter2 {
         fn offset() -> usize {
-            let dummy = std::mem::MaybeUninit::<NoSentinelNode>::uninit();
-            unsafe {
-                (std::ptr::addr_of!((*dummy.as_ptr()).link2) as usize) - (dummy.as_ptr() as usize)
-            }
+            core::mem::offset_of!(NoSentinelNode, link2)
         }
     }
 
