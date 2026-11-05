@@ -32,7 +32,10 @@ use crate::{
 use alloc::string::String;
 use blueos_driver::uart::UartConfig;
 use blueos_hal::{Configuration, PlatPeri};
-use core::ptr::{addr_of, addr_of_mut};
+use core::{
+    ptr::{addr_of, addr_of_mut},
+    sync::atomic::{AtomicBool, Ordering},
+};
 use spin::Once;
 
 // We have to put these globals in the .data section. If not specified explicitly,
@@ -45,7 +48,7 @@ pub(crate) static mut INIT_BSS_DONE: bool = false;
 pub(crate) static mut INIT_ARRAY_DONE: bool = false;
 #[cfg_attr(compatible_old_toolchain, link_section = ".data")]
 #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
-pub(crate) static mut INIT_HEAP_DONE: bool = false;
+pub(crate) static INIT_HEAP_DONE: AtomicBool = AtomicBool::new(false);
 #[cfg_attr(compatible_old_toolchain, link_section = ".data")]
 #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
 pub(crate) static mut INIT_VFS_DONE: bool = false;
@@ -71,7 +74,9 @@ unsafe extern "C" {
     pub static mut __bss_end: u8;
     pub static mut __sys_stack_start: u8;
     pub static mut __sys_stack_end: u8;
+    #[cfg(not(paging))]
     pub static mut __heap_start: u8;
+    #[cfg(not(paging))]
     pub static mut __heap_end: u8;
     pub static mut _end: u8;
 }
@@ -89,15 +94,10 @@ fn init_pin_states<P: blueos_hal::pinctrl::AlterFuncPin>(pin_states: &[&P]) {
 
 extern "C" fn init() {
     boards::init();
+    #[cfg(not(paging))]
     init_heap();
     init_runtime();
     init_pin_states(crate::boards::PIN_STATES);
-
-    // FIXME: 4KB paging can only be used after heap initialization is complete.
-    // This call is used to verify that 4KB paging works correctly; perhaps it can be removed later?
-    #[cfg(target_arch = "aarch64")]
-    crate::arch::aarch64::mmu::init_el1_runtime_linearmap()
-        .expect("failed to initialize AArch64 EL1 runtime 4KB linearmap");
 
     let uart = crate::boards::get_device!(console_uart);
     uart.configure(&UartConfig::default()).unwrap();
@@ -230,12 +230,27 @@ fn init_apps() {
 }
 
 #[inline(never)]
-pub(crate) fn init_heap() {
+#[cfg(all(paging, not(allocator_buddy)))]
+pub(crate) fn init_frames(regions: &[crate::mm::memory_bank::MemoryRegion]) {
+    use crate::mm::paging::first_fit::FirstFitFrameAllocator;
+
+    // SAFETY: CPU0 calls this once after runtime initialization. The static
+    // array is exclusively transferred to FirstFit. The reserved regions cover
+    // this array, the kernel, stacks and boot table; heap backing follows later.
     unsafe {
-        if INIT_HEAP_DONE {
-            return;
-        }
-        allocator::init_heap(addr_of_mut!(__heap_start), addr_of_mut!(__heap_end));
-        INIT_HEAP_DONE = true;
+        FirstFitFrameAllocator::instance()
+            .init(regions)
+            .expect("failed to initialize FirstFit frame allocator");
     }
+}
+
+#[cfg(not(paging))]
+#[inline(never)]
+pub(crate) fn init_heap() {
+    if INIT_HEAP_DONE.load(Ordering::Acquire) {
+        return;
+    }
+
+    allocator::init_heap(addr_of_mut!(__heap_start), addr_of_mut!(__heap_end));
+    INIT_HEAP_DONE.store(true, Ordering::Release);
 }

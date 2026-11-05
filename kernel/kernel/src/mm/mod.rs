@@ -12,6 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod address_space;
+
+mod mem_attribute;
+pub use mem_attribute::{CachePolicy, MemAttribute, MemFlags, MemType};
+
+#[cfg(paging)]
+pub mod kernel_space;
+pub mod memory_bank;
+#[cfg(paging)]
+pub mod paging;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct PhysicalAddress(usize);
 
@@ -26,6 +38,7 @@ impl PhysicalAddress {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct VirtualAddress(usize);
 
@@ -43,13 +56,23 @@ impl VirtualAddress {
 pub const KERNEL_VIRT_OFFSET: usize = blueos_kconfig::CONFIG_KERNEL_VIRT_OFFSET as usize;
 
 #[inline]
+/// Return the kernel direct-map alias for physical memory.
 pub const fn kernel_phys_to_virt(addr: PhysicalAddress) -> VirtualAddress {
     debug_assert!(addr.0.checked_add(KERNEL_VIRT_OFFSET).is_some());
     VirtualAddress(addr.0 + KERNEL_VIRT_OFFSET)
 }
 
 #[inline]
-pub const fn kernel_virt_to_phys(addr: VirtualAddress) -> PhysicalAddress {
+pub fn kernel_virt_to_phys(addr: VirtualAddress) -> PhysicalAddress {
+    // Validate translations against the published permanent kernel mappings.
+    // Before the new tables are published, only boot direct-map addresses
+    // are translated here.
+    #[cfg(paging)]
+    if let Some(space) = kernel_space::KernelAddressSpace::get() {
+        return space
+            .translate(addr.0)
+            .expect("unmapped kernel virtual address");
+    }
     debug_assert!(addr.0.checked_sub(KERNEL_VIRT_OFFSET).is_some());
     PhysicalAddress(addr.0 - KERNEL_VIRT_OFFSET)
 }

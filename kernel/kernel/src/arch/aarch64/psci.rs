@@ -73,7 +73,7 @@ pub fn cpu_off(psci_base: u32) {
 //        - Bits[0:7] Aff0: Match Aff0 of target core MPIDR
 // * `entry` - The entry poin.
 // * `context_id` - The context id, this value must be present in X0
-pub fn cpu_on(psci_base: u32, target_cpu: usize, entry: usize, context_id: usize) {
+pub fn cpu_on(psci_base: u32, target_cpu: usize, entry: usize, context_id: usize) -> isize {
     let func_id = psci_base + (PsciFuncName::CpuOn as u32);
     unsafe {
         psci_call(
@@ -85,7 +85,7 @@ pub fn cpu_on(psci_base: u32, target_cpu: usize, entry: usize, context_id: usize
             0,
             0,
             0,
-        );
+        ) as i32 as isize
     }
 }
 

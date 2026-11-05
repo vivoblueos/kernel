@@ -14,7 +14,7 @@
 
 use crate::{
     arch::{aarch64::mmu, irq::IrqNumber},
-    mm::PhysicalAddress,
+    mm::{memory_bank::MemoryBank, PhysicalAddress},
 };
 
 pub const UART0_BASE_S: usize =
@@ -26,10 +26,18 @@ pub const PL011_UART0_IRQNUM: IrqNumber = IrqNumber::new(33);
 pub const GENERIC_TIMER_IRQNUM: IrqNumber = IrqNumber::new(30);
 pub const HEAP_SIZE: u64 = 16 * 1024 * 1024;
 pub const PSCI_BASE: u32 = 0x84000000;
+// QEMU virt with GICv3 places 16 CPUs in each Aff1 group, varying Aff0 first.
+pub(crate) const CPU_AFFINITIES: [usize; blueos_kconfig::CONFIG_NUM_CORES as usize] = {
+    let mut affinities = [0; blueos_kconfig::CONFIG_NUM_CORES as usize];
+    let mut cpu = 0;
+    while cpu < affinities.len() {
+        affinities[cpu] = ((cpu / 16) << 8) | (cpu % 16);
+        cpu += 1;
+    }
+    affinities
+};
 pub const GICD: usize = mmu::kernel_phys_to_virt(PhysicalAddress::new(0x8000000)).into_raw();
 pub const GICR: usize = mmu::kernel_phys_to_virt(PhysicalAddress::new(0x80a0000)).into_raw();
-pub const MMU_L1_NORMAL_BASES: &[u64] = &[0x4008_0000];
-pub const MMU_L1_DEVICE_BASES: &[u64] = &[0x0];
 
 // Physical memory range for buddy allocator (QEMU virt defaults to 128MB).
 pub const PHYS_DRAM_BASE: u64 = 0x4000_0000;
@@ -37,3 +45,25 @@ pub const PHYS_DRAM_SIZE: u64 = 128 * 1024 * 1024;
 
 // Offset from the 2MiB-aligned base, published in the arm64 Image header.
 pub const TEXT_OFFSET: u64 = blueos_kconfig::CONFIG_KERNEL_PHYS_BASE as u64 % (2 * 1024 * 1024);
+pub const MEMORY_BANKS: &[MemoryBank] = &[
+    MemoryBank::RAM((
+        PhysicalAddress::new(0x4000_0000),
+        PhysicalAddress::new(0x4800_0000),
+    )),
+    MemoryBank::MMIO((
+        PhysicalAddress::new(0x0800_0000),
+        PhysicalAddress::new(0x0801_0000),
+    )),
+    MemoryBank::MMIO((
+        PhysicalAddress::new(0x080a_0000),
+        PhysicalAddress::new(0x080a_0000 + blueos_kconfig::CONFIG_NUM_CORES as usize * 0x2_0000),
+    )),
+    MemoryBank::MMIO((
+        PhysicalAddress::new(0x0900_0000),
+        PhysicalAddress::new(0x0900_1000),
+    )),
+    MemoryBank::MMIO((
+        PhysicalAddress::new(0x0a00_0000),
+        PhysicalAddress::new(0x0a00_4000),
+    )),
+];

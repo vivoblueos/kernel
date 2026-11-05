@@ -4,6 +4,7 @@ config SOC_RK3568
     bool "rk3568"
     default y
     select AARCH64
+    select PAGING
 
 config NUM_IRQS
 	default 240

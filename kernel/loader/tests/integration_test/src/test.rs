@@ -139,7 +139,9 @@ mod test_elf_loader {
 
     // FIXME: The PIC ELF file is too large in debug mode. We should use
     // lseek to parse the ELF file.
-    #[cfg(not(debug_assertions))]
+    // TODO(paging): Re-enable once executable page allocation is supported and
+    // the loader uses it; ordinary heap allocations must remain non-executable.
+    #[cfg(all(not(debug_assertions), not(paging)))]
     #[test]
     fn test_load_elf_and_run() {
         let buf = read_all(unsafe { LOADER_TEST_ELF_PATH }).unwrap();

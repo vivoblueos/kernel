@@ -377,3 +377,6 @@ fn dynamic_slab_heap_small_and_system_allocations() {
     }
     assert_eq!(heap.allocated(), 0);
 }
+
+#[path = "page_heap.rs"]
+mod page_heap_tests;
