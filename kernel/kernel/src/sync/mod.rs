@@ -22,7 +22,7 @@ pub mod posix_mqueue;
 pub mod semaphore;
 pub mod spinlock;
 pub use mqueue::MessageQueue;
-pub use mutex::Mutex;
+pub use mutex::{Mutex, MutexGuard};
 pub use semaphore::Semaphore;
 pub use spinlock::{ISpinLock, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard};
 pub mod barrier;
