@@ -14,12 +14,11 @@
 
 //! Checked program headers and read-only planning of executable image layouts.
 
-use super::{admit::program_header_error, plan::PlannedImage};
+use super::{plan::PlannedImage, LoadRequest};
 use crate::{
-    elf::{ElfHeaderInfo, LoadSegmentInfo, ProgramHeaderInfo},
+    elf::{ElfClass, ElfHeaderInfo, FileRange, LoadSegmentInfo, ProgramHeaderInfo},
     error::{ErrorContext, HeaderField, LoadErrorKind, LoadStage, ProgramHeaderField},
-    memory::{address::FileRange, MemoryPermissions, TargetAddress, TargetRange},
-    profile::{ElfClass, LoadRequest},
+    memory::{MemoryPermissions, TargetAddress, TargetRange},
     reader::ElfReader,
     LoadError, LoadResult,
 };
@@ -76,7 +75,7 @@ impl<R: ElfReader> InspectedImage<R> {
                 0 | 1 => 1,
                 value if value.is_power_of_two() => value,
                 value => {
-                    return Err(program_header_error(
+                    return Err(LoadError::program_header(
                         index,
                         ProgramHeaderField::Align,
                         value,
@@ -86,7 +85,7 @@ impl<R: ElfReader> InspectedImage<R> {
             };
             self.request.limits().check_segment_alignment(alignment)?;
             if header.file_offset() % alignment != header.vaddr().get() % alignment {
-                return Err(program_header_error(
+                return Err(LoadError::program_header(
                     index,
                     ProgramHeaderField::Align,
                     alignment,
@@ -117,7 +116,7 @@ impl<R: ElfReader> InspectedImage<R> {
             if TargetRange::new(pair[0].vaddr(), pair[0].memory_size())
                 .overlaps(TargetRange::new(pair[1].vaddr(), pair[1].memory_size()))
             {
-                return Err(program_header_error(
+                return Err(LoadError::program_header(
                     pair[1].index(),
                     ProgramHeaderField::VirtualRange,
                     pair[1].vaddr().get(),

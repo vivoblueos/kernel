@@ -23,6 +23,6 @@ mod inspect;
 mod map;
 mod plan;
 
-pub(crate) use image_loader::ImageLoader;
+pub(crate) use image_loader::{ImageLoader, LoadRequest};
 pub(crate) use map::MappedImage;
 pub(crate) use plan::PlannedImage;

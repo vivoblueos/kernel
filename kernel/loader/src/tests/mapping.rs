@@ -17,12 +17,12 @@
 use super::fixture::{ElfFixtureBuilder, ProgramHeaderFixture, SliceElfReader};
 use crate::{
     error::{ErrorContext, LoadErrorKind, LoadStage},
-    image::{ImageLoader, PlannedImage},
+    image::{ImageLoader, LoadRequest, PlannedImage},
     memory::{
         AllocationOffset, ImageLayout, MemoryMapper, MemoryPermissions, MemoryRegion, Placement,
         SegmentLayout, TargetAddress, TargetRange,
     },
-    profile::{ElfClass, LoadLimits, LoadProfile, LoadRequest},
+    profile::{ElfClass, LoadLimits, LoadProfile},
     ElfReader, ImageAllocator, ImageMapping, LoadError, LoadResult,
 };
 use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};

@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::memory::{
-    address::{FileRange, TargetAddress},
-    MemoryPermissions,
-};
+use super::FileRange;
+use crate::memory::{MemoryPermissions, TargetAddress};
 
 #[derive(Debug)]
 pub(crate) struct LoadSegmentInfo {

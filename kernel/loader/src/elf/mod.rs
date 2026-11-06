@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ELF wire structures and bounds-checked integer decoding.
-//! Image admission policy is implemented in `image`.
+//! ELF structures, dynamic tables and bounds-checked record decoding.
+//! Loading stages and image ownership are implemented in `image`.
 
 mod header;
 mod program_header;
@@ -21,14 +21,43 @@ mod segment;
 
 use crate::{
     error::{ErrorContext, LoadErrorKind},
-    profile::ElfData,
     LoadError, LoadResult,
 };
 use goblin::{elf32, elf64};
 
-pub(crate) use header::ElfHeaderInfo;
+pub use header::{ElfClass, ElfData, ElfMachine};
+pub(crate) use header::{ElfHeaderInfo, ElfType};
 pub(crate) use program_header::ProgramHeaderInfo;
 pub(crate) use segment::LoadSegmentInfo;
+
+/// A byte range in the ELF input file, independent of target addresses.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FileRange {
+    offset: u64,
+    len: u64,
+}
+
+impl FileRange {
+    #[inline]
+    pub const fn new(offset: u64, len: u64) -> Self {
+        Self { offset, len }
+    }
+
+    #[inline]
+    pub const fn offset(self) -> u64 {
+        self.offset
+    }
+
+    #[inline]
+    pub const fn len(self) -> u64 {
+        self.len
+    }
+
+    #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.len == 0
+    }
+}
 
 pub(crate) const ELF_IDENT_SIZE: usize = 16;
 pub(crate) const ELF32_HEADER_SIZE: usize = elf32::header::SIZEOF_EHDR;

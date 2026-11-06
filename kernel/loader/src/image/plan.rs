@@ -14,15 +14,14 @@
 
 //! Validated single-image layout; no backing has been reserved or modified.
 
-use super::allocate::AllocatedImage;
+use super::{allocate::AllocatedImage, LoadRequest};
 use crate::{
-    elf::{ElfHeaderInfo, LoadSegmentInfo},
-    error::{ErrorContext, LoadErrorKind, LoadStage},
+    elf::{ElfClass, ElfHeaderInfo, ElfType, LoadSegmentInfo},
+    error::{ErrorContext, HeaderField, LoadErrorKind, LoadStage},
     memory::{
         AllocationOffset, ImageAllocator, ImageLayout, ImageMapping, Placement, SegmentLayout,
         TargetAddress, TargetRange,
     },
-    profile::{ElfClass, ElfType, LoadRequest},
     reader::ElfReader,
     LoadError, LoadResult,
 };
@@ -62,10 +61,15 @@ impl<R: ElfReader> PlannedImage<R> {
             ElfType::Dyn => Placement::Anywhere,
             ElfType::Exec => Placement::Fixed(self.image_range),
             ElfType::Other(_) => {
+                // Admission already excludes these types; guard internal plans
+                // without adding another feature-admission decision here.
                 return Err(LoadError::new(
-                    LoadErrorKind::UnsupportedByProfile,
-                    ErrorContext::None,
-                ))
+                    LoadErrorKind::BadElf,
+                    ErrorContext::HeaderField {
+                        field: HeaderField::Type,
+                        value: u64::from(self.header.r#type()),
+                    },
+                ));
             }
         };
         let mut segments = Vec::new();

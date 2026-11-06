@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Checked arithmetic for target addresses, target ranges and file ranges.
+//! Checked arithmetic for target addresses and target ranges.
 
 use crate::{
     error::{ErrorContext, LoadErrorKind},
@@ -137,33 +137,5 @@ impl TargetRange {
             return false;
         };
         self.start < other_end && other.start < self_end
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct FileRange {
-    offset: u64,
-    len: u64,
-}
-
-impl FileRange {
-    #[inline]
-    pub const fn new(offset: u64, len: u64) -> Self {
-        Self { offset, len }
-    }
-
-    #[inline]
-    pub const fn offset(self) -> u64 {
-        self.offset
-    }
-
-    #[inline]
-    pub const fn len(self) -> u64 {
-        self.len
-    }
-
-    #[inline]
-    pub const fn is_empty(self) -> bool {
-        self.len == 0
     }
 }

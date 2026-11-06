@@ -13,9 +13,8 @@
 // limitations under the License.
 
 use crate::{
-    elf::{read_u32, read_u64},
+    elf::{read_u32, read_u64, ElfClass, ElfData},
     memory::TargetAddress,
-    profile::{ElfClass, ElfData},
     LoadResult,
 };
 

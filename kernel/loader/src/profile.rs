@@ -15,83 +15,20 @@
 //! Caller-supplied ELF architecture, ABI and admission policies, and resource limits.
 
 use crate::{
-    error::{ErrorContext, LimitKind, LoadErrorKind, ProgramHeaderField},
+    elf::{ElfHeaderInfo, ElfType},
+    error::{ErrorContext, HeaderField, LimitKind, LoadErrorKind, ProgramHeaderField},
     memory::MemoryPermissions,
     LoadError, LoadResult,
 };
 use goblin::elf::{
-    header::{
-        ELFCLASS32, ELFCLASS64, ELFDATA2LSB, ELFDATA2MSB, EM_AARCH64, EM_RISCV, ET_DYN, ET_EXEC,
-    },
+    header::{ELFOSABI_GNU, ELFOSABI_NONE},
     program_header::{
         PF_R, PF_W, PF_X, PT_DYNAMIC, PT_GNU_EH_FRAME, PT_GNU_RELRO, PT_GNU_STACK, PT_INTERP,
         PT_LOAD, PT_NOTE, PT_NULL, PT_PHDR, PT_TLS,
     },
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ElfClass {
-    Elf32,
-    Elf64,
-}
-
-impl From<ElfClass> for u64 {
-    fn from(value: ElfClass) -> Self {
-        match value {
-            ElfClass::Elf32 => u64::from(ELFCLASS32),
-            ElfClass::Elf64 => u64::from(ELFCLASS64),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ElfData {
-    Little,
-    Big,
-}
-
-impl From<ElfData> for u64 {
-    fn from(value: ElfData) -> Self {
-        match value {
-            ElfData::Little => u64::from(ELFDATA2LSB),
-            ElfData::Big => u64::from(ELFDATA2MSB),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ElfType {
-    Dyn,
-    Exec,
-    Other(u16),
-}
-
-impl From<ElfType> for u64 {
-    fn from(value: ElfType) -> Self {
-        match value {
-            ElfType::Dyn => u64::from(ET_DYN),
-            ElfType::Exec => u64::from(ET_EXEC),
-            ElfType::Other(value) => u64::from(value),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ElfMachine {
-    Riscv,
-    Aarch64,
-    Other(u16),
-}
-
-impl From<ElfMachine> for u64 {
-    fn from(value: ElfMachine) -> Self {
-        match value {
-            ElfMachine::Riscv => u64::from(EM_RISCV),
-            ElfMachine::Aarch64 => u64::from(EM_AARCH64),
-            ElfMachine::Other(x) => u64::from(x),
-        }
-    }
-}
+pub use crate::elf::{ElfClass, ElfData, ElfMachine};
 
 /// RISC-V `e_flags` bits the loader interprets. The float ABI must be soft for
 /// the current RISC-V profiles; the embedded (RVE) register model is unsupported.
@@ -302,6 +239,64 @@ pub struct LoadProfile {
 }
 
 impl LoadProfile {
+    pub(crate) fn check_ident_abi(&self, osabi: u8, abi_version: u8) -> LoadResult<()> {
+        if !matches!(osabi, ELFOSABI_NONE | ELFOSABI_GNU) {
+            return Err(unsupported_header(HeaderField::OsAbi, u64::from(osabi)));
+        }
+        if abi_version != 0 {
+            return Err(unsupported_header(
+                HeaderField::AbiVersion,
+                u64::from(abi_version),
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_header(&self, header: &ElfHeaderInfo) -> LoadResult<()> {
+        if !matches!(header.r#type(), ElfType::Dyn | ElfType::Exec) {
+            return Err(unsupported_header(
+                HeaderField::Type,
+                u64::from(header.r#type()),
+            ));
+        }
+        if header.class() != self.class() {
+            return Err(unsupported_header(
+                HeaderField::Class,
+                u64::from(header.class()),
+            ));
+        }
+        if header.endian() != self.endian() {
+            return Err(unsupported_header(
+                HeaderField::Endian,
+                u64::from(header.endian()),
+            ));
+        }
+        if header.machine() != self.machine() {
+            return Err(unsupported_header(
+                HeaderField::Machine,
+                u64::from(header.machine()),
+            ));
+        }
+        // `e_flags` is machine-defined; a trusted profile always carries a
+        // HeaderFlagsPolicy for its machine, so an unknown ABI/float/RVE
+        // combination fails admission before any allocation.
+        if !self.header_flags().accepts(header.flags()) {
+            return Err(unsupported_header(
+                HeaderField::Flags,
+                u64::from(header.flags()),
+            ));
+        }
+        // PN_XNUM stores the real count in section header zero. This pipeline
+        // reads program headers directly and does not support extended numbering.
+        if header.program_header_count() == u16::MAX {
+            return Err(unsupported_header(
+                HeaderField::ProgramHeaderCount,
+                u64::from(header.program_header_count()),
+            ));
+        }
+        Ok(())
+    }
+
     #[inline]
     pub const fn new(
         class: ElfClass,
@@ -617,22 +612,9 @@ fn check_limit(resource: LimitKind, actual: u64, maximum: u64) -> LoadResult<()>
     ))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct LoadRequest {
-    profile: LoadProfile,
-    limits: LoadLimits,
-}
-
-impl LoadRequest {
-    pub const fn new(profile: LoadProfile, limits: LoadLimits) -> Self {
-        Self { profile, limits }
-    }
-
-    pub const fn profile(&self) -> &LoadProfile {
-        &self.profile
-    }
-
-    pub const fn limits(&self) -> &LoadLimits {
-        &self.limits
-    }
+fn unsupported_header(field: HeaderField, value: u64) -> LoadError {
+    LoadError::new(
+        LoadErrorKind::UnsupportedByProfile,
+        ErrorContext::HeaderField { field, value },
+    )
 }

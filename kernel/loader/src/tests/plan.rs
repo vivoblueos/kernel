@@ -17,11 +17,9 @@
 use super::fixture::{ElfFixtureBuilder, ProgramHeaderFixture, SliceElfReader};
 use crate::{
     error::{ErrorContext, HeaderField, LimitKind, LoadErrorKind, LoadStage, ProgramHeaderField},
-    image::{ImageLoader, PlannedImage},
+    image::{ImageLoader, LoadRequest, PlannedImage},
     memory::{MemoryPermissions, TargetAddress},
-    profile::{
-        ElfClass, ElfMachine, LoadLimits, LoadProfile, LoadRequest, SegmentPermissionPolicy,
-    },
+    profile::{ElfClass, ElfMachine, LoadLimits, LoadProfile, SegmentPermissionPolicy},
     reader::ElfReader,
     LoadError, LoadResult,
 };

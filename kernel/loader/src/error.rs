@@ -140,6 +140,23 @@ pub struct LoadError {
 }
 
 impl LoadError {
+    /// Describe a program-header failure without coupling loading stages.
+    pub(crate) fn program_header(
+        index: u16,
+        field: ProgramHeaderField,
+        value: u64,
+        kind: LoadErrorKind,
+    ) -> LoadError {
+        LoadError::new(
+            kind,
+            ErrorContext::ProgramHeader {
+                index,
+                field,
+                value,
+            },
+        )
+    }
+
     #[inline]
     pub const fn new(kind: LoadErrorKind, context: ErrorContext) -> Self {
         Self {

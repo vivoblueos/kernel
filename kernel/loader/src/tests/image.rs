@@ -29,12 +29,11 @@ use goblin::elf::{
 
 use super::fixture::{ElfFixtureBuilder, ProgramHeaderFixture, SliceElfReader};
 use crate::{
+    elf::{ElfHeaderInfo, ElfType, ELF_IDENT_SIZE},
     error::{ErrorContext, HeaderField, LimitKind, LoadErrorKind, LoadStage, ProgramHeaderField},
-    image::ImageLoader,
+    image::{ImageLoader, LoadRequest},
     memory::TargetAddress,
-    profile::{
-        ElfClass, ElfData, ElfMachine, LoadLimits, LoadProfile, LoadRequest, ProgramHeaderPolicy,
-    },
+    profile::{ElfClass, ElfData, ElfMachine, LoadLimits, LoadProfile, ProgramHeaderPolicy},
     reader::ElfReader,
     LoadError, LoadResult,
 };
@@ -139,6 +138,34 @@ fn admission_rejects_nonzero_abi_versions_for_supported_osabis() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn elf_header_decoding_leaves_capability_admission_to_the_profile() {
+    for profile in PROFILES {
+        let mut bytes = fixture(profile, ET_REL).build();
+        bytes[EI_OSABI] = ELFOSABI_FREEBSD;
+        bytes[EI_ABIVERSION] = 1;
+        let ident = bytes[..ELF_IDENT_SIZE].try_into().unwrap();
+        let (class, endian) = ElfHeaderInfo::decode_ident(&ident).unwrap();
+        let header = ElfHeaderInfo::decode(&bytes, class, endian).unwrap();
+        assert_eq!(header.r#type(), ElfType::Other(ET_REL));
+
+        let error = failure(profile.check_header(&header));
+        assert_eq!(error.kind(), LoadErrorKind::UnsupportedByProfile);
+        assert!(matches!(
+            error.context(),
+            ErrorContext::HeaderField { field: HeaderField::Type, value }
+                if *value == u64::from(ET_REL)
+        ));
+        let error = failure(profile.check_ident_abi(ident[EI_OSABI], ident[EI_ABIVERSION]));
+        assert_eq!(error.kind(), LoadErrorKind::UnsupportedByProfile);
+        assert!(matches!(
+            error.context(),
+            ErrorContext::HeaderField { field: HeaderField::OsAbi, value }
+                if *value == u64::from(ELFOSABI_FREEBSD)
+        ));
     }
 }
 

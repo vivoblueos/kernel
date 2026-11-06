@@ -14,10 +14,10 @@
 
 //! Initialized segments; relocation, cache synchronization and protection follow later.
 
+use super::LoadRequest;
 use crate::{
     elf::{ElfHeaderInfo, LoadSegmentInfo},
     memory::{AllocationOffset, ImageMapping, TargetAddress, TargetRange},
-    profile::LoadRequest,
     LoadResult,
 };
 use alloc::vec::Vec;
