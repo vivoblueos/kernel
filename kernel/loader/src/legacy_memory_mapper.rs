@@ -12,53 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Legacy flat mapper retained for `load_elf()` during staged migration.
+//! The common memory module owns logical addresses and permissions.
+//! The new backend and shared region type live in `memory::flat_memory_mapper`.
+//! This legacy type remains until the public loading entry and its callers
+//! are migrated.
+
+use crate::memory::{MemoryPermissions, MemoryRegion};
 use blueos_infra::storage::Storage;
 use core::alloc::Layout;
 
 pub type Result<T> = core::result::Result<T, &'static str>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MemoryPermissions(u8);
-
-impl MemoryPermissions {
-    pub const NONE: Self = Self(0);
-    pub const READ: Self = Self(1 << 0);
-    pub const WRITE: Self = Self(1 << 1);
-    pub const EXECUTE: Self = Self(1 << 2);
-
-    pub const fn bitor(self, rhs: Self) -> Self {
-        Self(self.0 | rhs.0)
-    }
-
-    pub(crate) const fn contains(self, requested: Self) -> bool {
-        self.0 & requested.0 == requested.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MemoryRegion {
-    start: usize,
-    end: usize,
-    permissions: MemoryPermissions,
-}
-
-impl MemoryRegion {
-    /// Authorizes a fixed address range for accesses described by `permissions`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `[start, end)` is a valid mapped range for every
-    /// advertised permission and remains so for the lifetime of any mapper that uses
-    /// this region. While a mapper accesses the range, it must not alias Rust references
-    /// or receive conflicting accesses.
-    pub const unsafe fn new(start: usize, end: usize, permissions: MemoryPermissions) -> Self {
-        Self {
-            start,
-            end,
-            permissions,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MappingModeKind {
@@ -73,6 +37,7 @@ enum MappingMode {
 }
 
 #[derive(Debug)]
+#[must_use = "keep the mapper alive while its loaded image is in use"]
 pub struct MemoryMapper {
     virtual_entry: usize,
     virtual_start: usize,
