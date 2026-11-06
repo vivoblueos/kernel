@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #![no_std]
-// naked_functions was stabilized in 1.88; only declare the feature on
-// toolchains older than 1.90 to avoid the stable_features lint.
-#![cfg_attr(compatible_old_toolchain, feature(naked_functions))]
 
 #[cfg(any(target_arch = "riscv64", target_arch = "riscv32"))]
 pub mod riscv;

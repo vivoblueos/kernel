@@ -182,7 +182,7 @@ files from this set:
 external/rust/BUILD.gn
 external/rust/Cargo.lock
 external/gnrt_config.toml
-external/rust/patches/esp-hal-1.1.1/001-stable-toolchain-compat.patch
+external/rust/patches/esp-hal-1.1.1/001-blueos-integration.patch
 ```
 
 Preserve exact requested versions. A declaration such as `version = "=0.23.0"`

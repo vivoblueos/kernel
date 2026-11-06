@@ -21,7 +21,7 @@ use crate::{
     syscall::{Sys, Syscall},
 };
 use libc::{c_int, utsname};
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn uname(name: *mut utsname) -> c_int {
-    Sys::uname(name).map(|()| 0).syscall_failed()
+    unsafe { Sys::uname(name).map(|()| 0).syscall_failed() }
 }
