@@ -192,7 +192,7 @@ template("build_rust") {
     edition = invoker.edition
     rustflags += [ "--edition=$edition" ]
   } else {
-    rustflags += [ "--edition=2021" ]
+    rustflags += [ "--edition=2024" ]
   }
 
   rustc_metadata = ""

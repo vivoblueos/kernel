@@ -24,7 +24,7 @@ pub use blueos_header::syscalls::NR::{Close, Read};
 use blueos_scal::bk_syscall;
 use core::slice;
 use libc::{c_int, c_void, size_t, ssize_t};
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub extern "C" fn write(fd: i32, buf: *const u8, size: usize) -> isize {
     let buf = unsafe { slice::from_raw_parts(buf, size) };
@@ -34,13 +34,13 @@ pub extern "C" fn write(fd: i32, buf: *const u8, size: usize) -> isize {
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/close.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn close(fildes: c_int) -> c_int {
     Sys::close(fildes).map(|_| 0).syscall_failed()
 }
 
 /// See https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn read(fildes: c_int, buf: *const c_void, nbyte: size_t) -> ssize_t {
     let buf = unsafe { slice::from_raw_parts_mut(buf as *mut u8, nbyte) };
     Sys::read(fildes, buf)

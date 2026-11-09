@@ -37,51 +37,47 @@ pub fn init_virtio(fdt: &Fdt) {
 }
 fn find_virtio_mmio_devices(fdt: &Fdt) {
     for node in fdt.all_nodes() {
-        if let Some(compatible) = node.compatible() {
-            if compatible.all().any(|c| c == VIRTIO_MMIO_COMPATIBLE) {
-                debug!("Found VirtIO MMIO device {}", node.name);
-                if let Some(region) = node.reg().next() {
-                    let region_size = region.size.unwrap_or(0);
-                    if region_size < size_of::<VirtIOHeader>() {
-                        warn!(
-                            "VirtIO MMIO device {} region smaller than VirtIO header size ({} < {})",
-                            node.name,
-                            region_size,
-                            size_of::<VirtIOHeader>()
-                        );
-                    } else {
-                        let header = NonNull::new(
-                            kernel_phys_to_virt(PhysicalAddress::new(
-                                region.starting_address as usize,
-                            ))
+        if let Some(compatible) = node.compatible()
+            && compatible.all().any(|c| c == VIRTIO_MMIO_COMPATIBLE)
+        {
+            debug!("Found VirtIO MMIO device {}", node.name);
+            if let Some(region) = node.reg().next() {
+                let region_size = region.size.unwrap_or(0);
+                if region_size < size_of::<VirtIOHeader>() {
+                    warn!(
+                        "VirtIO MMIO device {} region smaller than VirtIO header size ({} < {})",
+                        node.name,
+                        region_size,
+                        size_of::<VirtIOHeader>()
+                    );
+                } else {
+                    let header = NonNull::new(
+                        kernel_phys_to_virt(PhysicalAddress::new(region.starting_address as usize))
                             .into_raw() as *mut VirtIOHeader,
-                        )
-                        .unwrap();
-                        // SAFETY: device tree is correct, VirtIO MMIO devices are mapped.
-                        match unsafe { MmioTransport::new(header, region_size) } {
-                            Err(MmioError::InvalidDeviceID(
-                                DeviceTypeError::InvalidDeviceType(0),
-                            )) => {
-                                warn!("Ignoring VirtIO device with zero device ID.");
-                            }
-                            Err(e) => {
-                                warn!("Error creating VirtIO transport: {}", e);
-                            }
-                            Ok(mut transport) => {
-                                debug!(
+                    )
+                    .unwrap();
+                    // SAFETY: device tree is correct, VirtIO MMIO devices are mapped.
+                    match unsafe { MmioTransport::new(header, region_size) } {
+                        Err(MmioError::InvalidDeviceID(DeviceTypeError::InvalidDeviceType(0))) => {
+                            warn!("Ignoring VirtIO device with zero device ID.");
+                        }
+                        Err(e) => {
+                            warn!("Error creating VirtIO transport: {}", e);
+                        }
+                        Ok(mut transport) => {
+                            debug!(
                                     "Detected virtio MMIO device with device type {:?}, vendor ID {:#x}, version {:?}, features {:#018x}",
                                     transport.device_type(),
                                     transport.vendor_id(),
                                     transport.version(),
                                     transport.read_device_features(),
                                 );
-                                init_virtio_device(transport.into());
-                            }
+                            init_virtio_device(transport.into());
                         }
                     }
-                } else {
-                    warn!("VirtIO MMIO device {} missing region", node.name);
                 }
+            } else {
+                warn!("VirtIO MMIO device {} missing region", node.name);
             }
         }
     }
@@ -122,7 +118,7 @@ unsafe impl Hal for VirtioHal {
 
     unsafe fn dma_dealloc(_paddr: PhysAddr, vaddr: NonNull<u8>, pages: usize) -> i32 {
         let layout = Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE).unwrap();
-        dealloc(vaddr.as_ptr(), layout);
+        unsafe { dealloc(vaddr.as_ptr(), layout) };
         0
     }
 

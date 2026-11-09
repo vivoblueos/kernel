@@ -1384,11 +1384,11 @@ impl<T: Read, U: Read> Read for Chain<T, U> {
     }
 
     unsafe fn initializer(&self) -> Initializer {
-        let initializer = self.first.initializer();
+        let initializer = unsafe { self.first.initializer() };
         if initializer.should_initialize() {
             initializer
         } else {
-            self.second.initializer()
+            unsafe { self.second.initializer() }
         }
     }
 }
@@ -1577,7 +1577,7 @@ impl<T: Read> Read for Take<T> {
     }
 
     unsafe fn initializer(&self) -> Initializer {
-        self.inner.initializer()
+        unsafe { self.inner.initializer() }
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize> {

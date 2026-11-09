@@ -63,13 +63,13 @@ pub mod tls;
 pub mod types;
 pub mod unistd;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __librs_start_main() {
     crate::stdio::init();
     crate::pthread::register_my_posix_tcb();
     // TODO: Pass argc, argv and envp?
     // TODO: Before exit, we have to check owned threads' status and recycle them.
-    extern "C" {
+    unsafe extern "C" {
         fn main() -> i32;
     }
     unsafe {
@@ -83,13 +83,13 @@ pub extern "C" fn __librs_start_main() {
 pub mod utils;
 
 #[cfg(target_arch = "arm")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub unsafe extern "C" fn __aeabi_unwind_cpp_pr0() {
     panic!("Unwind not implemented")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub unsafe extern "C" fn _Unwind_Backtrace(
     _trace: *mut core::ffi::c_void,
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn _Unwind_Backtrace(
     todo!()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub unsafe extern "C" fn _Unwind_GetIP(_context: *mut core::ffi::c_void) -> core::ffi::c_int {
     todo!()
@@ -122,7 +122,7 @@ pub fn librs_test_runner(tests: &[&dyn Fn()]) {
 }
 
 #[cfg(test)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn main() -> i32 {
     pthread::register_my_posix_tcb();
     librs_test_main();

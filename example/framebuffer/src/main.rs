@@ -235,7 +235,7 @@ impl DrawTarget for FbFile {
 }
 
 unsafe fn ioctl(fd: libc::c_int, request: libc::c_ulong, arg: *mut libc::c_void) -> Result<()> {
-    match librs::syscall::sys::Sys::ioctl(fd, request, arg) {
+    match unsafe { librs::syscall::sys::Sys::ioctl(fd, request, arg) } {
         Ok(ret) if ret < 0 => Err(syscall_error(ret)),
         Ok(_) => Ok(()),
         Err(librs::errno::Errno(errno)) => Err(Error::from_raw_os_error(errno)),

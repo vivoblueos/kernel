@@ -29,8 +29,7 @@ use log;
 // Create and Initialize a Mutex object.
 // \param[in]     attr          mutex attributes; NULL: default values.
 // \return mutex ID for reference by other functions or NULL in case of error.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMutexNew(attr: *const osMutexAttr_t) -> osMutexId_t {
     if irq::is_in_irq() {
         return ptr::null_mut();
@@ -82,8 +81,7 @@ pub extern "C" fn osMutexNew(attr: *const osMutexAttr_t) -> osMutexId_t {
 // Get name of a Mutex object.
 // \param[in]     mutex_id      mutex ID obtained by \ref osMutexNew.
 // \return name as null-terminated string.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMutexGetName(mutex_id: osMutexId_t) -> *const core::ffi::c_char {
     if mutex_id.is_null() {
         return ptr::null();
@@ -97,8 +95,7 @@ pub extern "C" fn osMutexGetName(mutex_id: osMutexId_t) -> *const core::ffi::c_c
 // \param[in]     mutex_id      mutex ID obtained by \ref osMutexNew.
 // \param[in]     timeout       \ref CMSIS_RTOS_TimeOutValue or 0 in case of no time-out.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMutexAcquire(mutex_id: osMutexId_t, timeout: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -117,8 +114,7 @@ pub extern "C" fn osMutexAcquire(mutex_id: osMutexId_t, timeout: u32) -> osStatu
 // Release a Mutex that was acquired by \ref osMutexAcquire.
 // \param[in]     mutex_id      mutex ID obtained by \ref osMutexNew.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMutexRelease(mutex_id: osMutexId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -135,8 +131,7 @@ pub extern "C" fn osMutexRelease(mutex_id: osMutexId_t) -> osStatus_t {
 // Get Thread which owns a Mutex object.
 // \param[in]     mutex_id      mutex ID obtained by \ref osMutexNew.
 // \return thread ID of owner thread or NULL when mutex was not acquired.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMutexGetOwner(mutex_id: osMutexId_t) -> osThreadId_t {
     if irq::is_in_irq() {
         return ptr::null_mut();
@@ -146,10 +141,10 @@ pub extern "C" fn osMutexGetOwner(mutex_id: osMutexId_t) -> osThreadId_t {
     }
 
     let mutex = unsafe { ManuallyDrop::new(Arc::from_raw(mutex_id as *const OsMutex)) };
-    if let Some(owner) = mutex.owner() {
-        if let Some(alien_ptr) = owner.get_alien_ptr() {
-            return alien_ptr.as_ptr() as osThreadId_t;
-        }
+    if let Some(owner) = mutex.owner()
+        && let Some(alien_ptr) = owner.get_alien_ptr()
+    {
+        return alien_ptr.as_ptr() as osThreadId_t;
     }
     log::warn!("not a cmsis thread");
     ptr::null_mut()
@@ -158,8 +153,7 @@ pub extern "C" fn osMutexGetOwner(mutex_id: osMutexId_t) -> osThreadId_t {
 // Delete a Mutex object.
 // \param[in]     mutex_id      mutex ID obtained by \ref osMutexNew.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMutexDelete(mutex_id: osMutexId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;

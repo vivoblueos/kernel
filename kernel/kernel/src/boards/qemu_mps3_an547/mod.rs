@@ -45,41 +45,45 @@ struct ZeroTable {
 // Copy data from FLASH to RAM.
 #[inline(never)]
 unsafe fn copy_data() {
-    extern "C" {
+    unsafe extern "C" {
         static __zero_table_start: ZeroTable;
         static __zero_table_end: ZeroTable;
         static __copy_table_start: CopyTable;
         static __copy_table_end: CopyTable;
     }
 
-    let mut p_table = addr_of!(__copy_table_start);
-    while p_table < addr_of!(__copy_table_end) {
-        let table = &(*p_table);
-        for i in 0..table.wlen {
-            core::ptr::write(
-                table.dest.add(i as usize),
-                core::ptr::read(table.src.add(i as usize)),
-            );
+    unsafe {
+        let mut p_table = addr_of!(__copy_table_start);
+        while p_table < addr_of!(__copy_table_end) {
+            let table = &(*p_table);
+            for i in 0..table.wlen {
+                core::ptr::write(
+                    table.dest.add(i as usize),
+                    core::ptr::read(table.src.add(i as usize)),
+                );
+            }
+            p_table = p_table.offset(1);
         }
-        p_table = p_table.offset(1);
     }
 
-    let mut p_table = addr_of!(__zero_table_start);
-    while p_table < addr_of!(__zero_table_end) {
-        let table = &*p_table;
-        for i in 0..table.wlen {
-            core::ptr::write(table.dest.add(i as usize), 0);
+    unsafe {
+        let mut p_table = addr_of!(__zero_table_start);
+        while p_table < addr_of!(__zero_table_end) {
+            let table = &*p_table;
+            for i in 0..table.wlen {
+                core::ptr::write(table.dest.add(i as usize), 0);
+            }
+            p_table = p_table.offset(1);
         }
-        p_table = p_table.offset(1);
     }
-    INIT_BSS_DONE = true;
+    unsafe { INIT_BSS_DONE = true };
 }
 
 unsafe fn enable_fpu() {
     const SCB_CPACR_PTR: *mut u32 = 0xE000_ED88 as *mut u32;
-    let mut temp = SCB_CPACR_PTR.read_volatile();
+    let mut temp = unsafe { SCB_CPACR_PTR.read_volatile() };
     temp |= 0x00F00000;
-    SCB_CPACR_PTR.write_volatile(temp);
+    unsafe { SCB_CPACR_PTR.write_volatile(temp) };
 }
 
 const TICKS_PS: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;

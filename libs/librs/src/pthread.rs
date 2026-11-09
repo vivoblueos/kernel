@@ -133,7 +133,7 @@ extern "C" fn posix_cleanup_routine(arg: *mut c_void) {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_attr_init(attr: *mut pthread_attr_t) -> c_int {
     let inner_attr = attr as *mut InnerPthreadAttr;
     unsafe {
@@ -143,13 +143,13 @@ pub extern "C" fn pthread_attr_init(attr: *mut pthread_attr_t) -> c_int {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_attr_destroy(_: *mut pthread_attr_t) -> c_int {
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_attr_setstacksize(
     attr: *mut pthread_attr_t,
     stacksize: c_size_t,
@@ -159,19 +159,19 @@ pub extern "C" fn pthread_attr_setstacksize(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_self() -> pthread_t {
     bk_syscall!(GetTid) as pthread_t
 }
 
 /// Same as `pthread_self`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gettid() -> pthread_t {
     bk_syscall!(GetTid) as pthread_t
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_getschedparam(
     thread: pthread_t,
     policy: *mut c_int,
@@ -197,7 +197,7 @@ pub extern "C" fn pthread_getschedparam(
 // Only support SCHED_RR, it's the only policy BlueKernel supports.
 // this function is a no-op in fact.
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_setschedparam(
     thread: pthread_t,
     policy: c_int,
@@ -208,7 +208,7 @@ pub unsafe extern "C" fn pthread_setschedparam(
     }
     // Only SCHED_RR is supported now. set policy is an non-op.
     // Only set current thread's priority for now.
-    let prio = (*param).sched_priority as c_int;
+    let prio = unsafe { (*param).sched_priority } as c_int;
     let ret = bk_syscall!(SetSchedParam, thread as usize, prio) as isize;
     if ret < 0 {
         return ret as c_int;
@@ -217,21 +217,21 @@ pub unsafe extern "C" fn pthread_setschedparam(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_setconcurrency(_concurrency: c_int) -> c_int {
     // BlueKernel supports only 1:1 thread model, so this function is a no-op.
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_setschedprio(_thread: pthread_t, _prio: c_int) -> c_int {
     // BlueKernel currently doesn't support setting thread priority.
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_cancel(thread: pthread_t) -> c_int {
     // now BlueKernel doesn't support full posix cancelation
     // just set cancel_enabled to false, so pthread_testcancel will exit this thread.
@@ -243,7 +243,7 @@ pub unsafe extern "C" fn pthread_cancel(thread: pthread_t) -> c_int {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_setcancelstate(state: c_int, oldstate: *mut c_int) -> c_int {
     // BlueKernel currently hasn't signal support, no cancel point is implemented.
     // just exit when pthread_testcancel is called.
@@ -252,10 +252,12 @@ pub unsafe extern "C" fn pthread_setcancelstate(state: c_int, oldstate: *mut c_i
         panic!("{:x}: My tcb is gone!", tid)
     };
     if !oldstate.is_null() {
-        *oldstate = if tcb.cancel_enabled.load(Ordering::SeqCst) {
-            PTHREAD_CANCEL_ENABLE
-        } else {
-            PTHREAD_CANCEL_DISABLE
+        unsafe {
+            *oldstate = if tcb.cancel_enabled.load(Ordering::SeqCst) {
+                PTHREAD_CANCEL_ENABLE
+            } else {
+                PTHREAD_CANCEL_DISABLE
+            }
         }
     }
     match state {
@@ -267,7 +269,7 @@ pub unsafe extern "C" fn pthread_setcancelstate(state: c_int, oldstate: *mut c_i
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_setcanceltype(_ty: c_int, _oldty: *mut c_int) -> c_int {
     // BlueKernel currently hasn't signal support, no cancel point is implemented.
     // just exit when pthread_testcancel is called.
@@ -275,7 +277,7 @@ pub extern "C" fn pthread_setcanceltype(_ty: c_int, _oldty: *mut c_int) -> c_int
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_testcancel() {
     let tid = pthread_self();
     let Some(tcb) = get_tcb(tid) else {
@@ -288,7 +290,7 @@ pub extern "C" fn pthread_testcancel() {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_detach(t: pthread_t) -> c_int {
     let Some(tcb) = get_tcb(t) else {
         return ESRCH;
@@ -308,7 +310,7 @@ pub extern "C" fn pthread_detach(t: pthread_t) -> c_int {
 // This is used in thread not created by `pthread_create`. Usually at the entry
 // of POSIX subsystem.
 /// cbindgen:ignore
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn register_my_posix_tcb() {
     let tid = pthread_self();
     register_posix_tcb(tid as usize, core::ptr::null_mut());
@@ -334,7 +336,7 @@ extern "C" fn register_posix_tcb(tid: usize, _spawn_args_ptr: *mut SpawnArgs) {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_create(
     thread: *mut pthread_t,
     attr: *const pthread_attr_t,
@@ -380,7 +382,7 @@ pub extern "C" fn pthread_create(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_join(tid: pthread_t, retval: *mut *mut c_void) -> c_int {
     if tid == pthread_self() {
         return EDEADLK;
@@ -396,7 +398,7 @@ pub extern "C" fn pthread_join(tid: pthread_t, retval: *mut *mut c_void) -> c_in
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_exit(retval: *mut c_void) -> ! {
     // pthread_detach must fail if tcb.state != RUNNING.
     let tid = pthread_self();
@@ -442,7 +444,7 @@ pub extern "C" fn pthread_exit(retval: *mut c_void) -> ! {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_setspecific(key: pthread_key_t, val: *const c_void) -> c_int {
     if !KEYS.read().contains_key(&key) {
         return EINVAL;
@@ -456,7 +458,7 @@ pub extern "C" fn pthread_setspecific(key: pthread_key_t, val: *const c_void) ->
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_getspecific(key: pthread_key_t) -> *mut c_void {
     if !KEYS.read().contains_key(&key) {
         return core::ptr::null_mut();
@@ -477,19 +479,19 @@ pub extern "C" fn pthread_getspecific(key: pthread_key_t) -> *mut c_void {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_equal(t1: pthread_t, t2: pthread_t) -> c_int {
     (t1 == t2) as c_int
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_getconcurrency() -> c_int {
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_getcpuclockid(_thread: pthread_t, clock_id: *mut clockid_t) -> c_int {
     // todo
     unsafe {
@@ -499,28 +501,28 @@ pub extern "C" fn pthread_getcpuclockid(_thread: pthread_t, clock_id: *mut clock
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_set_name_np(_t: pthread_t, _name: *const i8) -> c_int {
     // TODO
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_condattr_init(condattr: *mut pthread_condattr_t) -> c_int {
     unsafe { condattr.cast::<CondAttr>().write(CondAttr::default()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_condattr_destroy(condattr: *mut pthread_condattr_t) -> c_int {
     unsafe { core::ptr::drop_in_place(condattr.cast::<CondAttr>()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_condattr_getclock(
     condattr: *const pthread_condattr_t,
     clock: *mut clockid_t,
@@ -530,7 +532,7 @@ pub extern "C" fn pthread_condattr_getclock(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_condattr_getpshared(
     condattr: *const pthread_condattr_t,
     pshared: *mut c_int,
@@ -540,7 +542,7 @@ pub extern "C" fn pthread_condattr_getpshared(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_condattr_setpshared(
     condattr: *mut pthread_condattr_t,
     pshared: c_int,
@@ -550,7 +552,7 @@ pub extern "C" fn pthread_condattr_setpshared(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_condattr_setclock(
     condattr: *mut pthread_condattr_t,
     clock: clockid_t,
@@ -560,7 +562,7 @@ pub extern "C" fn pthread_condattr_setclock(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_cond_init(
     cond: *mut pthread_cond_t,
     _attr: *const pthread_condattr_t,
@@ -570,20 +572,20 @@ pub extern "C" fn pthread_cond_init(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_cond_signal(cond: *mut pthread_cond_t) -> c_int {
     unsafe { (*cond.cast::<Cond>()).signal() }.map_or_else(|e| e, |_| 0)
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_cond_destroy(cond: *mut pthread_cond_t) -> c_int {
     unsafe { core::ptr::drop_in_place(cond.cast::<Cond>()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_cond_wait(
     cond: *mut pthread_cond_t,
     mutex: *mut pthread_mutex_t,
@@ -592,7 +594,7 @@ pub extern "C" fn pthread_cond_wait(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_cond_timedwait(
     cond: *mut pthread_cond_t,
     mutex: *mut pthread_mutex_t,
@@ -603,7 +605,7 @@ pub extern "C" fn pthread_cond_timedwait(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_key_create(
     key: *mut pthread_key_t,
     dtor: Option<extern "C" fn(_: *mut c_void)>,
@@ -621,35 +623,35 @@ pub extern "C" fn pthread_key_create(
 // We expect user to have released resources bound to this key in all threads before
 // calling this function.
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_key_delete(key: pthread_key_t) -> c_int {
     KEYS.write().remove(&key);
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutexattr_init(attr: *mut pthread_mutexattr_t) -> c_int {
     unsafe { attr.cast::<MutexAttr>().write(MutexAttr::default()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutexattr_destroy(attr: *mut pthread_mutexattr_t) -> c_int {
     unsafe { core::ptr::drop_in_place(attr.cast::<MutexAttr>()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutexattr_settype(attr: *mut pthread_mutexattr_t, ty: c_int) -> c_int {
     unsafe { (*attr.cast::<MutexAttr>()).ty = ty };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutex_init(
     mutex: *mut pthread_mutex_t,
     attr: *const pthread_mutexattr_t,
@@ -670,39 +672,39 @@ pub extern "C" fn pthread_mutex_init(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutex_lock(mutex: *mut pthread_mutex_t) -> c_int {
     unsafe { (*mutex.cast::<Mutex>()).lock() }.map_or_else(|e| e, |_| 0)
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutex_unlock(mutex: *mut pthread_mutex_t) -> c_int {
     unsafe { (*mutex.cast::<Mutex>()).unlock() }.map_or_else(|e| e, |_| 0)
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutex_trylock(mutex: *mut pthread_mutex_t) -> c_int {
     unsafe { (*mutex.cast::<Mutex>()).try_lock() }.map_or_else(|e| e, |_| 0)
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_mutex_destroy(mutex: *mut pthread_mutex_t) -> c_int {
     unsafe { core::ptr::drop_in_place(mutex.cast::<Mutex>()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_rwlock_rdlock(rwlock: *mut pthread_rwlock_t) -> c_int {
     unsafe { (*rwlock.cast::<RsRwLock>()).try_acquire_read_lock() }
         .map_or_else(|e| e as c_int, |_| 0)
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_rwlock_timedrdlock(
     rwlock: *mut pthread_rwlock_t,
     abstime: *const timespec,
@@ -713,7 +715,7 @@ pub extern "C" fn pthread_rwlock_timedrdlock(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_rwlock_timedwrlock(
     rwlock: *mut pthread_rwlock_t,
     abstime: *const timespec,
@@ -724,83 +726,83 @@ pub extern "C" fn pthread_rwlock_timedwrlock(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_rwlock_tryrdlock(rwlock: *mut pthread_rwlock_t) -> c_int {
     unsafe { (*rwlock.cast::<RsRwLock>()).try_acquire_read_lock() }
         .map_or_else(|e| e as c_int, |_| 0)
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_rwlockattr_destroy(attr: *mut pthread_rwlockattr_t) -> c_int {
     unsafe { core::ptr::drop_in_place(attr) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_rwlockattr_getpshared(
     attr: *const pthread_rwlockattr_t,
     pshared: *mut c_int,
 ) -> c_int {
-    core::ptr::write(pshared, (*attr.cast::<RwlockAttr>()).pshared.raw());
+    unsafe { core::ptr::write(pshared, (*attr.cast::<RwlockAttr>()).pshared.raw()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pthread_rwlockattr_init(attr: *mut pthread_rwlockattr_t) -> c_int {
     unsafe { attr.cast::<RwlockAttr>().write(RwlockAttr::default()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_rwlockattr_setpshared(
     attr: *mut pthread_rwlockattr_t,
     pshared: c_int,
 ) -> c_int {
-    (*attr.cast::<RwlockAttr>()).pshared =
-        Pshared::from_raw(pshared).expect("invalid pshared in pthread_rwlockattr_setpshared");
+    unsafe {
+        (*attr.cast::<RwlockAttr>()).pshared =
+            Pshared::from_raw(pshared).expect("invalid pshared in pthread_rwlockattr_setpshared")
+    };
 
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrierattr_init(attr: *mut pthread_barrierattr_t) -> c_int {
-    core::ptr::write(attr.cast::<BarrierAttr>(), BarrierAttr::default());
+    unsafe { core::ptr::write(attr.cast::<BarrierAttr>(), BarrierAttr::default()) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrierattr_destroy(attr: *mut pthread_barrierattr_t) -> c_int {
     unsafe { core::ptr::drop_in_place(attr) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrier_destroy(barrier: *mut pthread_barrier_t) -> c_int {
     // Behavior is undefined if any thread is currently waiting when this is called.
 
     // No-op, currently.
-    core::ptr::drop_in_place(barrier.cast::<Barrier>());
+    unsafe { core::ptr::drop_in_place(barrier.cast::<Barrier>()) };
 
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrier_init(
     barrier: *mut pthread_barrier_t,
     attr: *const pthread_barrierattr_t,
     count: c_uint,
 ) -> c_int {
-    let _attr = attr
-        .cast::<BarrierAttr>()
-        .as_ref()
+    let _attr = unsafe { attr.cast::<BarrierAttr>().as_ref() }
         .copied()
         .unwrap_or_default();
 
@@ -808,14 +810,14 @@ pub unsafe extern "C" fn pthread_barrier_init(
         return EINVAL;
     };
 
-    barrier.cast::<Barrier>().write(Barrier::new(count));
+    unsafe { barrier.cast::<Barrier>().write(Barrier::new(count)) };
     0
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrier_wait(barrier: *mut pthread_barrier_t) -> c_int {
-    let barrier = &*barrier.cast::<Barrier>();
+    let barrier = unsafe { &*barrier.cast::<Barrier>() };
 
     match barrier.wait() {
         WaitResult::NotifiedAll => PTHREAD_BARRIER_SERIAL_THREAD,
@@ -823,21 +825,21 @@ pub unsafe extern "C" fn pthread_barrier_wait(barrier: *mut pthread_barrier_t) -
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrierattr_setpshared(
     attr: *mut pthread_barrierattr_t,
     pshared: c_int,
 ) -> c_int {
-    (*attr.cast::<BarrierAttr>()).pshared = pshared;
+    unsafe { (*attr.cast::<BarrierAttr>()).pshared = pshared };
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_barrierattr_getpshared(
     attr: *const pthread_barrierattr_t,
     pshared: *mut c_int,
 ) -> c_int {
-    core::ptr::write(pshared, (*attr.cast::<BarrierAttr>()).pshared);
+    unsafe { core::ptr::write(pshared, (*attr.cast::<BarrierAttr>()).pshared) };
     0
 }
 
@@ -845,29 +847,31 @@ pub unsafe extern "C" fn pthread_barrierattr_getpshared(
 const UNLOCKED: c_int = 0;
 const LOCKED: c_int = 1;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_spin_destroy(spinlock: *mut pthread_spinlock_t) -> c_int {
-    let _spinlock = &mut *spinlock.cast::<RsSpinlock>();
+    let _spinlock = unsafe { &mut *spinlock.cast::<RsSpinlock>() };
 
     // No-op
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_spin_init(
     spinlock: *mut pthread_spinlock_t,
     _pshared: c_int,
 ) -> c_int {
-    spinlock.cast::<RsSpinlock>().write(RsSpinlock {
-        inner: AtomicI32::new(UNLOCKED),
-    });
+    unsafe {
+        spinlock.cast::<RsSpinlock>().write(RsSpinlock {
+            inner: AtomicI32::new(UNLOCKED),
+        })
+    };
 
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_spin_lock(spinlock: *mut pthread_spinlock_t) -> c_int {
-    let spinlock = &*spinlock.cast::<RsSpinlock>();
+    let spinlock = unsafe { &*spinlock.cast::<RsSpinlock>() };
 
     loop {
         match spinlock.inner.compare_exchange_weak(
@@ -883,9 +887,9 @@ pub unsafe extern "C" fn pthread_spin_lock(spinlock: *mut pthread_spinlock_t) ->
 
     0
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_spin_trylock(spinlock: *mut pthread_spinlock_t) -> c_int {
-    let spinlock = &*spinlock.cast::<RsSpinlock>();
+    let spinlock = unsafe { &*spinlock.cast::<RsSpinlock>() };
 
     match spinlock
         .inner
@@ -897,9 +901,9 @@ pub unsafe extern "C" fn pthread_spin_trylock(spinlock: *mut pthread_spinlock_t)
 
     0
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pthread_spin_unlock(spinlock: *mut pthread_spinlock_t) -> c_int {
-    let spinlock = &*spinlock.cast::<RsSpinlock>();
+    let spinlock = unsafe { &*spinlock.cast::<RsSpinlock>() };
 
     spinlock.inner.store(UNLOCKED, Ordering::Release);
 
