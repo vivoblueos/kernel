@@ -465,9 +465,7 @@ pub(crate) extern "C" fn svc_switch_context_with_hook(hook: *mut ContextSwitchHo
 pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
     svc_switch_context_with_hook(hook)
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 pub(crate) extern "C" fn jump_to_high_va() -> ! {
     unsafe {
         core::arch::naked_asm!(
@@ -479,9 +477,7 @@ pub(crate) extern "C" fn jump_to_high_va() -> ! {
         )
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 pub(crate) extern "C" fn init() -> ! {
     unsafe {
         core::arch::naked_asm!(
@@ -505,9 +501,7 @@ pub(crate) extern "C" fn init() -> ! {
         )
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub(crate) extern "C" fn start_schedule(cont: extern "C" fn() -> !) {
     let current = crate::scheduler::current_thread_ref();
     current.reset_saved_sp();
@@ -581,9 +575,7 @@ pub fn secondary_cpu_setup(psci_base: u32) {
         psci::cpu_on(psci_base, i as usize, secondary_entry, 0);
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 pub(crate) extern "C" fn switch_stack(
     to_sp: usize,
     cont: extern "C" fn(sp: usize, old_sp: usize),

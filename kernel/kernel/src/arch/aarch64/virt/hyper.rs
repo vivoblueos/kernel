@@ -105,7 +105,7 @@ fn configure_timer_el2() {
 
 #[inline]
 unsafe fn deactivate_irq(intid: u64) {
-    core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) intid, options(nostack));
+    unsafe { core::arch::asm!("msr ICC_DIR_EL1, {}", in(reg) intid, options(nostack)) };
 }
 
 #[inline]

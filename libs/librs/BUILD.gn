@@ -59,7 +59,7 @@ build_rust("librs_unittest_image") {
   testonly = true
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//external/rust:semihosting",
     "//external/rust:spin",

@@ -48,19 +48,19 @@ unsafe fn sys_alloc(size: size_t) -> *mut c_void {
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _free_r(_reent: *mut c_void, ptr: *mut c_void) {
     blueos::allocator::free(ptr as *mut u8);
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _malloc_r(_reent: *mut c_void, size: size_t) -> *mut c_void {
     unsafe { sys_alloc(size) }
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _calloc_r(
     _reent: *mut c_void,
     nmemb: size_t,
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn _calloc_r(
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _realloc_r(
     _reent: *mut c_void,
     ptr: *mut c_void,
@@ -88,12 +88,12 @@ pub unsafe extern "C" fn _realloc_r(
 // non-Windows/non-glibc targets, Provided weak so a C library
 // that does define it wins.
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn malloc_usable_size(_ptr: *mut c_void) -> size_t {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _read(fd: c_int, buf: *mut c_void, len: size_t) -> ssize_t {
     if buf.is_null() {
         return -1;
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn _read(fd: c_int, buf: *mut c_void, len: size_t) -> ssiz
     bk_syscall!(Read, fd, buf.as_mut_ptr() as *mut c_void, buf.len()) as ssize_t
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _write(fd: c_int, buf: *const c_void, len: size_t) -> ssize_t {
     if buf.is_null() {
         return -1;
@@ -111,43 +111,43 @@ pub unsafe extern "C" fn _write(fd: c_int, buf: *const c_void, len: size_t) -> s
     bk_syscall!(Write, fd, buf.as_ptr(), buf.len()) as ssize_t
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _open(path: *const u8, flags: c_int, mode: c_int) -> c_int {
     bk_syscall!(Open, path as *const i8, flags, mode.try_into().unwrap_or(0)) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _close(fd: c_int) -> c_int {
     bk_syscall!(Close, fd) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _lseek(fd: c_int, offset: off_t, whence: c_int) -> off_t {
     bk_syscall!(Lseek, fd, offset as usize, whence) as off_t
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _fstat(fd: c_int, st: *mut c_void) -> c_int {
     bk_syscall!(FStat, fd, st as *mut i8) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _isatty(fd: c_int) -> c_int {
     (fd < 3) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _kill(_pid: c_int, _sig: c_int) -> c_int {
     -1
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _getpid() -> c_int {
     // no processes
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gettimeofday(tp: *mut libc::timeval, tzp: *mut c_void) -> c_int {
     if !tp.is_null() {
         let mut ts = libc::timespec {
@@ -163,12 +163,12 @@ pub extern "C" fn gettimeofday(tp: *mut libc::timeval, tzp: *mut c_void) -> c_in
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _gettimeofday(tp: *mut libc::timeval, tzp: *mut c_void) -> c_int {
     gettimeofday(tp, tzp)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sched_yield() -> c_int {
     bk_syscall!(SchedYield) as c_int
 }

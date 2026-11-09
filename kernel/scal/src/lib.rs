@@ -20,21 +20,21 @@ pub mod platform;
 #[cfg(not(direct_syscall_handler))]
 #[macro_export]
 macro_rules! bk_syscall {
-    ($nr:expr) => {
+    ($nr:expr_2021) => {
         unsafe { $crate::platform::syscall0($nr as usize) }
     };
-    ($nr:expr, $a1:expr) => {
+    ($nr:expr_2021, $a1:expr_2021) => {
         unsafe { $crate::platform::syscall1($nr as usize, $a1 as usize) }
     };
-    ($nr:expr, $a1:expr, $a2:expr) => {
+    ($nr:expr_2021, $a1:expr_2021, $a2:expr_2021) => {
         unsafe { $crate::platform::syscall2($nr as usize, $a1 as usize, $a2 as usize) }
     };
-    ($nr:expr, $a1:expr, $a2:expr, $a3:expr) => {
+    ($nr:expr_2021, $a1:expr_2021, $a2:expr_2021, $a3:expr_2021) => {
         unsafe {
             $crate::platform::syscall3($nr as usize, $a1 as usize, $a2 as usize, $a3 as usize)
         }
     };
-    ($nr:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr) => {
+    ($nr:expr_2021, $a1:expr_2021, $a2:expr_2021, $a3:expr_2021, $a4:expr_2021) => {
         unsafe {
             $crate::platform::syscall4(
                 $nr as usize,
@@ -45,7 +45,7 @@ macro_rules! bk_syscall {
             )
         }
     };
-    ($nr:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr) => {
+    ($nr:expr_2021, $a1:expr_2021, $a2:expr_2021, $a3:expr_2021, $a4:expr_2021, $a5:expr_2021) => {
         unsafe {
             $crate::platform::syscall5(
                 $nr as usize,
@@ -57,7 +57,7 @@ macro_rules! bk_syscall {
             )
         }
     };
-    ($nr:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+    ($nr:expr_2021, $a1:expr_2021, $a2:expr_2021, $a3:expr_2021, $a4:expr_2021, $a5:expr_2021, $a6:expr_2021) => {
         unsafe {
             $crate::platform::syscall6(
                 $nr as usize,

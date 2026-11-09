@@ -73,16 +73,16 @@ fn oops(info: &core::panic::PanicInfo) -> ! {
 }
 
 // workaround
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _fini() {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static __dso_handle: usize = 0;
 
 const _UVRSC_CORE: u32 = 0;
 const _UVRSD_UINT32: u32 = 0;
 
-extern "C" {
+unsafe extern "C" {
     fn _Unwind_Backtrace(
         callback: unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int,
         arg: *mut c_void,

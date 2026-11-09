@@ -18,7 +18,7 @@ use blueos_scal::bk_syscall;
 
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/getaddrinfo.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn getaddrinfo(
     node: *const libc::c_char,
     service: *const libc::c_char,
@@ -30,14 +30,14 @@ pub unsafe extern "C" fn getaddrinfo(
 
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/freeaddrinfo.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn freeaddrinfo(res: *mut libc::addrinfo) {
     bk_syscall!(FreeAddrinfo, res);
 }
 
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/gai_strerror.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn gai_strerror(errcode: libc::c_int) -> *const libc::c_char {
     let err = CString::new("Unimplement method").unwrap();
     err.as_ptr()

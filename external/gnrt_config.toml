@@ -161,7 +161,7 @@ license_files = ["LICENSE-MIT"]
 license_files = ["LICENSE-MIT"]
 # Support BlueOS targets and preserve existing source adaptations.
 patches = [
-    "//external/rust/patches/esp-hal-1.1.1/001-stable-toolchain-compat.patch",
+    "//external/rust/patches/esp-hal-1.1.1/001-blueos-integration.patch",
 ]
 # BlueKernel provides its own startup code and trap handlers. Chip features
 # pull in esp-riscv-rt even with esp-hal's `rt` feature disabled, so omit this
