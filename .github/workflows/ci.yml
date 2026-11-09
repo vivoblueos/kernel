@@ -13,6 +13,7 @@
 # limitations under the License.
 name: BlueKernel CI
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -33,7 +34,7 @@ jobs:
     container:
       image: ghcr.io/vivoblueos/kernel:latest
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -45,6 +46,9 @@ jobs:
           BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.sha }}
         run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            BASE_SHA=$(git merge-base refs/remotes/origin/main "$HEAD_SHA")
+          fi
           python3 tools/ci/check_changes.py \
             --base "$BASE_SHA" \
             --head "$HEAD_SHA"
@@ -55,7 +59,7 @@ jobs:
     container:
       image: ghcr.io/vivoblueos/kernel:latest
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -138,7 +142,7 @@ jobs:
         build_type: [debug, release]
         syscall_mode: [swi, dsc]
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -187,8 +191,27 @@ jobs:
         exclude:
           - board: none
             syscall_mode: dsc
+        include:
+          - board: qemu_virt64_aarch64
+            build_type: debug
+            syscall_mode: linux_abi
+          - board: qemu_virt64_aarch64
+            build_type: release
+            syscall_mode: linux_abi
+          - board: rk3568
+            build_type: debug
+            syscall_mode: linux_abi
+          - board: rk3568
+            build_type: release
+            syscall_mode: linux_abi
+          - board: qemu_riscv64
+            build_type: debug
+            syscall_mode: linux_abi
+          - board: qemu_riscv64
+            build_type: release
+            syscall_mode: linux_abi
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -211,14 +234,14 @@ jobs:
             --build-type "$BUILD_TYPE" \
             --syscall-mode "$SYSCALL_MODE"
   miri:
-    name: allocator Miri
+    name: MIRI check
     needs: resolve-dependencies
     timeout-minutes: 90
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/vivoblueos/kernel:latest
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -239,6 +262,10 @@ jobs:
             --args="board=\"qemu_mps2_an385\" build_type=\"debug\" miri_path=\"$MIRI_PATH\" miri_sysroot=\"$MIRI_SYSROOT\""
           ninja -C out/qemu_mps2_an385.debug.miri \
             kernel/allocator:check_allocator_by_miri
+      - name: Check RwLock with Miri Tree Borrows
+        run: |
+          ninja -C out/qemu_mps2_an385.debug.miri \
+            kernel/infra:check_rwlock_by_miri
   gate:
     name: BlueKernel CI
     if: ${{ always() }}
@@ -247,7 +274,7 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Require every PR CI job to pass
+      - name: Require every CI job to pass
         env:
           STATIC_CHECKS_RESULT: ${{ needs.static-checks.result }}
           DEPENDENCIES_RESULT: ${{ needs.resolve-dependencies.result }}

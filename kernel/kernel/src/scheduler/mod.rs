@@ -204,7 +204,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     #[cfg(thread_stats)]
     let cycles = time::current_clock_cycles();
     #[cfg(thread_stats)]
-    next.set_start_cycles(cycles);
+    next.lock().set_start_cycles(cycles);
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     let next_saved_sp = spin_until_ready_to_run(&next);
@@ -217,7 +217,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     debug_assert_eq!(ok, Ok(()));
     let mut old = set_current_thread(next);
     #[cfg(thread_stats)]
-    old.increment_cycles(cycles);
+    old.lock().increment_cycles(cycles);
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -272,7 +272,7 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
     debug_assert!(!crate::irq::is_in_irq());
     let old = current_thread_ref();
     debug_assert_eq!(old.preempt_count(), 0);
-    let Some(next) = next_preferred_thread(old.priority()) else {
+    let Some(next) = next_preferred_thread(old.priority(), PreferMode::StrictHigher) else {
         #[cfg(debugging_scheduler)]
         crate::trace!("[TH:0x{:x}] keeps running", Thread::id(old));
         return old_sp;
@@ -336,7 +336,7 @@ pub fn yield_me() {
 pub fn relinquish_me() {
     debug_assert!(arch::local_irq_enabled());
     let old = current_thread_ref();
-    let Some(next) = next_preferred_thread(old.priority()) else {
+    let Some(next) = next_preferred_thread(old.priority(), PreferMode::SameOrHigher) else {
         return;
     };
     debug_assert_eq!(next.state(), thread::READY);
@@ -412,13 +412,40 @@ pub fn yield_me_now_or_later() {
     if current_thread_ref().preempt_count() != 0 {
         return;
     }
-    arch::pend_switch_context();
+    // Skip the pendsv round-trip only when no same-or-higher-priority thread is
+    // runnable: pendsv is not free, and critical-section exits call this at
+    // high frequency even when the current thread will just resume. We must
+    // yield to same-priority threads too, because arch::pend_switch_context's
+    // non-IRQ path delegates to relinquish_me, which selects with
+    // PreferMode::SameOrHigher. Restricting to strictly-higher priority strands
+    // same-priority runnable threads in the ready queue (round_robin is off),
+    // so their stacks are never freed and stress_barrier leaks ~126 KB and OOMs.
+    match global_scheduler::highest_ready_priority() {
+        Some(p) if p <= current_thread_ref().priority() => arch::pend_switch_context(),
+        _ => {}
+    }
 }
 
 pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
     #[cfg(debugging_scheduler)]
     crate::trace!("[TH:0x{:x}] is waking up all threads", current_thread_id());
     let woken = wait_queue::wake_up_all(&mut w);
+    drop(w);
+    if woken > 0 {
+        yield_me_now_or_later();
+    }
+    woken
+}
+
+// wake_up_all, but injects `err` into each woken waiter. Same post-wake yield.
+pub fn wake_up_all_with_error(mut w: SpinLockGuard<'_, WaitQueue>, err: i32) -> usize {
+    #[cfg(debugging_scheduler)]
+    crate::trace!(
+        "[TH:0x{:x}] is waking up all threads with error {}",
+        current_thread_id(),
+        err
+    );
+    let woken = wait_queue::wake_up_all_with_error(&mut w, err);
     drop(w);
     if woken > 0 {
         yield_me_now_or_later();
@@ -452,8 +479,8 @@ pub extern "C" fn schedule() -> ! {
 pub fn current_thread() -> ThreadNode {
     let _guard = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
-    let t = unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() };
-    t
+
+    unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() }
 }
 
 #[inline]

@@ -18,7 +18,7 @@ use std::{
     thread,
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 fn main() {
     thread::Builder::new()
         .name("shell".to_string())

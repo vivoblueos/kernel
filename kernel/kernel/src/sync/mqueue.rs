@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use super::{ISpinLock, SpinLock, SpinLockGuard};
+use super::{SpinLock, SpinLockGuard};
 use crate::{
     allocator,
     error::{code, Error},
@@ -20,7 +20,7 @@ use crate::{
     support::align_up_size,
     thread, time,
     time::Tick,
-    types::{impl_simple_intrusive_adapter, Arc},
+    types::Arc,
     with_iou,
 };
 use alloc::alloc::{alloc, dealloc, Layout};
@@ -28,10 +28,8 @@ use blueos_infra::ringbuffer::BoxedRingBuffer;
 use core::{
     ops::DerefMut,
     slice,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
-
-impl_simple_intrusive_adapter!(OffsetOfLock, MessageQueue, lock);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SendMode {
@@ -42,6 +40,13 @@ pub enum SendMode {
 pub const SEND_TYPE: usize = 0;
 pub const RECV_TYPE: usize = 1;
 
+/// A freshly constructed or `init`-ed queue. send/recv proceed normally.
+const STATE_ACTIVE: u8 = 0;
+/// Set by reset()/delete() teardown. send/recv on a DEACTIVE queue return
+/// Err(code::EBADF) so a waiter woken across delete() exits instead of
+/// touching freed backing memory.
+const STATE_DEACTIVE: u8 = 1;
+
 #[derive(Debug)]
 pub struct MessageQueue {
     node_size: usize,
@@ -49,40 +54,72 @@ pub struct MessageQueue {
     accessible_count: [AtomicU32; 2],
     // pend_queues contain a receiver pending queue and a sender pending queue
     pend_queues: [SpinLock<WaitQueue>; 2],
-    queue_buffer: BoxedRingBuffer,
-    // use spinlock to protect the structure,
-    lock: ISpinLock<MessageQueue, OffsetOfLock>,
+    // Serializes access to the message buffer.
+    queue_buffer: SpinLock<BoxedRingBuffer>,
+    // ACTIVE on construction/init; DEACTIVE during reset()/delete() teardown.
+    // Checked at the top of the send/recv pend loops to return EBADF.
+    state: AtomicU8,
 }
 
 impl MessageQueue {
-    pub fn new(node_size: usize, node_count: u32, buf: *mut u8) -> Self {
+    /// Construct a message queue. Returns `None` if the backing-buffer size
+    /// computation would overflow `usize` (the `(addr + align)` term inside
+    /// `align_up_size` overflows before the `-1` on a 32-bit target when
+    /// `node_size > usize::MAX - usize_sz`, and the per-node/total
+    /// multiplications can also overflow). The happy path is identical to
+    /// the prior non-`Option` constructor.
+    pub fn new(node_size: usize, node_count: u32, buf: *mut u8) -> Option<Self> {
         debug_assert!(node_size > 0 && node_count > 0);
 
-        let node_align_size = align_up_size(node_size, core::mem::size_of::<usize>());
-        let total_size = (node_align_size + core::mem::size_of::<usize>()) * node_count as usize;
+        let usize_sz = core::mem::size_of::<usize>();
+        // Guard the align_up_size(addr, usize_sz) intermediate: its
+        // `(addr + align)` term overflows before the `-1` is applied, so
+        // reject before calling it.
+        if node_size > usize::MAX - usize_sz {
+            return None;
+        }
+        let node_align_size = align_up_size(node_size, usize_sz);
+        let per_node = node_align_size.checked_add(usize_sz)?;
+        let total_size = per_node.checked_mul(node_count as usize)?;
 
-        Self {
+        Some(Self {
             node_size: node_align_size + core::mem::size_of::<usize>(),
             node_count,
             accessible_count: [AtomicU32::new(node_count), AtomicU32::new(0)],
             pend_queues: [const { SpinLock::new(WaitQueue::new()) }; 2],
-            queue_buffer: if buf.is_null() {
+            queue_buffer: SpinLock::new(if buf.is_null() {
                 BoxedRingBuffer::new(total_size)
             } else {
                 BoxedRingBuffer::new_with_mem(total_size, buf)
-            },
-            lock: ISpinLock::new(),
-        }
+            }),
+            state: AtomicU8::new(STATE_ACTIVE),
+        })
+    }
+
+    /// Construct + wrap in `Arc` + `init`. Returns `None` exactly when
+    /// `new` does. Lets syscall/adapter callers map overflow to a
+    /// NULL/errno failure without `expect`.
+    pub fn create(node_size: usize, node_count: u32, buf: *mut u8) -> Option<Arc<Self>> {
+        let mq = Arc::new(Self::new(node_size, node_count, buf)?);
+        mq.init();
+        Some(mq)
     }
 
     pub fn init(&self) -> bool {
+        self.state.store(STATE_ACTIVE, Ordering::Release);
+        {
+            let mut buffer_guard = self.lock_buffer();
+            buffer_guard.reset();
+        }
+        self.accessible_count[SEND_TYPE].store(self.node_count, Ordering::Relaxed);
+        self.accessible_count[RECV_TYPE].store(0, Ordering::Relaxed);
         self.pend_queues[SEND_TYPE].irqsave_lock().init()
             && self.pend_queues[RECV_TYPE].irqsave_lock().init()
     }
 
     #[inline]
-    pub fn lock(&self) -> SpinLockGuard<'_, Self> {
-        self.lock.irqsave_lock()
+    fn lock_buffer(&self) -> SpinLockGuard<'_, BoxedRingBuffer> {
+        self.queue_buffer.irqsave_lock()
     }
 
     #[inline]
@@ -96,12 +133,12 @@ impl MessageQueue {
     }
 
     #[inline]
-    pub fn increment_sendable_count(&self) {
+    fn increment_sendable_count(&self) {
         self.accessible_count[SEND_TYPE].fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline]
-    pub fn decrement_sendable_count(&self) {
+    fn decrement_sendable_count(&self) {
         self.accessible_count[SEND_TYPE].fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -111,12 +148,12 @@ impl MessageQueue {
     }
 
     #[inline]
-    pub fn increment_recvable_count(&self) {
+    fn increment_recvable_count(&self) {
         self.accessible_count[RECV_TYPE].fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline]
-    pub fn decrement_recvable_count(&self) {
+    fn decrement_recvable_count(&self) {
         self.accessible_count[RECV_TYPE].fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -147,18 +184,21 @@ impl MessageQueue {
         }
 
         let this_thread = scheduler::current_thread();
-        let mut queue = self.lock();
+        let mut buffer_guard = self.lock_buffer();
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
         let mut start = Tick::now();
         while self.sendable_count() == 0 {
+            if self.state.load(Ordering::Acquire) == STATE_DEACTIVE {
+                return Err(code::EBADF);
+            }
             if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
             }
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            send_queue.take_irq_guard(&mut queue);
-            drop(queue);
+            send_queue.take_irq_guard(&mut buffer_guard);
+            drop(buffer_guard);
             let reached_deadline;
             with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
@@ -169,9 +209,14 @@ impl MessageQueue {
                 )
                 .unwrap();
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(send_queue));
-                queue = self.lock();
+                buffer_guard = self.lock_buffer();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
+                // ERESET injected by reset()/delete()? Bail out of send.
+                let werr = this_thread.take_wait_error();
+                if werr != 0 {
+                    return Err(Error::from_errno(werr));
+                }
             });
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
@@ -183,38 +228,38 @@ impl MessageQueue {
             }
         }
         drop(send_queue);
-        queue.decrement_sendable_count();
-        let mut sender = unsafe { queue.queue_buffer.writer() };
+        self.decrement_sendable_count();
+        let mut sender = unsafe { buffer_guard.writer() };
         let dst: &mut [u8];
         if urgent == SendMode::Normal {
             dst = sender.push_slice();
             dst[head_size..(head_size + size)].copy_from_slice(&buffer[0..size]);
             unsafe { *(dst.as_ptr() as *mut usize) = size };
-            sender.push_done(queue.node_size);
+            sender.push_done(self.node_size);
         } else {
             let [(end, len0), (start, len1)] = sender.push_bufs();
             if len1 != 0 {
-                debug_assert!(len1 >= queue.node_size);
+                debug_assert!(len1 >= self.node_size);
                 dst = unsafe {
-                    slice::from_raw_parts_mut(start.add(len1 - queue.node_size), queue.node_size)
+                    slice::from_raw_parts_mut(start.add(len1 - self.node_size), self.node_size)
                 };
             } else {
-                debug_assert!(len0 >= queue.node_size);
+                debug_assert!(len0 >= self.node_size);
                 dst = unsafe {
-                    slice::from_raw_parts_mut(end.add(len0 - queue.node_size), queue.node_size)
+                    slice::from_raw_parts_mut(end.add(len0 - self.node_size), self.node_size)
                 };
             }
 
             dst[head_size..(head_size + size)].copy_from_slice(&buffer[0..size]);
             unsafe { *(dst.as_ptr() as *mut usize) = size };
-            sender.push_front_done(queue.node_size);
+            sender.push_front_done(self.node_size);
         }
 
-        queue.increment_recvable_count();
-        let mut recv_queue = queue.pend_queues[RECV_TYPE].irqsave_lock();
+        self.increment_recvable_count();
+        let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
         if MessageQueue::wakeup_pend_receiver(&mut recv_queue) {
             drop(recv_queue);
-            drop(queue);
+            drop(buffer_guard);
             scheduler::yield_me_now_or_later();
         }
 
@@ -229,18 +274,21 @@ impl MessageQueue {
         let head_size = core::mem::size_of::<usize>();
 
         let this_thread = scheduler::current_thread();
-        let mut queue = self.lock();
+        let mut buffer_guard = self.lock_buffer();
         let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
         let mut start = Tick::now();
         while self.recvable_count() == 0 {
+            if self.state.load(Ordering::Acquire) == STATE_DEACTIVE {
+                return Err(code::EBADF);
+            }
             if timeout.0 == 0 {
                 return Err(code::ETIMEDOUT);
             }
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            recv_queue.take_irq_guard(&mut queue);
-            drop(queue);
+            recv_queue.take_irq_guard(&mut buffer_guard);
+            drop(buffer_guard);
             let reached_deadline;
             with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
@@ -251,9 +299,14 @@ impl MessageQueue {
                 )
                 .unwrap();
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(recv_queue));
-                queue = self.lock();
+                buffer_guard = self.lock_buffer();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
+                // ERESET injected by reset()/delete()? Bail out of recv.
+                let werr = this_thread.take_wait_error();
+                if werr != 0 {
+                    return Err(Error::from_errno(werr));
+                }
             });
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
@@ -265,8 +318,8 @@ impl MessageQueue {
             }
         }
         drop(recv_queue);
-        queue.decrement_recvable_count();
-        let mut receiver = unsafe { queue.queue_buffer.reader() };
+        self.decrement_recvable_count();
+        let mut receiver = unsafe { buffer_guard.reader() };
         let src = receiver.pop_slice();
         let msg_size = unsafe { *(src.as_ptr() as *const usize) };
         if msg_size < cpysize {
@@ -274,35 +327,77 @@ impl MessageQueue {
         }
 
         buffer[0..cpysize].copy_from_slice(&src[head_size..(head_size + cpysize)]);
-        receiver.pop_done(queue.node_size);
-        queue.increment_sendable_count();
+        receiver.pop_done(self.node_size);
+        self.increment_sendable_count();
 
-        let mut send_queue = queue.pend_queues[SEND_TYPE].irqsave_lock();
+        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
         if MessageQueue::wakeup_pend_receiver(&mut send_queue) {
             drop(send_queue);
-            drop(queue);
+            drop(buffer_guard);
             scheduler::yield_me_now_or_later();
         }
         Ok(())
     }
 
-    pub fn reset(&self) {
-        let mut queue = self.lock();
+    /// Wake both pend queues with ERESET, flush the ringbuffer, restore the
+    /// accessible counts to `final_*`, and flip state to STATE_DEACTIVE — all
+    /// under disable_preempt so woken waiters (now READY) cannot be scheduled
+    /// against us mid-teardown on UP. Does NOT yield: the yield point is the
+    /// caller's responsibility, because reset() must flip state back to ACTIVE
+    /// *before* yielding (so a woken receiver re-parks instead of spinning on
+    /// EBADF), while delete() must yield *after* DEACTIVE (so woken waiters
+    /// observe DEACTIVE and exit before the caller frees the backing memory).
+    fn deactivate(&self, final_sendable: u32, final_recvable: u32) {
+        let cur = scheduler::current_thread();
+        cur.disable_preempt();
 
-        // Wakeup the sender thread.
-        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
-        for val in send_queue.iter() {
-            let t = val.thread.clone();
-            scheduler::queue_ready_thread(thread::SUSPENDED, t);
+        {
+            let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+            let _woken =
+                wait_queue::wake_up_all_with_error(send_queue.deref_mut(), code::ERESET.to_errno());
         }
-        drop(send_queue);
-        // Reset the ringbuffer.
-        queue.queue_buffer.reset();
+        {
+            let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
+            let _woken =
+                wait_queue::wake_up_all_with_error(recv_queue.deref_mut(), code::ERESET.to_errno());
+        }
 
-        self.accessible_count[SEND_TYPE].store(self.node_count, Ordering::Relaxed);
-        self.accessible_count[RECV_TYPE].store(0, Ordering::Relaxed);
+        // Reset the ringbuffer through its buffer guard.
+        let mut buffer_guard = self.lock_buffer();
+        buffer_guard.reset();
+        drop(buffer_guard);
 
-        drop(queue);
+        self.accessible_count[SEND_TYPE].store(final_sendable, Ordering::Relaxed);
+        self.accessible_count[RECV_TYPE].store(final_recvable, Ordering::Relaxed);
+        self.state.store(STATE_DEACTIVE, Ordering::Release);
+
+        cur.enable_preempt();
+    }
+
+    pub fn reset(&self) {
+        // reset() keeps the queue usable: deactivate (wake waiters with
+        // ERESET, flush the ringbuffer, restore counts to (node_count, 0))
+        // then flip back to ACTIVE. CRITICAL INVARIANT: STATE_ACTIVE MUST
+        // be stored BEFORE yield_me_now_or_later — otherwise a woken
+        // receiver that preempts us re-enters recv, sees STATE_DEACTIVE,
+        // and returns EBADF without suspending, leaving the reset caller
+        // unable to resume and store ACTIVE. deactivate() does not yield;
+        // we own the yield here, after the ACTIVE flip.
+        self.deactivate(self.node_count, 0);
+        self.state.store(STATE_ACTIVE, Ordering::Release);
+        scheduler::yield_me_now_or_later();
+    }
+
+    pub fn delete(&self) {
+        // delete() = "deactivate and keep DEACTIVE": wakes all waiters with
+        // ERESET, flushes the ringbuffer, zeros counts. The backing
+        // MessageQueue memory is freed by the caller (e.g. Box::from_raw in
+        // the adapter), so we must finish all state mutation before
+        // yielding — disable_preempt inside deactivate blocks woken waiters
+        // from being scheduled mid-teardown. We yield here, AFTER state is
+        // DEACTIVE, so woken waiters observe DEACTIVE on resume and exit
+        // send/recv with EBADF before the caller frees the backing memory.
+        self.deactivate(0, 0);
         scheduler::yield_me_now_or_later();
     }
 }
@@ -313,13 +408,21 @@ unsafe impl Sync for MessageQueue {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        scheduler,
+        sync::{wait_until, wake},
+        thread,
+    };
     use blueos_test_macro::test;
-    use core::ptr;
+    use core::{
+        ptr,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
     const NO_WAITING: Tick = Tick(0);
 
     #[test]
     fn test_message_init() {
-        let queue = MessageQueue::new(4, 4, ptr::null_mut());
+        let queue = MessageQueue::new(4, 4, ptr::null_mut()).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -332,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_message_send() {
-        let queue = MessageQueue::new(4, 4, ptr::null_mut());
+        let queue = MessageQueue::new(4, 4, ptr::null_mut()).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -367,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_message_send_urgent() {
-        let queue = MessageQueue::new(4, 4, ptr::null_mut());
+        let queue = MessageQueue::new(4, 4, ptr::null_mut()).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -402,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_message_send_recv() {
-        let queue = MessageQueue::new(4, 4, ptr::null_mut());
+        let queue = MessageQueue::new(4, 4, ptr::null_mut()).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -436,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_message_send_outtime() {
-        let queue = MessageQueue::new(4, 2, ptr::null_mut());
+        let queue = MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -461,7 +564,7 @@ mod tests {
 
     #[test]
     fn test_message_recv_outtime() {
-        let queue = MessageQueue::new(4, 2, ptr::null_mut());
+        let queue = MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -498,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_message_multi_thread() {
-        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()));
+        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue"));
 
         // Test initialization
         let result = queue.init();
@@ -521,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_message_multi_thread1() {
-        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()));
+        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue"));
 
         // Test initialization
         let result = queue.init();
@@ -545,7 +648,7 @@ mod tests {
 
     #[test]
     fn test_message_multi_thread2() {
-        let queue = Arc::new(MessageQueue::new(4, 1, ptr::null_mut()));
+        let queue = Arc::new(MessageQueue::new(4, 1, ptr::null_mut()).expect("mqueue"));
 
         // Test initialization
         let result = queue.init();
@@ -575,7 +678,7 @@ mod tests {
     fn test_message_send_recv_with_mem() {
         let layout = Layout::from_size_align(4 * 2 * core::mem::size_of::<usize>(), 8).unwrap();
         let mem = unsafe { alloc(layout) as *mut u8 };
-        let queue = MessageQueue::new(4, 4, mem);
+        let queue = MessageQueue::new(4, 4, mem).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -611,7 +714,7 @@ mod tests {
     fn test_message_reset() {
         let layout = Layout::from_size_align(2 * 2 * core::mem::size_of::<usize>(), 8).unwrap();
         let mem = unsafe { alloc(layout) as *mut u8 };
-        let queue = MessageQueue::new(4, 2, mem);
+        let queue = MessageQueue::new(4, 2, mem).expect("mqueue");
 
         // Test initialization
         let result = queue.init();
@@ -639,5 +742,56 @@ mod tests {
         assert_eq!(buffer, [3u8, 3u8, 3u8, 3u8]);
         assert_eq!(queue.sendable_count(), 2);
         assert_eq!(queue.recvable_count(), 0);
+    }
+
+    #[test]
+    fn test_message_delete_wakes_waiter_with_ereset() {
+        // delete() must wake a recv blocked on an empty queue with Err(ERESET).
+        // Parked with Tick::MAX and no send(), so the only possible wake is delete().
+        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue"));
+        assert!(queue.init());
+
+        // 0 = blocked, 1 = Ok, 2 = other Err, 3 = Err(ERESET) (expected)
+        let observed = Arc::new(AtomicUsize::new(0));
+        let recv_queue = queue.clone();
+        let worker_observed = observed.clone();
+        let worker = thread::spawn(move || {
+            let mut buffer = [0u8; 4];
+            let res = recv_queue.recv(&mut buffer, 4, Tick::MAX);
+            let v = match res {
+                Ok(()) => 1,
+                Err(code::ERESET) => 3,
+                Err(_) => 2,
+            };
+            worker_observed.store(v, Ordering::Release);
+            wake(&worker_observed);
+        })
+        .unwrap();
+        // Wait until the worker has parked.
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        assert_eq!(observed.load(Ordering::Acquire), 0);
+        queue.delete();
+        wait_until(3, &observed);
+        assert_eq!(observed.load(Ordering::Acquire), 3);
+    }
+
+    #[test]
+    fn test_message_queue_new_overflow_returns_none() {
+        // The overflow guard in new() must reject inputs whose per-node or
+        // total size would wrap usize before BoxedRingBuffer is allocated,
+        // instead of allocating an undersized buffer and writing OOB in send.
+        assert!(MessageQueue::new(usize::MAX, 2, ptr::null_mut()).is_none());
+        let usize_sz = core::mem::size_of::<usize>();
+        // node_size so large that align_up_size(node_size, usize_sz) wraps
+        // before the per-node add: node_size = usize::MAX - (usize_sz - 1)
+        // makes align_up_size add usize_sz and wrap to 0.
+        assert!(MessageQueue::new(usize::MAX - (usize_sz - 1), 4, ptr::null_mut()).is_none());
+        // create() surfaces the same Option as new().
+        assert!(MessageQueue::create(usize::MAX, 2, ptr::null_mut()).is_none());
+        // Sanity: small literal counts must still construct successfully.
+        assert!(MessageQueue::new(4, 4, ptr::null_mut()).is_some());
+        assert!(MessageQueue::create(4, 4, ptr::null_mut()).is_some());
     }
 }

@@ -18,12 +18,12 @@ use core::{fmt, str};
 
 #[macro_export]
 macro_rules! kprintln {
-    ($fmt:expr) => ({
+    ($fmt:expr_2021) => ({
         use core::fmt::Write;
         let mut writer = $crate::console::Console {};
         writer.write_fmt(format_args!(concat!($fmt, "\n"))).unwrap();
     });
-    ($fmt:expr, $($arg:tt)*) => ({
+    ($fmt:expr_2021, $($arg:tt)*) => ({
         use core::fmt::Write;
         let mut writer = $crate::console::Console {};
         writer.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap();
@@ -35,12 +35,12 @@ macro_rules! kprintln {
 /// stage of the kernel initialization.
 #[macro_export]
 macro_rules! kearly_println {
-    ($fmt:expr) => ({
+    ($fmt:expr_2021) => ({
         use core::fmt::Write;
         let mut writer = $crate::console::EarlyConsole {};
         writer.write_fmt(format_args!(concat!($fmt, "\n"))).unwrap();
     });
-    ($fmt:expr, $($arg:tt)*) => ({
+    ($fmt:expr_2021, $($arg:tt)*) => ({
         use core::fmt::Write;
         let mut writer = $crate::console::EarlyConsole {};
         writer.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap();

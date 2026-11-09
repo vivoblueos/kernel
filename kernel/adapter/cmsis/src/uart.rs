@@ -14,24 +14,21 @@
 
 use blueos::{boards::qemu_mps2_an385::config, irq::IrqTrace, support::DisableInterruptGuard};
 
-extern "C" {
+unsafe extern "C" {
     fn Interrupt2_Handler();
     fn Interrupt3_Handler();
 }
 
 // only used for CMSIS-RTOS2 validation, so an disable guard is enough
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn uart1rx_handler() {
     let _trace = IrqTrace::new(config::UART1RX_IRQn);
     let _dig = DisableInterruptGuard::new();
-    Interrupt2_Handler()
+    unsafe { Interrupt2_Handler() }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn uart1tx_handler() {
     let _trace = IrqTrace::new(config::UART1TX_IRQn);
     let _dig = DisableInterruptGuard::new();
-    Interrupt3_Handler()
+    unsafe { Interrupt3_Handler() }
 }

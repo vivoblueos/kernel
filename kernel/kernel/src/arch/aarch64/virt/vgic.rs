@@ -369,7 +369,7 @@ pub fn cpu_init(vcpu_id: usize) {
 /// Called during guest shutdown to ensure no stale vGIC state leaks to the host.
 pub unsafe fn clear_all_lrs() {
     for i in 0..MAX_LR {
-        write_lr(i, 0);
+        unsafe { write_lr(i, 0) };
     }
 }
 
@@ -598,7 +598,7 @@ unsafe fn read_lr(index: usize) -> u64 {
     #[cfg(test)]
     {
         if index < MAX_LR {
-            MOCK_LR[index]
+            unsafe { MOCK_LR[index] }
         } else {
             0
         }
@@ -620,7 +620,7 @@ unsafe fn write_lr(index: usize, val: u64) {
     #[cfg(test)]
     {
         if index < MAX_LR {
-            MOCK_LR[index] = val;
+            unsafe { MOCK_LR[index] = val };
         }
     }
     #[cfg(not(test))]

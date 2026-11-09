@@ -47,10 +47,10 @@ fn handle_expiration(tm: &mut Timer) {
     match &mut tm.mode {
         TimerMode::Repeat(r) => {
             r.elapsed_times += 1;
-            if let Some(total) = r.total_times {
-                if r.elapsed_times >= total {
-                    tm.expire();
-                }
+            if let Some(total) = r.total_times
+                && r.elapsed_times >= total
+            {
+                tm.expire();
             }
         }
         _ => tm.expire(),
@@ -69,6 +69,12 @@ impl TimerManager {
         Self {
             timers: IntrusiveBinaryHeap::<Timer, Node, _>::new(compare_timer),
         }
+    }
+
+    /// Read-only access to the underlying heap; used by the alignment hook to
+    /// scan anchor candidates without mutating the queue.
+    pub fn timers(&self) -> &IntrusiveBinaryHeap<Timer, Node, Comparator> {
+        &self.timers
     }
 
     pub fn add<'a>(&mut self, tm: &'a mut Timer) -> Option<Iou<'a>> {

@@ -25,6 +25,11 @@ group("check_infra_by_miri") {
   deps = [ ":infra_miri_test" ]
 }
 
+group("check_rwlock_by_miri") {
+  testonly = true
+  deps = [ ":rwlock_miri_test" ]
+}
+
 group("check_infra_by_clippy") {
   testonly = true
   deps = [
@@ -34,7 +39,6 @@ group("check_infra_by_clippy") {
 }
 
 shared_deps = [
-  "//external/rust:cfg-if",
   "//external/rust:memchr",
   "//external/rust:spin",
 ]
@@ -42,7 +46,7 @@ shared_deps = [
 build_rust("blueos_infra") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = shared_deps
 }
 
@@ -55,12 +59,20 @@ miri_test("infra_miri_test") {
   deps = shared_deps
 }
 
+miri_test("rwlock_miri_test") {
+  crate = "src/lib.rs"
+  edition = "2024"
+  deps = shared_deps
+  test_filter = "tinyrwlock::tests::"
+  extra_miri_flags = [ "-Zmiri-tree-borrows" ]
+}
+
 build_rust("infra_unittest") {
   testonly = true
   crate_name = "infra_unittest"
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
 
   deps = shared_deps
   rustflags = [ "--test" ]

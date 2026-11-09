@@ -120,10 +120,10 @@ impl<T> IlistNode<T> {
             if write_me_guard.is_detached() {
                 return false;
             }
-            if let Some(version) = my_version {
-                if version != write_me_guard.version() {
-                    return false;
-                }
+            if let Some(version) = my_version
+                && version != write_me_guard.version()
+            {
+                return false;
             };
             let prev = write_me_guard.prev().cloned();
             let mut write_prev_guard = None;
@@ -173,10 +173,10 @@ impl<T> IlistNode<T> {
                 core::hint::spin_loop();
                 continue;
             };
-            if let Some(version) = other_version {
-                if write_other_guard.version() != version {
-                    return false;
-                }
+            if let Some(version) = other_version
+                && write_other_guard.version() != version
+            {
+                return false;
             };
             let prev = write_other_guard.prev.clone();
             let write_prev_guard = {
@@ -228,10 +228,10 @@ impl<T> IlistNode<T> {
                 core::hint::spin_loop();
                 continue;
             };
-            if let Some(version) = other_version {
-                if write_other_guard.version() != version {
-                    return false;
-                }
+            if let Some(version) = other_version
+                && write_other_guard.version() != version
+            {
+                return false;
             };
             let next = write_other_guard.next.clone();
             let write_next_guard = {

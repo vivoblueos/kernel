@@ -14,9 +14,7 @@
 
 use blueos::{irq, scheduler, time, time::Tick};
 use cmsis_os2::*;
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osDelay(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -24,9 +22,7 @@ pub extern "C" fn osDelay(ticks: u32) -> osStatus_t {
     scheduler::suspend_me_for::<()>(Tick(ticks as usize), None);
     osStatus_t_osOK
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osDelayUntil(ticks: u32) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;

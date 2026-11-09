@@ -48,8 +48,9 @@ unsafe impl GlobalAlloc for PosixAllocator {
         let align = layout.align();
         let size = layout.size();
 
-        let result =
-            librs::stdlib::malloc::posix_memalign(&mut mem_ptr as *mut *mut c_void, align, size);
+        let result = unsafe {
+            librs::stdlib::malloc::posix_memalign(&mut mem_ptr as *mut *mut c_void, align, size)
+        };
 
         if result == 0 {
             mem_ptr as *mut u8
@@ -60,7 +61,7 @@ unsafe impl GlobalAlloc for PosixAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         if !ptr.is_null() {
-            librs::stdlib::malloc::free(ptr as *mut c_void);
+            unsafe { librs::stdlib::malloc::free(ptr as *mut c_void) };
         }
     }
 }
@@ -72,11 +73,8 @@ static GLOBAL: PosixAllocator = PosixAllocator;
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     loop {}
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
-#[cfg_attr(not(compatible_old_toolchain), rustc_align(8))]
-#[cfg_attr(compatible_old_toolchain, repr(align(8)))]
+#[unsafe(no_mangle)]
+#[rustc_align(8)]
 pub extern "C" fn _start() {
     // FIXME: Generally we need toolchains able to build static-pie,
     // thus we have dynamic relocation entres to relocate .got
@@ -90,9 +88,7 @@ pub extern "C" fn _start() {
     #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
     assert_eq!(main(42), 42);
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 #[inline(never)]
 extern "C" fn main(argc: i32) -> i32 {
     // FIXME: Current librs::stdio::puts impl makes this program hangs forever.
