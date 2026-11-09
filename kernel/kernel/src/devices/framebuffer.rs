@@ -145,7 +145,7 @@ unsafe fn load_user_variable_info(
     if ptr.is_null() {
         return Err(ErrorKind::InvalidInput);
     }
-    Ok(*ptr)
+    Ok(unsafe { *ptr })
 }
 
 unsafe fn store_user_fixed_info(
@@ -155,7 +155,7 @@ unsafe fn store_user_fixed_info(
     if ptr.is_null() {
         return Err(ErrorKind::InvalidInput);
     }
-    *ptr = *fixed_info;
+    unsafe { *ptr = *fixed_info };
     Ok(())
 }
 
@@ -166,7 +166,7 @@ unsafe fn store_user_variable_info(
     if ptr.is_null() {
         return Err(ErrorKind::InvalidInput);
     }
-    *ptr = *variable_info;
+    unsafe { *ptr = *variable_info };
     Ok(())
 }
 

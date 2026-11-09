@@ -26,14 +26,14 @@ use core::{
 use libc::{EINVAL, ERANGE};
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn getenv(_key: *const i8) -> *mut i8 {
     core::ptr::null_mut()
 }
 
 #[macro_export]
 macro_rules! strto_float_impl {
-    ($type:ident, $s:expr, $endptr:expr) => {{
+    ($type:ident, $s:expr_2021, $endptr:expr_2021) => {{
         let mut s = $s;
         let endptr = $endptr;
 
@@ -158,7 +158,7 @@ macro_rules! strto_float_impl {
 
 #[macro_export]
 macro_rules! primitive_to_ascii {
-    ($type:ty, $n:expr,$s:expr, $radix:expr) => {
+    ($type:ty, $n:expr_2021,$s:expr_2021, $radix:expr_2021) => {
         #[allow(unused_comparisons)]
         {
             let mut n: $type = $n;
@@ -203,7 +203,7 @@ macro_rules! primitive_to_ascii {
 #[macro_export]
 macro_rules! strto_impl {
     (
-        $rettype:ty, $signed:expr, $maxval:expr, $minval:expr, $s:ident, $endptr:ident, $base:ident
+        $rettype:ty, $signed:expr_2021, $maxval:expr_2021, $minval:expr_2021, $s:ident, $endptr:ident, $base:ident
     ) => {{
         // ensure these are constants
         const CHECK_SIGN: bool = $signed;
@@ -216,7 +216,9 @@ macro_rules! strto_impl {
                 // const input but mut output, yet the man page says
                 // "stores the address of the first invalid character in *endptr"
                 // so obviously it doesn't want us to clone it.
-                *$endptr = $s.offset(idx) as *mut _;
+                unsafe {
+                    *$endptr = $s.offset(idx) as *mut _;
+                }
             }
         };
 
@@ -234,12 +236,12 @@ macro_rules! strto_impl {
         let mut idx = 0;
 
         // skip any whitespace at the beginning of the string
-        while ctype::isspace(*$s.offset(idx) as c_int) != 0 {
+        while ctype::isspace(unsafe { *$s.offset(idx) } as c_int) != 0 {
             idx += 1;
         }
 
         // check for +/-
-        let positive = match is_positive(*$s.offset(idx)) {
+        let positive = match is_positive(unsafe { *$s.offset(idx) }) {
             Some((pos, i)) => {
                 idx += i;
                 pos
@@ -251,13 +253,13 @@ macro_rules! strto_impl {
         };
 
         // convert the string to a number
-        let num_str = $s.offset(idx);
+        let num_str = unsafe { $s.offset(idx) };
         let res = match $base {
-            0 => detect_base(num_str)
-                .and_then(|($base, i)| convert_integer(num_str.offset(i), $base)),
-            8 => convert_octal(num_str),
-            16 => convert_hex(num_str),
-            _ => convert_integer(num_str, $base),
+            0 => unsafe { detect_base(num_str) }
+                .and_then(|($base, i)| unsafe { convert_integer(num_str.offset(i), $base) }),
+            8 => unsafe { convert_octal(num_str) },
+            16 => unsafe { convert_hex(num_str) },
+            _ => unsafe { convert_integer(num_str, $base) },
         };
 
         // check for error parsing octal/hex prefix
@@ -305,7 +307,7 @@ macro_rules! strto_impl {
 }
 
 macro_rules! dec_num_from_ascii {
-    ($s:expr, $t:ty) => {{
+    ($s:expr_2021, $t:ty) => {{
         let mut s = $s;
         // Iterate past whitespace
         while ctype::isspace(*s as c_int) != 0 {
@@ -340,50 +342,50 @@ macro_rules! dec_num_from_ascii {
     }};
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn abs(i: c_int) -> c_int {
     i.abs()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn atof(s: *const c_char) -> c_double {
-    strtod(s, ptr::null_mut())
+    unsafe { strtod(s, ptr::null_mut()) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn atoi(s: *const c_char) -> c_int {
-    dec_num_from_ascii!(s, c_int)
+    unsafe { dec_num_from_ascii!(s, c_int) }
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn atol(s: *const c_char) -> c_long {
-    dec_num_from_ascii!(s, c_long)
+    unsafe { dec_num_from_ascii!(s, c_long) }
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn atoll(s: *const c_char) -> c_longlong {
-    dec_num_from_ascii!(s, c_longlong)
+    unsafe { dec_num_from_ascii!(s, c_longlong) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtod(s: *const c_char, endptr: *mut *mut c_char) -> c_double {
-    strto_float_impl!(c_double, s, endptr)
+    unsafe { strto_float_impl!(c_double, s, endptr) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtof(s: *const c_char, endptr: *mut *mut c_char) -> c_float {
-    strto_float_impl!(c_float, s, endptr)
+    unsafe { strto_float_impl!(c_float, s, endptr) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtol(s: *const c_char, endptr: *mut *mut c_char, base: c_int) -> c_long {
-    strto_impl!(c_long, true, c_long::MAX, c_long::MIN, s, endptr, base)
+    unsafe { strto_impl!(c_long, true, c_long::MAX, c_long::MIN, s, endptr, base) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtold(_s: *const c_char, _endptr: *mut *mut c_char) -> ! {
     todo!("c_longdouble is not stable in llvm  yet!")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtoll(
     s: *const c_char,
     endptr: *mut *mut c_char,
@@ -400,16 +402,16 @@ pub unsafe extern "C" fn strtoll(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtoul(
     s: *const c_char,
     endptr: *mut *mut c_char,
     base: c_int,
 ) -> c_ulong {
-    strto_impl!(c_ulong, false, c_ulong::MAX, c_ulong::MIN, s, endptr, base)
+    unsafe { strto_impl!(c_ulong, false, c_ulong::MAX, c_ulong::MIN, s, endptr, base) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn strtoull(
     s: *const c_char,
     endptr: *mut *mut c_char,
@@ -426,36 +428,36 @@ pub unsafe extern "C" fn strtoull(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn itoa(n: c_int, s: *mut c_char, radix: c_int) -> *mut c_char {
-    primitive_to_ascii!(c_int, n, s, radix)
+    unsafe { primitive_to_ascii!(c_int, n, s, radix) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ultoa(n: c_ulong, s: *mut c_char, radix: c_int) -> *mut c_char {
-    primitive_to_ascii!(c_ulong, n, s, radix)
+    unsafe { primitive_to_ascii!(c_ulong, n, s, radix) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ulltoa(n: c_ulonglong, s: *mut c_char, radix: c_int) -> *mut c_char {
-    primitive_to_ascii!(c_ulonglong, n, s, radix)
+    unsafe { primitive_to_ascii!(c_ulonglong, n, s, radix) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn utoa(n: c_uint, s: *mut c_char, radix: c_int) -> *mut c_char {
-    primitive_to_ascii!(c_uint, n, s, radix)
+    unsafe { primitive_to_ascii!(c_uint, n, s, radix) }
 }
 
 // todo: implement the rest of the functions
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ltoa(n: c_long, s: *mut c_char, radix: c_int) -> *mut c_char {
-    primitive_to_ascii!(c_long, n, s, radix)
+    unsafe { primitive_to_ascii!(c_long, n, s, radix) }
 }
 
 // todo: implement the rest of the functions
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn lltoa(n: c_longlong, s: *mut c_char, radix: c_int) -> *mut c_char {
-    primitive_to_ascii!(c_longlong, n, s, radix)
+    unsafe { primitive_to_ascii!(c_longlong, n, s, radix) }
 }
 
 #[repr(C)]
@@ -466,7 +468,7 @@ pub struct lldiv_t {
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/ldiv.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lldiv(numer: c_longlong, denom: c_longlong) -> lldiv_t {
     lldiv_t {
         quot: numer / denom,
@@ -482,7 +484,7 @@ pub struct ldiv_t {
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/ldiv.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ldiv(numer: c_long, denom: c_long) -> ldiv_t {
     ldiv_t {
         quot: numer / denom,
@@ -490,12 +492,12 @@ pub extern "C" fn ldiv(numer: c_long, denom: c_long) -> ldiv_t {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn labs(i: c_long) -> c_long {
     i.abs()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn llabs(i: c_longlong) -> c_longlong {
     i.abs()
 }
@@ -507,7 +509,7 @@ pub struct div_t {
     rem: c_int,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn div(numer: c_int, denom: c_int) -> div_t {
     div_t {
         quot: numer / denom,
@@ -516,11 +518,11 @@ pub extern "C" fn div(numer: c_int, denom: c_int) -> div_t {
 }
 
 pub unsafe fn detect_base(s: *const c_char) -> Option<(c_int, isize)> {
-    let first = *s as u8;
+    let first = unsafe { *s } as u8;
     match first {
         0 => None,
         b'0' => {
-            let second = *s.offset(1) as u8;
+            let second = unsafe { *s.offset(1) } as u8;
             if second == b'X' || second == b'x' {
                 Some((16, 2))
             } else if (b'0'..=b'7').contains(&second) {
@@ -535,8 +537,8 @@ pub unsafe fn detect_base(s: *const c_char) -> Option<(c_int, isize)> {
 }
 
 pub unsafe fn convert_octal(s: *const c_char) -> Option<(c_ulong, isize, bool)> {
-    if *s != 0 && *s == b'0' as c_char {
-        if let Some((val, idx, overflow)) = convert_integer(s.offset(1), 8) {
+    if unsafe { *s } != 0 && unsafe { *s } == b'0' as c_char {
+        if let Some((val, idx, overflow)) = unsafe { convert_integer(s.offset(1), 8) } {
             Some((val, idx + 1, overflow))
         } else {
             // in case the prefix is not actually a prefix
@@ -548,12 +550,15 @@ pub unsafe fn convert_octal(s: *const c_char) -> Option<(c_ulong, isize, bool)> 
 }
 
 pub unsafe fn convert_hex(s: *const c_char) -> Option<(c_ulong, isize, bool)> {
-    if (*s != 0 && *s == b'0' as c_char)
-        && (*s.offset(1) != 0 && (*s.offset(1) == b'x' as c_char || *s.offset(1) == b'X' as c_char))
+    if (unsafe { *s } != 0 && unsafe { *s } == b'0' as c_char)
+        && (unsafe { *s.offset(1) } != 0
+            && (unsafe { *s.offset(1) } == b'x' as c_char
+                || unsafe { *s.offset(1) } == b'X' as c_char))
     {
-        convert_integer(s.offset(2), 16).map(|(val, idx, overflow)| (val, idx + 2, overflow))
+        unsafe { convert_integer(s.offset(2), 16) }
+            .map(|(val, idx, overflow)| (val, idx + 2, overflow))
     } else {
-        convert_integer(s, 16)
+        unsafe { convert_integer(s, 16) }
     }
 }
 
@@ -587,7 +592,7 @@ pub unsafe fn convert_integer(s: *const c_char, base: c_int) -> Option<(c_ulong,
         // `-1 as usize` is usize::MAX
         // `-1 as u8 as usize` is u8::MAX
         // It extends by the sign bit unless we cast it to unsigned first.
-        let val = LOOKUP_TABLE[*s.offset(idx) as u8 as usize];
+        let val = LOOKUP_TABLE[unsafe { *s.offset(idx) } as u8 as usize];
         if val == -1 || val as c_int >= base {
             break;
         } else {

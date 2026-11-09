@@ -41,34 +41,38 @@ struct ZeroTable {
 
 // Copy data from FLASH to RAM.
 unsafe fn copy_data() {
-    extern "C" {
+    unsafe extern "C" {
         static __zero_table_start: ZeroTable;
         static __zero_table_end: ZeroTable;
         static __copy_table_start: CopyTable;
         static __copy_table_end: CopyTable;
     }
 
-    let mut p_table = &__copy_table_start as *const CopyTable;
-    while p_table < &__copy_table_end as *const CopyTable {
-        let table = &(*p_table);
-        for i in 0..table.size {
-            core::ptr::write(
-                table.dst.add(i as usize),
-                core::ptr::read(table.src.add(i as usize)),
-            );
+    unsafe {
+        let mut p_table = &__copy_table_start as *const CopyTable;
+        while p_table < &__copy_table_end as *const CopyTable {
+            let table = &(*p_table);
+            for i in 0..table.size {
+                core::ptr::write(
+                    table.dst.add(i as usize),
+                    core::ptr::read(table.src.add(i as usize)),
+                );
+            }
+            p_table = p_table.add(1);
         }
-        p_table = p_table.add(1);
     }
 
-    let mut p_table = &__zero_table_start as *const ZeroTable;
-    while p_table < &__zero_table_end as *const ZeroTable {
-        let table = &*p_table;
-        for i in 0..table.size {
-            core::ptr::write(table.dst.add(i as usize), 0);
+    unsafe {
+        let mut p_table = &__zero_table_start as *const ZeroTable;
+        while p_table < &__zero_table_end as *const ZeroTable {
+            let table = &*p_table;
+            for i in 0..table.size {
+                core::ptr::write(table.dst.add(i as usize), 0);
+            }
+            p_table = p_table.add(1);
         }
-        p_table = p_table.add(1);
     }
-    INIT_BSS_DONE = true;
+    unsafe { INIT_BSS_DONE = true };
 }
 
 const TICKS_PS: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;

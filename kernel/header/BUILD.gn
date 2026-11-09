@@ -17,7 +17,7 @@ import("//build/templates/rust.gni")
 build_rust("blueos_header") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   configs += [ "//build/boards/${board}:kernel_config" ]
   cfgs = [ "${build_type}" ]
   deps = board_deps

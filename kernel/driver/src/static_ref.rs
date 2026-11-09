@@ -50,7 +50,7 @@ impl<T> StaticRef<T> {
     pub const unsafe fn new(ptr: *const T) -> StaticRef<T> {
         // SAFETY: `ptr` is non-null as promised by the caller.
         StaticRef {
-            ptr: NonNull::new_unchecked(ptr.cast_mut()),
+            ptr: unsafe { NonNull::new_unchecked(ptr.cast_mut()) },
         }
     }
 
