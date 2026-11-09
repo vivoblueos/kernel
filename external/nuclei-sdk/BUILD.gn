@@ -52,6 +52,7 @@ bindgen("nuclei_header") {
 }
 
 build_rust("nuclei_sdk_rs") {
+  edition = "2021"
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
   deps = [ ":nuclei_header" ]

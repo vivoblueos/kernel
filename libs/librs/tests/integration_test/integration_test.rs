@@ -49,7 +49,7 @@ extern "C" fn posix_main(_: *mut c_void) -> *mut c_void {
     core::ptr::null_mut()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 fn main() -> i32 {
     // We must enter POSIX subsystem first to perform pthread testing.
     let mut t: pthread_t = 0;

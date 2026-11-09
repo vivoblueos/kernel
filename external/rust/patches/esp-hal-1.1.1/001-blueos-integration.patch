@@ -1,0 +1,184 @@
+# Patch: Accept BlueOS targets and preserve local esp-hal source adaptations.
+# Reason: Upstream target checks reject BlueOS triples, and BlueKernel uses
+# its own interrupt runtime and HAL integration.
+
+--- a/build.rs
++++ b/build.rs
+@@ -39,13 +39,27 @@
+     // Ensure that exactly one chip has been specified:
+     let chip = esp_metadata_generated::Chip::from_cargo_feature()?;
+ 
+-    if !suppress_panics && chip.target() != std::env::var("TARGET").unwrap_or_default().as_str() {
+-        panic!("
++    if !suppress_panics {
++        let target = std::env::var("TARGET").unwrap_or_default();
++        let chip_target = chip.target();
++        // BlueOS uses custom target triples for the same chips, so the upstream
++        // bare-metal target names do not match TARGET.
++        let blueos_target = matches!(
++            (chip.name(), target.as_str()),
++            ("esp32c3", "riscv32imc-vivo-blueos") | ("esp32c6", "riscv32-vivo-blueos")
++        );
++        if chip_target != target.as_str()
++            && !target.is_empty()
++            && !chip_target.starts_with(target.as_str())
++            && !blueos_target
++        {
++            panic!("
+         Seems you are building for an unsupported or wrong target (e.g. the host environment).
+         Maybe you are missing the `target` in `.cargo/config.toml` or you have configs overriding it?
+ 
+         See https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure
+         ");
++        }
+     }
+ 
+     // Define all necessary configuration symbols for the configured device:
+--- a/src/clock/mod.rs
++++ b/src/clock/mod.rs
+@@ -75,9 +75,9 @@
+ #[instability::unstable]
+ pub use crate::soc::clocks::ClockConfig;
+ pub use crate::soc::clocks::CpuClock;
+-use crate::{ESP_HAL_LOCK, soc::clocks, time::Rate};
+ #[cfg(soc_has_clock_node_timg_calibration_clock)]
+ use crate::{peripherals::TIMG0, soc::clocks::ClockTree};
++use crate::{soc::clocks, time::Rate, ESP_HAL_LOCK};
+ 
+ impl CpuClock {
+     #[procmacros::doc_replace]
+--- a/src/i2c/master/mod.rs
++++ b/src/i2c/master/mod.rs
+@@ -124,26 +124,18 @@
+ use enumset::{EnumSet, EnumSetType};
+ 
+ use crate::{
+-    Async,
+-    Blocking,
+-    DriverMode,
+     asynch::AtomicWaker,
+     gpio::{
+-        DriveMode,
+-        InputSignal,
+-        OutputConfig,
+-        OutputSignal,
+-        PinGuard,
+-        Pull,
+         interconnect::{self, PeripheralInput, PeripheralOutput},
++        DriveMode, InputSignal, OutputConfig, OutputSignal, PinGuard, Pull,
+     },
+     handler,
+     interrupt::InterruptHandler,
+-    pac::i2c0::{COMD, RegisterBlock},
+-    private,
+-    ram,
++    pac::i2c0::{RegisterBlock, COMD},
++    private, ram,
+     system::PeripheralGuard,
+     time::{Duration, Instant, Rate},
++    Async, Blocking, DriverMode,
+ };
+ 
+ const I2C_FIFO_SIZE: usize = property!("i2c_master.fifo_size");
+@@ -244,7 +236,11 @@
+                     let to_peri = (cycles * 2 * half_bus_cycle).max(1);
+                     let log2 = to_peri.ilog2();
+                     // If not a power of 2, round up so that we don't shorten timeouts.
+-                    if to_peri != 1 << log2 { log2 + 1 } else { log2 }
++                    if to_peri != 1 << log2 {
++                        log2 + 1
++                    } else {
++                        log2
++                    }
+                 } else {
+                     cycles * 2 * half_bus_cycle
+                 };
+@@ -562,12 +558,12 @@
+ 
+ enum OperationType {
+     Write = 0,
+-    Read  = 1,
++    Read = 1,
+ }
+ 
+ #[derive(Eq, PartialEq, Copy, Clone, Debug)]
+ enum Ack {
+-    Ack  = 0,
++    Ack = 0,
+     Nack = 1,
+ }
+ 
+--- a/src/interrupt/mod.rs
++++ b/src/interrupt/mod.rs
+@@ -266,13 +266,14 @@
+ // Peripheral interrupt API.
+ 
+ fn vector_entry(interrupt: Interrupt) -> &'static pac::Vector {
+-    cfg_if::cfg_if! {
+-        if #[cfg(xtensa)] {
+-            &pac::__INTERRUPTS[interrupt as usize]
+-        } else {
+-            &pac::__EXTERNAL_INTERRUPTS[interrupt as usize]
+-        }
+-    }
++    todo!("unsupported")
++    // cfg_if::cfg_if! {
++    //     if #[cfg(xtensa)] {
++    //         &pac::__INTERRUPTS[interrupt as usize]
++    //     } else {
++    //         &pac::__EXTERNAL_INTERRUPTS[interrupt as usize]
++    //     }
++    // }
+ }
+ 
+ /// Returns the currently bound interrupt handler.
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -313,7 +313,8 @@
+ #[instability::unstable]
+ pub use procmacros::handler;
+ #[instability::unstable]
+-#[cfg(any(lp_core, ulp_riscv_core))]
++
++#[cfg(all(any(lp_core, ulp_riscv_core), any(feature = "has-lp-core", feature = "has-ulp-core")))]
+ pub use procmacros::load_lp_code;
+ pub use procmacros::ram;
+ 
+--- a/src/spi/master/mod.rs
++++ b/src/spi/master/mod.rs
+@@ -53,25 +53,16 @@
+ pub use dma::*;
+ use embedded_hal::spi::SpiBus;
+ use embedded_hal_async::spi::SpiBus as SpiBusAsync;
+-use enumset::{EnumSet, EnumSetType, enum_set};
++use enumset::{enum_set, EnumSet, EnumSetType};
+ use procmacros::doc_replace;
+ 
+ use super::{BitOrder, Error, Mode};
+ use crate::{
+-    Async,
+-    Blocking,
+-    DriverMode,
+-    RegisterToggle,
+     asynch::AtomicWaker,
+     clock::Clocks,
+     gpio::{
+-        InputConfig,
+-        InputSignal,
+-        NoPin,
+-        OutputConfig,
+-        OutputSignal,
+-        PinGuard,
+         interconnect::{self, PeripheralInput, PeripheralOutput},
++        InputConfig, InputSignal, NoPin, OutputConfig, OutputSignal, PinGuard,
+     },
+     handler,
+     interrupt::InterruptHandler,
+@@ -80,6 +71,7 @@
+     ram,
+     system::PeripheralGuard,
+     time::Rate,
++    Async, Blocking, DriverMode, RegisterToggle,
+ };
+ 
+ /// Enumeration of possible SPI interrupt events.

@@ -20,7 +20,7 @@ build_rust("librs_integration_test_image") {
   testonly = true
   crate_type = "bin"
   sources = [ "integration_test.rs" ]
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [
     "//external/rust:semihosting",

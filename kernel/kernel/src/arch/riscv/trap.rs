@@ -41,9 +41,7 @@ pub(crate) const ECALL: usize = 0xB;
 pub(crate) const MSI: usize = INTERRUPT_MASK | 0x3;
 
 type ContextSwitcher = extern "C" fn(hook: &mut ContextSwitchHookHolder, old_sp: usize) -> usize;
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 extern "C" fn switch_stack_with_hook(
     hook: &mut ContextSwitchHookHolder,
     old_sp: usize,
@@ -55,12 +53,9 @@ extern "C" fn switch_stack_with_hook(
 }
 
 // trap_handler decides whether nested interrupt is allowed.
-#[cfg_attr(not(compatible_old_toolchain), rustc_align(4))]
-#[cfg_attr(compatible_old_toolchain, repr(align(4)))]
-#[cfg_attr(compatible_old_toolchain, link_section = ".trap.handler")]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".trap.handler"))]
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[rustc_align(4)]
+#[unsafe(link_section = ".trap.handler")]
+#[unsafe(naked)]
 pub(crate) unsafe extern "C" fn trap_entry() {
     core::arch::naked_asm!(
         concat!(
