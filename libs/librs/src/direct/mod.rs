@@ -127,13 +127,13 @@ impl DIR {
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/closedir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn closedir(dir: Box<DIR>) -> c_int {
     dir.close().map(|_| 0).unwrap_or(-1)
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/fdopendir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn opendir(path: *const c_char) -> *mut DIR {
     let path = unsafe { CStr::from_ptr(path) };
 
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn opendir(path: *const c_char) -> *mut DIR {
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/readdir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn readdir(dir: &mut DIR) -> *mut libc::dirent {
     let nd = dir.next_dirent();
     match nd {
@@ -166,7 +166,7 @@ pub extern "C" fn readdir(dir: &mut DIR) -> *mut libc::dirent {
 /// The `readdir_r()` function was marked obsolescent in the Open Group Base
 /// Specifications Issue 8.
 #[deprecated]
-// #[no_mangle]
+// #[unsafe(no_mangle)]
 pub extern "C" fn readdir_r(
     _dir: *mut DIR,
     _entry: *mut libc::dirent,
@@ -176,13 +176,13 @@ pub extern "C" fn readdir_r(
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/rewinddir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rewinddir(dir: &mut DIR) {
     dir.rewind();
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/scandir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn scandir(
     dirp: *const c_char,
     namelist: *mut *mut *mut libc::dirent,
@@ -207,10 +207,10 @@ pub unsafe extern "C" fn scandir(
             break;
         }
 
-        if let Some(filter) = filter {
-            if filter(entry) == 0 {
-                continue;
-            }
+        if let Some(filter) = filter
+            && filter(entry) == 0
+        {
+            continue;
         }
 
         let copy = unsafe { malloc((*entry).d_reclen as usize) };
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn scandir(
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/seekdir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn seekdir(dir: &mut DIR, off: c_long) {
     dir.seek(
         off.try_into()
@@ -258,11 +258,11 @@ pub extern "C" fn seekdir(dir: &mut DIR, off: c_long) {
 }
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/telldir.html>.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn telldir(dir: &mut DIR) -> c_long {
     dir.opaque_offset as c_long
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn mount(
     _source: *const c_char,
     _target: *const c_char,
@@ -274,7 +274,7 @@ pub unsafe extern "C" fn mount(
     bk_syscall!(Mount, _source, _target, _filesystemtype, _mountflags, _data) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn umount(_target: *const c_char) -> c_int {
     // NOTE: not posix call
     bk_syscall!(Umount, _target) as c_int

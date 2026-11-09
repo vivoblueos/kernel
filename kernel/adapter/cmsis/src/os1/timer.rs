@@ -36,8 +36,7 @@ use core::{
 // \param[in]     timer_type    osTimerOnce for one-shot or osTimerPeriodic for periodic behavior.
 // \param[in]     argument      argument to the timer call back function.
 // \return timer ID for reference by other functions or NULL in case of error.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osTimerCreate(
     timer_def: *const osTimerDef_t,
     timer_type: os_timer_type,
@@ -72,8 +71,7 @@ pub extern "C" fn osTimerCreate(
 // \param[in]     timer_id      timer ID obtained by \ref osTimerCreate.
 // \param[in]     millisec      \ref CMSIS_RTOS_TimeOutValue "Time delay" value of the timer.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osTimerStart(timer_id: osTimerId, millis: u32) -> osStatus {
     let Some(mut os_timer) = NonNull::new(timer_id as *mut Timer) else {
         return osStatus_osErrorParameter;
@@ -102,8 +100,7 @@ pub extern "C" fn osTimerStart(timer_id: osTimerId, millis: u32) -> osStatus {
 // Stop the timer.
 // \param[in]     timer_id      timer ID obtained by \ref osTimerCreate.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osTimerStop(timer_id: osTimerId) -> osStatus {
     let Some(mut os_timer) = NonNull::new(timer_id as *mut Timer) else {
         return osStatus_osErrorParameter;
@@ -119,8 +116,7 @@ pub extern "C" fn osTimerStop(timer_id: osTimerId) -> osStatus {
 // Delete a timer that was created by \ref osTimerCreate.
 // \param[in]     timer_id      timer ID obtained by \ref osTimerCreate.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osTimerDelete(timer_id: osTimerId) -> osStatus {
     let Some(mut os_timer) = NonNull::new(timer_id as *mut Timer) else {
         return osStatus_osErrorParameter;
@@ -140,7 +136,8 @@ mod tests {
         if arg.is_null() {
             return;
         }
-        let counter = ManuallyDrop::new(Arc::<AtomicUsize>::from_raw(arg as *const AtomicUsize));
+        let counter =
+            ManuallyDrop::new(unsafe { Arc::<AtomicUsize>::from_raw(arg as *const AtomicUsize) });
         counter.fetch_add(1, Ordering::Relaxed);
     }
 

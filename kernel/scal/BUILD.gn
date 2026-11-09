@@ -19,7 +19,7 @@ build_rust("blueos_scal") {
   crate_name = "blueos_scal"
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [ "//kernel/header:blueos_header" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
   if (direct_syscall_handler) {
@@ -32,7 +32,7 @@ build_rust("blueos_scal_swi") {
   crate_name = "blueos_scal"
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [ "//kernel/header:blueos_header" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
 }

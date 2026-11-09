@@ -54,7 +54,7 @@ impl<T> SinglyLinkedList<T> {
         // Making sure T is big enough to memory next pointer.
         debug_assert!(mem::size_of::<T>() >= mem::size_of::<Option<NonNull<T>>>());
         let item_ptr = item.as_ptr() as *mut Option<NonNull<T>>;
-        *item_ptr = self.head;
+        unsafe { *item_ptr = self.head };
         self.head = Some(item);
     }
 

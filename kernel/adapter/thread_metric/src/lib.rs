@@ -45,9 +45,7 @@ static mut TM_THREADS: [MaybeUninit<ThreadNode>; MAX_THREADS] =
 const MAX_SEMAS: usize = 8;
 static mut TM_SEMAS: [MaybeUninit<Arc<Semaphore>>; MAX_SEMAS] =
     [const { MaybeUninit::zeroed() }; MAX_SEMAS];
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_initialize(test_initialization_function: extern "C" fn()) {
     // This thread is responsible to start worker threads. Make it the highest priority
     // so that all worker threads are created before running.
@@ -65,9 +63,7 @@ extern "C" fn tm_thread_start(arg: *mut core::ffi::c_void) {
     let entry: extern "C" fn() = unsafe { core::mem::transmute(arg) };
     entry();
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_thread_create(
     thread_id: c_int,
     priority: c_int,
@@ -86,9 +82,7 @@ pub extern "C" fn tm_thread_create(
     }
     TM_SUCCESS
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref().clone() };
     // Resuming myself should not happen.
@@ -100,9 +94,7 @@ pub extern "C" fn tm_thread_resume(thread_id: c_int) -> c_int {
     }
     TM_ERROR
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_thread_suspend(thread_id: c_int) -> c_int {
     let t = unsafe { TM_THREADS[thread_id as usize].assume_init_ref() };
     let this_thread = scheduler::current_thread_ref();
@@ -117,21 +109,15 @@ pub extern "C" fn tm_thread_suspend(thread_id: c_int) -> c_int {
     }
     TM_ERROR
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_thread_relinquish() {
     scheduler::relinquish_me()
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_thread_sleep(secs: c_int) {
     scheduler::suspend_me_for::<()>(Tick(TICKS_PER_SECOND * secs as usize), None);
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_semaphore_create(sema_id: c_int) -> c_int {
     let sema = Arc::new(Semaphore::new());
     sema.init(1);
@@ -140,9 +126,7 @@ pub extern "C" fn tm_semaphore_create(sema_id: c_int) -> c_int {
     }
     TM_SUCCESS
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_semaphore_get(sema_id: c_int) -> c_int {
     let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
     if sema.acquire_notimeout::<InsertToEnd>() {
@@ -150,23 +134,17 @@ pub extern "C" fn tm_semaphore_get(sema_id: c_int) -> c_int {
     }
     TM_ERROR
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_semaphore_put(sema_id: c_int) -> c_int {
     let sema = unsafe { TM_SEMAS[sema_id as usize].assume_init_ref() };
     sema.release();
     TM_SUCCESS
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_memory_pool_create(_pool_id: c_int) -> c_int {
     TM_SUCCESS
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_memory_pool_allocate(_pool_id: c_int, result: *mut *mut u8) -> c_int {
     let layout = unsafe { Layout::from_size_align(128, 16).unwrap_unchecked() };
     let ptr = unsafe { system_alloc(layout) };
@@ -176,17 +154,13 @@ pub extern "C" fn tm_memory_pool_allocate(_pool_id: c_int, result: *mut *mut u8)
     unsafe { result.write(ptr) };
     TM_SUCCESS
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_memory_pool_deallocate(_pool_id: c_int, result: *mut u8) -> c_int {
     let layout = unsafe { Layout::from_size_align(128, 16).unwrap_unchecked() };
     unsafe { system_dealloc(result, layout) };
     TM_SUCCESS
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn tm_cause_interrupt() {
     unsafe {
         core::arch::asm!(
@@ -200,14 +174,10 @@ pub extern "C" fn tm_cause_interrupt() {
         )
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub extern "C" fn tm_interrupt_handler() {}
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
     tm_interrupt_handler();
     ctx as *const _ as usize

@@ -452,8 +452,8 @@ pub extern "C" fn schedule() -> ! {
 pub fn current_thread() -> ThreadNode {
     let _guard = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
-    let t = unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() };
-    t
+
+    unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() }
 }
 
 #[inline]

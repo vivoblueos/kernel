@@ -131,11 +131,7 @@ pub const INTERRUPT_TABLE_LEN: usize = blueos_kconfig::CONFIG_NUM_IRQS as usize;
 /// The interrupt vector table must be properly aligned and contain valid function pointers
 /// for all used interrupt vectors. Incorrect configuration may lead to undefined behavior.
 #[used]
-#[cfg_attr(compatible_old_toolchain, link_section = ".interrupt.handlers")]
-#[cfg_attr(
-    not(compatible_old_toolchain),
-    unsafe(link_section = ".interrupt.handlers")
-)]
+#[unsafe(link_section = ".interrupt.handlers")]
 static mut __INTERRUPT_HANDLERS__: [Vector; blueos_kconfig::CONFIG_NUM_IRQS as usize] = [Vector {
     handler: _generic_isr_handler,
 };
@@ -172,7 +168,7 @@ static mut ISR_DESC: [Option<&dyn IsrDesc>; INTERRUPT_TABLE_LEN] = [None; INTERR
 /// and only be written in the boot process early, so it's
 /// safe to use unsafe to write it.
 pub fn init_interrupt_registry() {
-    extern "C" {
+    unsafe extern "C" {
         static __isr_array_start: usize;
         static __isr_array_end: usize;
     }
@@ -202,5 +198,5 @@ pub fn init_interrupt_registry() {
 /// interrupt is enabled and can be triggered, so the caller should ensure that the interrupt
 /// is disabled before calling this function, and enable it after the handler is registered.
 pub unsafe fn register_raw_isr(irq: IrqNumber, handler: unsafe extern "C" fn()) {
-    __INTERRUPT_HANDLERS__[irq.0 as usize] = Vector { handler };
+    unsafe { __INTERRUPT_HANDLERS__[irq.0 as usize] = Vector { handler } };
 }

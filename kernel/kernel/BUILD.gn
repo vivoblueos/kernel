@@ -46,7 +46,6 @@ group("check_kernel_probe") {
 
 _shared_deps = [
   "//external/rust:bitflags",
-  "//external/rust:cfg-if",
   "//external/rust:const-default",
   "//external/rust:embedded-hal",
   "//external/rust:embedded-hal-bus",
@@ -92,7 +91,7 @@ build_rust("kernel_unittest") {
   crate_name = "kernel_unittest"
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [
     "//external/rust:delegate",
     "//external/rust:num-derive",
@@ -130,7 +129,7 @@ build_rust("kernel_integration_test") {
   testonly = true
   crate_type = "bin"
   sources = [ "tests/integration_test.rs" ]
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [
            ":blueos",
@@ -166,7 +165,7 @@ run_clippy("kernel_integration_test_clippy") {
 build_rust("blueos") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [
     "//external/rust:delegate",
     "//external/rust:num-derive",
