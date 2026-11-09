@@ -19,8 +19,7 @@ const TICKS_PER_SECOND: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize
 // Get the RTOS kernel tick count.
 // \return RTOS kernel current tick count.
 // uint32_t osKernelGetTickCount (void);
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osKernelGetTickCount() -> u32 {
     time::Tick::now().0 as u32
 }
@@ -28,8 +27,7 @@ pub extern "C" fn osKernelGetTickCount() -> u32 {
 // Get the RTOS kernel tick frequency.
 // \return frequency of the kernel tick in hertz, i.e. kernel ticks per second.
 // uint32_t osKernelGetTickFreq (void);
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osKernelGetTickFreq() -> u32 {
     TICKS_PER_SECOND as u32
 }
@@ -37,8 +35,7 @@ pub extern "C" fn osKernelGetTickFreq() -> u32 {
 // Get the RTOS kernel system timer count.
 // \return RTOS kernel current system timer count as 32-bit value.
 // uint32_t osKernelGetSysTimerCount (void);
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osKernelGetSysTimerCount() -> u32 {
     time::current_clock_cycles() as u32
 }
@@ -46,8 +43,7 @@ pub extern "C" fn osKernelGetSysTimerCount() -> u32 {
 // Get the RTOS kernel system timer frequency.
 // \return frequency of the system timer in hertz, i.e. timer ticks per second.
 // uint32_t osKernelGetSysTimerFreq (void);
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osKernelGetSysTimerFreq() -> u32 {
     TICKS_PER_SECOND as u32
 }

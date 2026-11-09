@@ -91,18 +91,18 @@ impl Device for VirtIONetDevice {
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         with_net_device(self.net_device_index, |net| {
-            if net.can_recv() {
-                if let Ok(rx_buf) = net.receive() {
-                    return Some((
-                        VirtIONetRxToken {
-                            device_index: self.net_device_index,
-                            buffer: rx_buf,
-                        },
-                        VirtIONetTxToken {
-                            device_index: self.net_device_index,
-                        },
-                    ));
-                }
+            if net.can_recv()
+                && let Ok(rx_buf) = net.receive()
+            {
+                return Some((
+                    VirtIONetRxToken {
+                        device_index: self.net_device_index,
+                        buffer: rx_buf,
+                    },
+                    VirtIONetTxToken {
+                        device_index: self.net_device_index,
+                    },
+                ));
             }
             None
         })

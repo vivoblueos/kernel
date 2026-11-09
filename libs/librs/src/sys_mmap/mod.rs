@@ -35,7 +35,7 @@ pub const MAP_FAILED: *mut c_void = usize::wrapping_neg(1) as *mut c_void;
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/mmap.html>.
 /// This is not valid for blueos now , but is provided for malloc implementation.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn mmap(
     addr: *mut c_void,
     len: size_t,
@@ -44,7 +44,7 @@ pub unsafe extern "C" fn mmap(
     fildes: c_int,
     off: off_t,
 ) -> *mut c_void {
-    match Sys::mmap(addr, len, prot, flags, fildes, off) {
+    match unsafe { Sys::mmap(addr, len, prot, flags, fildes, off) } {
         Ok(ptr) => ptr,
         Err(Errno(errno)) => {
             ERRNO.set(errno);
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn mmap(
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/munmap.html>.
 /// This is not valid for blueos now , but is provided for compatibility with linux emulation applications.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn munmap(addr: *mut c_void, len: size_t) -> c_int {
-    Sys::munmap(addr, len).map(|()| 0).syscall_failed()
+    unsafe { Sys::munmap(addr, len).map(|()| 0).syscall_failed() }
 }

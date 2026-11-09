@@ -33,31 +33,31 @@ unsafe extern "C" {
 }
 
 macro_rules! bit {
-    ($x:expr) => {
+    ($x:expr_2021) => {
         (1u32 << $x)
     };
 }
 
 macro_rules! bits {
-    ($start:expr, $end:expr) => {
+    ($start:expr_2021, $end:expr_2021) => {
         (0xFFFFFFFF << $start) & (0xFFFFFFFF >> (31 - $end))
     };
 }
 
 macro_rules! pud_pupd {
-    ($regval:expr) => {
+    ($regval:expr_2021) => {
         bits!(0, 1) & ($regval as u32)
     };
 }
 
 macro_rules! af {
-    ($val:expr) => {
+    ($val:expr_2021) => {
         bits!(0, 3) & ($val as u32)
     };
 }
 
 macro_rules! ospd_ospd {
-    ($regval:expr) => {
+    ($regval:expr_2021) => {
         bits!(0, 1) & ($regval as u32)
     };
 }

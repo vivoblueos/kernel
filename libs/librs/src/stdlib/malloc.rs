@@ -17,7 +17,7 @@ use blueos_header::syscalls::NR::{AllocMem, FreeMem};
 use blueos_scal::bk_syscall;
 use libc::{c_int, c_void, size_t, ENOMEM};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn posix_memalign(
     ptr: *mut *mut c_void,
     align: size_t,
@@ -30,19 +30,21 @@ pub unsafe extern "C" fn posix_memalign(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn free(ptr: *mut c_void) {
     bk_syscall!(FreeMem, ptr);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
     let mut ptr: *mut c_void = core::ptr::null_mut();
-    let rc = posix_memalign(
-        &mut ptr as *mut *mut c_void,
-        core::mem::size_of::<usize>(),
-        size,
-    );
+    let rc = unsafe {
+        posix_memalign(
+            &mut ptr as *mut *mut c_void,
+            core::mem::size_of::<usize>(),
+            size,
+        )
+    };
     if rc != 0 {
         return core::ptr::null_mut();
     }

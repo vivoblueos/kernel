@@ -41,25 +41,25 @@ use libc::{
 use crate::unistd::{close, io::write as unistd_write, read};
 /// Parse mode flags as a string and output a mode flags integer
 pub unsafe fn parse_mode_flags(mode_str: *const c_char) -> i32 {
-    let mut flags = if !strchr(mode_str, b'+' as i32).is_null() {
+    let mut flags = if !unsafe { strchr(mode_str, b'+' as i32) }.is_null() {
         O_RDWR
-    } else if (*mode_str) == b'r' as i8 {
+    } else if unsafe { *mode_str } == b'r' as i8 {
         O_RDONLY
     } else {
         O_WRONLY
     };
-    if !strchr(mode_str, b'x' as i32).is_null() {
+    if !unsafe { strchr(mode_str, b'x' as i32) }.is_null() {
         flags |= O_EXCL;
     }
-    if !strchr(mode_str, b'e' as i32).is_null() {
+    if !unsafe { strchr(mode_str, b'e' as i32) }.is_null() {
         flags |= O_CLOEXEC;
     }
-    if (*mode_str) != b'r' as i8 {
+    if unsafe { *mode_str } != b'r' as i8 {
         flags |= O_CREAT;
     }
-    if (*mode_str) == b'w' as i8 {
+    if unsafe { *mode_str } == b'w' as i8 {
         flags |= O_TRUNC;
-    } else if (*mode_str) == b'a' as i8 {
+    } else if unsafe { *mode_str } == b'a' as i8 {
         flags |= O_APPEND;
     }
 
@@ -68,30 +68,34 @@ pub unsafe fn parse_mode_flags(mode_str: *const c_char) -> i32 {
 
 /// Open a file with the file descriptor `fd` in the mode `mode`
 pub unsafe fn _fdopen(fd: c_int, mode: *const c_char) -> Option<*mut FILE> {
-    if *mode != b'r' as i8 && *mode != b'w' as i8 && *mode != b'a' as i8 {
+    if unsafe { *mode != b'r' as i8 && *mode != b'w' as i8 && *mode != b'a' as i8 } {
         ERRNO.set(EINVAL);
         return None;
     }
 
     let mut flags = 0;
-    if strchr(mode, b'+' as i32).is_null() {
-        flags |= if *mode == b'r' as i8 { F_NOWR } else { F_NORD };
+    if unsafe { strchr(mode, b'+' as i32) }.is_null() {
+        flags |= if unsafe { *mode } == b'r' as i8 {
+            F_NOWR
+        } else {
+            F_NORD
+        };
     }
 
-    if !strchr(mode, b'e' as i32).is_null() {
-        fcntl(fd, F_SETFD, FD_CLOEXEC as c_ulonglong);
+    if !unsafe { strchr(mode, b'e' as i32) }.is_null() {
+        unsafe { fcntl(fd, F_SETFD, FD_CLOEXEC as c_ulonglong) };
     }
 
-    if *mode == 'a' as i8 {
-        let f = fcntl(fd, F_GETFL, 0);
+    if unsafe { *mode } == 'a' as i8 {
+        let f = unsafe { fcntl(fd, F_GETFL, 0) };
         if (f & O_APPEND) == 0 {
-            fcntl(fd, F_SETFL, (f | O_APPEND) as c_ulonglong);
+            unsafe { fcntl(fd, F_SETFL, (f | O_APPEND) as c_ulonglong) };
         }
         flags |= F_APP;
     }
 
     let file = File::new(fd);
-    let writer = Box::new(BufWriter::new(file.get_ref()));
+    let writer = Box::new(BufWriter::new(unsafe { file.get_ref() }));
 
     Some(Box::into_raw(Box::new(FILE {
         lock: GenericMutex::new(()),

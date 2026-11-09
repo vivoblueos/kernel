@@ -278,7 +278,7 @@ impl SocketAddress {
             return None;
         }
 
-        Some(&*(ptr as *const Self))
+        Some(unsafe { &*(ptr as *const Self) })
     }
 
     pub fn create_ip_endpoint(&self) -> Option<IpEndpoint> {
@@ -305,7 +305,7 @@ impl SocketAddressV4 {
             return None;
         }
 
-        Some(&*(ptr as *const Self))
+        Some(unsafe { &*(ptr as *const Self) })
     }
 
     pub fn create_ip_endpoint(&self) -> IpEndpoint {
@@ -352,7 +352,7 @@ impl Timeval {
         if ptr.is_null() || len != core::mem::size_of::<TimevalAbi>() as libc::socklen_t {
             return None;
         }
-        let timeval = ptr.cast::<TimevalAbi>().read_unaligned();
+        let timeval = unsafe { ptr.cast::<TimevalAbi>().read_unaligned() };
         Self::validated(Self {
             tv_sec: from_timeval_abi_field(timeval.tv_sec),
             tv_usec: from_timeval_abi_field(timeval.tv_usec),
@@ -371,7 +371,7 @@ impl Timeval {
             tv_sec: to_timeval_abi_field(self.tv_sec)?,
             tv_usec: to_timeval_abi_field(self.tv_usec)?,
         };
-        ptr.cast::<TimevalAbi>().write_unaligned(timeval);
+        unsafe { ptr.cast::<TimevalAbi>().write_unaligned(timeval) };
         Some(core::mem::size_of::<TimevalAbi>() as libc::socklen_t)
     }
 
@@ -463,7 +463,7 @@ impl SocketMsghdr {
         if ptr.is_null() {
             None
         } else {
-            Some(&*(ptr as *const Self))
+            Some(unsafe { &*(ptr as *const Self) })
         }
     }
 
@@ -471,7 +471,7 @@ impl SocketMsghdr {
         if ptr.is_null() {
             None
         } else {
-            Some(&mut *(ptr as *mut SocketMsghdr))
+            Some(unsafe { &mut *(ptr as *mut SocketMsghdr) })
         }
     }
 

@@ -25,7 +25,7 @@ adapter_deps = [
 
 build_rust("esp_radio_sys") {
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = adapter_deps
   deps += [ "//kernel/kconfig:generate_rustflags_file" ]
   configs += [
@@ -43,7 +43,7 @@ build_rust("esp_radio_sys_unittest") {
   crate_name = "esp_radio_sys_unittest"
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = adapter_deps
   deps += [
