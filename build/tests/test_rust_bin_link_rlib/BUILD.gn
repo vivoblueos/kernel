@@ -23,6 +23,7 @@ group("foo") {
 }
 
 rust_library("bar") {
+  rustflags = [ "--edition=2024" ]
   crate_name = "bar"
   sources = [ "bar/src/bar.rs" ]
 }
@@ -34,12 +35,14 @@ build_rust("bogus_crate") {
 }
 
 rust_library("builtin_bogus_crate") {
+  rustflags = [ "--edition=2024" ]
   crate_type = "bin"
   sources = [ "foo/src/foo.rs" ]
   deps = [ ":bar" ]
 }
 
 executable("bogus_exe") {
+  rustflags = [ "--edition=2024" ]
   sources = [ "foo/src/foo.rs" ]
   deps = [ ":bar" ]
 }

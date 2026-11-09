@@ -30,12 +30,12 @@ use libc::{
     F_SETLKW, O_CREAT, O_TRUNC, O_WRONLY,
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn creat(path: *const c_char, mode: mode_t) -> c_int {
     unsafe { open(path, O_WRONLY | O_CREAT | O_TRUNC, mode) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fcntl(fildes: c_int, cmd: c_int, mut __valist: ...) -> c_int {
     // c_ulonglong
     let arg = match cmd {
@@ -51,7 +51,7 @@ pub unsafe extern "C" fn fcntl(fildes: c_int, cmd: c_int, mut __valist: ...) -> 
 }
 
 // https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn open(path: *const c_char, oflag: c_int, mut __valist: ...) -> c_int {
     let mode = if oflag & O_CREAT == O_CREAT {
         // SAFETY: The caller must ensure that the mode is valid.

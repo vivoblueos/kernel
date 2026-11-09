@@ -20,8 +20,6 @@ common_cflags = [
   "-fdata-sections",
 ]
 
-import("//build/rustc_version.gni")
-
 common_rustflags = [
   "--color=always",
 
@@ -35,13 +33,6 @@ common_rustflags = [
   "-A",
   "static_mut_refs",
 ]
-
-if (is_rust_toolchain_older_than_1_90) {
-  common_rustflags += [
-    "--cfg",
-    "compatible_old_toolchain",
-  ]
-}
 
 build_type_config = {
   debug = {

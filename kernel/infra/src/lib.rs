@@ -27,13 +27,6 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(ptr_as_uninit)]
 #![feature(slice_ptr_get)]
-// Features below are stable in modern toolchains (version noted); only
-// declare them on old toolchains via `compatible_old_toolchain` so the
-// stable_features lint (deny via -D warnings) doesn't fire on new ones.
-#![cfg_attr(compatible_old_toolchain, feature(let_chains))] // 1.88
-#![cfg_attr(compatible_old_toolchain, feature(non_null_from_ref))] // 1.89
-#![cfg_attr(compatible_old_toolchain, feature(slice_as_chunks))] // 1.88
-#![cfg_attr(compatible_old_toolchain, feature(strict_provenance_atomic_ptr))] // 1.91
 
 pub mod intrusive;
 pub mod lifetime;

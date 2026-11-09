@@ -101,14 +101,14 @@ impl<T> TinyArc<T> {
 
     #[inline]
     pub unsafe fn clone_from_inner(inner: NonNull<TinyArcInner<T>>) -> Self {
-        inner.as_ref().rc.fetch_add(1, Ordering::Release);
+        unsafe { inner.as_ref() }.rc.fetch_add(1, Ordering::Release);
         TinyArc { inner }
     }
 
     #[inline]
     pub unsafe fn clone_from(this: &T) -> Self {
-        let this = Self::from_raw(this as *const T);
-        Self::increment_strong_count(&this);
+        let this = unsafe { Self::from_raw(this as *const T) };
+        unsafe { Self::increment_strong_count(&this) };
         this
     }
 
@@ -126,13 +126,17 @@ impl<T> TinyArc<T> {
 
     #[inline]
     pub unsafe fn increment_strong_count(this: &Self) {
-        let old = this.inner.as_ref().rc.fetch_add(1, Ordering::Relaxed);
+        let old = unsafe { this.inner.as_ref() }
+            .rc
+            .fetch_add(1, Ordering::Relaxed);
         assert_ne!(old, 0);
     }
 
     #[inline]
     pub unsafe fn decrement_strong_count(this: &Self) {
-        let old = this.inner.as_ref().rc.fetch_sub(1, Ordering::Relaxed);
+        let old = unsafe { this.inner.as_ref() }
+            .rc
+            .fetch_sub(1, Ordering::Relaxed);
         assert_ne!(old, 1);
     }
 
@@ -165,7 +169,7 @@ impl<T> TinyArc<T> {
         // SAFETY: ptr offset is same as TinyArcInner struct offset no recalculation of
         // offset is required
         TinyArc {
-            inner: NonNull::new_unchecked(ptr as *mut TinyArcInner<T>),
+            inner: unsafe { NonNull::new_unchecked(ptr as *mut TinyArcInner<T>) },
         }
     }
 
@@ -182,7 +186,7 @@ impl<T> TinyArc<T> {
 
     #[inline]
     pub unsafe fn get_mut_unchecked(this: &mut Self) -> &mut T {
-        &mut this.inner.as_mut().data
+        unsafe { &mut this.inner.as_mut().data }
     }
 
     #[inline]
@@ -276,26 +280,26 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
 
     #[inline]
     pub unsafe fn list_head_of_mut_unchecked(this: &mut TinyArc<T>) -> &mut AtomicListHead<T, A> {
-        let this_val = TinyArc::<T>::get_mut_unchecked(this);
+        let this_val = unsafe { TinyArc::<T>::get_mut_unchecked(this) };
         let ptr = this_val as *mut _ as *mut u8;
-        let list_head_ptr = ptr.add(A::offset()) as *mut AtomicListHead<T, A>;
-        &mut *list_head_ptr
+        let list_head_ptr = unsafe { ptr.add(A::offset()) } as *mut AtomicListHead<T, A>;
+        unsafe { &mut *list_head_ptr }
     }
 
     #[inline]
     pub unsafe fn from_mut(node: &mut AtomicListHead<T, A>) -> TinyArc<T> {
         let ptr = node as *mut _ as *mut u8;
         let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
-        let inner = ptr.sub(offset) as *mut TinyArcInner<T>;
-        TinyArc::from_inner(NonNull::new_unchecked(inner))
+        let inner = unsafe { ptr.sub(offset) } as *mut TinyArcInner<T>;
+        unsafe { TinyArc::from_inner(NonNull::new_unchecked(inner)) }
     }
 
     #[inline]
     pub unsafe fn clone_from(node: &AtomicListHead<T, A>) -> TinyArc<T> {
         let ptr = node as *const _ as *const u8;
         let offset = core::mem::offset_of!(TinyArcInner<T>, data) + A::offset();
-        let inner = &*(ptr.sub(offset) as *const TinyArcInner<T>);
-        TinyArc::clone_from_inner(NonNull::from_ref(inner))
+        let inner = unsafe { &*(ptr.sub(offset) as *const TinyArcInner<T>) };
+        unsafe { TinyArc::clone_from_inner(NonNull::from_ref(inner)) }
     }
 
     pub fn insert_after(other_node: &mut AtomicListHead<T, A>, mut me: TinyArc<T>) -> bool {

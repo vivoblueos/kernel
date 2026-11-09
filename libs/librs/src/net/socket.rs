@@ -40,7 +40,7 @@ fn syscall_result(result: isize) -> isize {
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/socket.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn socket(domain: c_int, type_: c_int, protocol: c_int) -> c_int {
     syscall_result(bk_syscall!(Socket, domain, type_, protocol) as isize) as c_int
 }
@@ -55,7 +55,7 @@ pub extern "C" fn socket(domain: c_int, type_: c_int, protocol: c_int) -> c_int 
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/bind.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn bind(
     socket: c_int,
     address: *const libc::sockaddr,
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn bind(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/connect.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn connect(
     socket: c_int,
     address: *const libc::sockaddr,
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn connect(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/listen.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn listen(socket: c_int, backlog: c_int) -> c_int {
     syscall_result(bk_syscall!(Listen, socket, backlog) as isize) as c_int
 }
@@ -111,7 +111,7 @@ pub extern "C" fn listen(socket: c_int, backlog: c_int) -> c_int {
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/accept.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn accept(
     sock_fd: c_int,
     _address: *mut libc::sockaddr,
@@ -132,7 +132,7 @@ pub unsafe extern "C" fn accept(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/send.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn send(
     socket: c_int,
     buffer: *const c_void,
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn send(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/sendto.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sendto(
     socket: c_int,
     message: *const c_void,
@@ -183,7 +183,7 @@ pub unsafe extern "C" fn sendto(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/recv.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn recv(
     socket: c_int,
     buffer: *mut c_void,
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn recv(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/recvfrom.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn recvfrom(
     socket: c_int,
     buffer: *mut c_void,
@@ -240,7 +240,7 @@ pub unsafe extern "C" fn recvfrom(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/shutdown.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn shutdown(socket: c_int, how: c_int) -> c_int {
     syscall_result(bk_syscall!(Shutdown, socket, how) as isize) as c_int
 }
@@ -257,7 +257,7 @@ pub extern "C" fn shutdown(socket: c_int, how: c_int) -> c_int {
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/setsockopt.html>
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/V2_chap02.html#tag_16_10_16>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn setsockopt(
     socket: c_int,
     level: c_int,
@@ -287,7 +287,7 @@ pub unsafe extern "C" fn setsockopt(
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/getsockopt.html>
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/V2_chap02.html#tag_16_10_16>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn getsockopt(
     socket: c_int,
     level: c_int,
@@ -318,7 +318,7 @@ pub unsafe extern "C" fn getsockopt(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/sendmsg.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sendmsg(
     socket: c_int,
     message: *const libc::msghdr,
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn sendmsg(
 ///
 /// # Reference
 /// <https://pubs.opengroup.org/onlinepubs/9799919799/functions/recvmsg.html>
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn recvmsg(
     socket: c_int,
     message: *mut libc::msghdr,

@@ -85,16 +85,16 @@ def check_files_format(repo: str, files: List[str]) -> List[Tuple[str, str]]:
         python_files = [f for f in files if f.endswith(".py")]
     gn_files = [f for f in files if f.endswith((".gn", ".gni"))]
 
-    # Check Rust formatting
-    if rust_files:
+    # Let rustfmt discover each file's component config.
+    for rust_file in rust_files:
         try:
             subprocess.run([
                 "rustfmt",
-                "--edition=2021",
                 "--check",
                 "--unstable-features",
                 "--skip-children",
-            ] + rust_files,
+                rust_file,
+            ],
                            check=True,
                            capture_output=True,
                            text=True,

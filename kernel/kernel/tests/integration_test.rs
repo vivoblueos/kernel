@@ -41,9 +41,7 @@ pub fn kernel_test_runner(tests: &[&dyn Fn()]) {
     }
     println!("Kernel integration test end.");
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 fn main() -> i32 {
     println!("Hello, BlueKernel!");
 
