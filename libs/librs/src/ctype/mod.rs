@@ -18,52 +18,52 @@
 // standard MIT license
 
 use crate::types::c_int;
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isalnum(c: c_int) -> c_int {
     c_int::from(isdigit(c) != 0 || isalpha(c) != 0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isalpha(c: c_int) -> c_int {
     c_int::from(islower(c) != 0 || isupper(c) != 0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isascii(c: c_int) -> c_int {
     c_int::from((c & !0x7f) == 0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isblank(c: c_int) -> c_int {
     c_int::from(c == c_int::from(b' ') || c == c_int::from(b'\t'))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn iscntrl(c: c_int) -> c_int {
     c_int::from((0x00..=0x1f).contains(&c) || c == 0x7f)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isdigit(c: c_int) -> c_int {
     c_int::from(c >= c_int::from(b'0') && c <= c_int::from(b'9'))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isgraph(c: c_int) -> c_int {
     c_int::from((0x21..=0x7e).contains(&c))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn islower(c: c_int) -> c_int {
     c_int::from(c >= c_int::from(b'a') && c <= c_int::from(b'z'))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isprint(c: c_int) -> c_int {
     c_int::from((0x20..0x7f).contains(&c))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ispunct(c: c_int) -> c_int {
     c_int::from(
         (c >= c_int::from(b'!') && c <= c_int::from(b'/'))
@@ -73,7 +73,7 @@ pub extern "C" fn ispunct(c: c_int) -> c_int {
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isspace(c: c_int) -> c_int {
     c_int::from(
         c == c_int::from(b' ')
@@ -85,22 +85,22 @@ pub extern "C" fn isspace(c: c_int) -> c_int {
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isupper(c: c_int) -> c_int {
     c_int::from(c >= c_int::from(b'A') && c <= c_int::from(b'Z'))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn isxdigit(c: c_int) -> c_int {
     c_int::from(isdigit(c) != 0 || (c | 32 >= c_int::from(b'a') && c | 32 <= c_int::from(b'f')))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn toascii(c: c_int) -> c_int {
     c & 0x7f
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn tolower(c: c_int) -> c_int {
     if isupper(c) != 0 {
         c | 0x20
@@ -109,7 +109,7 @@ pub extern "C" fn tolower(c: c_int) -> c_int {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn toupper(c: c_int) -> c_int {
     if islower(c) != 0 {
         c & !0x20

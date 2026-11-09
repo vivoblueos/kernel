@@ -217,10 +217,9 @@ jobs:
                     }
                   }
                 } else if (ext === '.rs') {
-                  console.log(`Running: rustfmt --edition=2021 --check --unstable-features --skip-children ${filePath}`);
+                  console.log(`Running: rustfmt --check --unstable-features --skip-children ${filePath}`);
                   try {
                     execFileSync('rustfmt', [
-                      '--edition=2021',
                       '--check',
                       '--unstable-features',
                       '--skip-children',

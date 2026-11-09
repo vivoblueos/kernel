@@ -19,7 +19,7 @@ import("//build/toolchain/blueos.gni")
 build_rust("loader_integration_test") {
   testonly = true
   crate_type = "bin"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/test.rs" ]
   deps = [
     "//external/rust:semihosting",

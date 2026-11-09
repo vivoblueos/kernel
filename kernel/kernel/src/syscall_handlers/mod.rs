@@ -283,14 +283,14 @@ macro_rules! syscall_table {
 
         #[macro_export]
         macro_rules! bk_syscall {
-            $(($nr $$(,$arg:expr)*) => { $crate::syscalls::$mod::handle($$($arg),*) });*
+            $(($nr $$(,$arg:expr_2021)*) => { $crate::syscalls::$mod::handle($$($arg),*) });*
         }
     };
 }
 
 macro_rules! map_args {
-    ($args:expr, $idx:expr) => {};
-    ($args:expr, $idx:expr, $arg:ident, $argty:ty $(, $tailarg:ident, $tailargty:ty)*) => {
+    ($args:expr_2021, $idx:expr_2021) => {};
+    ($args:expr_2021, $idx:expr_2021, $arg:ident, $argty:ty $(, $tailarg:ident, $tailargty:ty)*) => {
         let $arg = unsafe { core::mem::transmute_copy::<usize, $argty>(&$args[$idx]) };
         map_args!($args, $idx+1 $(, $tailarg, $tailargty)*);
     };

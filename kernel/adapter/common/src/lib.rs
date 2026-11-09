@@ -42,8 +42,7 @@ mod tests {
     }
 
     #[used]
-    #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
+    #[unsafe(link_section = ".bk_app_array")]
     static INIT_TEST: extern "C" fn() = init_test;
 
     extern "C" fn init_test() {

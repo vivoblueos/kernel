@@ -26,7 +26,7 @@ const MPU_RBAR_AP_PRIV_RO: u32 = 0b10 << 1;
 const MPU_RLAR_REGION_ENABLE: u32 = 1 << 0;
 const SCB_SHCSR_MEMFAULTENA: u32 = 1 << 16;
 
-extern "C" {
+unsafe extern "C" {
     static __sys_stack_guard_start: u8;
     static __sys_stack_guard_end: u8;
 }

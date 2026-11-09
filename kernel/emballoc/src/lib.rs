@@ -223,7 +223,6 @@
 //! [codecov]: https://codecov.io/gh/jfrimmel/emballoc
 //! [ci-logs]: https://app.circleci.com/pipelines/github/jfrimmel/emballoc
 #![cfg_attr(not(test), no_std)]
-#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
 #![warn(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks)]
 
@@ -387,9 +386,9 @@ unsafe impl<const N: usize> GlobalAlloc for Allocator<N> {
 mod extra_doctests {
     /// Helper macro to pass a "dynamic"/included string to the `extern`-block
     macro_rules! doc_check {
-        ($x:expr) => {
+        ($x:expr_2021) => {
             #[doc = $x]
-            extern "C" {}
+            unsafe extern "C" {}
         };
     }
     // Check the code snippets in the Readme.

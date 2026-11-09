@@ -126,7 +126,7 @@ action("parse_const") {
 build_rust("blueos_kconfig") {
   crate_type = "rlib"
   sources = get_target_outputs(":parse_const")
-  edition = "2021"
+  edition = "2024"
   deps = [ ":parse_const" ]
 }
 

@@ -50,8 +50,7 @@ mod tests {
     static ALLOCATOR: KernelAllocator = KernelAllocator;
 
     #[used]
-    #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
+    #[unsafe(link_section = ".bk_app_array")]
     static INIT_TEST: extern "C" fn() = init_test;
 
     #[inline(never)]
@@ -63,8 +62,7 @@ mod tests {
         semihosting::println!("cmsis_rv2 unittest finished");
     }
     // wrapper functions for cmsis_rv2, avoid rc count problem
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn report_before_rv2() {
         let t = scheduler::current_thread();
         semihosting::println!(
@@ -76,8 +74,7 @@ mod tests {
         );
     }
     // wrapper functions for cmsis_rv2, avoid rc count problem
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn report_after_rv2() {
         let t = scheduler::current_thread();
         semihosting::println!(
@@ -89,15 +86,14 @@ mod tests {
         );
     }
     // copy from librs, cmsis_rv2 need an c library in fact
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn strncmp(
         s1: *const core::ffi::c_char,
         s2: *const core::ffi::c_char,
         n: core::ffi::c_size_t,
     ) -> core::ffi::c_int {
-        let s1 = slice::from_raw_parts(s1 as *const core::ffi::c_uchar, n);
-        let s2 = slice::from_raw_parts(s2 as *const core::ffi::c_uchar, n);
+        let s1 = unsafe { slice::from_raw_parts(s1 as *const core::ffi::c_uchar, n) };
+        let s2 = unsafe { slice::from_raw_parts(s2 as *const core::ffi::c_uchar, n) };
 
         for (&a, &b) in s1.iter().zip(s2.iter()) {
             let val = (a as core::ffi::c_int) - (b as core::ffi::c_int);
@@ -129,67 +125,54 @@ mod tests {
             self.0
         }
     }
-
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_SetPriority(irq: u16, priority: u8) {
-        cortex_m::Peripherals::steal()
-            .NVIC
-            .set_priority(IrqNumber::new(irq), priority);
+        unsafe {
+            cortex_m::Peripherals::steal()
+                .NVIC
+                .set_priority(IrqNumber::new(irq), priority)
+        };
     }
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_EnableIRQ(irq: u16) {
-        cortex_m::peripheral::NVIC::unmask(IrqNumber::new(irq));
+        unsafe { cortex_m::peripheral::NVIC::unmask(IrqNumber::new(irq)) };
     }
-
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_DisableIRQ(irq: u16) {
         cortex_m::peripheral::NVIC::mask(IrqNumber::new(irq));
     }
-
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_GetPendingIRQ(irq: u16) -> bool {
         cortex_m::peripheral::NVIC::is_pending(IrqNumber::new(irq))
     }
-
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_SetPendingIRQ(irq: u16) {
         cortex_m::peripheral::NVIC::pend(IrqNumber::new(irq));
     }
-
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn strcmp(
         s1: *const core::ffi::c_char,
         s2: *const core::ffi::c_char,
     ) -> core::ffi::c_int {
-        strncmp(s1, s2, isize::MAX as core::ffi::c_size_t)
+        unsafe { strncmp(s1, s2, isize::MAX as core::ffi::c_size_t) }
     }
 
     unsafe extern "C" {
         #[link_name = "cmsis_rv2"]
-        #[cfg_attr(compatible_old_toolchain, no_mangle)]
-        #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+        #[unsafe(no_mangle)]
         fn cmsis_rv2();
     }
     extern "C" fn init_test() {
         validation_test_main();
     }
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     extern "C" fn stdout_putchar(c: i32) {
         use semihosting::io::Write;
         semihosting::io::stdout()
             .expect("Failed to get stdout")
             .write_all(&[c as u8]);
     }
-
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(no_mangle)]
     extern "C" fn stdout_flush() {
         use semihosting::io::Write;
         semihosting::io::stdout()

@@ -48,6 +48,7 @@ pub mod code {
     pub const EILSEQ: super::Error = super::Error(-libc::EILSEQ);
     pub const ENOTSUP: super::Error = super::Error(-libc::ENOTSUP);
     pub const ENOTTY: super::Error = super::Error(-libc::ENOTTY);
+    pub const ERESET: super::Error = super::Error(-254);
 }
 
 const UNKNOW_STR: &CStr = c"EUNKNOWN ";

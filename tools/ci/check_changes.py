@@ -133,7 +133,6 @@ def check_format(files: Iterable[str],
     for file_name in groups.get("rust", []):
         result = _run((
             "rustfmt",
-            "--edition=2021",
             "--check",
             "--unstable-features",
             "--skip-children",

@@ -18,6 +18,6 @@ import("//build/toolchain/blueos.gni")
 build_rust("core_traits") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = []
 }
