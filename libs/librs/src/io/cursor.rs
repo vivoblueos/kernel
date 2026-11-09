@@ -253,7 +253,7 @@ where
 
     #[inline]
     unsafe fn initializer(&self) -> Initializer {
-        Initializer::nop()
+        unsafe { Initializer::nop() }
     }
 }
 

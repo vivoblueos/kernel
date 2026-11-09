@@ -38,6 +38,7 @@ build_rust("ftp") {
 }
 
 build_rust("example_connecting") {
+  edition = "2021"
   crate_name = "example_connecting"
   crate_type = "bin"
   sources = [ "examples/connecting.rs" ]

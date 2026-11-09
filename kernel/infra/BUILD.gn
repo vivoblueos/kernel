@@ -34,7 +34,6 @@ group("check_infra_by_clippy") {
 }
 
 shared_deps = [
-  "//external/rust:cfg-if",
   "//external/rust:memchr",
   "//external/rust:spin",
 ]
@@ -42,7 +41,7 @@ shared_deps = [
 build_rust("blueos_infra") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = shared_deps
 }
 
@@ -60,7 +59,7 @@ build_rust("infra_unittest") {
   crate_name = "infra_unittest"
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
 
   deps = shared_deps
   rustflags = [ "--test" ]

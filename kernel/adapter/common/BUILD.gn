@@ -23,7 +23,7 @@ shared_deps = [
 
 build_rust("blueos_adapter") {
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = shared_deps
 }
 
@@ -36,7 +36,7 @@ build_rust("blueos_adapter_unittest") {
   crate_name = "blueos_adapter_unittest"
   crate_type = "bin"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [ "//kernel/test_harness:blueos_test_macro" ]
   deps = [ "//external/rust:semihosting" ] + shared_deps
   deps += [ "//kernel/kconfig:generate_rustflags_file" ]

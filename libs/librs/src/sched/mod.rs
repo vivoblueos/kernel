@@ -31,23 +31,23 @@ pub const SCHED_FIFO: c_int = 0;
 pub const SCHED_RR: c_int = 1;
 pub const SCHED_OTHER: c_int = 2;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sched_get_priority_max(policy: c_int) -> c_int {
     Sys::sched_get_priority_max(policy)
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sched_get_priority_min(policy: c_int) -> c_int {
     Sys::sched_get_priority_min(policy)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sched_rr_get_interval(pid: pid_t, time: *mut timespec) -> c_int {
-    Sys::sched_rr_get_interval(pid, time)
+    unsafe { Sys::sched_rr_get_interval(pid, time) }
         .map(|_| 0)
         .syscall_failed()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sched_setscheduler(
     _pid: pid_t,
     _policy: c_int,
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn sched_setscheduler(
     // POSIX support scheduler in pthread* functions, just return error value
     -1
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sched_yield() -> c_int {
     Sys::sched_yield().map(|()| 0).syscall_failed()
 }
