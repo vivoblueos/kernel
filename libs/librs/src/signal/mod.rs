@@ -65,7 +65,7 @@ pub struct sigaction {
     pub sa_mask: sigset_t,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigaction(
     sig: c_int,
     act: *const sigaction,
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn sigaction(
     bk_syscall!(RtSigAction, sig, act as *const c_void, oact as *mut c_void) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigaddset(set: *mut sigset_t, signo: c_int) -> c_int {
     if signo <= 0 || signo as usize > NSIG.max(SIGRTMAX) {
         ERRNO.set(libc::EINVAL);
@@ -87,12 +87,12 @@ pub unsafe extern "C" fn sigaddset(set: *mut sigset_t, signo: c_int) -> c_int {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigaltstack(ss: *const sigaltstack, old_ss: *mut sigaltstack) -> c_int {
     bk_syscall!(SigAltStack, ss as *const c_void, old_ss as *mut c_void) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigdelset(set: *mut sigset_t, signo: c_int) -> c_int {
     if signo <= 0 || signo as usize > NSIG.max(SIGRTMAX) {
         ERRNO.set(libc::EINVAL);
@@ -105,38 +105,38 @@ pub unsafe extern "C" fn sigdelset(set: *mut sigset_t, signo: c_int) -> c_int {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigemptyset(set: *mut sigset_t) -> c_int {
-    if let Some(set) = (set as *mut SigSet).as_mut() {
+    if let Some(set) = unsafe { (set as *mut SigSet).as_mut() } {
         *set = 0;
     }
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigfillset(set: *mut sigset_t) -> c_int {
-    if let Some(set) = (set as *mut SigSet).as_mut() {
+    if let Some(set) = unsafe { (set as *mut SigSet).as_mut() } {
         *set = (1 << NSIG) - 1;
     }
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigismember(set: *const sigset_t, signo: c_int) -> c_int {
     if signo <= 0 || signo as usize > NSIG {
         ERRNO.set(libc::EINVAL);
         return -1;
     }
 
-    if let Some(set) = unsafe { (set as *mut SigSet).as_mut() } {
-        if *set & (1 << (signo as usize - 1)) != 0 {
-            return 1;
-        }
+    if let Some(set) = unsafe { (set as *mut SigSet).as_mut() }
+        && *set & (1 << (signo as usize - 1)) != 0
+    {
+        return 1;
     }
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn signal(
     sig: c_int,
     func: Option<extern "C" fn(c_int)>,
@@ -154,12 +154,12 @@ pub extern "C" fn signal(
     unsafe { old_sa.assume_init() }.sa_handler
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigpending(set: *mut sigset_t) -> c_int {
     bk_syscall!(RtSigPending, set) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigprocmask(
     how: c_int,
     set: *const sigset_t,
@@ -169,17 +169,17 @@ pub unsafe extern "C" fn sigprocmask(
     bk_syscall!(RtSigProcmask, how, set, oset) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sigqueue(pid: pid_t, sig: c_int, val: sigval) -> c_int {
     bk_syscall!(RtSigQueueInfo, pid, sig, val.sival_ptr) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigsuspend(sigmask: *const sigset_t) -> c_int {
     bk_syscall!(RtSigSuspend, sigmask) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigtimedwait(
     set: *const sigset_t,
     sig: *mut siginfo_t,
@@ -188,18 +188,18 @@ pub unsafe extern "C" fn sigtimedwait(
     bk_syscall!(RtSigTimedWait, set, sig as *mut c_void, tp) as c_int
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigwait(set: *const sigset_t, sig: *mut c_int) -> c_int {
     let mut pinfo = mem::MaybeUninit::<siginfo_t>::uninit();
-    if sigtimedwait(set, pinfo.as_mut_ptr(), ptr::null_mut()) < 0 {
+    if unsafe { sigtimedwait(set, pinfo.as_mut_ptr(), ptr::null_mut()) } < 0 {
         return -1;
     }
-    let info = pinfo.assume_init();
-    (*sig) = info.si_signo;
+    let info = unsafe { pinfo.assume_init() };
+    unsafe { (*sig) = info.si_signo };
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sigwaitinfo(set: *const sigset_t, sig: *mut siginfo_t) -> c_int {
-    sigtimedwait(set, sig, core::ptr::null())
+    unsafe { sigtimedwait(set, sig, core::ptr::null()) }
 }

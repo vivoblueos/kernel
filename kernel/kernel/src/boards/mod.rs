@@ -29,7 +29,7 @@ impl BlockStoragePolicy {
 
 #[macro_export]
 macro_rules! define_peripheral {
-    ($( ($field_name:ident, $device_ty:ty, $v:expr) ),* $(,)?) => {
+    ($( ($field_name:ident, $device_ty:ty, $v:expr_2021) ),* $(,)?) => {
         paste::paste! {
             $(
                 pub static [<$field_name:upper>]: $device_ty = $v;
@@ -62,7 +62,7 @@ macro_rules! define_peripheral {
 
 #[macro_export]
 macro_rules! define_pin_states {
-    ($class_name:ty, $( ( $($v:expr),* $(,)? ) ),* $(,)?) => {
+    ($class_name:ty, $( ( $($v:expr_2021),* $(,)? ) ),* $(,)?) => {
         pub(crate) const PIN_STATES: &[&$class_name] = &[
             $( &<$class_name>::new( $($v),* ), )*
         ];
@@ -74,7 +74,7 @@ macro_rules! define_pin_states {
 
 #[macro_export]
 macro_rules! define_bus {
-    ($( ($bus_name:ident, $bus_ty:ty, $( $(#[$device_meta:meta])* ($device_name:ident, $device_ty:ty, $device:expr) ),* $(,)?  ) ),* $(,)?) => {
+    ($( ($bus_name:ident, $bus_ty:ty, $( $(#[$device_meta:meta])* ($device_name:ident, $device_ty:ty, $device:expr_2021) ),* $(,)?  ) ),* $(,)?) => {
         $(
             paste::paste! {
                 $(

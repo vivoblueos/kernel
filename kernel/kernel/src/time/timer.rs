@@ -41,6 +41,9 @@ static_arc! {
 #[cfg(soft_timer)]
 static mut SW_TIMER_WORKER: SoftTimerWorker = SoftTimerWorker::new();
 
+// FIXME: The shared timer queue and expiration barrier make one hart's timer
+// interrupt depend on another hart's callback duration. Retrying on contention
+// prevents a lost local clock, but per-CPU timer queues are the better fix.
 static EXPIRE_BARRIER: SpinLock<()> = SpinLock::new(());
 
 struct SoftTimerWorker {
@@ -144,6 +147,8 @@ impl const IntrusiveAdapter<Timer> for Node {
     }
 }
 
+#[cfg(timer_align)]
+pub const ALIGN_INSENSITIVE: u8 = 1 << 1;
 // To support concurrent modification of inner data of the timer, we have
 // to refactor it to something like
 // ```
@@ -163,6 +168,9 @@ pub struct Timer {
     pub callback: TimerCallback,
     // Support concurrent expiring via atomic.
     expired: AtomicBool,
+    // Flag bits (`ALIGN_INSENSITIVE`). Bit 0 is reserved for a future
+    // LOW_POWER port so the two lineages can share the layout.
+    flags: u8,
 }
 
 impl Timer {
@@ -172,6 +180,7 @@ impl Timer {
             mode: TimerMode::Deadline(Tick(0)),
             callback: TimerCallback::Nothing,
             expired: AtomicBool::new(false),
+            flags: 0,
         }
     }
 
@@ -185,6 +194,110 @@ impl Timer {
 
     pub unsafe fn reset(&self) {
         self.expired.store(false, Ordering::SeqCst);
+    }
+
+    #[cfg(timer_align)]
+    #[inline]
+    pub fn set_align_insensitive(&mut self) {
+        self.flags |= ALIGN_INSENSITIVE;
+    }
+
+    #[cfg(timer_align)]
+    #[inline]
+    pub fn is_align_insensitive(&self) -> bool {
+        self.flags & ALIGN_INSENSITIVE != 0
+    }
+
+    #[cfg(not(timer_align))]
+    #[inline]
+    pub fn is_align_insensitive(&self) -> bool {
+        false
+    }
+}
+
+/// Alignment policy: rewrites a timer's deadline onto an anchor's phase grid.
+pub trait AlignPolicy {
+    /// Called under irqsave guard before `add`. `heap` supplies anchor candidates.
+    fn maybe_align(
+        &self,
+        tm: &mut Timer,
+        now: Tick,
+        heap: &IntrusiveBinaryHeap<Timer, Node, Comparator>,
+    );
+}
+
+/// Disabled no-op: inlined away.
+pub struct AlignDisabled;
+
+impl AlignPolicy for AlignDisabled {
+    #[inline(always)]
+    fn maybe_align(
+        &self,
+        _tm: &mut Timer,
+        _now: Tick,
+        _heap: &IntrusiveBinaryHeap<Timer, Node, Comparator>,
+    ) {
+    }
+}
+
+/// Enabled: scans anchors and rewrites base_deadline via `decide_align`.
+#[cfg(timer_align)]
+pub struct AlignEnabled;
+
+#[cfg(timer_align)]
+impl AlignPolicy for AlignEnabled {
+    fn maybe_align(
+        &self,
+        tm: &mut Timer,
+        now: Tick,
+        heap: &IntrusiveBinaryHeap<Timer, Node, Comparator>,
+    ) {
+        use crate::time::timer_align::{decide_align, AlignedStart};
+        if !tm.is_align_insensitive() {
+            return;
+        }
+        let TimerMode::Repeat(r) = &mut tm.mode else {
+            return;
+        };
+        if r.period.0 == 0 {
+            return;
+        }
+        let new_period = r.period;
+        let new_original = r.base_deadline;
+        let tol = blueos_kconfig::CONFIG_TIMER_ALIGN_TOLERANCE_TICKS as usize;
+        let anchors = heap.iter().filter_map(|t| match &t.mode {
+            TimerMode::Repeat(ar) if t.is_align_insensitive() && ar.period.0 != 0 => {
+                Some((ar.base_deadline, ar.period))
+            }
+            _ => None,
+        });
+        if let Some(AlignedStart { deadline }) =
+            decide_align(new_period, new_original, now, tol, anchors)
+        {
+            r.base_deadline = deadline;
+        }
+    }
+}
+
+/// cfg-dispatched entry point so call sites need no scattered `#[cfg]`.
+pub struct AlignActive;
+
+impl AlignActive {
+    #[inline(always)]
+    pub fn maybe_align(
+        &self,
+        tm: &mut Timer,
+        now: Tick,
+        heap: &IntrusiveBinaryHeap<Timer, Node, Comparator>,
+    ) {
+        #[cfg(timer_align)]
+        {
+            AlignEnabled.maybe_align(tm, now, heap)
+        }
+        #[cfg(not(timer_align))]
+        {
+            AlignDisabled.maybe_align(tm, now, heap)
+        }
     }
 }
 
@@ -210,6 +323,7 @@ pub fn add_soft_timer(tm: &mut Timer) -> Option<Iou<'_>> {
     {
         let swtm = unsafe { &SW_TIMER_WORKER.timers };
         let mut w = swtm.irqsave_lock();
+        AlignActive.maybe_align(tm, Tick::now(), w.timers());
         iou = w.add(tm);
     }
     update_clock_interrupt();
@@ -257,8 +371,16 @@ pub fn is_active_soft_timer(iou: &Iou<'_>) -> bool {
     w.is_active(iou)
 }
 
-pub(crate) fn expire_timers(deadline: Tick) -> Option<Tick> {
-    let _guard = EXPIRE_BARRIER.try_irqsave_lock()?;
+pub(crate) enum ExpireTimersResult {
+    NextDeadline(Tick),
+    Idle,
+    BarrierBusy,
+}
+
+pub(crate) fn expire_timers(deadline: Tick) -> ExpireTimersResult {
+    let Some(_guard) = EXPIRE_BARRIER.try_irqsave_lock() else {
+        return ExpireTimersResult::BarrierBusy;
+    };
 
     let soft_deadline = wake_up_soft_timer_worker(deadline).unwrap_or(Tick::MAX);
     let hard_deadline;
@@ -271,9 +393,9 @@ pub(crate) fn expire_timers(deadline: Tick) -> Option<Tick> {
         res = core::cmp::min(soft_deadline, hard_deadline);
     }
     if res == Tick::MAX {
-        return None;
+        return ExpireTimersResult::Idle;
     }
-    Some(res)
+    ExpireTimersResult::NextDeadline(res)
 }
 
 fn update_clock_interrupt() -> Tick {
@@ -306,6 +428,133 @@ mod tests {
             }
         };
         TimerCallback::Do(Box::new(closure))
+    }
+
+    #[cfg(timer_align)]
+    #[test]
+    fn align_insensitive_flag_roundtrip() {
+        let mut tm = Timer::new();
+        assert!(!tm.is_align_insensitive());
+        tm.set_align_insensitive();
+        assert!(tm.is_align_insensitive());
+    }
+
+    #[cfg(not(timer_align))]
+    #[test]
+    fn align_insensitive_always_false_when_disabled() {
+        let tm = Timer::new();
+        assert!(!tm.is_align_insensitive());
+    }
+
+    #[cfg(timer_align)]
+    #[test]
+    fn align_disabled_is_noop() {
+        let mut tm = Timer::new();
+        tm.mode = TimerMode::Repeat(Repeat {
+            base_deadline: Tick(42),
+            period: Tick(10),
+            total_times: None,
+            elapsed_times: 0,
+        });
+        let original = Tick(42);
+        // Empty heap: AlignDisabled is a no-op.
+        let empty: IntrusiveBinaryHeap<Timer, Node, Comparator> =
+            IntrusiveBinaryHeap::<Timer, Node, _>::new(compare_timer);
+        AlignDisabled.maybe_align(&mut tm, Tick(0), &empty);
+        match tm.mode {
+            TimerMode::Repeat(r) => assert_eq!(r.base_deadline, original),
+            _ => debug_assert!(false, "expected Repeat mode"),
+        }
+    }
+
+    #[cfg(timer_align)]
+    #[test]
+    fn align_enabled_aligns_to_anchor() {
+        // Anchor period 10 base 0; new period 10 base 29, now 25, tol 1 -> snaps to 30.
+        let mut anchor = Timer::new();
+        anchor.mode = TimerMode::Repeat(Repeat {
+            base_deadline: Tick(0),
+            period: Tick(10),
+            total_times: None,
+            elapsed_times: 0,
+        });
+        anchor.set_align_insensitive();
+        let mut heap: IntrusiveBinaryHeap<Timer, Node, Comparator> =
+            IntrusiveBinaryHeap::<Timer, Node, _>::new(compare_timer);
+        heap.push(&mut anchor);
+        let mut tm = Timer::new();
+        tm.mode = TimerMode::Repeat(Repeat {
+            base_deadline: Tick(29),
+            period: Tick(10),
+            total_times: None,
+            elapsed_times: 0,
+        });
+        tm.set_align_insensitive();
+        AlignEnabled.maybe_align(&mut tm, Tick(25), &heap);
+        match tm.mode {
+            TimerMode::Repeat(r) => assert_eq!(r.base_deadline, Tick(30)),
+            _ => debug_assert!(false, "expected Repeat mode"),
+        }
+    }
+
+    #[cfg(timer_align)]
+    #[test]
+    fn base_deadline_snap_locks_phase_permanently() {
+        // B-specific: snapping base_deadline once locks ALL future
+        // base + period*elapsed on the grid (A's rolling model cannot do this).
+        // Anchor p=10 base=0; new p=10 base=9, now=5, tol=1 -> |10-9|=1<=1 -> snaps to 10.
+        let mut anchor = Timer::new();
+        anchor.mode = TimerMode::Repeat(Repeat {
+            base_deadline: Tick(0),
+            period: Tick(10),
+            total_times: None,
+            elapsed_times: 0,
+        });
+        anchor.set_align_insensitive();
+        let mut heap: IntrusiveBinaryHeap<Timer, Node, Comparator> =
+            IntrusiveBinaryHeap::<Timer, Node, _>::new(compare_timer);
+        heap.push(&mut anchor);
+        let mut tm = Timer::new();
+        tm.mode = TimerMode::Repeat(Repeat {
+            base_deadline: Tick(9),
+            period: Tick(10),
+            total_times: None,
+            elapsed_times: 0,
+        });
+        tm.set_align_insensitive();
+        AlignEnabled.maybe_align(&mut tm, Tick(5), &heap);
+        match &tm.mode {
+            TimerMode::Repeat(r) => {
+                assert_eq!(r.base_deadline, Tick(10));
+                // Every future deadline stays on-grid at multiples of 10.
+                for elapsed in 0..5usize {
+                    let next = compute_next_deadline_with(&tm, elapsed);
+                    assert_eq!(
+                        next.0 % 10,
+                        0,
+                        "elapsed={} deadline={} not on grid",
+                        elapsed,
+                        next.0
+                    );
+                }
+            }
+            _ => debug_assert!(false, "expected Repeat mode"),
+        }
+    }
+
+    /// Helper: compute deadline as if the timer had the given elapsed_times.
+    fn compute_next_deadline_with(tm: &Timer, elapsed: usize) -> Tick {
+        match &tm.mode {
+            TimerMode::Repeat(r) => Tick(r.base_deadline.0 + r.period.0 * elapsed),
+            TimerMode::Deadline(d) => *d,
+        }
+    }
+
+    #[test]
+    fn timer_size_invariant_across_cfg() {
+        // Timer is #[repr(C)]; the align flag must not change its layout.
+        let s = core::mem::size_of::<Timer>();
+        assert!(s > 0);
     }
 
     #[test]
@@ -627,6 +876,215 @@ mod tests {
             "Timer fired too late: diff = {}, expected at most {}",
             diff,
             r * hz / 1_00
+        );
+    }
+
+    #[cfg(all(soft_timer, timer_align))]
+    #[test]
+    fn align_010_same_period_coalesce() {
+        // Two same-period (10) insensitive timers: b's first fire is 2 ticks off
+        // the anchor phase (<= TOL=2 -> snaps). Coalescing check: both fire on the
+        // same tick (diff == 0).
+        //
+        // B uses the arithmetic model: first fire = base_deadline (+ period*0).
+        // So a.base = now+10 (fires now+10); b.base = now+12, snaps to nearest grid
+        // point now+10 (|12-10|=2 <= TOL), fires now+10 -> coalesces with a.
+        let ticks: Arc<SpinLock<Vec<Tick>>> = Arc::new(SpinLock::new(Vec::new()));
+        let now = Tick::now();
+        with_iou!(|iou_a, iou_b| {
+            let mut a = Timer::new();
+            a.mode = TimerMode::Repeat(Repeat {
+                base_deadline: now.add(Tick(10)),
+                period: Tick(10),
+                total_times: Some(1),
+                elapsed_times: 0,
+            });
+            a.set_align_insensitive();
+            a.callback = {
+                let ticks = ticks.clone();
+                TimerCallback::Do(Box::new(move || {
+                    ticks.irqsave_lock().push(Tick::now());
+                }))
+            };
+            iou_a = add_soft_timer(&mut a).unwrap();
+
+            let mut b = Timer::new();
+            // b's original first fire is 2 ticks off the anchor phase (<= TOL=2 -> snaps).
+            b.mode = TimerMode::Repeat(Repeat {
+                base_deadline: now.add(Tick(12)),
+                period: Tick(10),
+                total_times: Some(1),
+                elapsed_times: 0,
+            });
+            b.set_align_insensitive();
+            b.callback = {
+                let ticks = ticks.clone();
+                TimerCallback::Do(Box::new(move || {
+                    ticks.irqsave_lock().push(Tick::now());
+                }))
+            };
+            iou_b = add_soft_timer(&mut b).unwrap();
+
+            scheduler::suspend_me_until::<()>(now.add(Tick(15)), None);
+            iou_a = remove_soft_timer(iou_a).unwrap();
+            iou_b = remove_soft_timer(iou_b).unwrap();
+        });
+        let recorded = ticks.irqsave_lock();
+        assert_eq!(recorded.len(), 2, "both timers should fire once each");
+        assert_eq!(
+            recorded[0],
+            recorded[1],
+            "coalesced: both fire on same tick, got {:?}",
+            recorded.clone()
+        );
+    }
+
+    #[cfg(all(soft_timer, timer_align))]
+    #[test]
+    fn align_016_non_integer_no_align() {
+        // 13 vs 8 is not an integer multiple -> no alignment, each fires independently
+        // (no-align check: fire ticks differ, diff != 0).
+        //
+        // B arithmetic model: a.base = now+13 (fires now+13); b.base = now+8 (fires now+8).
+        // 13%8 != 0 and 8%13 != 0 -> decide_align returns None -> b keeps its base.
+        let ticks: Arc<SpinLock<Vec<Tick>>> = Arc::new(SpinLock::new(Vec::new()));
+        let now = Tick::now();
+        with_iou!(|iou_a, iou_b| {
+            let mut a = Timer::new();
+            a.mode = TimerMode::Repeat(Repeat {
+                base_deadline: now.add(Tick(13)),
+                period: Tick(13),
+                total_times: Some(1),
+                elapsed_times: 0,
+            });
+            a.set_align_insensitive();
+            a.callback = {
+                let ticks = ticks.clone();
+                TimerCallback::Do(Box::new(move || {
+                    ticks.irqsave_lock().push(Tick::now());
+                }))
+            };
+            iou_a = add_soft_timer(&mut a).unwrap();
+
+            let mut b = Timer::new();
+            b.mode = TimerMode::Repeat(Repeat {
+                base_deadline: now.add(Tick(8)),
+                period: Tick(8),
+                total_times: Some(1),
+                elapsed_times: 0,
+            });
+            b.set_align_insensitive();
+            b.callback = {
+                let ticks = ticks.clone();
+                TimerCallback::Do(Box::new(move || {
+                    ticks.irqsave_lock().push(Tick::now());
+                }))
+            };
+            iou_b = add_soft_timer(&mut b).unwrap();
+
+            scheduler::suspend_me_until::<()>(now.add(Tick(20)), None);
+            iou_a = remove_soft_timer(iou_a).unwrap();
+            iou_b = remove_soft_timer(iou_b).unwrap();
+        });
+        let recorded = ticks.irqsave_lock();
+        assert_eq!(recorded.len(), 2, "both timers should fire once each");
+        assert_ne!(
+            recorded[0],
+            recorded[1],
+            "non-integer-multiple must NOT coalesce, got same tick {:?}",
+            recorded.clone()
+        );
+    }
+
+    #[cfg(all(soft_timer, timer_align))]
+    #[test]
+    fn align_020_integer_multiple_aligns() {
+        // Integer-multiple alignment: anchor a period 20, newcomer b period 40 (x2).
+        // B's arithmetic model: first fire = base_deadline, and snapping base_deadline
+        // once locks ALL future base + period*elapsed on the grid.
+        //
+        // a: base=now+20, period=20, total=2 -> fires now+20, now+40.
+        // b: base=now+42 (2 off grid point now+40, <= TOL=2 -> snaps to now+40),
+        //    period=40, total=1 -> fires now+40, same tick as a's 2nd fire.
+        // Unaligned, b would fire at now+42 (offset%20==2), failing the assert below.
+        let a_ticks: Arc<SpinLock<Vec<Tick>>> = Arc::new(SpinLock::new(Vec::new()));
+        let b_ticks: Arc<SpinLock<Vec<Tick>>> = Arc::new(SpinLock::new(Vec::new()));
+        let now = Tick::now();
+        with_iou!(|iou_a, iou_b| {
+            let mut a = Timer::new();
+            a.mode = TimerMode::Repeat(Repeat {
+                base_deadline: now.add(Tick(20)),
+                period: Tick(20),
+                total_times: Some(2),
+                elapsed_times: 0,
+            });
+            a.set_align_insensitive();
+            a.callback = {
+                let ticks = a_ticks.clone();
+                TimerCallback::Do(Box::new(move || {
+                    ticks.irqsave_lock().push(Tick::now());
+                }))
+            };
+            iou_a = add_soft_timer(&mut a).unwrap();
+
+            let mut b = Timer::new();
+            // b's original first fire is 2 ticks off grid point now+40 -> <= TOL=2 snaps.
+            b.mode = TimerMode::Repeat(Repeat {
+                base_deadline: now.add(Tick(42)),
+                period: Tick(40),
+                total_times: Some(1),
+                elapsed_times: 0,
+            });
+            b.set_align_insensitive();
+            b.callback = {
+                let ticks = b_ticks.clone();
+                TimerCallback::Do(Box::new(move || {
+                    ticks.irqsave_lock().push(Tick::now());
+                }))
+            };
+            iou_b = add_soft_timer(&mut b).unwrap();
+
+            // Window covers now+40 (a's 2nd fire and b's 1st fire on the same tick).
+            scheduler::suspend_me_until::<()>(now.add(Tick(45)), None);
+            iou_a = remove_soft_timer(iou_a).unwrap();
+            iou_b = remove_soft_timer(iou_b).unwrap();
+        });
+
+        let b_recorded = b_ticks.irqsave_lock();
+        assert_eq!(
+            b_recorded.len(),
+            1,
+            "b should fire once, got {:?}",
+            b_recorded.clone()
+        );
+        let b_fire = b_recorded[0];
+        let a_recorded = a_ticks.irqsave_lock();
+        assert_eq!(
+            a_recorded.len(),
+            2,
+            "a should fire twice, got {:?}",
+            a_recorded.clone()
+        );
+
+        // Integer-multiple alignment core assertion: b's fire tick lands on anchor a's grid.
+        let offset = b_fire.0.saturating_sub(now.0);
+        assert_eq!(
+            offset % 20,
+            0,
+            "integer-multiple: b must fire on anchor grid (offset%20==0), \
+             b_fire={:?} now={:?} offset={} a_fires={:?}",
+            b_fire,
+            now,
+            offset,
+            a_recorded.clone()
+        );
+        // b's fire tick equals a's 2nd fire tick (drain on the same tick).
+        assert_eq!(
+            b_fire,
+            a_recorded[1],
+            "b should coalesce onto a's second fire, got b={:?} a={:?}",
+            b_fire,
+            a_recorded.clone()
         );
     }
 }

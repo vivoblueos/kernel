@@ -34,13 +34,25 @@ config SLAB_DYNAMIC_MAX_TOTAL_PAGES
     depends on ALLOCATOR_SLAB_DYNAMIC
 
 config ALLOCATOR_BUDDY
-    bool "Enable buddy allocator as physical page manager"
+    bool "Use buddy allocator as dynamic slab backing allocator"
+    depends on ALLOCATOR_SLAB_DYNAMIC
     default n
     help
-        Enable the buddy allocator to manage all physical memory pages.
-        This can coexist with TLSF/SLAB/LLFF, which remain the selected
-        heap allocator for small allocations.
-        When enabled, slab allocator operates on top of buddy-allocated
-        page pools; >= PAGE_SIZE allocations go directly to buddy;
-        tlsf/llff keep their original __heap_start~__heap_end path.
-        When disabled, the kernel falls back to direct heap management.
+        Use the buddy allocator to manage allocatable physical pages and
+        serve as the backing allocator for dynamic slab.
+
+        Dynamic slab obtains slab pages from buddy. Requests that cannot be
+        served by a slab size class, including requests larger than 2048 bytes
+        or requiring larger alignment, are forwarded to buddy.
+
+        When disabled, dynamic slab uses TLSF as its backing allocator over
+        the __heap_start to __heap_end range.
+
+config BUDDY_MAX_ORDER
+    int "Maximum buddy allocation order" if ALLOCATOR_BUDDY
+    range 0 19
+    default 11
+    help
+        Set the largest allocation order supported by the buddy allocator.
+        An order-N allocation contains 2^N pages. With 4 KiB pages, the
+        default order 11 supports allocations up to 8 MiB.

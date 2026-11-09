@@ -67,7 +67,7 @@ impl ContextSwitchHookHolder {
     /// # Safety
     /// The caller must ensure the pointer is valid and of the correct type.
     pub unsafe fn next_thread<T>(&self) -> &T {
-        &*(self.next_thread as *const T)
+        unsafe { &*(self.next_thread as *const T) }
     }
 }
 

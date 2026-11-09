@@ -112,69 +112,69 @@ impl __lock {
 // Static lock globals matching newlib's BSS symbols.
 // Recursive-named locks use recursive mutex type; others use normal.
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___sfp_recursive_mutex: __lock = __lock::new_recursive();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___atexit_recursive_mutex: __lock = __lock::new_recursive();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___at_quick_exit_mutex: __lock = __lock::new_normal();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___malloc_recursive_mutex: __lock = __lock::new_recursive();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___env_recursive_mutex: __lock = __lock::new_recursive();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___tz_mutex: __lock = __lock::new_normal();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___dd_hash_mutex: __lock = __lock::new_normal();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 static __lock___arc4random_mutex: __lock = __lock::new_normal();
 
 // __retarget_lock_* implementations.
 // _LOCK_T = *mut __lock. Init functions take *mut *mut __lock and may
 // replace the pointer with a heap-allocated lock.
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_init(lock: *mut *mut __lock) {
     *lock = Box::into_raw(Box::new(__lock::new_normal()));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_init_recursive(lock: *mut *mut __lock) {
     *lock = Box::into_raw(Box::new(__lock::new_recursive()));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_close(lock: *mut __lock) {
     if !lock.is_null() {
         drop(Box::from_raw(lock));
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_close_recursive(lock: *mut __lock) {
     __retarget_lock_close(lock);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_acquire(lock: *mut __lock) {
     if !lock.is_null() {
         (*lock).acquire();
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_acquire_recursive(lock: *mut __lock) {
     __retarget_lock_acquire(lock);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_try_acquire(lock: *mut __lock) -> c_int {
     if lock.is_null() {
         return 0;
@@ -182,19 +182,19 @@ pub unsafe extern "C" fn __retarget_lock_try_acquire(lock: *mut __lock) -> c_int
     (*lock).try_acquire()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_try_acquire_recursive(lock: *mut __lock) -> c_int {
     __retarget_lock_try_acquire(lock)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_release(lock: *mut __lock) {
     if !lock.is_null() {
         (*lock).release();
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __retarget_lock_release_recursive(lock: *mut __lock) {
     __retarget_lock_release(lock);
 }

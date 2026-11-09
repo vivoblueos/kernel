@@ -19,12 +19,10 @@ extern crate librs;
 extern crate rsrt;
 extern crate thread_metric;
 
-extern "C" {
+unsafe extern "C" {
     fn tm_main();
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     librs::stdio::init();
     librs::pthread::register_my_posix_tcb();

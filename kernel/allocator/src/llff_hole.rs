@@ -332,10 +332,12 @@ impl HoleList {
         debug_assert!(aligned_hole_size >= GRANULARITY);
 
         let ptr = aligned_hole_addr as *mut Hole;
-        ptr.write(Hole {
-            size: aligned_hole_size,
-            next: None,
-        });
+        unsafe {
+            ptr.write(Hole {
+                size: aligned_hole_size,
+                next: None,
+            })
+        };
 
         debug_assert_eq!(
             hole_addr.wrapping_add(hole_size),
@@ -345,7 +347,7 @@ impl HoleList {
         HoleList {
             first: Hole {
                 size: 0,
-                next: Some(NonNull::new_unchecked(ptr)),
+                next: Some(unsafe { NonNull::new_unchecked(ptr) }),
             },
             bottom: aligned_hole_addr,
             top: aligned_hole_addr.wrapping_add(aligned_hole_size),
@@ -417,12 +419,13 @@ impl HoleList {
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: &Layout) -> usize {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let Some(old_block) = used_block_hdr_for_allocation(ptr, layout.align()) else {
+        let Some(old_block) = (unsafe { used_block_hdr_for_allocation(ptr, layout.align()) })
+        else {
             return 0;
         };
         let old_block = old_block.cast::<UsedBlockHdr>();
         let hole_addr_u8 = old_block.as_ptr() as *mut u8;
-        let hole_size = old_block.as_ref().common.size - SIZE_USED;
+        let hole_size = unsafe { old_block.as_ref() }.common.size - SIZE_USED;
 
         deallocate(self, hole_addr_u8, hole_size);
         hole_size
@@ -431,12 +434,12 @@ impl HoleList {
     pub unsafe fn deallocate_unknown_align(&mut self, ptr: NonNull<u8>) -> usize {
         // Safety: `ptr` is a previously allocated memory block with the same
         //         alignment as `align`. This is upheld by the caller.
-        let Some(old_block) = used_block_hdr_for_allocation_unknown_align(ptr) else {
+        let Some(old_block) = (unsafe { used_block_hdr_for_allocation_unknown_align(ptr) }) else {
             return 0;
         };
         let old_block = old_block.cast::<UsedBlockHdr>();
         let hole_addr_u8 = old_block.as_ptr() as *mut u8;
-        let hole_size = old_block.as_ref().common.size - SIZE_USED;
+        let hole_size = unsafe { old_block.as_ref() }.common.size - SIZE_USED;
 
         deallocate(self, hole_addr_u8, hole_size);
         hole_size
@@ -512,7 +515,7 @@ impl HoleList {
         // only extend up to another valid boundary
         let new_hole_size = align_down_size(extend_by, align_of::<Hole>());
         deallocate(self, top, new_hole_size);
-        self.top = top.add(new_hole_size);
+        self.top = unsafe { top.add(new_hole_size) };
 
         // save extra bytes given to extend that weren't aligned to the hole size
         self.pending_extend = (extend_by - new_hole_size) as u8;
@@ -526,8 +529,8 @@ unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
         0,
         "Hole address not aligned!",
     );
-    hole_addr.write(Hole { size, next: None });
-    NonNull::new_unchecked(hole_addr)
+    unsafe { hole_addr.write(Hole { size, next: None }) };
+    unsafe { NonNull::new_unchecked(hole_addr) }
 }
 
 impl Cursor {

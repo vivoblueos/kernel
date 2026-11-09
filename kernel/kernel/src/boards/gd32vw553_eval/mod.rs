@@ -111,15 +111,15 @@ pub(crate) fn handle_irq(_ctx: &Context, _mcause: usize, _mtval: usize) {
 }
 
 unsafe fn copy_data() {
-    extern "C" {
+    unsafe extern "C" {
         static __data_lma: u8;
         static mut __data_start: u8;
         static mut __data_end: u8;
     }
     let src = core::ptr::addr_of!(__data_lma);
     let dst = core::ptr::addr_of_mut!(__data_start);
-    let size = core::ptr::addr_of_mut!(__data_end).offset_from(dst as *const _) as usize;
-    core::ptr::copy_nonoverlapping(src, dst, size)
+    let size = unsafe { core::ptr::addr_of_mut!(__data_end).offset_from(dst as *const _) as usize };
+    unsafe { core::ptr::copy_nonoverlapping(src, dst, size) }
 }
 
 pub(crate) fn init() {
@@ -161,8 +161,7 @@ crate::define_pin_states!(
 );
 
 // Used by many drivers in gd32's SDK.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn delay_1ms(millis: u32) {
     let ticks = Tick::from_millis(millis as u64);
     if ticks == Tick(0) {

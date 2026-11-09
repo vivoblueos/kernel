@@ -40,7 +40,7 @@ pub const _SC_HOST_NAME_MAX: c_int = 180;
 
 /// See <https://pubs.opengroup.org/onlinepubs/9799919799/functions/sysconf.html>.
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sysconf(name: c_int) -> c_long {
     // TODO: Real values
     match name {

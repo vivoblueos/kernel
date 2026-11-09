@@ -60,17 +60,21 @@ pub fn is_in_irq() -> bool {
 #[inline]
 unsafe fn increment_nesting_count() -> usize {
     let id = arch::current_cpu_id();
-    let old = IRQ_NESTING_COUNT[id];
-    IRQ_NESTING_COUNT[id] = old + 1;
-    old as usize
+    unsafe {
+        let old = IRQ_NESTING_COUNT[id];
+        IRQ_NESTING_COUNT[id] = old + 1;
+        old as usize
+    }
 }
 
 #[inline]
 unsafe fn decrement_nesting_count() -> usize {
     let id = arch::current_cpu_id();
-    let old = IRQ_NESTING_COUNT[id];
-    IRQ_NESTING_COUNT[id] = old - 1;
-    old as usize
+    unsafe {
+        let old = IRQ_NESTING_COUNT[id];
+        IRQ_NESTING_COUNT[id] = old - 1;
+        old as usize
+    }
 }
 
 // This might be called from assembly code, use extern "C" here.

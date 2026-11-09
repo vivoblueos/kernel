@@ -19,7 +19,7 @@ build_rust("arch_crate") {
   crate_type = "rlib"
   crate_name = "arch_crate"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//kernel/core_traits",
     "//kernel/hal:blueos_hal",

@@ -46,7 +46,7 @@ struct ZeroTable {
 // Copy data from FLASH to RAM.
 #[inline(never)]
 unsafe fn copy_data() {
-    extern "C" {
+    unsafe extern "C" {
         static __zero_table_start: ZeroTable;
         static __zero_table_end: ZeroTable;
         static __copy_table_start: CopyTable;

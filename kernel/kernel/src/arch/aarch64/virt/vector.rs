@@ -91,11 +91,8 @@ unsafe extern "C" {
 pub fn get_vector_table_addr() -> usize {
     hyper_vector_table as *const () as usize
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_from_lower_el1() {
     core::arch::naked_asm!(
         "sub sp, sp, #272\n",
@@ -184,155 +181,169 @@ pub unsafe extern "C" fn sync_from_lower_el1() {
         "b 3b\n"
     );
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_from_lower_el1_rust(frame: *mut u64) -> u64 {
-    if let Some(vcpu_id) = VCPU_MANAGER.0.current_vcpu_id() {
-        handle_guest_request(vcpu_id, frame)
+    if let Some(vcpu_id) = unsafe { VCPU_MANAGER.0.current_vcpu_id() } {
+        unsafe { handle_guest_request(vcpu_id, frame) }
     } else {
-        handle_host_request(frame)
+        unsafe { handle_host_request(frame) }
     }
 }
 
 unsafe fn handle_guest_request(vcpu_id: usize, frame: *mut u64) -> u64 {
-    let vcpu = VCPU_MANAGER.0.get_vcpu(vcpu_id).unwrap();
-    save_frame_to_context(frame, vcpu);
+    let vcpu = unsafe { VCPU_MANAGER.0.get_vcpu(vcpu_id).unwrap() };
+    unsafe { save_frame_to_context(frame, vcpu) };
     let ok = handle_vm_exit(vcpu);
 
     if !ok && is_guest_shutdown() {
         clear_guest_shutdown();
         hyper::shutdown_guest();
-        VCPU_MANAGER.0.clear_current_vcpu();
-        restore_host_to_frame(frame);
+        unsafe { VCPU_MANAGER.0.clear_current_vcpu() };
+        unsafe { restore_host_to_frame(frame) };
         2
     } else {
-        restore_context_to_frame(vcpu, frame);
+        unsafe { restore_context_to_frame(vcpu, frame) };
         vgic::flush(vcpu_id);
         1
     }
 }
 
 unsafe fn handle_host_request(frame: *mut u64) -> u64 {
-    let func_id = *frame.add(0);
+    let func_id = unsafe { *frame.add(0) };
 
     match func_id {
         0x02 => {
-            let target_id = *frame.add(1) as usize;
-            if let Some(vcpu) = VCPU_MANAGER.0.get_vcpu(target_id) {
-                save_host_context(frame);
+            let target_id = unsafe { *frame.add(1) } as usize;
+            if let Some(vcpu) = unsafe { VCPU_MANAGER.0.get_vcpu(target_id) } {
+                unsafe { save_host_context(frame) };
                 hyper::configure_hcr_el2_for_guest();
                 vcpu.prepare_run();
-                VCPU_MANAGER.0.set_current_vcpu(target_id);
-                restore_context_to_frame(vcpu, frame);
+                unsafe { VCPU_MANAGER.0.set_current_vcpu(target_id) };
+                unsafe { restore_context_to_frame(vcpu, frame) };
                 1
             } else {
-                *frame.add(0) = 1;
+                unsafe { *frame.add(0) = 1 };
                 1
             }
         }
         _ => {
-            *frame.add(0) = 0;
+            unsafe { *frame.add(0) = 0 };
             1
         }
     }
 }
 
 unsafe fn save_host_context(frame: *mut u64) {
-    VCPU_MANAGER.0.host_elr = *frame.add(31);
-    VCPU_MANAGER.0.host_spsr = *frame.add(32);
-    VCPU_MANAGER.0.host_sp = *frame.add(33);
-    for i in 0..31 {
-        VCPU_MANAGER.0.host_regs[i] = *frame.add(i);
+    unsafe {
+        VCPU_MANAGER.0.host_elr = *frame.add(31);
+        VCPU_MANAGER.0.host_spsr = *frame.add(32);
+        VCPU_MANAGER.0.host_sp = *frame.add(33);
+        for i in 0..31 {
+            VCPU_MANAGER.0.host_regs[i] = *frame.add(i);
+        }
     }
 
     // ICC_PMR_EL1 / ICC_SRE_EL1 / ICC_CTLR_EL1 are not wrapped by the crate,
     // so their reads stay raw asm.
     let (pmr, sre, ctlr): (u64, u64, u64);
-    core::arch::asm!(
-        "mrs {pmr}, ICC_PMR_EL1",
-        "mrs {sre}, ICC_SRE_EL1",
-        "mrs {ctlr}, ICC_CTLR_EL1",
-        pmr = out(reg) pmr,
-        sre = out(reg) sre,
-        ctlr = out(reg) ctlr,
-        options(nostack, nomem)
-    );
-    VCPU_MANAGER.0.host_vbar = VBAR_EL1.get();
-    VCPU_MANAGER.0.host_sctlr = SCTLR_EL1.get();
-    VCPU_MANAGER.0.host_ttbr0 = TTBR0_EL1.get();
-    VCPU_MANAGER.0.host_ttbr1 = TTBR1_EL1.get();
-    VCPU_MANAGER.0.host_tcr = TCR_EL1.get();
-    VCPU_MANAGER.0.host_mair = MAIR_EL1.get();
-    VCPU_MANAGER.0.host_pmr = pmr;
-    VCPU_MANAGER.0.host_sre = sre;
-    VCPU_MANAGER.0.host_ctlr = ctlr;
-    VCPU_MANAGER.0.host_tpidr_el0 = TPIDR_EL0.get();
-    VCPU_MANAGER.0.host_tpidr_el1 = TPIDR_EL1.get();
-    VCPU_MANAGER.0.host_tpidrro_el0 = TPIDRRO_EL0.get();
-    VCPU_MANAGER.0.host_sp_el0 = SP_EL0.get();
+    unsafe {
+        core::arch::asm!(
+            "mrs {pmr}, ICC_PMR_EL1",
+            "mrs {sre}, ICC_SRE_EL1",
+            "mrs {ctlr}, ICC_CTLR_EL1",
+            pmr = out(reg) pmr,
+            sre = out(reg) sre,
+            ctlr = out(reg) ctlr,
+            options(nostack, nomem)
+        )
+    };
+    unsafe {
+        VCPU_MANAGER.0.host_vbar = VBAR_EL1.get();
+        VCPU_MANAGER.0.host_sctlr = SCTLR_EL1.get();
+        VCPU_MANAGER.0.host_ttbr0 = TTBR0_EL1.get();
+        VCPU_MANAGER.0.host_ttbr1 = TTBR1_EL1.get();
+        VCPU_MANAGER.0.host_tcr = TCR_EL1.get();
+        VCPU_MANAGER.0.host_mair = MAIR_EL1.get();
+        VCPU_MANAGER.0.host_pmr = pmr;
+        VCPU_MANAGER.0.host_sre = sre;
+        VCPU_MANAGER.0.host_ctlr = ctlr;
+        VCPU_MANAGER.0.host_tpidr_el0 = TPIDR_EL0.get();
+        VCPU_MANAGER.0.host_tpidr_el1 = TPIDR_EL1.get();
+        VCPU_MANAGER.0.host_tpidrro_el0 = TPIDRRO_EL0.get();
+        VCPU_MANAGER.0.host_sp_el0 = SP_EL0.get();
+    }
 
     // Save Host physical timer state (Guest can modify CNTP via direct EL1 access).
     let cntp_ctl = CNTP_CTL_EL0.get();
     let cntp_cval = CNTP_CVAL_EL0.get();
-    VCPU_MANAGER.0.host_cntp_ctl = cntp_ctl;
-    VCPU_MANAGER.0.host_cntp_cval = cntp_cval;
+    unsafe {
+        VCPU_MANAGER.0.host_cntp_ctl = cntp_ctl;
+        VCPU_MANAGER.0.host_cntp_cval = cntp_cval;
+    }
 
     // Diagnostic: print key system registers before Guest runs
     let cpacr = CPACR_EL1.get();
 }
 
 unsafe fn restore_host_to_frame(frame: *mut u64) {
-    *frame.add(31) = VCPU_MANAGER.0.host_elr;
-    *frame.add(32) = VCPU_MANAGER.0.host_spsr;
-    *frame.add(33) = VCPU_MANAGER.0.host_sp;
-    // Restore Host GPRs (x0-x30)
-    for i in 0..31 {
-        *frame.add(i) = VCPU_MANAGER.0.host_regs[i];
+    unsafe {
+        *frame.add(31) = VCPU_MANAGER.0.host_elr;
+        *frame.add(32) = VCPU_MANAGER.0.host_spsr;
+        *frame.add(33) = VCPU_MANAGER.0.host_sp;
+        // Restore Host GPRs (x0-x30)
+        for i in 0..31 {
+            *frame.add(i) = VCPU_MANAGER.0.host_regs[i];
+        }
+
+        // Pass success code (0) back to host's x0
+        *frame.add(0) = 0;
     }
 
-    // Pass success code (0) back to host's x0
-    *frame.add(0) = 0;
-
-    let sre = VCPU_MANAGER.0.host_sre;
-    let ctlr = VCPU_MANAGER.0.host_ctlr;
-    let pmr = VCPU_MANAGER.0.host_pmr;
+    let sre = unsafe { VCPU_MANAGER.0.host_sre };
+    let ctlr = unsafe { VCPU_MANAGER.0.host_ctlr };
+    let pmr = unsafe { VCPU_MANAGER.0.host_pmr };
 
     // ICC_SRE_EL1 / ICC_CTLR_EL1 / ICC_PMR_EL1 are not wrapped by the crate,
     // so their writes stay raw asm. VTTBR_EL2 + tlbi sequence has no crate
     // equivalents either.
-    core::arch::asm!(
-        // Restore GIC: SRE must come first (enables ICC_* register access)
-        "msr ICC_SRE_EL1, {sre}",
-        "isb",
-        "msr ICC_CTLR_EL1, {ctlr}",
-        "msr ICC_PMR_EL1, {pmr}",
-        "isb",
-        sre = in(reg) sre,
-        ctlr = in(reg) ctlr,
-        pmr = in(reg) pmr,
-    );
+    unsafe {
+        core::arch::asm!(
+            // Restore GIC: SRE must come first (enables ICC_* register access)
+            "msr ICC_SRE_EL1, {sre}",
+            "isb",
+            "msr ICC_CTLR_EL1, {ctlr}",
+            "msr ICC_PMR_EL1, {pmr}",
+            "isb",
+            sre = in(reg) sre,
+            ctlr = in(reg) ctlr,
+            pmr = in(reg) pmr,
+        )
+    };
 
-    MAIR_EL1.set(VCPU_MANAGER.0.host_mair);
-    TCR_EL1.set(VCPU_MANAGER.0.host_tcr);
-    TTBR0_EL1.set(VCPU_MANAGER.0.host_ttbr0);
-    TTBR1_EL1.set(VCPU_MANAGER.0.host_ttbr1);
-    isb(SY);
-    SCTLR_EL1.set(VCPU_MANAGER.0.host_sctlr);
-    VBAR_EL1.set(VCPU_MANAGER.0.host_vbar);
-    TPIDR_EL0.set(VCPU_MANAGER.0.host_tpidr_el0);
-    TPIDR_EL1.set(VCPU_MANAGER.0.host_tpidr_el1);
-    TPIDRRO_EL0.set(VCPU_MANAGER.0.host_tpidrro_el0);
-    SP_EL0.set(VCPU_MANAGER.0.host_sp_el0);
+    unsafe {
+        MAIR_EL1.set(VCPU_MANAGER.0.host_mair);
+        TCR_EL1.set(VCPU_MANAGER.0.host_tcr);
+        TTBR0_EL1.set(VCPU_MANAGER.0.host_ttbr0);
+        TTBR1_EL1.set(VCPU_MANAGER.0.host_ttbr1);
+        isb(SY);
+        SCTLR_EL1.set(VCPU_MANAGER.0.host_sctlr);
+        VBAR_EL1.set(VCPU_MANAGER.0.host_vbar);
+        TPIDR_EL0.set(VCPU_MANAGER.0.host_tpidr_el0);
+        TPIDR_EL1.set(VCPU_MANAGER.0.host_tpidr_el1);
+        TPIDRRO_EL0.set(VCPU_MANAGER.0.host_tpidrro_el0);
+        SP_EL0.set(VCPU_MANAGER.0.host_sp_el0);
+    }
 
-    core::arch::asm!(
-        "msr VTTBR_EL2, xzr",
-        "isb",
-        "tlbi vmalle1is",
-        "tlbi alle2is",
-        "dsb ish",
-        "isb",
-    );
+    unsafe {
+        core::arch::asm!(
+            "msr VTTBR_EL2, xzr",
+            "isb",
+            "tlbi vmalle1is",
+            "tlbi alle2is",
+            "dsb ish",
+            "isb",
+        )
+    };
 
     let restored_pmr: u64;
     unsafe {
@@ -349,7 +360,7 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
 
     // Restore Host physical timer CVAL (compare value).
     // CNTP_CTL is left as-is — shutdown_guest() already set it to Enable=1, IMASK=0.
-    let cntp_cval = VCPU_MANAGER.0.host_cntp_cval;
+    let cntp_cval = unsafe { VCPU_MANAGER.0.host_cntp_cval };
     CNTP_CVAL_EL0.set(cntp_cval);
     isb(SY);
     CNTV_CTL_EL0.set(0);
@@ -357,12 +368,14 @@ unsafe fn restore_host_to_frame(frame: *mut u64) {
 
 unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
     let mut ctx = vcpu.context_mut();
-    for i in 0..31 {
-        ctx.regs[i] = *frame.add(i);
+    unsafe {
+        for i in 0..31 {
+            ctx.regs[i] = *frame.add(i);
+        }
+        ctx.elr_el2 = *frame.add(31);
+        ctx.spsr = *frame.add(32);
+        ctx.sp = *frame.add(33);
     }
-    ctx.elr_el2 = *frame.add(31);
-    ctx.spsr = *frame.add(32);
-    ctx.sp = *frame.add(33);
     ctx.sctlr_el1 = SCTLR_EL1.get();
     ctx.ttbr0_el1 = TTBR0_EL1.get();
     ctx.ttbr1_el1 = TTBR1_EL1.get();
@@ -373,12 +386,14 @@ unsafe fn save_frame_to_context(frame: *mut u64, vcpu: &mut Vcpu) {
 
 unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
     let ctx = vcpu.context();
-    for i in 0..31 {
-        *frame.add(i) = ctx.regs[i];
+    unsafe {
+        for i in 0..31 {
+            *frame.add(i) = ctx.regs[i];
+        }
+        *frame.add(31) = ctx.elr_el2;
+        *frame.add(32) = ctx.spsr;
+        *frame.add(33) = ctx.sp;
     }
-    *frame.add(31) = ctx.elr_el2;
-    *frame.add(32) = ctx.spsr;
-    *frame.add(33) = ctx.sp;
 
     // while booting linux, mmu should closed.
     VBAR_EL1.set(ctx.vbar_el1);
@@ -391,10 +406,8 @@ unsafe fn restore_context_to_frame(vcpu: &mut Vcpu, frame: *mut u64) {
 }
 
 /// Solve irq from lower el1.
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn irq_from_lower_el1() {
     core::arch::naked_asm!(
         "sub sp, sp, #272\n",
@@ -451,10 +464,8 @@ pub unsafe extern "C" fn irq_from_lower_el1() {
 }
 
 /// Solve fiq from lower el1.
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fiq_from_lower_el1() {
     core::arch::naked_asm!(
         "sub sp, sp, #272\n",
@@ -511,23 +522,19 @@ pub unsafe extern "C" fn fiq_from_lower_el1() {
 }
 
 /// Solve serror from lower el1.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn serror_from_lower_el1() {
     eret();
 }
 
 /// Solve sync exception from lower el2 sp0.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_current_sp0() {
     loop {
         wfi();
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_current_spx() {
     let esr = ESR_EL2.get();
     let elr = ELR_EL2.get();
@@ -545,9 +552,7 @@ pub unsafe extern "C" fn sync_current_spx() {
         wfi();
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_current_el1() {
     let esr = ESR_EL2.get();
     let elr = ELR_EL2.get();
@@ -557,33 +562,25 @@ pub unsafe extern "C" fn sync_current_el1() {
         wfi();
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_current_el0() {
     loop {
         wfi();
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn irq_current() {
     loop {
         wfi();
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fiq_current() {
     loop {
         wfi();
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn serror_current() {
     loop {
         wfi();
