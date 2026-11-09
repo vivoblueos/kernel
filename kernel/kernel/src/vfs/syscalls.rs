@@ -57,14 +57,14 @@ use log::{debug, error, warn};
 /// the `Arc` (`_fd_proc`) alive for the guard's whole scope, so the borrow is
 /// sound.
 macro_rules! current_fd {
-    ($guard:ident, err: $err:expr) => {
+    ($guard:ident, err: $err:expr_2021) => {
         let _fd_proc = match crate::process::current_process() {
             Some(p) => p,
             None => return $err,
         };
         let $guard = _fd_proc.fd_manager().irqsave_lock();
     };
-    (mut $guard:ident, err: $err:expr) => {
+    (mut $guard:ident, err: $err:expr_2021) => {
         let _fd_proc = match crate::process::current_process() {
             Some(p) => p,
             None => return $err,

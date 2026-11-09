@@ -55,14 +55,16 @@ use core::arch::asm;
 /// responsibility to ensure safety.
 #[inline]
 pub unsafe fn syscall0(n: usize) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        out("a0") ret,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            out("a0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }
 
 /// Issues a raw system call with 1 argument.
@@ -73,14 +75,16 @@ pub unsafe fn syscall0(n: usize) -> usize {
 /// responsibility to ensure safety.
 #[inline]
 pub unsafe fn syscall1(n: usize, arg1: usize) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        inlateout("a0") arg1 => ret,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            inlateout("a0") arg1 => ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }
 
 /// Issues a raw system call with 2 arguments.
@@ -91,15 +95,17 @@ pub unsafe fn syscall1(n: usize, arg1: usize) -> usize {
 /// responsibility to ensure safety.
 #[inline]
 pub unsafe fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        inlateout("a0") arg1 => ret,
-        in("a1") arg2,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            inlateout("a0") arg1 => ret,
+            in("a1") arg2,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }
 
 /// Issues a raw system call with 3 arguments.
@@ -110,16 +116,18 @@ pub unsafe fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
 /// responsibility to ensure safety.
 #[inline]
 pub unsafe fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        inlateout("a0") arg1 => ret,
-        in("a1") arg2,
-        in("a2") arg3,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            inlateout("a0") arg1 => ret,
+            in("a1") arg2,
+            in("a2") arg3,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }
 
 /// Issues a raw system call with 4 arguments.
@@ -130,17 +138,19 @@ pub unsafe fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize
 /// responsibility to ensure safety.
 #[inline]
 pub unsafe fn syscall4(n: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        inlateout("a0") arg1 => ret,
-        in("a1") arg2,
-        in("a2") arg3,
-        in("a3") arg4,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            inlateout("a0") arg1 => ret,
+            in("a1") arg2,
+            in("a2") arg3,
+            in("a3") arg4,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }
 
 /// Issues a raw system call with 5 arguments.
@@ -158,18 +168,20 @@ pub unsafe fn syscall5(
     arg4: usize,
     arg5: usize,
 ) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        inlateout("a0") arg1 => ret,
-        in("a1") arg2,
-        in("a2") arg3,
-        in("a3") arg4,
-        in("a4") arg5,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            inlateout("a0") arg1 => ret,
+            in("a1") arg2,
+            in("a2") arg3,
+            in("a3") arg4,
+            in("a4") arg5,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }
 
 /// Issues a raw system call with 6 arguments.
@@ -188,17 +200,19 @@ pub unsafe fn syscall6(
     arg5: usize,
     arg6: usize,
 ) -> usize {
-    let mut ret: usize;
-    asm!(
-        "ecall",
-        in("a7") n,
-        inlateout("a0") arg1 => ret,
-        in("a1") arg2,
-        in("a2") arg3,
-        in("a3") arg4,
-        in("a4") arg5,
-        in("a5") arg6,
-        options(nostack, preserves_flags)
-    );
-    ret
+    unsafe {
+        let mut ret: usize;
+        asm!(
+            "ecall",
+            in("a7") n,
+            inlateout("a0") arg1 => ret,
+            in("a1") arg2,
+            in("a2") arg3,
+            in("a3") arg4,
+            in("a4") arg5,
+            in("a5") arg6,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
 }

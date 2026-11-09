@@ -66,7 +66,7 @@ impl BoxedRingBuffer {
     ///
     /// - Only one reader can exist at a time.
     pub unsafe fn reader(&self) -> Reader<'_> {
-        self.inner.reader()
+        unsafe { self.inner.reader() }
     }
 
     /// Get a writer for this ring buffer
@@ -74,7 +74,7 @@ impl BoxedRingBuffer {
     ///
     /// - Only one writer can exist at a time.
     pub unsafe fn writer(&self) -> Writer<'_> {
-        self.inner.writer()
+        unsafe { self.inner.writer() }
     }
 
     /// Returns the capacity of the ring buffer

@@ -34,7 +34,7 @@ pub fn c_name_to_bytes<const LEN: usize>(name_ptr: *const core::ffi::c_char) -> 
 macro_rules! os_adapter {
     // Basic version with required name prefix (no additional fields)
     // Syntax: (prefix1 "name1" -> type1: inner_type1, prefix2 "name2" -> type2: inner_type2, ...)
-    ($($prefix:expr => $name:ident: $inner_type:ty),* $(,)?) => {
+    ($($prefix:expr_2021 => $name:ident: $inner_type:ty),* $(,)?) => {
         $(
             #[allow(non_upper_case_globals)]
             static $name: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(1);
@@ -115,7 +115,7 @@ macro_rules! os_adapter {
     };
 
     // Extended version with additional fields
-    ($prefix:expr => $name:ident: $inner_type:ty { $($field:ident: $field_type:ty),* $(,)? }) => {
+    ($prefix:expr_2021 => $name:ident: $inner_type:ty { $($field:ident: $field_type:ty),* $(,)? }) => {
         #[allow(non_upper_case_globals)]
         static $name: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(1);
 

@@ -32,8 +32,7 @@ use core::{
 // \param[in]     msg_size      maximum message size in bytes.
 // \param[in]     attr          message queue attributes; NULL: default values.
 // \return message queue ID for reference by other functions or NULL in case of error.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueNew(
     msg_count: u32,
     msg_size: u32,
@@ -119,8 +118,7 @@ pub extern "C" fn osMessageQueueNew(
 // Get name of a Message Queue object.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return name as null-terminated string.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueGetName(mq_id: osMessageQueueId_t) -> *const core::ffi::c_char {
     if mq_id.is_null() {
         return ptr::null();
@@ -136,8 +134,7 @@ pub extern "C" fn osMessageQueueGetName(mq_id: osMessageQueueId_t) -> *const cor
 // \param[in]     msg_prio      message priority.
 // \param[in]     timeout       \ref CMSIS_RTOS_TimeOutValue or 0 in case of no time-out.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueuePut(
     mq_id: osMessageQueueId_t,
     msg_ptr: *const core::ffi::c_void,
@@ -173,8 +170,7 @@ pub extern "C" fn osMessageQueuePut(
 // \param[out]    msg_prio      pointer to buffer for message priority or NULL.
 // \param[in]     timeout       \ref CMSIS_RTOS_TimeOutValue or 0 in case of no time-out.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueGet(
     mq_id: osMessageQueueId_t,
     msg_ptr: *mut core::ffi::c_void,
@@ -204,8 +200,7 @@ pub extern "C" fn osMessageQueueGet(
 // Get maximum number of messages in a Message Queue.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return maximum number of messages.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueGetCapacity(mq_id: osMessageQueueId_t) -> u32 {
     if mq_id.is_null() {
         return 0;
@@ -219,8 +214,7 @@ pub extern "C" fn osMessageQueueGetCapacity(mq_id: osMessageQueueId_t) -> u32 {
 // Get maximum message size in a Memory Pool.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return maximum message size in bytes.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueGetMsgSize(mq_id: osMessageQueueId_t) -> u32 {
     if mq_id.is_null() {
         return 0;
@@ -234,8 +228,7 @@ pub extern "C" fn osMessageQueueGetMsgSize(mq_id: osMessageQueueId_t) -> u32 {
 // Get number of queued messages in a Message Queue.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return number of queued messages.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueGetCount(mq_id: osMessageQueueId_t) -> u32 {
     if mq_id.is_null() {
         return 0;
@@ -248,8 +241,7 @@ pub extern "C" fn osMessageQueueGetCount(mq_id: osMessageQueueId_t) -> u32 {
 // Get number of available slots for messages in a Message Queue.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return number of available slots for messages.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueGetSpace(mq_id: osMessageQueueId_t) -> u32 {
     if mq_id.is_null() {
         return 0;
@@ -262,8 +254,7 @@ pub extern "C" fn osMessageQueueGetSpace(mq_id: osMessageQueueId_t) -> u32 {
 // Reset a Message Queue to initial empty state.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueReset(mq_id: osMessageQueueId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -280,8 +271,7 @@ pub extern "C" fn osMessageQueueReset(mq_id: osMessageQueueId_t) -> osStatus_t {
 // Delete a Message Queue object.
 // \param[in]     mq_id         message queue ID obtained by \ref osMessageQueueNew.
 // \return status code that indicates the execution status of the function.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osMessageQueueDelete(mq_id: osMessageQueueId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
