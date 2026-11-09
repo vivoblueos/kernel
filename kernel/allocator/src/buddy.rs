@@ -259,7 +259,7 @@ impl BuddyAllocator {
         self.manageable_end = manageable_pfns.end;
 
         for pfn in 0..total_pages {
-            self.pages.add(pfn).write(Page::new(pfn));
+            unsafe { self.pages.add(pfn).write(Page::new(pfn)) };
         }
 
         let mut pfn = self.manageable_start;
@@ -270,7 +270,7 @@ impl BuddyAllocator {
                 .rev()
                 .find(|&candidate| pfn % (1 << candidate) == 0)
                 .expect("order zero always satisfies buddy alignment");
-            let page = &mut *self.pfn_to_page(pfn);
+            let page = unsafe { &mut *self.pfn_to_page(pfn) };
             page.state = PageState::Free;
             page.order = order as u8;
             self.free_lists[order]
@@ -356,7 +356,7 @@ impl BuddyAllocator {
         }
 
         debug_assert_eq!(pfn & ((1 << order) - 1), 0, "frame is not a block head");
-        let mut current_page = &mut *self.pfn_to_page(pfn);
+        let mut current_page = unsafe { &mut *self.pfn_to_page(pfn) };
         debug_assert_eq!(
             current_page.state,
             PageState::Allocated,
@@ -382,7 +382,7 @@ impl BuddyAllocator {
                 break;
             }
 
-            let buddy = &mut *self.pfn_to_page(buddy_pfn);
+            let buddy = unsafe { &mut *self.pfn_to_page(buddy_pfn) };
             if buddy.state != PageState::Free || buddy.order as usize != current_order {
                 break;
             }
@@ -415,7 +415,7 @@ impl BuddyAllocator {
     /// `order` must equal its allocation order, and the block must be released
     /// exactly once.
     pub unsafe fn free_pages_pfn(&mut self, pfn: usize, order: usize) {
-        self.free_pages(PageFrame(pfn), order);
+        unsafe { self.free_pages(PageFrame(pfn), order) };
     }
 
     /// Return current page accounting information.

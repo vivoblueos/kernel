@@ -130,8 +130,7 @@ pub fn to_thread_priority(prio: osPriority_t) -> ThreadPriority {
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga8df03548e89fbc56402a5cd584a505da
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadGetId() -> osThreadId_t {
     if let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() {
         alien_ptr.as_ptr() as osThreadId_t
@@ -161,8 +160,7 @@ extern "C" fn enter_cmsis(entry: *mut core::ffi::c_void) {
 const STACK_ALIGN: usize = 16;
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga48d68b8666d99d28fa646ee1d2182b8f.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadNew(
     func: osThreadFunc_t,
     arg: *mut core::ffi::c_void,
@@ -299,8 +297,7 @@ pub extern "C" fn osThreadNew(
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga0aeaf349604f456e68e78f9d3b42e44b.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadGetPriority(thread_id: osThreadId_t) -> osPriority_t {
     if irq::is_in_irq() {
         return osPriority_t_osPriorityError;
@@ -311,8 +308,7 @@ pub extern "C" fn osThreadGetPriority(thread_id: osThreadId_t) -> osPriority_t {
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga861a420fb2d643115b06622903fb3bfb.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadSetPriority(
     thread_id: osThreadId_t,
     priority: osPriority_t,
@@ -337,8 +333,7 @@ pub extern "C" fn osThreadSetPriority(
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gad01c7ec26535b1de6b018bb9466720e2.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadYield() -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -348,8 +343,7 @@ pub extern "C" fn osThreadYield() -> osStatus_t {
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gac3230f3a55a297514b013ebf38f27e0a.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadGetName(thread_id: osThreadId_t) -> *const core::ffi::c_char {
     if irq::is_in_irq() || thread_id.is_null() {
         return ptr::null();
@@ -359,8 +353,7 @@ pub extern "C" fn osThreadGetName(thread_id: osThreadId_t) -> *const core::ffi::
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gacc0a98b42f0a5928e12dc91dc76866b9.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadGetState(thread_id: osThreadId_t) -> osThreadState_t {
     if irq::is_in_irq() || thread_id.is_null() {
         return osThreadState_t_osThreadError;
@@ -368,9 +361,7 @@ pub extern "C" fn osThreadGetState(thread_id: osThreadId_t) -> osThreadState_t {
     let t = unsafe { &*(thread_id as *const _ as *const Os2Thread) };
     to_os_state(t.state() as u8)
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadGetStackSize(thread_id: osThreadId_t) -> usize {
     if irq::is_in_irq() || thread_id.is_null() {
         return 0;
@@ -383,8 +374,7 @@ pub extern "C" fn osThreadGetStackSize(thread_id: osThreadId_t) -> usize {
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga9c83bd5dd8de329701775d6ef7012720.
 // Returns the remaining stack space for the specified thread.
 // use previously saved stack usage for indication, not accurate in SMP
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadGetStackSpace(thread_id: osThreadId_t) -> usize {
     if irq::is_in_irq() || thread_id.is_null() {
         return 0;
@@ -403,8 +393,7 @@ fn exit_os2_thread(t: &mut Os2Thread) {
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#gaddaa452dd7610e4096647a566d3556fc.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadExit() {
     if irq::is_in_irq() {
         panic!("osThreadExit called in IRQ context");
@@ -417,8 +406,7 @@ pub extern "C" fn osThreadExit() {
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga495b3f812224e7301f23a691793765db.
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
 pub extern "C" fn osThreadGetCount() -> usize {
     if irq::is_in_irq() {
@@ -441,8 +429,7 @@ pub extern "C" fn osThreadGetCount() -> usize {
 }
 
 // See https://arm-software.github.io/CMSIS_6/main/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html#ga5606604d56e21ece1a654664be877439
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadEnumerate(thread_ids: *mut osThreadId_t, count: usize) -> u32 {
     if irq::is_in_irq() {
         return 0;
@@ -462,9 +449,7 @@ pub extern "C" fn osThreadEnumerate(thread_ids: *mut osThreadId_t, count: usize)
     }
     index as u32
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
 pub extern "C" fn osThreadSuspend(thread_id: osThreadId_t) -> osStatus_t {
     if irq::is_in_irq() {
@@ -501,9 +486,7 @@ pub extern "C" fn osThreadSuspend(thread_id: osThreadId_t) -> osStatus_t {
     scheduler::yield_me();
     osStatus_t_osOK
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadResume(thread_id: osThreadId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -516,10 +499,10 @@ pub extern "C" fn osThreadResume(thread_id: osThreadId_t) -> osStatus_t {
     let thread = t.inner();
     let mut th = thread.lock();
     // Can't resume current thread from itself.
-    if let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr() {
-        if core::ptr::eq(t, alien_ptr.as_ptr() as *mut Os2Thread) {
-            return osStatus_t_osErrorResource;
-        }
+    if let Some(alien_ptr) = scheduler::current_thread_ref().get_alien_ptr()
+        && core::ptr::eq(t, alien_ptr.as_ptr() as *mut Os2Thread)
+    {
+        return osStatus_t_osErrorResource;
     }
     drop(th);
     scheduler::queue_ready_thread(thread::SUSPENDED, thread.clone());
@@ -535,9 +518,7 @@ fn drop_os2_thread(ptr: *mut Os2Thread) {
         drop(Box::from_raw(ptr));
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadJoin(thread_id: osThreadId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -552,9 +533,7 @@ pub extern "C" fn osThreadJoin(thread_id: osThreadId_t) -> osStatus_t {
     scheduler::yield_me();
     osStatus_t_osOK
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadDetach(thread_id: osThreadId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -574,9 +553,7 @@ pub extern "C" fn osThreadDetach(thread_id: osThreadId_t) -> osStatus_t {
     }
     osStatus_t_osErrorResource
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadTerminate(thread_id: osThreadId_t) -> osStatus_t {
     if irq::is_in_irq() {
         return osStatus_t_osErrorISR;
@@ -617,8 +594,7 @@ pub extern "C" fn osThreadTerminate(thread_id: osThreadId_t) -> osStatus_t {
 // as CMSIS-API description: "Thread Flags are a more specialized version of the Event Flags"
 // we reuse the event flags implementation, event flags/thread flags are in different bit space
 // and in same state field in TCB, so that they won't interfere with each other
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadFlagsGet() -> u32 {
     if irq::is_in_irq() {
         return 0;
@@ -629,9 +605,7 @@ pub extern "C" fn osThreadFlagsGet() -> u32 {
     let t = unsafe { &*(alien_ptr.as_ptr() as *mut Os2Thread) };
     t.thread_flags.get()
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadFlagsSet(thread_id: osThreadId_t, flags: u32) -> u32 {
     // may be called in IRQ context
     if thread_id.is_null() {
@@ -647,8 +621,7 @@ pub extern "C" fn osThreadFlagsSet(thread_id: osThreadId_t, flags: u32) -> u32 {
         },
     }
 }
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadFlagsClear(flags: u32) -> u32 {
     if irq::is_in_irq() {
         return 0;
@@ -659,9 +632,7 @@ pub extern "C" fn osThreadFlagsClear(flags: u32) -> u32 {
     let t = unsafe { &mut *(alien_ptr.as_ptr() as *mut Os2Thread) };
     t.thread_flags.clear(flags)
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn osThreadFlagsWait(flags: u32, options: u32, timeout: u32) -> u32 {
     if irq::is_in_irq() {
         return 0;

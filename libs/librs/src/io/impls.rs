@@ -21,7 +21,7 @@ impl<'a, R: Read + ?Sized> Read for &'a mut R {
 
     #[inline]
     unsafe fn initializer(&self) -> Initializer {
-        (**self).initializer()
+        unsafe { (**self).initializer() }
     }
 
     #[cfg(feature = "alloc")]
@@ -100,7 +100,7 @@ impl<R: Read + ?Sized> Read for Box<R> {
 
     #[inline]
     unsafe fn initializer(&self) -> Initializer {
-        (**self).initializer()
+        unsafe { (**self).initializer() }
     }
 
     #[cfg(feature = "alloc")]
@@ -200,7 +200,7 @@ impl<'a> Read for &'a [u8] {
 
     #[inline]
     unsafe fn initializer(&self) -> Initializer {
-        Initializer::nop()
+        unsafe { Initializer::nop() }
     }
 
     #[inline]

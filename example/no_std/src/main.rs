@@ -18,7 +18,7 @@
 extern crate blueos;
 extern crate rsrt;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     blueos::kprintln!("Hello, world!");
     let memory_info = blueos::allocator::memory_info();

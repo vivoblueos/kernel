@@ -60,7 +60,7 @@ pub use inner::*;
 
 #[macro_export]
 macro_rules! static_arc {
-    ($name:ident($ty:ty, $val:expr),) => {
+    ($name:ident($ty:ty, $val:expr_2021),) => {
         #[allow(non_snake_case)]
         mod $name {
             use super::*;
@@ -72,23 +72,9 @@ macro_rules! static_arc {
     };
 }
 
-// Same dual-version pattern as `blueos_infra::intrusive::Adapter`: old
-// toolchains need `#[const_trait]`, new ones the `const trait` syntax.
-// The old parser cannot skip the new syntax, but cfg_if! keeps each branch
-// as a token tree that is only expanded when selected.
-cfg_if::cfg_if! {
-    if #[cfg(compatible_old_toolchain)] {
-        #[const_trait]
-        pub(crate) trait StaticListOwner<T, A: IntrusiveAdapter<T>> {
-            type List = ArcList<T, A>;
-            fn get() -> &'static Arc<SpinLock<AtomicIlistHead<T, A>>>;
-        }
-    } else {
-        pub(crate) const trait StaticListOwner<T, A: IntrusiveAdapter<T>> {
-            type List = ArcList<T, A>;
-            fn get() -> &'static Arc<SpinLock<AtomicIlistHead<T, A>>>;
-        }
-    }
+pub(crate) const trait StaticListOwner<T, A: IntrusiveAdapter<T>> {
+    type List = ArcList<T, A>;
+    fn get() -> &'static Arc<SpinLock<AtomicIlistHead<T, A>>>;
 }
 
 #[derive(Debug, Default)]

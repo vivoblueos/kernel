@@ -13,6 +13,7 @@
 # limitations under the License.
 
 rust_library("foo_c") {
+  rustflags = [ "--edition=2024" ]
   crate_type = "cdylib"
   sources = [ "src/lib.rs" ]
 }

@@ -14,26 +14,13 @@
 
 use core::marker::PhantomData;
 
-// `#[const_trait]` was removed from toolchains 1.90+, which use the
-// `const trait` keyword syntax instead. Old toolchains cannot even parse
-// the new syntax — cfg-gated code is still parsed — but cfg_if! keeps each
-// branch as a token tree that is only expanded when selected.
-cfg_if::cfg_if! {
-    if #[cfg(compatible_old_toolchain)] {
-        #[const_trait]
-        pub trait Adapter<T> {
-            fn offset() -> usize;
-        }
-    } else {
-        pub const trait Adapter<T> {
-            fn offset() -> usize;
-        }
-    }
+pub const trait Adapter<T> {
+    fn offset() -> usize;
 }
 
 #[macro_export]
 macro_rules! impl_simple_intrusive_adapter {
-    ($name:ident, $ty:ty, $($fields:expr)+) => {
+    ($name:ident, $ty:ty, $($fields:expr_2021)+) => {
         #[derive(Default, Debug)]
         pub struct $name;
         impl const $crate::intrusive::Adapter<$ty> for $name {

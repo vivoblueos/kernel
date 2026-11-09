@@ -64,10 +64,8 @@ pub fn handle_physical_uart_interrupt() {
             injected = true;
         }
 
-        if injected {
-            if let Some(vcpu_id) = get_current_vcpu_id() {
-                vgic::inject_irq(vcpu_id, 48);
-            }
+        if injected && let Some(vcpu_id) = get_current_vcpu_id() {
+            vgic::inject_irq(vcpu_id, 48);
         }
 
         core::ptr::write_volatile(uart_base.add(0x44 / 4), (1 << 4) | (1 << 6));

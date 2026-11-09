@@ -20,7 +20,6 @@
 #![allow(clippy::collapsible_match)]
 #![allow(clippy::len_zero)]
 #![allow(clippy::while_let_loop)]
-#![cfg_attr(compatible_old_toolchain, allow(clippy::needless_borrow))]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
@@ -39,20 +38,6 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(trivial_bounds)]
 #![feature(map_try_insert)]
-// Features below are stable in modern toolchains (version noted); only
-// declare them on old toolchains via `compatible_old_toolchain` so the
-// stable_features lint (deny via -D warnings) doesn't fire on new ones.
-#![cfg_attr(compatible_old_toolchain, feature(alloc_layout_extra))] // 1.95
-#![cfg_attr(compatible_old_toolchain, feature(async_closure))] // 1.85
-#![cfg_attr(compatible_old_toolchain, feature(generic_arg_infer))] // 1.89
-#![cfg_attr(compatible_old_toolchain, feature(lazy_get))] // 1.94
-#![cfg_attr(compatible_old_toolchain, feature(let_chains))] // 1.88
-#![cfg_attr(compatible_old_toolchain, feature(naked_functions))] // 1.88
-#![cfg_attr(compatible_old_toolchain, feature(new_zeroed_alloc))] // 1.92
-#![cfg_attr(compatible_old_toolchain, feature(non_null_from_ref))] // 1.89
-#![cfg_attr(compatible_old_toolchain, feature(noop_waker))] // 1.85
-#![cfg_attr(compatible_old_toolchain, feature(trait_upcasting))] // 1.86
-#![cfg_attr(compatible_old_toolchain, feature(unsigned_is_multiple_of))] // 1.88
 // Attributes applied when we're testing the kernel.
 #![cfg_attr(test, no_main)]
 #![cfg_attr(test, feature(custom_test_frameworks))]
@@ -153,8 +138,7 @@ mod tests {
     use thread::{Entry, SystemThreadStorage, Thread, ThreadKind, ThreadNode};
 
     #[used]
-    #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
+    #[unsafe(link_section = ".bk_app_array")]
     static INIT_TEST: extern "C" fn() = init_test;
 
     extern "C" fn test_main() {
@@ -368,7 +352,7 @@ mod tests {
     }
 
     #[cfg(mpu_stack_guard)]
-    extern "C" {
+    unsafe extern "C" {
         static __sys_stack_guard_start: u8;
     }
 
@@ -413,10 +397,8 @@ mod tests {
     }
 
     #[cfg(mpu_stack_guard)]
-    #[cfg_attr(compatible_old_toolchain, naked)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
-    #[cfg_attr(compatible_old_toolchain, no_mangle)]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+    #[unsafe(naked)]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn handle_memfault() {
         core::arch::naked_asm!(
             "

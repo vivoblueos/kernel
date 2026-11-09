@@ -155,8 +155,7 @@ fn loader_test_runner(tests: &[&dyn Fn()]) {
 }
 
 #[cfg(test)]
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 extern "C" fn main() -> i32 {
     librs::pthread::register_my_posix_tcb();
     loader_test_main();

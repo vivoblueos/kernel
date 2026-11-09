@@ -14,7 +14,7 @@
 
 extern crate bar;
 
-extern "C" {
+unsafe extern "C" {
     fn say_hello();
 }
 

@@ -121,13 +121,13 @@ pub const STR_ERROR: [&str; NUM_ERRNO] = build_errno_string_table();
 pub static ERRNO: Cell<c_int> = Cell::new(0);
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __errno() -> *mut c_int {
     __errno_location()
 }
 
 #[linkage = "weak"]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __errno_location() -> *mut c_int {
     ERRNO.as_ptr()
 }

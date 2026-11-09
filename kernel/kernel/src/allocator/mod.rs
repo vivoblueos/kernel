@@ -94,11 +94,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
             if size > BUDDY_THRESHOLD {
                 let order = order_of_size(size);
                 let phys_addr = kernel_virt_to_phys(VirtualAddress::new(ptr as usize)).into_raw();
-                BUDDY_ALLOC.free_pages_phys_addr(phys_addr, order);
+                unsafe { BUDDY_ALLOC.free_pages_phys_addr(phys_addr, order) };
                 return;
             }
         }
-        HEAP.dealloc(ptr, layout);
+        unsafe { HEAP.dealloc(ptr, layout) };
     }
 
     // TODO: support slab reallocating pages from buddy as memory pool
@@ -112,8 +112,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
             // Both sides stay on the small-object heap: try an in-place realloc.
             if !old_is_buddy && !new_is_buddy {
-                return HEAP
-                    .realloc(ptr, old_layout, new_size)
+                return unsafe { HEAP.realloc(ptr, old_layout, new_size) }
                     .map_or(ptr::null_mut(), |ptr| ptr.as_ptr());
             }
             // Both sides stay in the buddy pool: reuse the block when the
@@ -133,18 +132,18 @@ unsafe impl GlobalAlloc for KernelAllocator {
             let Ok(new_layout) = Layout::from_size_align(new_size, old_layout.align()) else {
                 return ptr::null_mut();
             };
-            let new_ptr = self.alloc(new_layout);
+            let new_ptr = unsafe { self.alloc(new_layout) };
             if new_ptr.is_null() {
                 return ptr::null_mut();
             }
-            ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size));
-            self.dealloc(ptr, old_layout);
+            unsafe { ptr::copy_nonoverlapping(ptr, new_ptr, old_layout.size().min(new_size)) };
+            unsafe { self.dealloc(ptr, old_layout) };
             new_ptr
         }
 
         #[cfg(not(allocator_buddy))]
         {
-            HEAP.realloc(ptr, old_layout, new_size)
+            unsafe { HEAP.realloc(ptr, old_layout, new_size) }
                 .map_or(ptr::null_mut(), |ptr| ptr.as_ptr())
         }
     }

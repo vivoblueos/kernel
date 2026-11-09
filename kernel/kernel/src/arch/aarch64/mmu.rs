@@ -276,13 +276,11 @@ impl PageEntry {
 // This page table must be available before `init_runtime()` clears `.bss`,
 // because we may set up EL1 MMU state while still running in EL2.
 #[used]
-#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
+#[unsafe(link_section = ".data")]
 static mut TABLE_MANAGER: PageTableManager = PageTableManager::new();
 
 #[used]
-#[cfg_attr(compatible_old_toolchain, link_section = ".data")]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".data"))]
+#[unsafe(link_section = ".data")]
 static mut LINEARMAP_MANAGER: PageTableManager = PageTableManager::new();
 
 #[repr(C, align(4096))]
@@ -491,10 +489,10 @@ pub unsafe fn free_page_table(pgtbl: *mut PageTableManager) {
 
         let table = unsafe { &mut *pgtbl };
         for entry in table.0.iter_mut() {
-            if level < 2 {
-                if let Some(next_table) = entry.table_ptr() {
-                    free_page_table_level(next_table, level + 1);
-                }
+            if level < 2
+                && let Some(next_table) = entry.table_ptr()
+            {
+                unsafe { free_page_table_level(next_table, level + 1) };
             }
             entry.0 = 0;
         }
@@ -502,7 +500,7 @@ pub unsafe fn free_page_table(pgtbl: *mut PageTableManager) {
         crate::allocator::free_align(pgtbl.cast::<u8>(), mem::align_of::<PageTableManager>());
     }
 
-    free_page_table_level(pgtbl, 0);
+    unsafe { free_page_table_level(pgtbl, 0) };
 }
 
 pub fn init_el1_enable_mmu() {

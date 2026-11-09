@@ -67,7 +67,7 @@ if (_loader_unittest_enabled) {
   build_rust("loader_unittest") {
     testonly = true
     crate_type = "bin"
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/lib.rs" ]
     deps = [
       "//external/rust:goblin",

@@ -111,14 +111,14 @@ unsafe fn load_user_termios(ptr: *const Termios) -> Result<Termios, ErrorKind> {
     if ptr.is_null() {
         return Err(ErrorKind::InvalidInput);
     }
-    Ok(*ptr)
+    Ok(unsafe { *ptr })
 }
 
 unsafe fn store_user_termios(ptr: *mut Termios, termios: &Termios) -> Result<(), ErrorKind> {
     if ptr.is_null() {
         return Err(ErrorKind::InvalidInput);
     }
-    *ptr = *termios;
+    unsafe { *ptr = *termios };
     Ok(())
 }
 
@@ -195,14 +195,14 @@ impl Device for Tty {
             let history_cursor = self.history_cursor.load(Ordering::Relaxed);
             match key {
                 SpecKey::Up => {
-                    if history_cursor < self.history.lock().len() {
-                        if let Some(hist_cmd) = self.get_history(history_cursor) {
-                            line_buf[..hist_cmd.len()].copy_from_slice(hist_cmd.as_bytes());
-                            self.cursor.store(hist_cmd.len(), Ordering::Relaxed);
-                            self.dev.send_bytes(hist_cmd.as_bytes(), false)?;
-                            self.history_cursor
-                                .store(history_cursor + 1, Ordering::Relaxed);
-                        }
+                    if history_cursor < self.history.lock().len()
+                        && let Some(hist_cmd) = self.get_history(history_cursor)
+                    {
+                        line_buf[..hist_cmd.len()].copy_from_slice(hist_cmd.as_bytes());
+                        self.cursor.store(hist_cmd.len(), Ordering::Relaxed);
+                        self.dev.send_bytes(hist_cmd.as_bytes(), false)?;
+                        self.history_cursor
+                            .store(history_cursor + 1, Ordering::Relaxed);
                     }
                 }
                 SpecKey::Down => {

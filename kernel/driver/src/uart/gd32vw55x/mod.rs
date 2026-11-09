@@ -17,55 +17,55 @@ use blueos_hal::{
 };
 
 macro_rules! usart_regidx_bit {
-    ($regidx:expr, $bitops:expr) => {
+    ($regidx:expr_2021, $bitops:expr_2021) => {
         (($regidx << 6) | $bitops)
     };
 }
 
 macro_rules! usart_regidx_bit2 {
-    ($regidx:expr, $bitpos:expr, $regidx2:expr, $bitpos2:expr) => {
+    ($regidx:expr_2021, $bitpos:expr_2021, $regidx2:expr_2021, $bitpos2:expr_2021) => {
         ($regidx2 << 22) | (($bitpos2 << 16) as u32) | (($regidx << 6) | ($bitpos as u32))
     };
 }
 
 macro_rules! bit {
-    ($x:expr) => {
+    ($x:expr_2021) => {
         (1u32 << $x)
     };
 }
 
 macro_rules! bits {
-    ($start:expr, $end:expr) => {
+    ($start:expr_2021, $end:expr_2021) => {
         (0xFFFFFFFF << $start) & (0xFFFFFFFF >> (31 - $end))
     };
 }
 
 macro_rules! ctl0_pm {
-    ($reg:expr) => {
+    ($reg:expr_2021) => {
         (bits!(9, 10) & (($reg as u32) << 9))
     };
 }
 
 macro_rules! ctl0_wl {
-    ($reg:expr) => {
+    ($reg:expr_2021) => {
         bit!(12) & (($reg as u32) << 12)
     };
 }
 
 macro_rules! ctl1_stb {
-    ($reg:expr) => {
+    ($reg:expr_2021) => {
         (bits!(12, 13) & (($reg as u32) << 12))
     };
 }
 
 macro_rules! ctl0_ren {
-    ($reg:expr) => {
+    ($reg:expr_2021) => {
         bit!(2) & (($reg as u32) << 2)
     };
 }
 
 macro_rules! ctl0_ten {
-    ($reg:expr) => {
+    ($reg:expr_2021) => {
         bit!(3) & (($reg as u32) << 3)
     };
 }

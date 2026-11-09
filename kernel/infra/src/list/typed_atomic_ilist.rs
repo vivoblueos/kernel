@@ -80,9 +80,11 @@ impl<T, A: Adapter<T>> AtomicListHead<T, A> {
 
     #[inline]
     pub unsafe fn list_head_of(this: &T) -> &mut Self {
-        let ptr: *mut u8 = core::mem::transmute(this as *const _ as *const u8);
-        let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
-        &mut *list_head_ptr
+        unsafe {
+            let ptr: *mut u8 = core::mem::transmute(this as *const _ as *const u8);
+            let list_head_ptr = unsafe { ptr.add(A::offset()) as *mut Self };
+            &mut *list_head_ptr
+        }
     }
 
     #[inline]
