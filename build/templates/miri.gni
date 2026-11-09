@@ -35,6 +35,7 @@ template("miri_test") {
       forward_variables_from(invoker,
                              [
                                "crate_name",
+                               "edition",
                                "deps",
                                "inputs",
                                "rustenv",

@@ -168,21 +168,23 @@ unsafe extern "C" fn psci_call(
     arg5: usize,
     arg6: usize,
 ) -> usize {
-    let ret: usize;
-    core::arch::asm!(
-        // Select the calling method according to PSCI implementation
-        "smc #0",
-        inlateout("x0") func_id as usize => ret,
-        inlateout("x1") arg0 => _,
-        in("x2") arg1,
-        in("x3") arg2,
-        in("x4") arg3,
-        in("x5") arg4,
-        in("x6") arg5,
-        in("x7") arg6,
-        options(nostack)
-    );
-    ret
+    unsafe {
+        let ret: usize;
+        core::arch::asm!(
+            // Select the calling method according to PSCI implementation
+            "smc #0",
+            inlateout("x0") func_id as usize => ret,
+            inlateout("x1") arg0 => _,
+            in("x2") arg1,
+            in("x3") arg2,
+            in("x4") arg3,
+            in("x5") arg4,
+            in("x6") arg5,
+            in("x7") arg6,
+            options(nostack)
+        );
+        ret
+    }
 }
 
 #[inline]

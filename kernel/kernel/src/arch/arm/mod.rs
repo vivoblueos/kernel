@@ -46,16 +46,12 @@ pub const NR_SWITCH: usize = !0;
 pub const NR_RET_FROM_SYSCALL: usize = NR_SWITCH - 1;
 pub const NR_DEBUG_SYSCALL: usize = NR_SWITCH - 2;
 pub const DISABLE_LOCAL_IRQ_BASEPRI: u8 = irq::IRQ_PRIORITY_FOR_SCHEDULER;
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub unsafe extern "C" fn bk_handle_hardfault() {
-    handle_hardfault()
+    unsafe { handle_hardfault() }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn handle_systick() {
     if !crate::boards::ClockImpl::claim_interrupt() {
         return;
@@ -64,13 +60,8 @@ pub unsafe extern "C" fn handle_systick() {
 }
 
 #[used]
-#[cfg_attr(compatible_old_toolchain, link_section = ".exception.handlers")]
-#[cfg_attr(
-    not(compatible_old_toolchain),
-    unsafe(link_section = ".exception.handlers")
-)]
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(link_section = ".exception.handlers")]
+#[unsafe(no_mangle)]
 pub static __EXCEPTION_HANDLERS__: [Vector; 15] = build_exception_handlers();
 
 unsafe extern "C" {
@@ -110,7 +101,7 @@ const fn build_exception_handlers() -> [Vector; 15] {
 
 #[macro_export]
 macro_rules! arch_bootstrap {
-    ($stack_start:expr, $stack_end:expr, $cont:path) => {
+    ($stack_start:expr_2021, $stack_end:expr_2021, $cont:path) => {
         core::arch::naked_asm!(
             "cpsid i",
             "b {cont}",
@@ -128,7 +119,7 @@ extern "C" fn prepare_schedule() -> usize {
     current.saved_sp()
 }
 
-extern "C" {
+unsafe extern "C" {
     pub static mut __sys_stack_start: u8;
     pub static mut __sys_stack_end: u8;
 }
@@ -391,9 +382,7 @@ pub(crate) extern "C" fn post_pendsv() {
     SCB::set_pendsv();
     unsafe { core::arch::asm!("isb", options(nostack),) }
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 pub unsafe extern "C" fn handle_svc() {
     core::arch::naked_asm!(
         concat!(
@@ -430,9 +419,7 @@ extern "C" fn syscall_handler(ctx: &mut Context) {
     // r0 should contain the return value.
     ctx.r0 = dispatch_syscall(&sc);
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 unsafe extern "C" fn syscall_stub(ctx: *mut Context) -> ! {
     core::arch::naked_asm!(
         concat!(
@@ -462,9 +449,7 @@ fn handle_svc_switch(ctx: &Context) -> usize {
     let hook = unsafe { &mut *hook_ptr };
     scheduler::save_context_finish_hook(&mut *hook, ctx as *const _ as usize)
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub extern "C" fn bk_debug_syscall(ctx: &Context) -> usize {
     ctx as *const _ as usize
@@ -511,9 +496,7 @@ extern "C" fn handle_syscall(ctx: &Context) -> usize {
     }
     base
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 pub unsafe extern "C" fn handle_pendsv() {
     core::arch::naked_asm!(
         concat!(
@@ -715,9 +698,7 @@ pub extern "C" fn local_irq_enabled() -> bool {
 pub extern "C" fn is_in_interrupt() -> bool {
     cortex_m::peripheral::SCB::vect_active() != cortex_m::peripheral::scb::VectActive::ThreadMode
 }
-
-#[cfg_attr(compatible_old_toolchain, naked)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(naked))]
+#[unsafe(naked)]
 pub(crate) extern "C" fn switch_stack(
     to_sp: usize,
     cont: extern "C" fn(sp: usize, old_sp: usize),

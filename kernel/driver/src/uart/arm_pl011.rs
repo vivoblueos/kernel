@@ -297,7 +297,7 @@ impl ArmPl011<'_> {
 struct FlagsRegister(u32);
 
 macro_rules! field_used_by_inner {
-    ($mmio_pointer:expr, $field:ident) => {{
+    ($mmio_pointer:expr_2021, $field:ident) => {{
         // Make sure $mmio_pointer is the right type.
         let mmio_pointer: &mut UniqueMmioPointer<_> = $mmio_pointer;
         // SAFETY: ptr_mut is guaranteed to return a valid pointer for MMIO, so the pointer to the

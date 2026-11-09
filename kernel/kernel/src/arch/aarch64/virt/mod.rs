@@ -36,9 +36,7 @@ use aarch64_cpu::{
     registers::{CNTV_CTL_EL0, ICC_CTLR_EL1, ICH_HCR_EL2},
 };
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -> usize {
     unsafe {
         let mut ctlr = ICC_CTLR_EL1.get();
@@ -113,9 +111,7 @@ pub extern "C" fn hyper_trap_irq(_context: &mut crate::arch::aarch64::Context) -
     vgic::flush(vcpu_id);
     0
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn hyper_trap_fiq(_context: &mut crate::arch::aarch64::Context) -> usize {
     0
 }

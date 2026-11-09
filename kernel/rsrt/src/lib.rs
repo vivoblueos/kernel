@@ -94,14 +94,13 @@ fn oops(info: &core::panic::PanicInfo) -> ! {
 }
 
 #[used]
-#[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
+#[unsafe(link_section = ".bk_app_array")]
 static INIT: extern "C" fn() = init;
 
 extern "C" fn init() {
     #[cfg(feature = "std")]
     {
-        extern "C" {
+        unsafe extern "C" {
             fn __librs_start_main();
         }
         unsafe { __librs_start_main() };
@@ -109,7 +108,7 @@ extern "C" fn init() {
 
     #[cfg(not(feature = "std"))]
     {
-        extern "C" {
+        unsafe extern "C" {
             fn main() -> i32;
         }
         unsafe { main() };

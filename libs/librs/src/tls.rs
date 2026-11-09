@@ -127,7 +127,7 @@ fn allocate_object(ctrl: &EmutlsControl) -> *mut u8 {
     base
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[linkage = "weak"]
 pub extern "C" fn __emutls_get_address(ptr: *mut c_void) -> *mut c_void {
     let ctrl = unsafe { &mut *ptr.cast::<EmutlsControl>() };

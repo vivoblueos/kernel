@@ -20,7 +20,7 @@ use core::ffi::c_char;
 use librs::pthread;
 use semihosting::{io::Read, println};
 
-extern "C" {
+unsafe extern "C" {
     static LOADER_TEST_ELF_PATH: *const c_char;
     static INVALID_MAGIC_ELF_PATH: *const c_char;
     static INVALID_ENTRY_ELF_PATH: *const c_char;
@@ -225,9 +225,7 @@ mod test_elf_loader {
         assert!(loader::load_elf(&buf, &mut mapper).is_err());
     }
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub fn loader_test_runner(tests: &[&dyn Fn()]) {
     println!("Loader integration test started");
     println!("Running {} tests", tests.len());
@@ -236,9 +234,7 @@ pub fn loader_test_runner(tests: &[&dyn Fn()]) {
     }
     println!("Loader integration test ended");
 }
-
-#[cfg_attr(compatible_old_toolchain, no_mangle)]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(no_mangle))]
+#[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     pthread::register_my_posix_tcb();
     loader_test_main();

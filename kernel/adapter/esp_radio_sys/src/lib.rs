@@ -140,15 +140,15 @@ impl SchedulerImplementation for BkScheduler {
     }
 
     unsafe fn task_priority(&self, task: ThreadPtr) -> u32 {
-        let thread = &*(task.as_ptr() as *const blueos::thread::Thread);
+        let thread = unsafe { &*(task.as_ptr() as *const blueos::thread::Thread) };
         let blueos_prio = thread.priority();
         // Invert: freertos_prio = MAX - blueos_prio
         blueos::config::MAX_THREAD_PRIORITY.saturating_sub(blueos_prio)
     }
 
     unsafe fn set_task_priority(&self, task: ThreadPtr, priority: u32) {
-        let thread = &*(task.as_ptr() as *const blueos::thread::Thread);
-        let thread = Arc::clone_from(thread);
+        let thread = unsafe { &*(task.as_ptr() as *const blueos::thread::Thread) };
+        let thread = unsafe { Arc::clone_from(thread) };
         let blueos_prio = blueos::config::MAX_THREAD_PRIORITY
             .saturating_sub(priority.min(blueos::config::MAX_THREAD_PRIORITY))
             as ThreadPriority;
@@ -189,12 +189,12 @@ impl WaitQueueImplementation for EspWaitQueue {
 
     unsafe fn delete(queue: WaitQueuePtr) {
         let ptr = queue.as_ptr() as *mut EspWaitQueue;
-        drop(Box::from_raw(ptr));
+        drop(unsafe { Box::from_raw(ptr) });
     }
 
     #[allow(clippy::drop_non_drop)]
     unsafe fn wait_until(queue: WaitQueuePtr, deadline_instant: Option<u64>) {
-        let this = &*(queue.as_ptr() as *const EspWaitQueue);
+        let this = unsafe { &*(queue.as_ptr() as *const EspWaitQueue) };
         let this_thread = scheduler::current_thread();
         let deadline = deadline_instant.map(Tick::from_micros).unwrap_or(Tick::MAX);
         let mut w = this.0.irqsave_lock();
@@ -209,7 +209,7 @@ impl WaitQueueImplementation for EspWaitQueue {
     }
 
     unsafe fn notify(queue: WaitQueuePtr) {
-        let this = &*(queue.as_ptr() as *const EspWaitQueue);
+        let this = unsafe { &*(queue.as_ptr() as *const EspWaitQueue) };
         let w = this.0.irqsave_lock();
         let mut woke = false;
         for entry in w.iter() {
@@ -226,7 +226,7 @@ impl WaitQueueImplementation for EspWaitQueue {
     }
 
     unsafe fn notify_from_isr(queue: WaitQueuePtr, mut higher_prio_task_waken: Option<&mut bool>) {
-        let this = &*(queue.as_ptr() as *const EspWaitQueue);
+        let this = unsafe { &*(queue.as_ptr() as *const EspWaitQueue) };
         let w = this.0.irqsave_lock();
         let mut woke = false;
         for entry in w.iter() {
@@ -346,21 +346,23 @@ impl SemaphoreImplementation for BkSemaphore {
     }
 
     unsafe fn delete(semaphore: SemaphorePtr) {
-        let sem = Box::from_raw(semaphore.cast::<Self>().as_ptr());
+        let sem = unsafe { Box::from_raw(semaphore.cast::<Self>().as_ptr()) };
         // Delete the wait queue — no lock needed, nobody references this any more.
-        EspWaitQueue::delete(sem.with_irq_safe(|d| d.waiting));
+        unsafe { EspWaitQueue::delete(sem.with_irq_safe(|d| d.waiting)) };
         drop(sem);
     }
 
     unsafe fn take(semaphore: SemaphorePtr, timeout_us: Option<u32>) -> bool {
-        <Self as SemaphoreImplementation>::take_with_deadline(
-            semaphore,
-            timeout_us.map(|us| Tick::now().as_micros() + us as u64),
-        )
+        unsafe {
+            <Self as SemaphoreImplementation>::take_with_deadline(
+                semaphore,
+                timeout_us.map(|us| Tick::now().as_micros() + us as u64),
+            )
+        }
     }
 
     unsafe fn take_with_deadline(semaphore: SemaphorePtr, _deadline_instant: Option<u64>) -> bool {
-        let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
+        let sem = unsafe { &*semaphore.cast::<BkSemaphore>().as_ptr() };
         loop {
             // Quick path: try to decrement current under a short critical section.
             // If semaphore is available, take it and return immediately.
@@ -431,7 +433,7 @@ impl SemaphoreImplementation for BkSemaphore {
     }
 
     unsafe fn give(semaphore: SemaphorePtr) -> bool {
-        let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
+        let sem = unsafe { &*semaphore.cast::<BkSemaphore>().as_ptr() };
         let current_thread = scheduler::current_thread();
         let current_owner = Arc::as_ptr(&current_thread) as usize;
         let (ok, released, waiting, owner_thread, owner_boosted) = sem.with_irq_safe(|data| {
@@ -486,7 +488,7 @@ impl SemaphoreImplementation for BkSemaphore {
         semaphore: SemaphorePtr,
         higher_prio_task_waken: Option<&mut bool>,
     ) -> bool {
-        let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
+        let sem = unsafe { &*semaphore.cast::<BkSemaphore>().as_ptr() };
         let (ok, waiting) = sem.with_irq_safe(|data| {
             let ok = match &data.kind {
                 SemaphoreKind::Mutex | SemaphoreKind::RecursiveMutex => false,
@@ -505,12 +507,12 @@ impl SemaphoreImplementation for BkSemaphore {
     }
 
     unsafe fn current_count(semaphore: SemaphorePtr) -> u32 {
-        let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
+        let sem = unsafe { &*semaphore.cast::<BkSemaphore>().as_ptr() };
         sem.with_irq_safe(|data| data.current)
     }
 
     unsafe fn try_take(semaphore: SemaphorePtr) -> bool {
-        let sem = &*semaphore.cast::<BkSemaphore>().as_ptr();
+        let sem = unsafe { &*semaphore.cast::<BkSemaphore>().as_ptr() };
         let current_thread = scheduler::current_thread();
         let current_owner = Arc::as_ptr(&current_thread) as usize;
         sem.with_irq_safe(|data| match &data.kind {
@@ -538,7 +540,7 @@ impl SemaphoreImplementation for BkSemaphore {
         semaphore: SemaphorePtr,
         _higher_prio_task_waken: Option<&mut bool>,
     ) -> bool {
-        <Self as SemaphoreImplementation>::try_take(semaphore)
+        unsafe { <Self as SemaphoreImplementation>::try_take(semaphore) }
     }
 }
 
@@ -562,8 +564,7 @@ mod tests {
     static ALLOCATOR: KernelAllocator = KernelAllocator;
 
     #[used]
-    #[cfg_attr(compatible_old_toolchain, link_section = ".bk_app_array")]
-    #[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".bk_app_array"))]
+    #[unsafe(link_section = ".bk_app_array")]
     static INIT_TEST: extern "C" fn() = init_test;
 
     #[inline(never)]

@@ -18,7 +18,7 @@ build_rust("blueos_test_macro") {
   testonly = true
   crate_type = "proc-macro"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   public_deps = [ "//external/rust:semihosting(${default_toolchain})" ]
   deps = [
     "//external/rust:proc-macro2",
