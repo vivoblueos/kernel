@@ -29,9 +29,7 @@ use spin::Once;
 
 // const definitions
 pub const UART0_IRQN: IrqNumber = IrqNumber::new(33);
-
-#[cfg_attr(compatible_old_toolchain, link_section = ".start_block")]
-#[cfg_attr(not(compatible_old_toolchain), unsafe(link_section = ".start_block"))]
+#[unsafe(link_section = ".start_block")]
 #[used]
 pub static IMAGE_DEF: block::ImageDef = block::ImageDef::secure_exe();
 
@@ -51,34 +49,38 @@ struct ZeroTable {
 // Copy data from FLASH to RAM.
 #[inline(never)]
 unsafe fn copy_data() {
-    extern "C" {
+    unsafe extern "C" {
         static __zero_table_start: ZeroTable;
         static __zero_table_end: ZeroTable;
         static __copy_table_start: CopyTable;
         static __copy_table_end: CopyTable;
     }
 
-    let mut p_table = addr_of!(__copy_table_start);
-    while p_table < addr_of!(__copy_table_end) {
-        let table = &(*p_table);
-        for i in 0..table.wlen {
-            core::ptr::write(
-                table.dest.add(i as usize),
-                core::ptr::read(table.src.add(i as usize)),
-            );
+    unsafe {
+        let mut p_table = addr_of!(__copy_table_start);
+        while p_table < addr_of!(__copy_table_end) {
+            let table = &(*p_table);
+            for i in 0..table.wlen {
+                core::ptr::write(
+                    table.dest.add(i as usize),
+                    core::ptr::read(table.src.add(i as usize)),
+                );
+            }
+            p_table = p_table.offset(1);
         }
-        p_table = p_table.offset(1);
     }
 
-    let mut p_table = addr_of!(__zero_table_start);
-    while p_table < addr_of!(__zero_table_end) {
-        let table = &*p_table;
-        for i in 0..table.wlen {
-            core::ptr::write(table.dest.add(i as usize), 0);
+    unsafe {
+        let mut p_table = addr_of!(__zero_table_start);
+        while p_table < addr_of!(__zero_table_end) {
+            let table = &*p_table;
+            for i in 0..table.wlen {
+                core::ptr::write(table.dest.add(i as usize), 0);
+            }
+            p_table = p_table.offset(1);
         }
-        p_table = p_table.offset(1);
     }
-    INIT_BSS_DONE = true;
+    unsafe { INIT_BSS_DONE = true };
 }
 
 const TICKS_PS: usize = blueos_kconfig::CONFIG_TICKS_PER_SECOND as usize;

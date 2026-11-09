@@ -38,6 +38,7 @@ build_rust("foo_crate") {
 }
 
 rust_library("builtin_foo_crate") {
+  rustflags = [ "--edition=2024" ]
   crate_type = "bin"
   sources = [ "src/foo.rs" ]
   deps = [ ":foo_cc" ]
@@ -49,6 +50,7 @@ rust_library("builtin_foo_crate") {
 }
 
 executable("foo_exe") {
+  rustflags = [ "--edition=2024" ]
   sources = [ "src/foo.rs" ]
   deps = [ ":foo_cc" ]
   if (host_os == "mac") {

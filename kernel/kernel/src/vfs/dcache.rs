@@ -461,10 +461,10 @@ impl Dcache {
             *overridden_children = Some(BTreeMap::new());
         }
         let mut children = self.children.write();
-        if let Some(overridden_child) = children.remove(&name) {
-            if let Some(overridden_children) = overridden_children.as_mut() {
-                overridden_children.insert(overridden_child.name(), overridden_child);
-            }
+        if let Some(overridden_child) = children.remove(&name)
+            && let Some(overridden_children) = overridden_children.as_mut()
+        {
+            overridden_children.insert(overridden_child.name(), overridden_child);
         }
 
         children.insert(name, mount_point);

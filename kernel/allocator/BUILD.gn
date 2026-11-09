@@ -24,7 +24,7 @@ build_rust("allocator_crate") {
   crate_type = "rlib"
   crate_name = "allocator_crate"
   sources = [ "src/lib.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//external/rust:const-default",
     "//external/rust:log",
