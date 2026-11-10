@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reverse-map a subtree branch and merge it into BlueKernel."""
+"""Reverse-map a subtree branch and merge it into the kernel center."""
 
 import argparse
 import shlex
@@ -8,37 +8,58 @@ import sys
 from pathlib import Path
 
 PATH_MAP = {
-    "apps_shell": "apps/shell",
-    "apps_example": "apps/example",
-    "book": "book",
+    "apps_shell": "shell",
+    "apps_example": "example",
     "build": "build",
     "external": "external",
-    "kernel": "kernel",
-    "libc": "libc",
-    "librs": "librs",
+    "libc": "libs/libc",
+    "librs": "libs/librs",
 }
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        allow_abbrev=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=
+        """The target baseline must contain the full central history. For an existing
+target, it must be an ancestor of the target or its tip. To import another
+child, use the current target as both --target-base and --target-branch.
+
+Tracked files must be clean, with no ongoing Git operation. The script
+switches to the target branch and merges without pushing. Resolve conflicts
+with git merge --continue or abort with git merge --abort. For a retry, reuse
+the printed starting SHA and the same source commit.
+
+The remote filter must match the selected directory; --repo does not change
+it. Run Josh operations sequentially within a repository.""",
+    )
     parser.add_argument("--source-remote",
                         required=True,
                         help="Configured Josh remote")
     parser.add_argument("--source-branch",
                         required=True,
                         help="Child repository branch")
-    parser.add_argument("--repo", required=True, choices=PATH_MAP)
+    parser.add_argument("--repo",
+                        required=True,
+                        choices=PATH_MAP,
+                        help="Child repository to import")
     parser.add_argument(
         "--target-base",
         default="main",
-        help="BlueKernel mapping baseline; branch, SHA or Git expression",
+        help=("Kernel center mapping baseline; branch, tag, SHA or Git "
+              "expression (default: main)"),
     )
     parser.add_argument("--target-branch",
                         required=True,
                         help="Branch to create or merge into")
-    parser.add_argument("--repo-root",
-                        type=Path,
-                        default=Path(__file__).resolve().parents[2])
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[2],
+        help="Center checkout (default: the script's repository)",
+    )
     args = parser.parse_args()
     git_dir = None
 
@@ -125,6 +146,7 @@ def main():
         snapshot_ref = f"refs/import/{args.target_branch}/source/0"
         mapped_ref = f"refs/import/{args.target_branch}/mapped/0"
         run("git", "update-ref", snapshot_ref, source_oid)
+        # These helper refs are overwritten on each run and retained for inspection.
         # Reverse filtering updates its input ref; never use the target branch here.
         run("git", "update-ref", mapped_ref, base_oid)
         run(
@@ -153,7 +175,7 @@ def main():
             "--no-ff",
             "--no-edit",
             "-m",
-            f"Import {args.source_remote}/{args.source_branch} into bluekernel",
+            f"Import {args.source_remote}/{args.source_branch} into kernel",
             mapped_oid,
         )
         print(f"\nUpdated branch: {args.target_branch}")
