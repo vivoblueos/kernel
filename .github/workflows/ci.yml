@@ -187,6 +187,25 @@ jobs:
         exclude:
           - board: none
             syscall_mode: dsc
+        include:
+          - board: qemu_virt64_aarch64
+            build_type: debug
+            syscall_mode: linux_abi
+          - board: qemu_virt64_aarch64
+            build_type: release
+            syscall_mode: linux_abi
+          - board: rk3568
+            build_type: debug
+            syscall_mode: linux_abi
+          - board: rk3568
+            build_type: release
+            syscall_mode: linux_abi
+          - board: qemu_riscv64
+            build_type: debug
+            syscall_mode: linux_abi
+          - board: qemu_riscv64
+            build_type: release
+            syscall_mode: linux_abi
     steps:
       - name: Check out pull request
         uses: actions/checkout@v4

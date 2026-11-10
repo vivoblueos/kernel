@@ -81,12 +81,12 @@ blueos_board("newlib_mps3_an547") {
 # manual target. Dispatches on quickjs_mode:
 #   qjs_check -> non-interactive scripted run; asserts QUICKJS_CHECK_PASS and
 #                the checker terminates the emulator. you can start with:
-#                `gn gen out/qjs_check.dsc --args='board="newlib_mps3_an547" build_type="debug" direct_syscall_handler=true quickjs_flavor="quickjs" quickjs_mode="qjs_check"'
+#                `gn gen out/qjs_check.dsc --args='board="newlib_mps3_an547" build_type="debug" syscall_mode="dsc" quickjs_flavor="quickjs" quickjs_mode="qjs_check"'
 #                `ninja -C out/qjs_check.dsc run_quickjs`, then you could got the cases output.
 #   repl      -> interactive read-eval-print loop; generates the runner scripts and
 #                prints how to launch them (an action cannot hold an interactive
 #                terminal through ninja). you can then launch the REPL with:
-#                `gn gen out/repl.dsc --args='board="newlib_mps3_an547" build_type="debug" direct_syscall_handler=true quickjs_flavor="quickjs" quickjs_mode="repl"'
+#                `gn gen out/repl.dsc --args='board="newlib_mps3_an547" build_type="debug" syscall_mode="dsc" quickjs_flavor="quickjs" quickjs_mode="repl"'
 #                ninja -C out/repl.dsc run_quickjs`, if you want quickjs-ng, change the args.
 
 if (quickjs_enabled) {
