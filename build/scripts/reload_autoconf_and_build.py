@@ -19,6 +19,7 @@ This file will build a new gn project from the parent project.
 
 import os
 import argparse
+from pathlib import Path
 from kconfiglib import Kconfig
 import subprocess
 
@@ -68,6 +69,8 @@ if __name__ == "__main__":
         subprocess.run(cp_cmd, check=True)
         cp_cmd = ['cp', elf_file, cped_elf_file]
         subprocess.run(cp_cmd, check=True)
+        stamp_file = Path(args.output_dir).parent / f"{target_name}.stamp"
+        stamp_file.touch()
 
     except Exception as e:
         print(f"Error reload autoconf and build: {e}")
