@@ -34,9 +34,6 @@ macro_rules! exception_handler {
         unsafe extern "C" fn $name() -> ! {
             naked_asm!(
                 concat!(
-                    "
-                    msr DAIFSet, #0x3
-                    ",
                     crate::aarch64_save_context_prologue!(),
                     crate::aarch64_save_context!(),
                     "
