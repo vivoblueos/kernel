@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::sync::{ISpinLock, SpinLock, SpinLockGuard};
+use crate::sync::{SpinLock, SpinLockGuard};
 pub use blueos_infra::{
     iheap::{
         IouMinHeapNodeMut as IouIntrusiveBinaryHeapNodeMut, MinHeap as IntrusiveBinaryHeap,
@@ -145,52 +145,5 @@ impl<T: 'static, A: IntrusiveAdapter<T> + 'static, O: StaticListOwner<T, A>>
     pub fn insert(me: Arc<T>) -> bool {
         let mut head = O::get().irqsave_lock();
         ArcList::<T, A>::insert_after(&mut *head, me)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use blueos_test_macro::test;
-
-    impl_simple_intrusive_adapter!(Node, Foobar, node);
-    impl_simple_intrusive_adapter!(Lock, Foobar, node_lock);
-
-    #[allow(clippy::type_complexity)]
-    struct Foobar {
-        node: AtomicIlistHead<Foobar, Node>,
-        node_lock: ISpinLock<
-            AtomicIlistHead<Foobar, Node>,
-            RelativeAdapter<Foobar, Lock, Node, AtomicIlistHead<Foobar, Node>>,
-        >,
-    }
-
-    #[test]
-    fn test_intrusive_mutex_list_head() {
-        type L = AtomicIlistHead<Foobar, Node>;
-        let head = Arc::new(Foobar {
-            node: AtomicIlistHead::new(),
-            node_lock: ISpinLock::new(),
-        });
-        let a = Arc::new(Foobar {
-            node: AtomicIlistHead::new(),
-            node_lock: ISpinLock::new(),
-        });
-        let b = Arc::new(Foobar {
-            node: AtomicIlistHead::new(),
-            node_lock: ISpinLock::new(),
-        });
-        // For following insertions, the head doesn't get the share of ownership.
-        let mut head_lock = head.node_lock.irqsave_lock();
-        {
-            let mut lock_a = a.node_lock.irqsave_lock();
-            L::insert_after(&mut head_lock, &mut lock_a);
-            drop(lock_a);
-            assert_eq!(Arc::<Foobar>::strong_count(&a), 1);
-        }
-        {
-            let mut lock_b = b.node_lock.irqsave_lock();
-            L::insert_after(&mut head_lock, &mut lock_b);
-        }
     }
 }

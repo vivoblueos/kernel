@@ -46,12 +46,11 @@ pub extern "C" fn osMessageQueueNew(
     }
 
     if attr.is_null() {
-        let queue = Arc::new(MessageQueue::new(
-            msg_size as usize,
-            msg_count,
-            core::ptr::null_mut(),
-        ));
-        queue.init();
+        let queue = match MessageQueue::create(msg_size as usize, msg_count, core::ptr::null_mut())
+        {
+            Some(q) => q,
+            None => return ptr::null_mut(),
+        };
         // Use default values when attr is NULL
         let os_queue = Arc::new(OsMessageQueue::with_default_name(queue));
         return Arc::into_raw(os_queue) as osMessageQueueId_t;
@@ -59,23 +58,19 @@ pub extern "C" fn osMessageQueueNew(
 
     let attr_ref = unsafe { &*attr };
     let queue = if attr_ref.mq_mem.is_null() {
-        Arc::new(MessageQueue::new(
-            msg_size as usize,
-            msg_count,
-            core::ptr::null_mut(),
-        ))
+        match MessageQueue::create(msg_size as usize, msg_count, core::ptr::null_mut()) {
+            Some(q) => q,
+            None => return ptr::null_mut(),
+        }
     } else {
         if attr_ref.mq_size < ((msg_size + core::mem::size_of::<usize>() as u32) * msg_count) {
             return ptr::null_mut();
         }
-        Arc::new(MessageQueue::new(
-            msg_size as usize,
-            msg_count,
-            attr_ref.mq_mem as *mut u8,
-        ))
+        match MessageQueue::create(msg_size as usize, msg_count, attr_ref.mq_mem as *mut u8) {
+            Some(q) => q,
+            None => return ptr::null_mut(),
+        }
     };
-
-    queue.init();
     if attr_ref.cb_mem.is_null() {
         // Allocate memory dynamically
         let os_queue = if attr_ref.name.is_null() {

@@ -836,35 +836,10 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
     }
 
     #[inline]
-    fn this(&self) -> &T {
-        let ptr = (&raw const *self).cast::<u8>();
-        let base = unsafe { ptr.sub(A::offset()) as *const T };
-        unsafe { &*base }
-    }
-
-    #[inline]
     fn this_mut(&self) -> &mut T {
         let ptr = (&raw const *self).cast::<u8>().cast_mut();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
-    }
-
-    #[inline]
-    pub fn read(&self) -> RwLockReadGuard<'_, T> {
-        let g = self.rwlock.read();
-        let lock = g.lock;
-        let data = self.this() as *const T;
-        core::mem::forget(g);
-        RwLockReadGuard { lock, data }
-    }
-
-    #[inline]
-    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
-        let g = self.rwlock.try_read()?;
-        let lock = g.lock;
-        let data = self.this() as *const T;
-        core::mem::forget(g);
-        Some(RwLockReadGuard { lock, data })
     }
 
     #[inline]
@@ -874,15 +849,6 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
         let data = self.this_mut() as *mut T;
         core::mem::forget(g);
         RwLockWriteGuard { lock, data }
-    }
-
-    #[inline]
-    pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
-        let g = self.rwlock.try_write()?;
-        let lock = g.lock;
-        let data = self.this_mut() as *mut T;
-        core::mem::forget(g);
-        Some(RwLockWriteGuard { lock, data })
     }
 }
 
@@ -1160,11 +1126,99 @@ mod tests {
     fn test_upgrade() {
         let lock: RwLock<i32> = RwLock::default();
         let read_guard = lock.upgradeable_read();
+        assert_eq!(*read_guard, 0);
         assert_eq!(lock.reader_count(), 1);
         assert_eq!(lock.writer_count(), 0);
 
-        let write_guard = read_guard.upgrade();
+        let mut write_guard = read_guard.upgrade();
         assert_eq!(lock.reader_count(), 0);
         assert_eq!(lock.writer_count(), 1);
+        *write_guard = 2;
+        assert_eq!(*write_guard, 2);
+        drop(write_guard);
+
+        assert_eq!(*lock.read(), 2);
+        assert_eq!(*lock.try_write().expect("upgrade must release the lock"), 2);
+    }
+
+    #[test]
+    fn test_try_upgrade_retry() {
+        let lock = RwLock::new(1i32);
+        let reader = lock.read();
+        let upgradable = lock.upgradeable_read();
+        let upgradable = match upgradable.try_upgrade() {
+            Ok(_) => panic!("upgrade must fail while another reader exists"),
+            Err(guard) => guard,
+        };
+        assert_eq!(*reader, 1);
+        assert_eq!(*upgradable, 1);
+        assert!(lock.try_write().is_none());
+        drop(reader);
+
+        let mut writer = upgradable.try_upgrade().expect("reader has exited");
+        *writer = 2;
+        assert_eq!(*writer, 2);
+        drop(writer);
+
+        assert_eq!(*lock.read(), 2);
+        assert_eq!(*lock.try_write().expect("retry must release the lock"), 2);
+    }
+
+    #[test]
+    fn test_write_downgrade_upgrade() {
+        let lock = RwLock::new(1i32);
+        let mut writer = lock.write();
+        *writer = 2;
+        let upgradable = writer.downgrade_to_upgradeable();
+        assert_eq!(*upgradable, 2);
+        assert!(lock.try_write().is_none());
+
+        let mut writer = upgradable.upgrade();
+        *writer = 3;
+        assert_eq!(*writer, 3);
+        drop(writer);
+
+        assert_eq!(*lock.read(), 3);
+        assert_eq!(
+            *lock.try_write().expect("round trip must release the lock"),
+            3
+        );
+    }
+
+    #[test]
+    fn test_write_downgrade_read() {
+        let lock = RwLock::new(1i32);
+        let mut writer = lock.write();
+        *writer = 2;
+        let reader = writer.downgrade();
+        let other = lock.try_read().expect("downgrade must allow readers");
+        assert_eq!(*reader, 2);
+        assert_eq!(*other, 2);
+        assert!(lock.try_write().is_none());
+        drop(reader);
+        assert!(lock.try_write().is_none());
+        drop(other);
+
+        assert_eq!(*lock.try_write().expect("readers must release the lock"), 2);
+    }
+
+    #[test]
+    fn test_upgradable_downgrade_read() {
+        let lock = RwLock::new(1i32);
+        let upgradable = lock.upgradeable_read();
+        assert_eq!(*upgradable, 1);
+        let reader = upgradable.downgrade();
+        let other = lock.try_read().expect("downgrade must allow readers");
+        assert_eq!(*reader, 1);
+        assert_eq!(*other, 1);
+        assert!(lock.try_write().is_none());
+        drop(reader);
+        assert!(lock.try_write().is_none());
+        drop(other);
+
+        let mut writer = lock.try_write().expect("readers must release the lock");
+        *writer = 2;
+        drop(writer);
+        assert_eq!(*lock.read(), 2);
     }
 }
