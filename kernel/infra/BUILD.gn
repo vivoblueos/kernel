@@ -25,6 +25,11 @@ group("check_infra_by_miri") {
   deps = [ ":infra_miri_test" ]
 }
 
+group("check_rwlock_by_miri") {
+  testonly = true
+  deps = [ ":rwlock_miri_test" ]
+}
+
 group("check_infra_by_clippy") {
   testonly = true
   deps = [
@@ -52,6 +57,14 @@ run_clippy("blueos_infra_clippy") {
 miri_test("infra_miri_test") {
   crate = "src/lib.rs"
   deps = shared_deps
+}
+
+miri_test("rwlock_miri_test") {
+  crate = "src/lib.rs"
+  edition = "2024"
+  deps = shared_deps
+  test_filter = "tinyrwlock::tests::"
+  extra_miri_flags = [ "-Zmiri-tree-borrows" ]
 }
 
 build_rust("infra_unittest") {

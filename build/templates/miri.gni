@@ -19,6 +19,7 @@ import("//build/templates/rust.gni")
 # The default-toolchain target is a forwarding group. The actual Rust target is
 # instantiated under //build/toolchain:miri, so all of its Rust dependencies
 # are rebuilt by Miri with complete MIR instead of reusing normal target rlibs.
+# Optional test_filter selects tests through libtest's name substring filter.
 
 template("miri_test") {
   if (current_toolchain == default_toolchain) {
@@ -47,6 +48,13 @@ template("miri_test") {
       rustflags = [ "--test" ]
       if (defined(invoker.extra_miri_flags)) {
         rustflags += invoker.extra_miri_flags
+      }
+      if (defined(invoker.test_filter)) {
+        assert(invoker.test_filter != "", "test_filter must not be empty")
+        if (!defined(rustenv)) {
+          rustenv = []
+        }
+        rustenv += [ "BLUEOS_MIRI_TEST_FILTER=${invoker.test_filter}" ]
       }
       if (defined(invoker.configs)) {
         configs += invoker.configs
