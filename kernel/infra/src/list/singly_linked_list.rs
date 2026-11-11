@@ -84,7 +84,7 @@ impl<T> SinglyLinkedList<T> {
     /// Return an mutable iterator over the items in the list
     pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut {
-            prev: &mut self.head as *mut Option<NonNull<T>>,
+            prev: &raw mut self.head,
             curr: self.head,
             list: PhantomData,
         }
