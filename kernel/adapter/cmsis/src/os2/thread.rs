@@ -322,13 +322,26 @@ pub extern "C" fn osThreadSetPriority(
     if !(osPriority_t_osPriorityIdle..=osPriority_t_osPriorityISR).contains(&priority) {
         return osStatus_t_osErrorParameter;
     }
-    let t = unsafe { &mut *(thread_id as *const _ as *mut Os2Thread) };
+    let t = unsafe { &*(thread_id as *const _ as *const Os2Thread) };
     if to_os_state(t.state() as u8) == osThreadState_t_osThreadTerminated {
         // Cannot set priority for terminated thread.
         return osStatus_t_osErrorResource;
     }
-    let mut guard = t.lock();
-    guard.set_priority(to_thread_priority(priority));
+    let new_priority = to_thread_priority(priority);
+    // set_thread_priority re-queues a READY thread under the ReadyTable lock and
+    // writes the priority field for a non-READY thread within that same irqsave
+    // section, closing the window between "decide not in queue" and "write
+    // field".
+    match scheduler::set_thread_priority(t.inner(), new_priority) {
+        Ok(()) => {}
+        Err(state) => {
+            // Field already set by set_thread_priority; only yield if the
+            // running thread's priority changed so the scheduler can preempt.
+            if state == thread::RUNNING {
+                scheduler::yield_me_now_or_later();
+            }
+        }
+    }
     osStatus_t_osOK
 }
 

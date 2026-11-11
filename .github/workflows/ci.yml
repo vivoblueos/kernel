@@ -211,7 +211,7 @@ jobs:
             --build-type "$BUILD_TYPE" \
             --syscall-mode "$SYSCALL_MODE"
   miri:
-    name: allocator Miri
+    name: MIRI check
     needs: resolve-dependencies
     timeout-minutes: 90
     runs-on: ubuntu-latest
@@ -239,6 +239,10 @@ jobs:
             --args="board=\"qemu_mps2_an385\" build_type=\"debug\" miri_path=\"$MIRI_PATH\" miri_sysroot=\"$MIRI_SYSROOT\""
           ninja -C out/qemu_mps2_an385.debug.miri \
             kernel/allocator:check_allocator_by_miri
+      - name: Check RwLock with Miri Tree Borrows
+        run: |
+          ninja -C out/qemu_mps2_an385.debug.miri \
+            kernel/infra:check_rwlock_by_miri
   gate:
     name: BlueKernel CI
     if: ${{ always() }}
