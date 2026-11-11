@@ -256,6 +256,9 @@ pub struct Thread {
     // Intrusive node linking this thread into its owning process's thread
     // list. Protected by the process's `threads` spinlock.
     process_node: ThreadListNode,
+    // Error code injected by a sync object's reset()/delete() so a blocked
+    // waiter bails out instead of touching freed memory. 0 = normal wake.
+    wait_error: AtomicI32,
     #[cfg(round_robin)]
     rr: RoundRobin,
 }
@@ -346,6 +349,23 @@ impl Thread {
     #[inline]
     pub fn state(&self) -> Uint {
         self.state.load(Ordering::Relaxed)
+    }
+
+    // Set from the waker side. Release pairs with take_wait_error's AcqRel.
+    // `err != 0` guard keeps a normal wake a no-op.
+    #[inline]
+    pub fn set_wait_error(&self, err: i32) {
+        if err != 0 {
+            self.wait_error.store(err, Ordering::Release);
+        }
+    }
+
+    // One-shot drain on the waiter side: swap(0) so a normal wake yields 0,
+    // an object-destroyed wake yields the injected code. AcqRel pairs with
+    // set_wait_error's Release.
+    #[inline]
+    pub fn take_wait_error(&self) -> i32 {
+        self.wait_error.swap(0, Ordering::AcqRel)
     }
 
     #[inline]
@@ -486,6 +506,7 @@ impl Thread {
             signal_context: None,
             process: Weak::new(),
             process_node: ThreadListNode::new(),
+            wait_error: AtomicI32::new(0),
             #[cfg(round_robin)]
             rr: RoundRobin::new(),
         }
