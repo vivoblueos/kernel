@@ -130,35 +130,10 @@ impl<T: Sized, A: Adapter<T>> INoLock<T, A> {
     }
 
     #[inline]
-    fn this(&self) -> &T {
-        let ptr = (&raw const *self).cast::<u8>();
-        let base = unsafe { ptr.sub(A::offset()) as *const T };
-        unsafe { &*base }
-    }
-
-    #[inline]
     fn this_mut(&self) -> &mut T {
         let ptr = (&raw const *self).cast::<u8>().cast_mut();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
-    }
-
-    #[inline]
-    pub fn read(&self) -> NoLockReadGuard<'_, T> {
-        let inner = self.this() as *const T;
-        NoLockReadGuard {
-            inner,
-            _a: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn try_read(&self) -> Option<NoLockReadGuard<'_, T>> {
-        let inner = self.this() as *const T;
-        Some(NoLockReadGuard {
-            inner,
-            _a: PhantomData,
-        })
     }
 
     #[inline]
@@ -168,15 +143,6 @@ impl<T: Sized, A: Adapter<T>> INoLock<T, A> {
             inner,
             _a: PhantomData,
         }
-    }
-
-    #[inline]
-    pub fn try_write(&self) -> Option<NoLockWriteGuard<'_, T>> {
-        let inner = self.this_mut() as *mut T;
-        Some(NoLockWriteGuard {
-            inner,
-            _a: PhantomData,
-        })
     }
 }
 

@@ -254,39 +254,13 @@ impl<T: Sized, A: const IntrusiveAdapter<T>> ISpinLock<T, A> {
     }
 
     #[inline]
-    pub fn lock(&self) -> SpinLockGuard<'_, T> {
-        let l = self.lock.write();
-        SpinLockGuard {
-            lock_guard: l,
-            irq_guard: None,
-        }
-    }
-
-    #[inline]
     pub fn irqsave_lock(&self) -> SpinLockGuard<'_, T> {
         let irq_guard = DisableInterruptGuard::new();
         compiler_fence(Ordering::SeqCst);
-        let mut g = self.lock();
-        g.irq_guard = Some(irq_guard);
-        g
-    }
-
-    #[inline]
-    pub fn read(&self) -> SpinLockReadGuard<'_, T> {
-        let l = self.lock.read();
-        SpinLockReadGuard {
-            lock_guard: l,
-            irq_guard: None,
+        SpinLockGuard {
+            lock_guard: self.lock.write(),
+            irq_guard: Some(irq_guard),
         }
-    }
-
-    #[inline]
-    pub fn irqsave_read(&self) -> SpinLockReadGuard<'_, T> {
-        let irq_guard = DisableInterruptGuard::new();
-        compiler_fence(Ordering::SeqCst);
-        let mut g = self.read();
-        g.irq_guard = Some(irq_guard);
-        g
     }
 }
 
