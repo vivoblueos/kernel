@@ -172,6 +172,11 @@ impl MessageQueue {
                 queue = self.lock();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
+                // ERESET injected by reset()/delete()? Bail out of send.
+                let werr = this_thread.take_wait_error();
+                if werr != 0 {
+                    return Err(Error::from_errno(werr));
+                }
             });
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
@@ -254,6 +259,11 @@ impl MessageQueue {
                 queue = self.lock();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
+                // ERESET injected by reset()/delete()? Bail out of recv.
+                let werr = this_thread.take_wait_error();
+                if werr != 0 {
+                    return Err(Error::from_errno(werr));
+                }
             });
             if reached_deadline {
                 return Err(code::ETIMEDOUT);
@@ -289,17 +299,48 @@ impl MessageQueue {
     pub fn reset(&self) {
         let mut queue = self.lock();
 
-        // Wakeup the sender thread.
+        // Wake all blocked senders and receivers with ERESET.
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
-        for val in send_queue.iter() {
-            let t = val.thread.clone();
-            scheduler::queue_ready_thread(thread::SUSPENDED, t);
-        }
+        let _woken =
+            wait_queue::wake_up_all_with_error(send_queue.deref_mut(), code::ERESET.to_errno());
         drop(send_queue);
+
+        let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
+        let _woken =
+            wait_queue::wake_up_all_with_error(recv_queue.deref_mut(), code::ERESET.to_errno());
+        drop(recv_queue);
+
         // Reset the ringbuffer.
         queue.queue_buffer.reset();
 
         self.accessible_count[SEND_TYPE].store(self.node_count, Ordering::Relaxed);
+        self.accessible_count[RECV_TYPE].store(0, Ordering::Relaxed);
+
+        drop(queue);
+        scheduler::yield_me_now_or_later();
+    }
+
+    /// Wake all blocked senders and receivers with ERESET, reset the
+    /// ringbuffer, and drain both accessible counts to 0. Call before
+    /// dropping the Arc.
+    pub fn delete(&self) {
+        let mut queue = self.lock();
+
+        // Wake all blocked senders and receivers with ERESET.
+        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
+        let _woken =
+            wait_queue::wake_up_all_with_error(send_queue.deref_mut(), code::ERESET.to_errno());
+        drop(send_queue);
+
+        let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
+        let _woken =
+            wait_queue::wake_up_all_with_error(recv_queue.deref_mut(), code::ERESET.to_errno());
+        drop(recv_queue);
+
+        // Reset the ringbuffer.
+        queue.queue_buffer.reset();
+
+        self.accessible_count[SEND_TYPE].store(0, Ordering::Relaxed);
         self.accessible_count[RECV_TYPE].store(0, Ordering::Relaxed);
 
         drop(queue);
@@ -313,8 +354,16 @@ unsafe impl Sync for MessageQueue {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        scheduler,
+        sync::{wait_until, wake},
+        thread,
+    };
     use blueos_test_macro::test;
-    use core::ptr;
+    use core::{
+        ptr,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
     const NO_WAITING: Tick = Tick(0);
 
     #[test]
@@ -639,5 +688,38 @@ mod tests {
         assert_eq!(buffer, [3u8, 3u8, 3u8, 3u8]);
         assert_eq!(queue.sendable_count(), 2);
         assert_eq!(queue.recvable_count(), 0);
+    }
+
+    #[test]
+    fn test_message_delete_wakes_waiter_with_ereset() {
+        // delete() must wake a recv blocked on an empty queue with Err(ERESET).
+        // Parked with Tick::MAX and no send(), so the only possible wake is delete().
+        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()));
+        assert!(queue.init());
+
+        // 0 = blocked, 1 = Ok, 2 = other Err, 3 = Err(ERESET) (expected)
+        let observed = Arc::new(AtomicUsize::new(0));
+        let recv_queue = queue.clone();
+        let worker_observed = observed.clone();
+        let worker = thread::spawn(move || {
+            let mut buffer = [0u8; 4];
+            let res = recv_queue.recv(&mut buffer, 4, Tick::MAX);
+            let v = match res {
+                Ok(()) => 1,
+                Err(code::ERESET) => 3,
+                Err(_) => 2,
+            };
+            worker_observed.store(v, Ordering::Release);
+            wake(&worker_observed);
+        })
+        .unwrap();
+        // Wait until the worker has parked.
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        assert_eq!(observed.load(Ordering::Acquire), 0);
+        queue.delete();
+        wait_until(3, &observed);
+        assert_eq!(observed.load(Ordering::Acquire), 3);
     }
 }

@@ -426,6 +426,22 @@ pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
     woken
 }
 
+// wake_up_all, but injects `err` into each woken waiter. Same post-wake yield.
+pub fn wake_up_all_with_error(mut w: SpinLockGuard<'_, WaitQueue>, err: i32) -> usize {
+    #[cfg(debugging_scheduler)]
+    crate::trace!(
+        "[TH:0x{:x}] is waking up all threads with error {}",
+        current_thread_id(),
+        err
+    );
+    let woken = wait_queue::wake_up_all_with_error(&mut w, err);
+    drop(w);
+    if woken > 0 {
+        yield_me_now_or_later();
+    }
+    woken
+}
+
 pub fn is_schedule_ready() -> bool {
     READY_CORES.load(Ordering::Acquire) != 0
 }
