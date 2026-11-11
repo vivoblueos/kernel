@@ -56,11 +56,14 @@ def main():
     if args.mode == "test" and not args.stamp:
         return fail("--stamp is required in test mode")
 
+    env = os.environ.copy()
+    test_filter = env.pop("BLUEOS_MIRI_TEST_FILTER", None)
     command = [args.miri, "--sysroot", args.sysroot, *args.rustc_args]
     if args.mode == "test":
         command.extend(("--", "--nocapture"))
+        if test_filter:
+            command.append(test_filter)
 
-    env = os.environ.copy()
     if args.mode == "compile":
         env["MIRI_BE_RUSTC"] = "target"
     else:
