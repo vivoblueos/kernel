@@ -12,6 +12,29 @@ passes only when all jobs succeed and can be selected as a required PR check.
 The scripts live outside the synchronized component directories. Existing
 component workflows and repository synchronization remain independent.
 
+## Uniprocessor lock coverage
+
+The existing `qemu_mps2_an385`, `qemu_mps3_an547`, and `qemu_riscv32` profiles
+disable `CONFIG_SMP`. Their `check_all` targets execute the kernel unit tests
+under QEMU in both debug/release and swi/dsc configurations.
+
+`kernel/kernel/src/sync/spinlock/up_tests.rs` is enabled only with
+`cfg(all(test, not(smp)))`. It checks shared readers, access exclusion, release
+and reacquisition, and the IRQ-save variants of the owning `SpinLock`. Conflicting
+acquisition probes only inspect whether a guard was returned; they do not access
+the payload through conflicting guards. These are contract assertions, not
+expected-failure tests: the current unchecked `NoLock` backend fails them.
+
+For a focused run after generating an output directory, use:
+
+```sh
+ninja -C out/qemu_mps2_an385.debug.swi kernel/kernel:run_unittest
+```
+
+This runs the full kernel unit-test binary, including the UP lock tests. QEMU
+coverage does not replace Miri aliasing checks or prove all interrupt and
+scheduling interleavings.
+
 ## Rust dependencies
 
 Before running local builds or Miri tests, install GNRT and sync dependencies
