@@ -212,7 +212,9 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
     if old.preempt_count() != 0 {
         return old_sp;
     }
-    let Some(next) = scheduler::next_preferred_thread(old.priority()) else {
+    let Some(next) =
+        scheduler::next_preferred_thread(old.priority(), scheduler::PreferMode::StrictHigher)
+    else {
         return old_sp;
     };
     debug_assert_eq!(next.state(), thread::READY);
