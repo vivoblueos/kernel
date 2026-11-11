@@ -292,3 +292,6 @@ impl<T: Sized, A: const IntrusiveAdapter<T>> ISpinLock<T, A> {
 
 unsafe impl<T: Sized + Send, A: const IntrusiveAdapter<T>> Send for ISpinLock<T, A> {}
 unsafe impl<T: Sized + Sync, A: const IntrusiveAdapter<T>> Sync for ISpinLock<T, A> {}
+
+#[cfg(all(test, not(smp)))]
+mod up_tests;
