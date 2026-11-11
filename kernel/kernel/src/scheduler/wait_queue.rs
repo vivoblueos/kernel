@@ -54,9 +54,20 @@ pub fn insert<'a>(
 }
 
 pub fn wake_up_all(wq: &mut WaitQueue) -> usize {
+    wake_up_all_with_error(wq, 0)
+}
+
+// Like wake_up_all, but when `err != 0` inject it into each woken waiter's
+// wait_error slot before scheduling it ready — how reset()/delete() tells
+// blocked waiters the object is gone (ERESET). Callers must hold the wq's
+// spinlock, same as wake_up_all.
+pub fn wake_up_all_with_error(wq: &mut WaitQueue, err: i32) -> usize {
     let mut woken = 0;
     for entry in wq.iter() {
         let t = entry.thread.clone();
+        if err != 0 {
+            t.set_wait_error(err);
+        }
         if scheduler::queue_ready_thread(SUSPENDED, t).is_err() {
             continue;
         }

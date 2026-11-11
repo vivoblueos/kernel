@@ -338,7 +338,7 @@ impl<T: ?Sized> RwLock<T> {
         } else {
             Some(RwLockReadGuard {
                 lock: &self.lock,
-                data: unsafe { &*self.data.get() },
+                data: self.data.get(),
             })
         }
     }
@@ -408,7 +408,7 @@ impl<T: ?Sized> RwLock<T> {
         {
             Some(RwLockWriteGuard {
                 lock: &self.lock,
-                data: unsafe { &mut *self.data.get() },
+                data: self.data.get(),
             })
         } else {
             None
@@ -445,7 +445,7 @@ impl<T: ?Sized> RwLock<T> {
         if self.lock.fetch_or(UPGRADED, Ordering::Acquire) & (WRITER | UPGRADED) == 0 {
             Some(RwLockUpgradableGuard {
                 lock: &self.lock,
-                data: unsafe { &*self.data.get() },
+                data: self.data.get(),
             })
         } else {
             // We can't unflip the UPGRADED bit back just yet as there is another upgradeable or write lock.
@@ -837,14 +837,14 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
 
     #[inline]
     fn this(&self) -> &T {
-        let ptr = self as *const _ as *const u8;
+        let ptr = (&raw const *self).cast::<u8>();
         let base = unsafe { ptr.sub(A::offset()) as *const T };
         unsafe { &*base }
     }
 
     #[inline]
     fn this_mut(&self) -> &mut T {
-        let ptr = self as *const _ as *mut u8;
+        let ptr = (&raw const *self).cast::<u8>().cast_mut();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
     }
@@ -1128,7 +1128,7 @@ mod tests {
 
         let lock = RwLock::new(0);
         unsafe {
-            let lock_ptr = &lock.lock as *const AtomicUsize as *mut AtomicUsize;
+            let lock_ptr = (&raw const lock.lock) as *mut AtomicUsize;
             (*lock_ptr).store(Usize::MAX / 2 + 1, Ordering::Relaxed);
         }
         let value = lock.acquire_reader();
