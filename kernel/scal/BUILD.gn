@@ -15,6 +15,21 @@
 import("//build/templates/rust.gni")
 import("features.gni")
 
+if (syscall_mode == "linux_abi") {
+  action("gen_linux_syscalls") {
+    script = "//build/scripts/gen_linux_syscalls.py"
+    inputs = [ script ]
+    outputs = [
+      "$target_gen_dir/linux_syscalls/aarch64.rs",
+      "$target_gen_dir/linux_syscalls/riscv64.rs",
+    ]
+    args = [
+      "--output-dir",
+      rebase_path("$target_gen_dir/linux_syscalls", root_build_dir),
+    ]
+  }
+}
+
 build_rust("blueos_scal") {
   crate_name = "blueos_scal"
   crate_type = "rlib"
@@ -22,8 +37,11 @@ build_rust("blueos_scal") {
   edition = "2024"
   deps = [ "//kernel/header:blueos_header" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
-  if (direct_syscall_handler) {
-    cfgs = [ "direct_syscall_handler" ]
+  cfgs = [ syscall_mode_cfg ]
+  if (syscall_mode == "linux_abi") {
+    build_deps = [ ":gen_linux_syscalls" ]
+  }
+  if (syscall_mode == "dsc") {
     deps += [ "//kernel/kernel:blueos" ]
   }
 }
@@ -35,4 +53,9 @@ build_rust("blueos_scal_swi") {
   edition = "2024"
   deps = [ "//kernel/header:blueos_header" ]
   configs += [ "//build/boards/${board}:kernel_config" ]
+  if (syscall_mode == "linux_abi") {
+    cfgs = [ syscall_mode_cfg ]
+  } else {
+    cfgs = [ "syscall_mode=\"swi\"" ]
+  }
 }

@@ -15,10 +15,12 @@
 import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
+import("//kernel/scal/features.gni")
 
 _kernel_default_cfgs = [
   "scheduler=\"global\"",
   "${build_type}",
+  syscall_mode_cfg,
 ]
 
 group("check_kernel") {

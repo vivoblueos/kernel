@@ -54,7 +54,7 @@ After synchronization, generate the affected board and build an actual consumer:
 
 ```sh
 gn gen out/qemu_mps3_an547.release.swi \
-  --args='board="qemu_mps3_an547" build_type="release" direct_syscall_handler=false'
+  --args='board="qemu_mps3_an547" build_type="release" syscall_mode="swi"'
 ninja -C out/qemu_mps3_an547.release.swi bin/ftp_client_example
 ```
 
