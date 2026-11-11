@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use super::{ISpinLock, SpinLock, SpinLockGuard};
+use super::{SpinLock, SpinLockGuard};
 use crate::{
     allocator,
     error::{code, Error},
@@ -20,7 +20,7 @@ use crate::{
     support::align_up_size,
     thread, time,
     time::Tick,
-    types::{impl_simple_intrusive_adapter, Arc},
+    types::Arc,
     with_iou,
 };
 use alloc::alloc::{alloc, dealloc, Layout};
@@ -30,8 +30,6 @@ use core::{
     slice,
     sync::atomic::{AtomicU32, Ordering},
 };
-
-impl_simple_intrusive_adapter!(OffsetOfLock, MessageQueue, lock);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SendMode {
@@ -49,9 +47,8 @@ pub struct MessageQueue {
     accessible_count: [AtomicU32; 2],
     // pend_queues contain a receiver pending queue and a sender pending queue
     pend_queues: [SpinLock<WaitQueue>; 2],
-    queue_buffer: BoxedRingBuffer,
-    // use spinlock to protect the structure,
-    lock: ISpinLock<MessageQueue, OffsetOfLock>,
+    // Serializes buffer access and updates to the accessible counts.
+    queue_buffer: SpinLock<BoxedRingBuffer>,
 }
 
 impl MessageQueue {
@@ -66,12 +63,11 @@ impl MessageQueue {
             node_count,
             accessible_count: [AtomicU32::new(node_count), AtomicU32::new(0)],
             pend_queues: [const { SpinLock::new(WaitQueue::new()) }; 2],
-            queue_buffer: if buf.is_null() {
+            queue_buffer: SpinLock::new(if buf.is_null() {
                 BoxedRingBuffer::new(total_size)
             } else {
                 BoxedRingBuffer::new_with_mem(total_size, buf)
-            },
-            lock: ISpinLock::new(),
+            }),
         }
     }
 
@@ -81,8 +77,8 @@ impl MessageQueue {
     }
 
     #[inline]
-    pub fn lock(&self) -> SpinLockGuard<'_, Self> {
-        self.lock.irqsave_lock()
+    fn lock_buffer(&self) -> SpinLockGuard<'_, BoxedRingBuffer> {
+        self.queue_buffer.irqsave_lock()
     }
 
     #[inline]
@@ -96,12 +92,12 @@ impl MessageQueue {
     }
 
     #[inline]
-    pub fn increment_sendable_count(&self) {
+    fn increment_sendable_count(&self) {
         self.accessible_count[SEND_TYPE].fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline]
-    pub fn decrement_sendable_count(&self) {
+    fn decrement_sendable_count(&self) {
         self.accessible_count[SEND_TYPE].fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -111,12 +107,12 @@ impl MessageQueue {
     }
 
     #[inline]
-    pub fn increment_recvable_count(&self) {
+    fn increment_recvable_count(&self) {
         self.accessible_count[RECV_TYPE].fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline]
-    pub fn decrement_recvable_count(&self) {
+    fn decrement_recvable_count(&self) {
         self.accessible_count[RECV_TYPE].fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -147,7 +143,7 @@ impl MessageQueue {
         }
 
         let this_thread = scheduler::current_thread();
-        let mut queue = self.lock();
+        let mut buffer_guard = self.lock_buffer();
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
         let mut start = Tick::now();
         while self.sendable_count() == 0 {
@@ -157,8 +153,8 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            send_queue.take_irq_guard(&mut queue);
-            drop(queue);
+            send_queue.take_irq_guard(&mut buffer_guard);
+            drop(buffer_guard);
             let reached_deadline;
             with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
@@ -169,7 +165,7 @@ impl MessageQueue {
                 )
                 .unwrap();
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(send_queue));
-                queue = self.lock();
+                buffer_guard = self.lock_buffer();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
                 // ERESET injected by reset()/delete()? Bail out of send.
@@ -188,38 +184,38 @@ impl MessageQueue {
             }
         }
         drop(send_queue);
-        queue.decrement_sendable_count();
-        let mut sender = unsafe { queue.queue_buffer.writer() };
+        self.decrement_sendable_count();
+        let mut sender = unsafe { buffer_guard.writer() };
         let dst: &mut [u8];
         if urgent == SendMode::Normal {
             dst = sender.push_slice();
             dst[head_size..(head_size + size)].copy_from_slice(&buffer[0..size]);
             unsafe { *(dst.as_ptr() as *mut usize) = size };
-            sender.push_done(queue.node_size);
+            sender.push_done(self.node_size);
         } else {
             let [(end, len0), (start, len1)] = sender.push_bufs();
             if len1 != 0 {
-                debug_assert!(len1 >= queue.node_size);
+                debug_assert!(len1 >= self.node_size);
                 dst = unsafe {
-                    slice::from_raw_parts_mut(start.add(len1 - queue.node_size), queue.node_size)
+                    slice::from_raw_parts_mut(start.add(len1 - self.node_size), self.node_size)
                 };
             } else {
-                debug_assert!(len0 >= queue.node_size);
+                debug_assert!(len0 >= self.node_size);
                 dst = unsafe {
-                    slice::from_raw_parts_mut(end.add(len0 - queue.node_size), queue.node_size)
+                    slice::from_raw_parts_mut(end.add(len0 - self.node_size), self.node_size)
                 };
             }
 
             dst[head_size..(head_size + size)].copy_from_slice(&buffer[0..size]);
             unsafe { *(dst.as_ptr() as *mut usize) = size };
-            sender.push_front_done(queue.node_size);
+            sender.push_front_done(self.node_size);
         }
 
-        queue.increment_recvable_count();
-        let mut recv_queue = queue.pend_queues[RECV_TYPE].irqsave_lock();
+        self.increment_recvable_count();
+        let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
         if MessageQueue::wakeup_pend_receiver(&mut recv_queue) {
             drop(recv_queue);
-            drop(queue);
+            drop(buffer_guard);
             scheduler::yield_me_now_or_later();
         }
 
@@ -234,7 +230,7 @@ impl MessageQueue {
         let head_size = core::mem::size_of::<usize>();
 
         let this_thread = scheduler::current_thread();
-        let mut queue = self.lock();
+        let mut buffer_guard = self.lock_buffer();
         let mut recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
         let mut start = Tick::now();
         while self.recvable_count() == 0 {
@@ -244,8 +240,8 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            recv_queue.take_irq_guard(&mut queue);
-            drop(queue);
+            recv_queue.take_irq_guard(&mut buffer_guard);
+            drop(buffer_guard);
             let reached_deadline;
             with_iou!(|borrowed_wait_entry| {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
@@ -256,7 +252,7 @@ impl MessageQueue {
                 )
                 .unwrap();
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(recv_queue));
-                queue = self.lock();
+                buffer_guard = self.lock_buffer();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
                 // ERESET injected by reset()/delete()? Bail out of recv.
@@ -275,8 +271,8 @@ impl MessageQueue {
             }
         }
         drop(recv_queue);
-        queue.decrement_recvable_count();
-        let mut receiver = unsafe { queue.queue_buffer.reader() };
+        self.decrement_recvable_count();
+        let mut receiver = unsafe { buffer_guard.reader() };
         let src = receiver.pop_slice();
         let msg_size = unsafe { *(src.as_ptr() as *const usize) };
         if msg_size < cpysize {
@@ -284,20 +280,20 @@ impl MessageQueue {
         }
 
         buffer[0..cpysize].copy_from_slice(&src[head_size..(head_size + cpysize)]);
-        receiver.pop_done(queue.node_size);
-        queue.increment_sendable_count();
+        receiver.pop_done(self.node_size);
+        self.increment_sendable_count();
 
-        let mut send_queue = queue.pend_queues[SEND_TYPE].irqsave_lock();
+        let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
         if MessageQueue::wakeup_pend_receiver(&mut send_queue) {
             drop(send_queue);
-            drop(queue);
+            drop(buffer_guard);
             scheduler::yield_me_now_or_later();
         }
         Ok(())
     }
 
     pub fn reset(&self) {
-        let mut queue = self.lock();
+        let mut buffer_guard = self.lock_buffer();
 
         // Wake all blocked senders and receivers with ERESET.
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
@@ -311,12 +307,12 @@ impl MessageQueue {
         drop(recv_queue);
 
         // Reset the ringbuffer.
-        queue.queue_buffer.reset();
+        buffer_guard.reset();
 
         self.accessible_count[SEND_TYPE].store(self.node_count, Ordering::Relaxed);
         self.accessible_count[RECV_TYPE].store(0, Ordering::Relaxed);
 
-        drop(queue);
+        drop(buffer_guard);
         scheduler::yield_me_now_or_later();
     }
 
@@ -324,7 +320,7 @@ impl MessageQueue {
     /// ringbuffer, and drain both accessible counts to 0. Call before
     /// dropping the Arc.
     pub fn delete(&self) {
-        let mut queue = self.lock();
+        let mut buffer_guard = self.lock_buffer();
 
         // Wake all blocked senders and receivers with ERESET.
         let mut send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
@@ -338,12 +334,12 @@ impl MessageQueue {
         drop(recv_queue);
 
         // Reset the ringbuffer.
-        queue.queue_buffer.reset();
+        buffer_guard.reset();
 
         self.accessible_count[SEND_TYPE].store(0, Ordering::Relaxed);
         self.accessible_count[RECV_TYPE].store(0, Ordering::Relaxed);
 
-        drop(queue);
+        drop(buffer_guard);
         scheduler::yield_me_now_or_later();
     }
 }
