@@ -19,11 +19,10 @@ use goblin::elf::program_header::{
     PT_DYNAMIC, PT_GNU_RELRO, PT_GNU_STACK, PT_LOAD, PT_NULL, PT_PHDR,
 };
 
+use super::{inspect::InspectedImage, LoadRequest};
 use crate::{
     elf::{ElfHeaderInfo, ProgramHeaderInfo, ELF64_PROGRAM_HEADER_SIZE},
     error::{ErrorContext, LoadErrorKind, LoadStage, ProgramHeaderField},
-    image::inspect::InspectedImage,
-    profile::LoadRequest,
     reader::ElfReader,
     LoadError, LoadResult,
 };
@@ -70,6 +69,7 @@ impl<R: ElfReader> AdmittedImage<R> {
         let entry_size = usize::from(self.header.program_header_entry_size());
         let mut raw = [0; ELF64_PROGRAM_HEADER_SIZE];
         let mut seen_singletons = 0u8;
+        let mut load_segment_count = 0usize;
 
         for index in 0..count {
             // Admission checked this complete table's extent and entry size.
@@ -90,6 +90,14 @@ impl<R: ElfReader> AdmittedImage<R> {
                 program_headers.push(header);
                 continue;
             }
+            if kind == PT_LOAD {
+                // Metadata headers consume only the program-header budget.
+                // Empty PT_LOAD entries still consume the load-segment budget.
+                load_segment_count += 1;
+                self.request
+                    .limits()
+                    .check_load_segment_count(load_segment_count)?;
+            }
             let singleton = match kind {
                 PT_DYNAMIC => Some((0b0001, ProgramHeaderField::DuplicateDynamic)),
                 PT_PHDR => Some((0b0010, ProgramHeaderField::DuplicatePhdr)),
@@ -99,7 +107,7 @@ impl<R: ElfReader> AdmittedImage<R> {
             };
             if let Some((bit, field)) = singleton {
                 if seen_singletons & bit != 0 {
-                    return Err(program_header_error(
+                    return Err(LoadError::program_header(
                         index,
                         field,
                         u64::from(kind),
@@ -109,7 +117,7 @@ impl<R: ElfReader> AdmittedImage<R> {
                 seen_singletons |= bit;
             }
             if matches!(kind, PT_LOAD | PT_DYNAMIC) && header.file_size() > header.memory_size() {
-                return Err(program_header_error(
+                return Err(LoadError::program_header(
                     index,
                     ProgramHeaderField::FileRange,
                     header.file_size(),
@@ -130,12 +138,13 @@ impl<R: ElfReader> AdmittedImage<R> {
             }
             header
                 .vaddr()
+                .get()
                 .checked_add(header.memory_size())
                 .ok_or_else(|| {
-                    program_header_error(
+                    LoadError::program_header(
                         index,
                         ProgramHeaderField::VirtualRange,
-                        header.vaddr(),
+                        header.vaddr().get(),
                         LoadErrorKind::IntegerOverflow,
                     )
                 })?;
@@ -154,20 +163,4 @@ impl<R: ElfReader> AdmittedImage<R> {
             program_headers,
         })
     }
-}
-
-fn program_header_error(
-    index: u16,
-    field: ProgramHeaderField,
-    value: u64,
-    kind: LoadErrorKind,
-) -> LoadError {
-    LoadError::new(
-        kind,
-        ErrorContext::ProgramHeader {
-            index,
-            field,
-            value,
-        },
-    )
 }

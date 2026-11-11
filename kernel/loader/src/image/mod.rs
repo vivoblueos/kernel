@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Read-only stages of single-image ELF loading.
-//! Follow `ImageLoader::admit` then `AdmittedImage::inspect` before planning
-//! the memory layout. Neither stage allocates or writes image backing.
+//! Single-image ELF inspection, layout planning and backend-mediated mapping.
+//! Follow admit, inspect, plan, allocate, then map. A mapped image still needs
+//! relocation, cache synchronization and final protection before execution.
 
 mod admit;
+mod allocate;
 mod image_loader;
 mod inspect;
+mod map;
+mod plan;
 
-pub(crate) use image_loader::ImageLoader;
+pub(crate) use image_loader::{ImageLoader, LoadRequest};
+pub(crate) use map::MappedImage;
+pub(crate) use plan::PlannedImage;

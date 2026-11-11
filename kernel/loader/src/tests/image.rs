@@ -17,8 +17,8 @@ use blueos_test_macro::test;
 use core::cell::Cell;
 use goblin::elf::{
     header::{
-        EI_ABIVERSION, EI_CLASS, EI_DATA, EI_OSABI, EI_VERSION, ELFDATA2MSB, EM_AARCH64, EM_RISCV,
-        ET_DYN, ET_EXEC, ET_REL,
+        EI_ABIVERSION, EI_CLASS, EI_DATA, EI_OSABI, EI_VERSION, ELFDATA2MSB, ELFOSABI_FREEBSD,
+        ELFOSABI_GNU, ELFOSABI_NONE, EM_AARCH64, EM_RISCV, ET_DYN, ET_EXEC, ET_REL,
     },
     program_header::{
         PF_R, PF_W, PF_X, PT_DYNAMIC, PT_GNU_EH_FRAME, PT_GNU_RELRO, PT_GNU_STACK, PT_INTERP,
@@ -29,11 +29,11 @@ use goblin::elf::{
 
 use super::fixture::{ElfFixtureBuilder, ProgramHeaderFixture, SliceElfReader};
 use crate::{
+    elf::{ElfHeaderInfo, ElfType, ELF_IDENT_SIZE},
     error::{ErrorContext, HeaderField, LimitKind, LoadErrorKind, LoadStage, ProgramHeaderField},
-    image::ImageLoader,
-    profile::{
-        ElfClass, ElfData, ElfMachine, LoadLimits, LoadProfile, LoadRequest, ProgramHeaderPolicy,
-    },
+    image::{ImageLoader, LoadRequest},
+    memory::TargetAddress,
+    profile::{ElfClass, ElfData, ElfMachine, LoadLimits, LoadProfile, ProgramHeaderPolicy},
     reader::ElfReader,
     LoadError, LoadResult,
 };
@@ -108,6 +108,68 @@ fn admission_accepts_dyn_and_exec_for_all_public_profiles() {
 }
 
 #[test]
+fn admission_accepts_supported_osabis_for_all_public_profiles() {
+    for profile in PROFILES {
+        for elf_type in [ET_DYN, ET_EXEC] {
+            for osabi in [ELFOSABI_NONE, ELFOSABI_GNU] {
+                let mut bytes = fixture(profile, elf_type).build();
+                bytes[EI_OSABI] = osabi;
+                assert!(loader(&bytes, profile).admit().unwrap().inspect().is_ok());
+            }
+        }
+    }
+}
+
+#[test]
+fn admission_rejects_nonzero_abi_versions_for_supported_osabis() {
+    for profile in PROFILES {
+        for elf_type in [ET_DYN, ET_EXEC] {
+            for osabi in [ELFOSABI_NONE, ELFOSABI_GNU] {
+                for abi_version in [1, u8::MAX] {
+                    let mut bytes = fixture(profile, elf_type).build();
+                    bytes[EI_OSABI] = osabi;
+                    bytes[EI_ABIVERSION] = abi_version;
+                    assert_header_error(
+                        &bytes,
+                        profile,
+                        LoadErrorKind::UnsupportedByProfile,
+                        HeaderField::AbiVersion,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn elf_header_decoding_leaves_capability_admission_to_the_profile() {
+    for profile in PROFILES {
+        let mut bytes = fixture(profile, ET_REL).build();
+        bytes[EI_OSABI] = ELFOSABI_FREEBSD;
+        bytes[EI_ABIVERSION] = 1;
+        let ident = bytes[..ELF_IDENT_SIZE].try_into().unwrap();
+        let (class, endian) = ElfHeaderInfo::decode_ident(&ident).unwrap();
+        let header = ElfHeaderInfo::decode(&bytes, class, endian).unwrap();
+        assert_eq!(header.r#type(), ElfType::Other(ET_REL));
+
+        let error = failure(profile.check_header(&header));
+        assert_eq!(error.kind(), LoadErrorKind::UnsupportedByProfile);
+        assert!(matches!(
+            error.context(),
+            ErrorContext::HeaderField { field: HeaderField::Type, value }
+                if *value == u64::from(ET_REL)
+        ));
+        let error = failure(profile.check_ident_abi(ident[EI_OSABI], ident[EI_ABIVERSION]));
+        assert_eq!(error.kind(), LoadErrorKind::UnsupportedByProfile);
+        assert!(matches!(
+            error.context(),
+            ErrorContext::HeaderField { field: HeaderField::OsAbi, value }
+                if *value == u64::from(ELFOSABI_FREEBSD)
+        ));
+    }
+}
+
+#[test]
 fn admission_reports_invalid_ident_fields() {
     for (offset, value, kind, field) in [
         (0, 0, LoadErrorKind::BadElf, HeaderField::Magic),
@@ -116,7 +178,7 @@ fn admission_reports_invalid_ident_fields() {
         (EI_VERSION, 0, LoadErrorKind::BadElf, HeaderField::Version),
         (
             EI_OSABI,
-            3,
+            ELFOSABI_FREEBSD,
             LoadErrorKind::UnsupportedByProfile,
             HeaderField::OsAbi,
         ),
@@ -158,7 +220,12 @@ fn admission_rejects_extended_program_header_numbering() {
         };
         bytes[count_offset..count_offset + 2].copy_from_slice(&u16::MAX.to_le_bytes());
         // Even a permissive count limit must not interpret PN_XNUM literally.
-        let request = LoadRequest::new(profile, LoadLimits::new(u64::MAX, u16::MAX));
+        let request = LoadRequest::new(
+            profile,
+            LoadLimits::DEFAULT
+                .with_max_file_len(u64::MAX)
+                .with_max_program_headers(u16::MAX),
+        );
         let error = failure(ImageLoader::new(SliceElfReader::new(&bytes), request).admit());
         assert_error(
             &error,
@@ -330,7 +397,7 @@ fn endian_decoding_is_independent_of_the_native_profiles() {
         );
         let image = loader(&bytes, profile).admit().unwrap().inspect().unwrap();
         assert_eq!(image.header().entry(), 0x1234_5678);
-        assert_eq!(image.program_headers()[0].vaddr(), 0x1000);
+        assert_eq!(image.program_headers()[0].vaddr().get(), 0x1000);
         assert_eq!(image.program_headers()[0].file_size(), 4);
         assert_eq!(image.program_headers()[0].flags(), PF_R | PF_X);
     }
@@ -375,8 +442,18 @@ fn file_and_header_count_limits_precede_further_reads() {
         .with_program_header(ProgramHeaderFixture::load())
         .build();
     for (limits, expected_reads, resource) in [
-        (LoadLimits::new(0, 128), 0, LimitKind::FileLength),
-        (LoadLimits::new(1024, 0), 2, LimitKind::ProgramHeaderCount),
+        (
+            LoadLimits::DEFAULT.with_max_file_len(0),
+            0,
+            LimitKind::FileLength,
+        ),
+        (
+            LoadLimits::DEFAULT
+                .with_max_file_len(1024)
+                .with_max_program_headers(0),
+            2,
+            LimitKind::ProgramHeaderCount,
+        ),
     ] {
         let reads = Cell::new(0);
         let reader = ProbeReader {
@@ -407,7 +484,9 @@ fn file_and_header_count_limits_precede_further_reads() {
             )
         ));
     }
-    let exact_limits = LoadLimits::new(bytes.len() as u64, 1);
+    let exact_limits = LoadLimits::DEFAULT
+        .with_max_file_len(bytes.len() as u64)
+        .with_max_program_headers(1);
     ImageLoader::new(
         SliceElfReader::new(&bytes),
         LoadRequest::new(profile, exact_limits),
@@ -440,7 +519,7 @@ fn admission_rejects_overlapping_truncated_and_overflowing_header_tables() {
         let error = failure(
             ImageLoader::new(
                 reader,
-                LoadRequest::new(profile, LoadLimits::new(u64::MAX, 128)),
+                LoadRequest::new(profile, LoadLimits::DEFAULT.with_max_file_len(u64::MAX)),
             )
             .admit(),
         );
@@ -529,7 +608,7 @@ fn inspected_program_headers_match_an_independent_parser() {
     for profile in PROFILES {
         let bytes = fixture(profile, ET_DYN)
             .with_program_header(ProgramHeaderFixture {
-                vaddr: 0x8123_4560,
+                vaddr: TargetAddress::new(0x8123_4560),
                 flags: PF_R | PF_W,
                 ..ProgramHeaderFixture::load()
             })
@@ -545,7 +624,7 @@ fn inspected_program_headers_match_an_independent_parser() {
             assert_eq!(actual.r#type(), expected.p_type);
             assert_eq!(actual.flags(), expected.p_flags);
             assert_eq!(actual.file_offset(), expected.p_offset);
-            assert_eq!(actual.vaddr(), expected.p_vaddr);
+            assert_eq!(actual.vaddr().get(), expected.p_vaddr);
             assert_eq!(actual.file_size(), expected.p_filesz);
             assert_eq!(actual.memory_size(), expected.p_memsz);
             assert_eq!(actual.align(), expected.p_align);
@@ -590,7 +669,7 @@ fn inspection_rejects_segment_file_and_virtual_range_errors() {
         let bytes = fixture(profile, ET_DYN)
             .with_program_header(ProgramHeaderFixture {
                 offset,
-                vaddr,
+                vaddr: TargetAddress::new(vaddr),
                 ..ProgramHeaderFixture::load()
             })
             .build();
@@ -841,8 +920,7 @@ fn inspection_uses_the_callers_program_header_whitelist() {
 #[test]
 fn additional_program_headers_extend_one_profile_without_replacing_defaults() {
     for base in PROFILES {
-        let mut profile = base;
-        profile.set_additional_program_headers(&[PT_TLS]);
+        let profile = base.with_additional_program_headers(&[PT_TLS]);
         let bytes = fixture(profile, ET_DYN)
             .with_program_header(ProgramHeaderFixture::load())
             .with_program_header(ProgramHeaderFixture {
@@ -875,7 +953,7 @@ fn additional_program_headers_extend_one_profile_without_replacing_defaults() {
                 ..
             }
         ));
-        profile.set_additional_program_headers(&[]);
+        let profile = profile.with_additional_program_headers(&[]);
         let error = failure(loader(&bytes, profile).admit().unwrap().inspect());
         assert_error(
             &error,
@@ -888,39 +966,44 @@ fn additional_program_headers_extend_one_profile_without_replacing_defaults() {
 #[test]
 fn additional_program_header_configuration_preserves_other_policy_settings() {
     const CUSTOM_HEADER: u32 = 0x6000_0042;
+    const POLICY: ProgramHeaderPolicy = ProgramHeaderPolicy::new(&[PT_GNU_STACK], true)
+        .with_additional_types(&[CUSTOM_HEADER, PT_TLS]);
     for base in PROFILES {
-        let profile = base
-            .with_program_header_policy(ProgramHeaderPolicy::new(&[PT_GNU_STACK], true))
-            .with_additional_program_headers(&[CUSTOM_HEADER, PT_TLS]);
-        let mut builder = fixture(profile, ET_DYN);
-        for kind in [PT_GNU_STACK, CUSTOM_HEADER, PT_TLS] {
-            builder = builder.with_program_header(ProgramHeaderFixture {
-                kind,
-                flags: PF_R | PF_W | PF_X,
-                ..ProgramHeaderFixture::load()
-            });
+        for profile in [
+            base.with_program_header_policy(ProgramHeaderPolicy::new(&[PT_GNU_STACK], true))
+                .with_additional_program_headers(&[CUSTOM_HEADER, PT_TLS]),
+            base.with_program_header_policy(POLICY),
+        ] {
+            let mut builder = fixture(profile, ET_DYN);
+            for kind in [PT_GNU_STACK, CUSTOM_HEADER, PT_TLS] {
+                builder = builder.with_program_header(ProgramHeaderFixture {
+                    kind,
+                    flags: PF_R | PF_W | PF_X,
+                    ..ProgramHeaderFixture::load()
+                });
+            }
+            let bytes = builder.build();
+            assert_eq!(
+                loader(&bytes, profile)
+                    .admit()
+                    .unwrap()
+                    .inspect()
+                    .unwrap()
+                    .program_headers()
+                    .len(),
+                3
+            );
+            // Extra types must not restore types excluded by a custom base policy.
+            let bytes = fixture(profile, ET_DYN)
+                .with_program_header(ProgramHeaderFixture::load())
+                .build();
+            let error = failure(loader(&bytes, profile).admit().unwrap().inspect());
+            assert_error(
+                &error,
+                LoadStage::Inspect,
+                LoadErrorKind::UnsupportedByProfile,
+            );
         }
-        let bytes = builder.build();
-        assert_eq!(
-            loader(&bytes, profile)
-                .admit()
-                .unwrap()
-                .inspect()
-                .unwrap()
-                .program_headers()
-                .len(),
-            3
-        );
-        // Extra types must not restore types excluded by a custom base policy.
-        let bytes = fixture(profile, ET_DYN)
-            .with_program_header(ProgramHeaderFixture::load())
-            .build();
-        let error = failure(loader(&bytes, profile).admit().unwrap().inspect());
-        assert_error(
-            &error,
-            LoadStage::Inspect,
-            LoadErrorKind::UnsupportedByProfile,
-        );
     }
 }
 
@@ -1017,7 +1100,7 @@ fn inspection_ignores_undefined_fields_in_null_entries() {
         .with_program_header(ProgramHeaderFixture {
             kind: PT_NULL,
             offset: u64::MAX,
-            vaddr: u64::MAX,
+            vaddr: TargetAddress::new(u64::MAX),
             filesz: u64::MAX,
             memsz: u64::MAX,
             ..ProgramHeaderFixture::load()

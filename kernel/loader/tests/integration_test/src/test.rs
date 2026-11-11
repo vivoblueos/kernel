@@ -154,7 +154,9 @@ mod test_elf_loader {
         }
         #[cfg(not(loader_test_exec))]
         {
-            let run = unsafe { core::mem::transmute::<usize, fn()>(entry) };
+            // SAFETY: the fixture's _start uses the C ABI, and mapper retains
+            // its loaded backing until after this call.
+            let run = unsafe { core::mem::transmute::<usize, extern "C" fn()>(entry) };
             run();
         }
     }
