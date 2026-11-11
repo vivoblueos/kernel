@@ -22,7 +22,7 @@ use crate::{
     scheduler::WaitQueue,
     static_arc,
     support::ArcBufferingQueue,
-    sync::{atomic_wait, ISpinLock, SpinLockGuard},
+    sync::{atomic_wait, SpinLock, SpinLockGuard},
     thread::{self, Entry, SystemThreadStorage, ThreadKind, ThreadNode},
     time::Tick,
     types::{impl_simple_intrusive_adapter, Arc, IlistHead},
@@ -37,29 +37,32 @@ use core::{
 };
 
 impl_simple_intrusive_adapter!(TaskletNode, Tasklet, node);
-impl_simple_intrusive_adapter!(TaskletLock, Tasklet, lock);
 
 pub struct Tasklet {
     node: IlistHead<Tasklet, TaskletNode>,
-    lock: ISpinLock<Tasklet, TaskletLock>,
-    future: Option<Pin<Box<dyn Future<Output = ()>>>>,
-    blocked: Option<ThreadNode>,
+    inner: SpinLock<TaskletInner>,
     state: AtomicUsize,
 }
 
+struct TaskletInner {
+    future: Option<Pin<Box<dyn Future<Output = ()>>>>,
+    blocked: Option<ThreadNode>,
+}
+
 impl Tasklet {
-    pub fn new(future: Pin<Box<dyn Future<Output = ()>>>) -> Self {
+    fn new(future: Pin<Box<dyn Future<Output = ()>>>) -> Self {
         Self {
             node: IlistHead::new(),
-            future: Some(future),
-            lock: ISpinLock::new(),
-            blocked: None,
+            inner: SpinLock::new(TaskletInner {
+                future: Some(future),
+                blocked: None,
+            }),
             state: AtomicUsize::new(TASKLET_IDLE),
         }
     }
 
-    pub fn lock(&self) -> SpinLockGuard<'_, Tasklet> {
-        self.lock.irqsave_lock()
+    fn lock_inner(&self) -> SpinLockGuard<'_, TaskletInner> {
+        self.inner.irqsave_lock()
     }
 }
 
@@ -99,11 +102,11 @@ fn create_tasklet(future: impl Future<Output = ()> + 'static) -> Arc<Tasklet> {
 pub fn block_on(future: impl Future<Output = ()> + Send + 'static) {
     let t = scheduler::current_thread();
     let task = create_tasklet(future);
-    let mut w = task.lock();
-    w.blocked = Some(t.clone());
+    let mut inner_guard = task.lock_inner();
+    inner_guard.blocked = Some(t.clone());
     t.disable_preempt();
     wake_tasklet(task.clone());
-    scheduler::suspend_me_for::<Tasklet>(Tick::MAX, Some(w));
+    scheduler::suspend_me_for(Tick::MAX, Some(inner_guard));
     t.enable_preempt();
 }
 
@@ -241,8 +244,11 @@ fn poll_inner() {
         debug_assert_eq!(old, Ok(TASKLET_QUEUED));
 
         let mut future = {
-            let mut l = task.lock();
-            l.future.take().expect("tasklet future is missing")
+            let mut inner_guard = task.lock_inner();
+            inner_guard
+                .future
+                .take()
+                .expect("tasklet future is missing")
         };
 
         let waker = tasklet_waker(task.clone());
@@ -250,9 +256,9 @@ fn poll_inner() {
         match future.as_mut().poll(&mut ctx) {
             Poll::Ready(()) => {
                 let blocked = {
-                    let mut l = task.lock();
+                    let mut inner_guard = task.lock_inner();
                     task.state.store(TASKLET_COMPLETED, Ordering::Release);
-                    l.blocked.take()
+                    inner_guard.blocked.take()
                 };
                 if let Some(t) = blocked {
                     let ok = scheduler::queue_ready_thread(thread::SUSPENDED, t);
@@ -261,8 +267,8 @@ fn poll_inner() {
             }
             Poll::Pending => {
                 {
-                    let mut l = task.lock();
-                    l.future = Some(future);
+                    let mut inner_guard = task.lock_inner();
+                    inner_guard.future = Some(future);
                 }
                 finish_pending_poll(task);
             }
