@@ -836,35 +836,10 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
     }
 
     #[inline]
-    fn this(&self) -> &T {
-        let ptr = (&raw const *self).cast::<u8>();
-        let base = unsafe { ptr.sub(A::offset()) as *const T };
-        unsafe { &*base }
-    }
-
-    #[inline]
     fn this_mut(&self) -> &mut T {
         let ptr = (&raw const *self).cast::<u8>().cast_mut();
         let base = unsafe { ptr.sub(A::offset()) as *mut T };
         unsafe { &mut *base }
-    }
-
-    #[inline]
-    pub fn read(&self) -> RwLockReadGuard<'_, T> {
-        let g = self.rwlock.read();
-        let lock = g.lock;
-        let data = self.this() as *const T;
-        core::mem::forget(g);
-        RwLockReadGuard { lock, data }
-    }
-
-    #[inline]
-    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
-        let g = self.rwlock.try_read()?;
-        let lock = g.lock;
-        let data = self.this() as *const T;
-        core::mem::forget(g);
-        Some(RwLockReadGuard { lock, data })
     }
 
     #[inline]
@@ -874,15 +849,6 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
         let data = self.this_mut() as *mut T;
         core::mem::forget(g);
         RwLockWriteGuard { lock, data }
-    }
-
-    #[inline]
-    pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
-        let g = self.rwlock.try_write()?;
-        let lock = g.lock;
-        let data = self.this_mut() as *mut T;
-        core::mem::forget(g);
-        Some(RwLockWriteGuard { lock, data })
     }
 }
 
