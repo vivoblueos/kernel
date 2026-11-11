@@ -17,6 +17,8 @@
 
 Reference: https://github.com/jasonwhite/syscalls/tree/main/syscalls-gen
 No third-party Python packages or Linux build tools are required.
+By default, syscall tables are downloaded from Linux v7.0; pass --linux-dir
+to read from a local Linux source tree instead.
 
 Examples:
   python3 build/scripts/gen_linux_syscalls.py --output-dir /tmp/linux-syscalls
