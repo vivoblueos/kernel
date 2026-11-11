@@ -169,6 +169,11 @@ impl EventFlags {
             w = self.pending.irqsave_lock();
             borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
         });
+        // ERESET injected by reset()/delete()? Bail out with that errno.
+        let werr = current_thread.take_wait_error();
+        if werr != 0 {
+            return Err(Error::from_errno(werr));
+        }
         if reached_deadline {
             return Err(code::ETIMEDOUT);
         }
@@ -178,7 +183,16 @@ impl EventFlags {
     pub fn reset(&self) {
         let mut w = self.pending.irqsave_lock();
         self.flags.set(0);
-        let _ = wait_queue::wake_up_all(&mut w);
+        // Wake waiters with ERESET so they bail out of wait().
+        let _unused = wait_queue::wake_up_all_with_error(&mut w, code::ERESET.to_errno());
+        drop(w);
+        scheduler::yield_me_now_or_later();
+    }
+
+    /// Wake all waiters with ERESET and yield. Call before dropping the Arc.
+    pub fn delete(&self) {
+        let mut w = self.pending.irqsave_lock();
+        let _woken = wait_queue::wake_up_all_with_error(&mut w, code::ERESET.to_errno());
         drop(w);
         scheduler::yield_me_now_or_later();
     }
@@ -190,7 +204,13 @@ unsafe impl Sync for EventFlags {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        scheduler,
+        sync::{wait_until, wake},
+        thread,
+    };
     use blueos_test_macro::test;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_event_flags_new() {
@@ -539,5 +559,36 @@ mod tests {
         // Clear flags that partially exist
         event_flags.clear(0x05); // Clear 0x01 and 0x04 (0x04 doesn't exist)
         assert_eq!(event_flags.get(), 0x02); // Only 0x02 remains
+    }
+
+    #[test]
+    fn test_event_flags_delete_wakes_waiter_with_ereset() {
+        // delete() must wake a waiter blocked on a never-set flag with Err(ERESET).
+        // Parked with Tick::MAX so the only possible wake is delete().
+        let event_flags = Arc::new(EventFlags::new());
+        assert!(event_flags.init(0));
+        // 0 = blocked, 1 = Ok(mask), 2 = other Err, 3 = Err(ERESET) (expected)
+        let observed = Arc::new(AtomicUsize::new(0));
+        let worker_flags = event_flags.clone();
+        let worker_observed = observed.clone();
+        let worker = thread::spawn(move || {
+            let res = worker_flags.wait::<InsertToEnd>(0x01, EventFlagsMode::ANY, Tick::MAX);
+            let v = match res {
+                Ok(_) => 1,
+                Err(code::ERESET) => 3,
+                Err(_) => 2,
+            };
+            worker_observed.store(v, Ordering::Release);
+            wake(&worker_observed);
+        })
+        .unwrap();
+        // Wait until the worker has parked.
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        assert_eq!(observed.load(Ordering::Acquire), 0);
+        event_flags.delete();
+        wait_until(3, &observed);
+        assert_eq!(observed.load(Ordering::Acquire), 3);
     }
 }

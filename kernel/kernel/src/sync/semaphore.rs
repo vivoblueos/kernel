@@ -14,6 +14,7 @@
 
 use super::{SpinLock, SpinLockGuard};
 use crate::{
+    error::code,
     irq, scheduler,
     scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitEntry, WaitQueue},
     thread,
@@ -101,6 +102,10 @@ impl Semaphore {
                 debug_assert!(!timeout);
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                // ERESET injected by reset()/delete()? Bail out.
+                if this_thread.take_wait_error() != 0 {
+                    return false;
+                }
             });
         }
     }
@@ -140,6 +145,10 @@ impl Semaphore {
                 timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                // ERESET injected by reset()/delete()? Bail out.
+                if this_thread.take_wait_error() != 0 {
+                    return false;
+                }
             });
             if timeout {
                 return false;
@@ -212,8 +221,20 @@ impl Semaphore {
     pub fn reset(&self) -> usize {
         let mut w = self.pending.irqsave_lock();
         self.counter.set(0);
-        // Wakeup all threads.
-        scheduler::wake_up_all(w)
+        // reset() does NOT yield (unlike delete()) — asymmetry is intentional.
+        let woken = wait_queue::wake_up_all_with_error(w.deref_mut(), code::ERESET.to_errno());
+        drop(w);
+        woken
+    }
+
+    /// Wake all waiters with ERESET and yield. Call before dropping the Arc;
+    /// unlike `reset()`, yields so woken waiters run before return.
+    pub fn delete(&self) {
+        let mut w = self.pending.irqsave_lock();
+        self.counter.set(0);
+        let _woken = wait_queue::wake_up_all_with_error(w.deref_mut(), code::ERESET.to_errno());
+        drop(w);
+        scheduler::yield_me_now_or_later();
     }
 }
 
@@ -564,5 +585,32 @@ mod tests {
         // permits, and both waiters consume the consecutively released ones.
         assert_eq!(successful_acquires.load(Ordering::Acquire), 4);
         assert_eq!(semaphore.count(), 0);
+    }
+
+    #[test]
+    fn test_semaphore_delete_wakes_waiter_with_ereset() {
+        // delete() on a zero-count sem must wake a blocked acquire with ERESET,
+        // making it return false. The only path returning false is the bail-out,
+        // so observing false proves the injection landed.
+        let semaphore = Arc::new(Semaphore::new());
+        semaphore.init(0);
+        // 0 = blocked, 1 = acquired, 2 = bailed out (ERESET)
+        let observed = Arc::new(AtomicUsize::new(0));
+        let worker_semaphore = semaphore.clone();
+        let worker_observed = observed.clone();
+        let worker = thread::spawn(move || {
+            let got = worker_semaphore.acquire_notimeout::<InsertToEnd>();
+            worker_observed.store(if got { 1 } else { 2 }, Ordering::Release);
+            wake(&worker_observed);
+        })
+        .unwrap();
+        // Wait until the worker has parked.
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        assert_eq!(observed.load(Ordering::Acquire), 0);
+        semaphore.delete();
+        wait_until(2, &observed);
+        assert_eq!(observed.load(Ordering::Acquire), 2);
     }
 }
