@@ -590,8 +590,11 @@ mod tests {
         MUTEX_CLEANUP.spin_until_eq(l);
     }
 
-    static MQUEUE: Lazy<Arc<sync::mqueue::MessageQueue>> =
-        Lazy::new(|| Arc::new(sync::mqueue::MessageQueue::new(4, 2, ptr::null_mut())));
+    static MQUEUE: Lazy<Arc<sync::mqueue::MessageQueue>> = Lazy::new(|| {
+        Arc::new(
+            sync::mqueue::MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue lazy static"),
+        )
+    });
     static TEST_SEND_CNT: AtomicUsize = AtomicUsize::new(0);
 
     extern "C" fn test_mqueue() {
