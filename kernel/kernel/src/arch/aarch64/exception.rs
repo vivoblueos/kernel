@@ -101,6 +101,8 @@ exception_handler!(el1_irq, trap_irq);
 
 exception_handler!(el1_error, trap_exception);
 
+exception_handler!(el0_sync, trap_sync);
+
 macro_rules! unsupported_handler {
     ($name:ident, $msg:expr_2021) => {
         #[unsafe(no_mangle)]

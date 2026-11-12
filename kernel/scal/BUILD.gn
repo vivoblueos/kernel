@@ -28,6 +28,24 @@ if (syscall_mode == "linux_abi") {
       rebase_path("$target_gen_dir/linux_syscalls", root_build_dir),
     ]
   }
+
+  _linux_gen_dir = get_label_info(":gen_linux_syscalls", "target_gen_dir")
+  _linux_root = "$_linux_gen_dir/linux_syscalls/lib.rs"
+  _linux_arch = board_toolchain_info.current_cpu
+  write_file(_linux_root,
+             [
+               "#![no_std]",
+               "pub mod ${_linux_arch};",
+               "pub use ${_linux_arch}::*;",
+             ])
+
+  build_rust("linux_syscalls") {
+    crate_name = "linux_syscalls"
+    crate_type = "rlib"
+    edition = "2024"
+    sources = [ _linux_root ]
+    build_deps = [ ":gen_linux_syscalls" ]
+  }
 }
 
 build_rust("blueos_scal") {
