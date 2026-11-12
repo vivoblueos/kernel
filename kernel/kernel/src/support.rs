@@ -16,7 +16,7 @@ use crate::{
     arch,
     sync::spinlock::{SpinLock, SpinLockGuard},
     thread::ThreadNode,
-    types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, Uint},
+    types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, NotThreadSafe, Uint},
 };
 pub use blueos_infra::storage::Storage;
 use core::{
@@ -30,13 +30,19 @@ use core::{
 #[must_use]
 pub struct DisableInterruptGuard {
     old: usize,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared references cannot restore IRQ state. Only Drop does so, and
+// the marker keeps ownership in the original execution context.
+unsafe impl Sync for DisableInterruptGuard {}
 
 impl DisableInterruptGuard {
     #[inline]
     pub fn new() -> Self {
         Self {
             old: arch::disable_local_irq_save(),
+            _not_send: NotThreadSafe,
         }
     }
 }
@@ -49,13 +55,21 @@ impl Drop for DisableInterruptGuard {
 }
 
 #[must_use]
-pub struct PlainDisableInterruptGuard;
+pub struct PlainDisableInterruptGuard {
+    _not_send: NotThreadSafe,
+}
+
+// SAFETY: Shared references cannot re-enable IRQs. Only Drop does so, and
+// the marker keeps ownership in the original execution context.
+unsafe impl Sync for PlainDisableInterruptGuard {}
 
 impl PlainDisableInterruptGuard {
     #[inline]
     pub fn new() -> Self {
         arch::disable_local_irq();
-        Self
+        Self {
+            _not_send: NotThreadSafe,
+        }
     }
 }
 
@@ -243,7 +257,12 @@ pub fn nonnull_slice_end<T>(ptr: NonNull<[T]>) -> *mut T {
 pub(crate) struct PerCpuVarAccessGuard {
     t: ThreadNode,
     id: u8,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared access only reads the captured CPU id. Releasing preemption
+// protection requires ownership, which stays in the acquiring context.
+unsafe impl Sync for PerCpuVarAccessGuard {}
 
 impl PerCpuVarAccessGuard {
     pub fn new() -> Self {
@@ -257,7 +276,11 @@ impl PerCpuVarAccessGuard {
         t.disable_preempt();
         compiler_fence(Ordering::SeqCst);
         drop(dig);
-        Self { t, id: id as u8 }
+        Self {
+            t,
+            id: id as u8,
+            _not_send: NotThreadSafe,
+        }
     }
 
     #[inline(always)]

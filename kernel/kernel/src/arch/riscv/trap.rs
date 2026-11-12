@@ -27,7 +27,7 @@ use crate::{
     syscalls::{dispatch_syscall, Context as ScContext},
     thread,
     thread::Thread,
-    types::Arc,
+    types::{Arc, NotThreadSafe},
 };
 use core::{
     mem::offset_of,
@@ -123,7 +123,12 @@ pub(crate) unsafe extern "C" fn trap_entry() {
 #[must_use]
 struct SyscallGuard {
     isr_ctx: IsrContext,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared references only expose saved register values; restoring local
+// IRQ and trap state happens in Drop, in the acquiring execution context.
+unsafe impl Sync for SyscallGuard {}
 
 impl SyscallGuard {
     pub fn new() -> Self {

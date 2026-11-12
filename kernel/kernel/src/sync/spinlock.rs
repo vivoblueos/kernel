@@ -14,7 +14,10 @@
 
 use crate::{
     support::DisableInterruptGuard,
-    types::{IRwLock, IntrusiveAdapter, NestedAdapter, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    types::{
+        IRwLock, IntrusiveAdapter, NestedAdapter, NotThreadSafe, RwLock, RwLockReadGuard,
+        RwLockWriteGuard,
+    },
 };
 use blueos_infra::nolock::{INoLock, NoLock, NoLockReadGuard, NoLockWriteGuard};
 use core::{
@@ -31,6 +34,12 @@ pub struct SpinLock<T: ?Sized> {
     lock: NoLock<T>,
 }
 
+// SAFETY: Both backends allow ownership transfer when T: Send.
+unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
+// SAFETY: Both backends require T: Send + Sync for shared access: writers may
+// replace T and concurrent readers share &T. This preserves their bounds.
+unsafe impl<T: ?Sized + Send + Sync> Sync for SpinLock<T> {}
+
 pub type SpinLockWriteGuard<'a, T> = SpinLockGuard<'a, T>;
 
 // See https://doc.rust-lang.org/reference/destructors.html#r-destructors.operation for dropping orders.
@@ -43,7 +52,13 @@ pub struct SpinLockGuard<'a, T: ?Sized> {
     #[cfg(not(smp))]
     lock_guard: NoLockWriteGuard<'a, T>,
     irq_guard: Option<DisableInterruptGuard>,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared access exposes only &T. Mutation and IRQ-token handoff require
+// &mut Guard; dropping the guard stays in its acquiring execution context.
+// These are the same bounds as both backend write guards.
+unsafe impl<T: ?Sized + Send + Sync> Sync for SpinLockGuard<'_, T> {}
 
 impl<T: ?Sized> SpinLockGuard<'_, T> {
     #[inline]
@@ -76,7 +91,12 @@ pub struct SpinLockReadGuard<'a, T: ?Sized> {
     #[cfg(not(smp))]
     lock_guard: NoLockReadGuard<'a, T>,
     irq_guard: Option<DisableInterruptGuard>,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared access exposes only &T. IRQ-token handoff requires &mut Guard;
+// dropping the guard stays in its acquiring execution context.
+unsafe impl<T: ?Sized + Sync> Sync for SpinLockReadGuard<'_, T> {}
 
 impl<T: ?Sized> SpinLockReadGuard<'_, T> {
     #[inline]
@@ -132,6 +152,7 @@ impl<T: ?Sized> SpinLock<T> {
         Some(SpinLockGuard {
             irq_guard: None,
             lock_guard,
+            _not_send: NotThreadSafe,
         })
     }
 
@@ -169,6 +190,7 @@ impl<T: ?Sized> SpinLock<T> {
         Some(SpinLockReadGuard {
             irq_guard: None,
             lock_guard,
+            _not_send: NotThreadSafe,
         })
     }
 
@@ -220,9 +242,6 @@ impl<'a, T: 'a + ?Sized> SpinLockGuard<'a, T> {
     }
 }
 
-unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
-unsafe impl<T: ?Sized + Sync> Sync for SpinLock<T> {}
-
 #[derive(Default, Debug)]
 struct ISpinLockOffset<T: Sized, A: const IntrusiveAdapter<T>>(PhantomData<T>, PhantomData<A>);
 
@@ -260,9 +279,12 @@ impl<T: Sized, A: const IntrusiveAdapter<T>> ISpinLock<T, A> {
         SpinLockGuard {
             lock_guard: self.lock.write(),
             irq_guard: Some(irq_guard),
+            _not_send: NotThreadSafe,
         }
     }
 }
 
 unsafe impl<T: Sized + Send, A: const IntrusiveAdapter<T>> Send for ISpinLock<T, A> {}
-unsafe impl<T: Sized + Sync, A: const IntrusiveAdapter<T>> Sync for ISpinLock<T, A> {}
+// A write guard can move the projected T out by replacement, requiring T: Send.
+// Keep the existing conservative T: Sync bound for this intrusive lock.
+unsafe impl<T: Sized + Send + Sync, A: const IntrusiveAdapter<T>> Sync for ISpinLock<T, A> {}
