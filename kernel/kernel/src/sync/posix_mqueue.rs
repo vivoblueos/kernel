@@ -132,10 +132,16 @@ pub fn mq_open(name: *const c_char, oflag: c_int, _mode: mode_t, attr: *const mq
         (a.mq_maxmsg as u32, a.mq_msgsize as usize)
     };
 
-    let q = Arc::new(MessageQueue::new(msgsize, maxmsg, core::ptr::null_mut()));
-    if !q.init() {
-        return -libc::EFAULT;
-    }
+    let q = match MessageQueue::new(msgsize, maxmsg, core::ptr::null_mut()) {
+        Some(mq) => {
+            let arc = Arc::new(mq);
+            if !arc.init() {
+                return -libc::EFAULT;
+            }
+            arc
+        }
+        None => return -libc::EINVAL,
+    };
 
     let mq = Arc::new(MQ {
         queue: q,
