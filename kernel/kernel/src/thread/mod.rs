@@ -26,7 +26,7 @@ use crate::{
     support::{Region, RegionalObjectBuilder, Storage},
     sync::{
         mutex::{MutexList, MutexListIterator},
-        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard,
+        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
     },
     thread::builder::GlobalQueue,
     time::Tick,
@@ -312,11 +312,6 @@ impl Thread {
     #[inline]
     pub fn lock(&self) -> SpinLockGuard<'_, Self> {
         self.lock.irqsave_lock()
-    }
-
-    #[inline]
-    pub fn lock_for_read(&self) -> SpinLockReadGuard<'_, Self> {
-        self.lock.irqsave_read()
     }
 
     #[inline(always)]
