@@ -17,23 +17,42 @@
 import os
 import sys
 import argparse
+import shlex
 
-GEN_BLOCK_IMG = r"""
-rm -f {block_img}
-dd if=/dev/zero of={block_img} bs=1M count={block_size}
+GEN_BLOCK_ARGS = r"""
+block_args=()
+block_img=""
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != "--block-img" ]; then
+    echo "Usage: $0 [--block-img <image>]" >&2
+    exit 2
+  fi
+  block_img="$2"
+  if [ ! -f "$block_img" ]; then
+    echo "Block image not found: $block_img" >&2
+    exit 2
+  fi
+fi
+if [ -n "$block_img" ]; then
+  block_args+=(-drive "file=${{block_img}},if=none,format=raw,id=hd")
+else
+  rm -f {block_img}
+  dd if=/dev/zero of={block_img} bs=1M count={block_size}
+  block_args+=(-drive "file={block_img},if=none,format=raw,id=hd")
+fi
 """
 
 TEST = r"""
-exec {qemu} {semihosting} -M {machine} {qemu_args} {block_args} {net_args} -kernel {image} -nographic -serial \
+exec {qemu} {semihosting} -M {machine} {qemu_args} "${{block_args[@]}}" {net_args} -kernel {image} -nographic -serial \
        file:{logfile} -d int,cpu_reset,guest_errors,unimp -D {syslog}
 """
 
 DBG = r"""
-exec {qemu} {semihosting} -M {machine} {qemu_args} {block_args} {net_args} -kernel {image} -nographic -s -S
+exec {qemu} {semihosting} -M {machine} {qemu_args} "${{block_args[@]}}" {net_args} -kernel {image} -nographic -s -S
 """
 
 DEFAULT = r"""
-exec {qemu} {semihosting} -M {machine} {qemu_args} {block_args} {net_args} -kernel {image} -nographic
+exec {qemu} {semihosting} -M {machine} {qemu_args} "${{block_args[@]}}" {net_args} -kernel {image} -nographic
 """
 
 
@@ -47,19 +66,21 @@ def do_gen(config, template, suffix='', need_log=False):
             os.path.join(config.out_dir, f'{config.name}-qemu{suffix}.syslog'))
     machine = config.machine
     with open(out_file, 'w') as f:
-        f.write(r"#!/bin/bash")
+        f.write("#!/bin/bash\n")
 
+        block_setup = 'block_args=()\n'
         block_args = ''
         if config.block_img:
             dirname = os.path.dirname(config.block_img)
             os.makedirs(dirname, exist_ok=True)
-            f.write(
-                GEN_BLOCK_IMG.format(block_img=config.block_img,
-                                     block_size=config.block_size))
-            block_args += f'-drive file={config.block_img},if=none,format=raw,id=hd'
+            block_setup = GEN_BLOCK_ARGS.format(block_img=config.block_img,
+                                                block_size=config.block_size)
 
         if config.block_args:
-            block_args += ' ' + config.block_args
+            block_args = ' '.join(
+                shlex.quote(arg) for arg in shlex.split(config.block_args))
+            block_setup += f'block_args+=({block_args})\n'
+        f.write(block_setup)
 
         if not need_log:
             f.write(

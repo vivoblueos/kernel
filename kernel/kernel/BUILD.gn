@@ -183,6 +183,36 @@ build_rust("blueos") {
   ]
 }
 
+# Link the kernel crate into a freestanding image without pulling in a userspace
+# application. The kernel's _start entry point performs board and scheduler init;
+# with an empty .bk_app_array the kernel remains in its idle loop.
+build_rust("kernel_image") {
+  crate_type = "bin"
+  sources = [ "src/kernel_image.rs" ]
+  edition = "2024"
+  rustenv = [ "TARGET_BOARD=${board}" ]
+  cfgs = _kernel_default_cfgs
+  deps = [ ":blueos" ]
+  public_deps = board_deps
+  configs += [
+    "//kernel/kconfig:kconfigs",
+    "//build/boards/${board}:kernel_config",
+  ]
+  linker_script = default_linker_script
+  rustflags = [ "-Clink-arg=-Wl,-u,_start" ]
+}
+
+if (defined(qemu_exe) && qemu_exe != "") {
+  gen_qemu_runner("kernel_runner") {
+    img = ":kernel_image"
+    qemu = qemu_exe
+    machine = qemu_machine
+    qemu_args = qemu_extra_args
+    block_img = "kernel_block.img"
+    block_args = qemu_block_args
+  }
+}
+
 run_clippy("blueos_clippy") {
   deps = [ ":blueos" ]
 }
