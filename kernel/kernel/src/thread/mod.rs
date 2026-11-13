@@ -40,7 +40,7 @@ use core::{
     alloc::Layout,
     cell::Cell,
     ptr::NonNull,
-    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
 };
 
 mod builder;
@@ -147,36 +147,36 @@ pub const SUSPENDED: Uint = 3;
 pub const RETIRED: Uint = 4;
 
 // ThreadStats is protected by thread scheduler.
+// ThreadStats is protected by thread scheduler.
 #[derive(Debug, Default)]
 pub struct ThreadStats {
-    start: Cell<u64>,
-    cycles: Cell<u64>,
+    start: u64,
+    cycles: u64,
 }
 
 impl ThreadStats {
     pub const fn new() -> Self {
         Self {
-            start: Cell::new(0),
-            cycles: Cell::new(0),
+            start: 0,
+            cycles: 0,
         }
     }
 
-    pub fn increment_cycles(&self, cycles: u64) {
-        let cycles = self.get_cycles();
-        self.cycles
-            .set(cycles + cycles.saturating_sub(self.start.get()));
+    pub fn increment_cycles(&mut self, cycles: u64) {
+        let cur = self.get_cycles();
+        self.cycles = cur + cycles.saturating_sub(self.start);
     }
 
-    pub fn set_start_cycles(&self, start: u64) {
-        self.start.set(start);
+    pub fn set_start_cycles(&mut self, start: u64) {
+        self.start = start;
     }
 
     pub fn start_cycles(&self) -> u64 {
-        self.start.get()
+        self.start
     }
 
     pub fn get_cycles(&self) -> u64 {
-        self.cycles.get()
+        self.cycles
     }
 }
 
@@ -211,8 +211,9 @@ pub struct Thread {
     // If saved_sp is 0, the thread should be in RUNNING state. Otherwise, it's
     // switching context or is in a non RUNNING state.
     saved_sp: AtomicUsize,
-    // This value may change at runtime.
-    priority: ThreadPriority,
+    // This value may change at runtime. Atomic so a priority boost (PR-B
+    // PI) is visible to another core without taking Thread.lock().
+    priority: AtomicU32,
     // This is the static priority of this thread.
     origin_priority: ThreadPriority,
     state: AtomicUint,
@@ -412,7 +413,7 @@ impl Thread {
 
     #[inline]
     pub fn set_priority(&mut self, p: ThreadPriority) -> &mut Self {
-        self.priority = p;
+        self.priority.store(p, Ordering::Release);
         self
     }
 
@@ -490,7 +491,7 @@ impl Thread {
             sched_node: IlistHead::<Thread, OffsetOfSchedNode>::new(),
             global: UniqueListHead::new(),
             saved_sp: AtomicUsize::new(0),
-            priority: 0,
+            priority: AtomicU32::new(0),
             origin_priority: 0,
             preempt_count: AtomicUint::new(0),
             #[cfg(thread_stats)]
@@ -669,7 +670,6 @@ impl Thread {
         };
         let mut builder = RegionalObjectBuilder::new(region);
         let ctx = unsafe { builder.zeroed_after_start::<arch::Context>().unwrap() };
-        self.set_saved_sp(ctx as *const _ as usize);
 
         ctx.init();
         // TODO: We should provide the thread a more rusty environment
@@ -692,12 +692,17 @@ impl Thread {
                 .set_arg(0, unsafe { f as usize })
                 .set_arg(1, unsafe { arg as usize }),
         };
+        // Set saved_sp ONLY AFTER ctx is fully initialized (mepc, gp, args).
+        // Otherwise, on SMP another hart's spin_until_ready_to_run() could
+        // observe saved_sp != 0 but mepc = 0, then context-switch into a
+        // jump to 0x0.
+        self.set_saved_sp(ctx as *const _ as usize);
         self
     }
 
     #[inline]
     pub fn priority(&self) -> ThreadPriority {
-        self.priority
+        self.priority.load(Ordering::Acquire)
     }
 
     #[inline]
@@ -712,7 +717,13 @@ impl Thread {
 
     #[inline]
     pub fn enable_preempt(&self) -> bool {
-        self.preempt_count.fetch_sub(1, Ordering::Release) & Self::PREEMPT_COUNT_MASK == 1
+        let prev = self.preempt_count.fetch_sub(1, Ordering::Release);
+        debug_assert_ne!(
+            prev & Self::PREEMPT_COUNT_MASK,
+            0,
+            "enable_preempt underflow: preempt_count was 0 before decrement"
+        );
+        prev & Self::PREEMPT_COUNT_MASK == 1
     }
 
     /// Complete a scheduler operation in the resumed thread. A sender marks
@@ -744,13 +755,13 @@ impl Thread {
 
     #[cfg(thread_stats)]
     #[inline]
-    pub fn increment_cycles(&self, cycles: u64) {
+    pub fn increment_cycles(&mut self, cycles: u64) {
         self.stats.increment_cycles(cycles);
     }
 
     #[cfg(thread_stats)]
     #[inline]
-    pub fn set_start_cycles(&self, cycles: u64) {
+    pub fn set_start_cycles(&mut self, cycles: u64) {
         self.stats.set_start_cycles(cycles);
     }
 
@@ -873,16 +884,16 @@ impl Thread {
 
     #[inline]
     pub fn recover_priority(&mut self) -> &mut Self {
-        self.priority = self.origin_priority;
+        self.priority.store(self.origin_priority, Ordering::Release);
         self
     }
 
     #[inline]
     pub fn promote_priority_to(&mut self, target_priority: ThreadPriority) -> bool {
-        if target_priority >= self.priority {
+        if target_priority >= self.priority.load(Ordering::Relaxed) {
             return false;
         }
-        self.priority = target_priority;
+        self.priority.store(target_priority, Ordering::Release);
         true
     }
 
