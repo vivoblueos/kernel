@@ -104,10 +104,15 @@ impl Tick {
 pub(crate) extern "C" fn handle_clock_interrupt() {
     let _guard = DisableInterruptGuard::new();
     let now = Tick::now();
-    if let Some(next_deadline) = timer::expire_timers(now) {
-        Tick::interrupt_at(next_deadline);
-    } else {
-        ClockImpl::stop();
+    match timer::expire_timers(now) {
+        timer::ExpireTimersResult::NextDeadline(next_deadline) => {
+            Tick::interrupt_at(next_deadline);
+        }
+        timer::ExpireTimersResult::Idle => ClockImpl::stop(),
+        timer::ExpireTimersResult::BarrierBusy => {
+            // Keep this hart's clock running and retry expiration after a short delay.
+            Tick::interrupt_at(now.add(Tick(1)));
+        }
     };
     if !scheduler::need_reschedule_at(now) {
         return;

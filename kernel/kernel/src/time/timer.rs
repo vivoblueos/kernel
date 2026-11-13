@@ -41,6 +41,9 @@ static_arc! {
 #[cfg(soft_timer)]
 static mut SW_TIMER_WORKER: SoftTimerWorker = SoftTimerWorker::new();
 
+// FIXME: The shared timer queue and expiration barrier make one hart's timer
+// interrupt depend on another hart's callback duration. Retrying on contention
+// prevents a lost local clock, but per-CPU timer queues are the better fix.
 static EXPIRE_BARRIER: SpinLock<()> = SpinLock::new(());
 
 struct SoftTimerWorker {
@@ -257,8 +260,16 @@ pub fn is_active_soft_timer(iou: &Iou<'_>) -> bool {
     w.is_active(iou)
 }
 
-pub(crate) fn expire_timers(deadline: Tick) -> Option<Tick> {
-    let _guard = EXPIRE_BARRIER.try_irqsave_lock()?;
+pub(crate) enum ExpireTimersResult {
+    NextDeadline(Tick),
+    Idle,
+    BarrierBusy,
+}
+
+pub(crate) fn expire_timers(deadline: Tick) -> ExpireTimersResult {
+    let Some(_guard) = EXPIRE_BARRIER.try_irqsave_lock() else {
+        return ExpireTimersResult::BarrierBusy;
+    };
 
     let soft_deadline = wake_up_soft_timer_worker(deadline).unwrap_or(Tick::MAX);
     let hard_deadline;
@@ -271,9 +282,9 @@ pub(crate) fn expire_timers(deadline: Tick) -> Option<Tick> {
         res = core::cmp::min(soft_deadline, hard_deadline);
     }
     if res == Tick::MAX {
-        return None;
+        return ExpireTimersResult::Idle;
     }
-    Some(res)
+    ExpireTimersResult::NextDeadline(res)
 }
 
 fn update_clock_interrupt() -> Tick {
