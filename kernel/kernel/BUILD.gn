@@ -25,20 +25,22 @@ _kernel_default_cfgs = [
 
 group("check_kernel") {
   testonly = true
-  deps = [
-    ":run_integration_test",
-    ":run_unittest",
-  ]
+  deps = [ ":run_unittest" ]
+  if (syscall_mode != "linux_abi") {
+    deps += [ ":run_integration_test" ]
+  }
 }
 
 group("check_kernel_by_clippy") {
   testonly = true
   deps = [
     ":blueos_clippy",
-    ":kernel_integration_test_clippy",
     ":kernel_unittest_clippy",
     "//external/rust:semihosting",
   ]
+  if (syscall_mode != "linux_abi") {
+    deps += [ ":kernel_integration_test_clippy" ]
+  }
 }
 
 group("check_kernel_probe") {
