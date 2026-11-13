@@ -14,10 +14,10 @@
 
 #![no_std]
 
-#[cfg(not(direct_syscall_handler))]
+#[cfg(not(syscall_mode = "dsc"))]
 pub mod platform;
 
-#[cfg(not(direct_syscall_handler))]
+#[cfg(not(syscall_mode = "dsc"))]
 #[macro_export]
 macro_rules! bk_syscall {
     ($nr:expr_2021) => {
@@ -72,5 +72,5 @@ macro_rules! bk_syscall {
     };
 }
 
-#[cfg(direct_syscall_handler)]
+#[cfg(syscall_mode = "dsc")]
 pub use blueos::bk_syscall;

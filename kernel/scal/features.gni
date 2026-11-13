@@ -13,5 +13,18 @@
 # limitations under the License.
 
 declare_args() {
-  direct_syscall_handler = true
+  # swi: native numbering through a software interrupt.
+  # dsc: native handlers called directly.
+  # linux_abi: reserved for the Linux syscall ABI; dispatch is not implemented.
+  syscall_mode = "dsc"
 }
+
+assert(syscall_mode == "swi" || syscall_mode == "dsc" ||
+           syscall_mode == "linux_abi",
+       "syscall_mode must be swi, dsc, or linux_abi")
+assert(syscall_mode != "linux_abi" ||
+           board_toolchain_info.current_cpu == "aarch64" ||
+           board_toolchain_info.current_cpu == "riscv64",
+       "linux_abi is only available on AArch64 and RISC-V 64")
+
+syscall_mode_cfg = "syscall_mode=\"${syscall_mode}\""

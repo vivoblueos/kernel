@@ -15,28 +15,32 @@
 import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
+import("//kernel/scal/features.gni")
 
 _kernel_default_cfgs = [
   "scheduler=\"global\"",
   "${build_type}",
+  syscall_mode_cfg,
 ]
 
 group("check_kernel") {
   testonly = true
-  deps = [
-    ":run_integration_test",
-    ":run_unittest",
-  ]
+  deps = [ ":run_unittest" ]
+  if (syscall_mode != "linux_abi") {
+    deps += [ ":run_integration_test" ]
+  }
 }
 
 group("check_kernel_by_clippy") {
   testonly = true
   deps = [
     ":blueos_clippy",
-    ":kernel_integration_test_clippy",
     ":kernel_unittest_clippy",
     "//external/rust:semihosting",
   ]
+  if (syscall_mode != "linux_abi") {
+    deps += [ ":kernel_integration_test_clippy" ]
+  }
 }
 
 group("check_kernel_probe") {
@@ -78,6 +82,10 @@ if (current_toolchain != "//build/toolchain:gcc_fv_thumbv8m") {
   _shared_deps += [ ":atomic" ]
 }
 _shared_deps += board_deps
+
+if (syscall_mode == "linux_abi") {
+  _shared_deps += [ "//kernel/scal:linux_syscalls" ]
+}
 
 if (coverage || profile) {
   _shared_deps += [

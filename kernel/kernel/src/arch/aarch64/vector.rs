@@ -45,7 +45,7 @@ vector_table:
 
     // Lower EL using AArch64
     .align 7
-        b lowerel_not_supported   // Synchronous
+        b el0_sync                // Synchronous
     .align 7
         b lowerel_not_supported   // IRQ
     .align 7

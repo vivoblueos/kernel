@@ -13,13 +13,17 @@
 # limitations under the License.
 
 import("//build/templates/rust.gni")
+import("//kernel/scal/features.gni")
 
 build_rust("blueos_header") {
   crate_type = "rlib"
   sources = [ "src/lib.rs" ]
   edition = "2024"
   configs += [ "//build/boards/${board}:kernel_config" ]
-  cfgs = [ "${build_type}" ]
+  cfgs = [
+    "${build_type}",
+    syscall_mode_cfg,
+  ]
   deps = board_deps
   public_deps = board_deps
 }
