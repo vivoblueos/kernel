@@ -412,7 +412,18 @@ pub fn yield_me_now_or_later() {
     if current_thread_ref().preempt_count() != 0 {
         return;
     }
-    arch::pend_switch_context();
+    // Skip the pendsv round-trip only when no same-or-higher-priority thread is
+    // runnable: pendsv is not free, and critical-section exits call this at
+    // high frequency even when the current thread will just resume. We must
+    // yield to same-priority threads too, because arch::pend_switch_context's
+    // non-IRQ path delegates to relinquish_me, which selects with
+    // PreferMode::SameOrHigher. Restricting to strictly-higher priority strands
+    // same-priority runnable threads in the ready queue (round_robin is off),
+    // so their stacks are never freed and stress_barrier leaks ~126 KB and OOMs.
+    match global_scheduler::highest_ready_priority() {
+        Some(p) if p <= current_thread_ref().priority() => arch::pend_switch_context(),
+        _ => {}
+    }
 }
 
 pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
