@@ -369,19 +369,38 @@ mod tests {
 
     #[test]
     fn max_free_block_comprehensive() {
-        // Test 1: Basic behavior - check max free block after pool initialization
+        const SIZE: usize = 64 * 1024;
+
         let max_free = get_max_free_block_size();
         assert!(
             max_free > 0,
             "max free block should be positive after pool insert"
         );
 
-        // Max free block decreases on allocation
-        let _boxed = Box::new([0u8; 1024 * 64]);
+        // Allocate straight from the heap rather than `Box::new([0u8; 64K])`:
+        // the array literal is materialized as a stack temporary, and the
+        // unittest runner only has an 8 KiB thread stack.
+        let layout = Layout::from_size_align(SIZE, 1).unwrap();
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
+        assert!(!ptr.is_null(), "64 KiB allocation should succeed");
+
+        // The tail of the block must be usable, i.e. the whole payload was
+        // really handed out.
+        unsafe { ptr.add(SIZE - 1).write(0xA5) };
+        let tail = unsafe { ptr.add(SIZE - 1).read() };
+
         let after = get_max_free_block_size();
+        unsafe { alloc::alloc::dealloc(ptr, layout) };
+        let restored = get_max_free_block_size();
+
+        assert_eq!(tail, 0xA5, "the full payload must be readable and writable");
         assert!(
             after <= max_free,
-            "max free block should decrease after allocation"
+            "max free block should not grow on allocation: {max_free} -> {after}"
+        );
+        assert!(
+            restored >= after,
+            "max free block should recover after dealloc: {after} -> {restored}"
         );
     }
 
