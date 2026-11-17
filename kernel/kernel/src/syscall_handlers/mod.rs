@@ -14,6 +14,9 @@
 
 extern crate alloc;
 
+#[cfg(syscall_mode = "linux_abi")]
+use linux_abi::*;
+
 #[cfg(kernel_async)]
 use crate::asynk;
 #[cfg(enable_net)]
@@ -271,6 +274,7 @@ pub struct mq_attr {
 // dispatcher if syscall is invoked via software interrupt.
 // bk_syscall! macro should be used by external libraries if syscall
 // is invoked via function call.
+#[cfg(not(syscall_mode = "linux_abi"))]
 macro_rules! syscall_table {
     ($(($nr:tt, $mod:ident),)*) => {
         pub(crate) fn dispatch_syscall(ctx: &Context) -> usize {
@@ -281,9 +285,24 @@ macro_rules! syscall_table {
             }
         }
 
+        #[cfg(syscall_mode = "dsc")]
         #[macro_export]
         macro_rules! bk_syscall {
             $(($nr $$(,$arg:expr_2021)*) => { $crate::syscalls::$mod::handle($$($arg),*) });*
+        }
+    };
+}
+
+#[cfg(syscall_mode = "linux_abi")]
+macro_rules! syscall_table {
+    ($(($nr:tt, $mod:ident),)*) => {
+        pub(crate) fn dispatch_syscall(ctx: &Context) -> usize {
+            use linux_syscalls::LinuxSysno;
+            match ctx.nr {
+                $(val if val == LinuxSysno::$nr as usize =>
+                    return $crate::syscalls::$mod::handle_context(ctx) as usize,)*
+                _ => return usize::MAX,
+            }
         }
     };
 }
@@ -855,7 +874,7 @@ define_syscall_handler!(
     }
 );
 
-#[cfg(enable_syscall)]
+#[cfg(all(enable_syscall, not(syscall_mode = "linux_abi")))]
 syscall_table! {
     (Echo, echo),
     (Nop, nop),
@@ -931,6 +950,13 @@ syscall_table! {
     (Ioctl, ioctl),
 }
 
+#[cfg(all(enable_syscall, syscall_mode = "linux_abi"))]
+syscall_table! {
+    (Mmap, sys_mmap),
+    (Brk, sys_brk),
+    (Munmap, sys_munmap),
+}
+
 #[cfg(not(enable_syscall))]
 pub fn dispatch_syscall(ctx: &Context) -> usize {
     0
@@ -938,5 +964,7 @@ pub fn dispatch_syscall(ctx: &Context) -> usize {
 
 // Begin syscall modules.
 pub mod echo;
+#[cfg(syscall_mode = "linux_abi")]
+pub(crate) mod linux_abi;
 pub mod posix_timers;
 // End syscall modules.
