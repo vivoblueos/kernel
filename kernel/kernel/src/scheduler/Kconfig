@@ -6,6 +6,22 @@ config SOFT_TIMER
     default y
     bool "Enable soft timer"
 
+config TIMER_ALIGN
+    default n
+    bool "Enable soft timer phase alignment"
+    depends on SOFT_TIMER
+    help
+      Coalesce periodic soft timers whose periods are integer multiples or
+      divisors of each other onto shared phase grids, reducing clock ISR
+      wakeups. Each newcomer's first fire is snapped to the anchor grid point
+      nearest its intended first fire when that is within tolerance.
+
+config TIMER_ALIGN_TOLERANCE_TICKS
+    default 1
+    range 0 255
+    int "Max ticks a timer's first fire may move when phase-aligned"
+    depends on TIMER_ALIGN
+
 config EVENT_FLAGS
     default y if CMSIS_RTOS1_ADAPTER || CMSIS_RTOS2_ADAPTER
     default n

@@ -13,6 +13,8 @@
 // limitations under the License.
 
 pub mod timer;
+#[cfg(timer_align)]
+pub mod timer_align;
 pub mod timer_manager;
 
 use crate::{arch, scheduler, support::DisableInterruptGuard};
