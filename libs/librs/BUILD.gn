@@ -15,6 +15,7 @@
 import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
+import("//kernel/scal/features.gni")
 
 build_rust("librs") {
   crate_type = "rlib"
@@ -119,13 +120,16 @@ run_qemu_check("run_librs_unittest") {
 
 group("check_librs") {
   testonly = true
-  deps = [
-    ":run_librs_unittest",
-    "tests/integration_test:run_librs_integration_test",
+  deps = []
+  if (syscall_mode != "linux_abi") {
+    deps += [
+      ":run_librs_unittest",
+      "tests/integration_test:run_librs_integration_test",
+    ]
+  }
 
-    # wait for virtio
-    # "tests/posixtestsuite:run_librs_posix_testsuite",
-  ]
+  # wait for virtio
+  # "tests/posixtestsuite:run_librs_posix_testsuite",
 }
 
 group("check_librs_linux_emulation") {
