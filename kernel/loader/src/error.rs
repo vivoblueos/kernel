@@ -14,6 +14,7 @@
 
 //! Structured errors shared by positional reads and loading stages.
 
+use crate::memory::TargetAddress;
 use core::fmt::Debug;
 
 pub type LoadResult<T> = core::result::Result<T, LoadError>;
@@ -23,12 +24,18 @@ pub enum LoadStage {
     Beginning,
     Admit,
     Inspect,
+    Plan,
+    Allocate,
+    Map,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoadErrorKind {
     BadElf,
     UnsupportedByProfile,
+    InvalidAlignment,
+    IncorrectLayout,
+    PermissionConflict,
     OutOfBounds,
     IntegerOverflow,
     ResourceLimit,
@@ -48,6 +55,7 @@ pub enum HeaderField {
     Type,
     Machine,
     Flags,
+    Entry,
     HeaderSize,
     ProgramHeaderSize,
     ProgramHeaderCount,
@@ -59,6 +67,8 @@ pub enum ProgramHeaderField {
     Type,
     FileRange,
     VirtualRange,
+    Align,
+    Permissions,
     DuplicateDynamic,
     DuplicatePhdr,
     DuplicateRelro,
@@ -72,6 +82,9 @@ pub enum ProgramHeaderField {
 pub enum LimitKind {
     FileLength,
     ProgramHeaderCount,
+    LoadSegmentCount,
+    ImageSpan,
+    SegmentAlignment,
 }
 
 #[non_exhaustive]
@@ -82,6 +95,27 @@ pub enum ErrorContext {
         offset: u64,
         len: u64,
         file_len: u64,
+    },
+    TargetRange {
+        start: TargetAddress,
+        len: u64,
+        align: u64,
+    },
+    TargetBounds {
+        start: TargetAddress,
+        end: TargetAddress,
+    },
+    Allocation {
+        base: TargetAddress,
+        len: u64,
+        align: u64,
+    },
+    MemoryAccess {
+        allocation_base: TargetAddress,
+        allocation_len: u64,
+        allocation_align: u64,
+        offset: u64,
+        len: u64,
     },
     HeaderField {
         field: HeaderField,
@@ -106,6 +140,23 @@ pub struct LoadError {
 }
 
 impl LoadError {
+    /// Describe a program-header failure without coupling loading stages.
+    pub(crate) fn program_header(
+        index: u16,
+        field: ProgramHeaderField,
+        value: u64,
+        kind: LoadErrorKind,
+    ) -> LoadError {
+        LoadError::new(
+            kind,
+            ErrorContext::ProgramHeader {
+                index,
+                field,
+                value,
+            },
+        )
+    }
+
     #[inline]
     pub const fn new(kind: LoadErrorKind, context: ErrorContext) -> Self {
         Self {
