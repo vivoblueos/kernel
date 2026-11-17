@@ -21,6 +21,53 @@ use crate::{
 };
 use core::{marker::PhantomData, ptr::NonNull};
 
+extern crate alloc;
+use alloc::vec::Vec;
+
+/// Depth-first iterator over the nodes currently linked in a `MinHeap`.
+///
+/// Order is unspecified (heap layout is not a sorted sequence); the iterator
+/// visits every in-heap element exactly once and never yields popped values.
+pub struct MinHeapIter<'a, T, A: const Adapter<T>> {
+    stack: Vec<NonNull<MinHeapNode<T, A>>>,
+    _lt: PhantomData<&'a T>,
+}
+
+impl<T, A: const Adapter<T>> MinHeapIter<'_, T, A> {
+    fn new(root: Option<NonNull<MinHeapNode<T, A>>>) -> Self {
+        let mut stack = Vec::new();
+        if let Some(r) = root {
+            stack.push(r);
+        }
+        Self {
+            stack,
+            _lt: PhantomData,
+        }
+    }
+}
+
+impl<'a, T, A: const Adapter<T> + 'a> Iterator for MinHeapIter<'a, T, A> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node_ptr = self.stack.pop()?;
+        let node = unsafe { node_ptr.as_ref() };
+        if let Some(right) = node.link.right() {
+            self.stack
+                .push(NonNull::from_ref(MinHeapNode::node_of_link(unsafe {
+                    right.as_ref()
+                })));
+        }
+        if let Some(left) = node.link.left() {
+            self.stack
+                .push(NonNull::from_ref(MinHeapNode::node_of_link(unsafe {
+                    left.as_ref()
+                })));
+        }
+        Some(MinHeapNode::owner(node))
+    }
+}
+
 #[derive(Default)]
 #[repr(transparent)]
 pub struct IouMinHeapNodeMut<'a, T, A: const Adapter<T>> {
@@ -560,6 +607,11 @@ where
     pub fn peek(&self) -> Option<&T> {
         let root = self.root?;
         Some(MinHeapNode::owner(unsafe { root.as_ref() }))
+    }
+
+    /// Read-only iteration over every value currently linked in the heap.
+    pub fn iter(&self) -> MinHeapIter<'_, T, A> {
+        MinHeapIter::new(self.root)
     }
 
     pub fn for_each_popped_value<F>(&mut self, f: F)

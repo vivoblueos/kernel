@@ -1,4 +1,4 @@
-# BlueKernel PR CI
+# BlueKernel CI
 
 The root `BlueKernel CI` workflow checks every pull request targeting `main`,
 including drafts. Each job checks out the PR's merge result and uses the existing
@@ -11,6 +11,16 @@ passes only when all jobs succeed and can be selected as a required PR check.
 
 The scripts live outside the synchronized component directories. Existing
 component workflows and repository synchronization remain independent.
+
+## Run CI on a fork
+
+Enable Actions on the fork and make sure its default branch and the branch to
+test both contain the workflow with `workflow_dispatch`. Open **Actions → BlueKernel CI
+→ Run workflow**, select the branch to test, and start the run.
+
+The full CI runs on the selected commit. Format and license checks cover changes
+since its common ancestor with the fork's `main`. Selecting `main` itself gives
+those checks an empty diff.
 
 ## Rust dependencies
 
@@ -33,6 +43,14 @@ python3 tools/ci/run_profile.py --board none --build-type debug --syscall-mode s
 python3 tools/ci/run_profile.py --board qemu_mps2_an385 --build-type release --syscall-mode dsc
 python3 tools/ci/check_changes.py --base BASE_COMMIT --head MERGE_COMMIT
 ```
+
+`--syscall-mode` accepts `swi`, `dsc`, and `linux_abi`; it passes the selected
+mode to GN as `syscall_mode`. The `linux_abi` option is available on
+`qemu_virt64_aarch64`, `rk3568`, and `qemu_riscv64`. These profiles generate
+both 64-bit Linux syscall tables through the `kernel/scal:gen_linux_syscalls`
+GN action. CI includes debug and release profiles for all three boards.
+Linux syscall dispatch integration remains pending, so these profiles verify
+generation and build integration only. Host profiles still support only `swi`.
 
 For changed-file checks, check out `MERGE_COMMIT` first. The script compares its
 tree with `BASE_COMMIT`, checks existing changed GN/Python/Rust/YAML files, and
