@@ -206,7 +206,13 @@ template("gen_qemu_runner") {
       ]
     }
     if (defined(block_img)) {
-      _block_img_path = rebase_path("${target_gen_dir}/${block_img}")
+      if (qemu_block_image != "") {
+        not_needed([ "block_img" ])
+        _block_img_path = rebase_path(qemu_block_image)
+        args += [ "--preserve_block_img" ]
+      } else {
+        _block_img_path = rebase_path("${target_gen_dir}/${block_img}")
+      }
       args += [
         "--block_img",
         _block_img_path,

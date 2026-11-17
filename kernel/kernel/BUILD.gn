@@ -54,6 +54,7 @@ _shared_deps = [
   "//external/rust:log",
   "//external/rust:mipidsi",
   "//external/rust:num-traits",
+  "//external/rust:rsext4",
   "//external/rust:safe-mmio",
   "//external/rust:spin",
   "//external/rust:thiserror",

@@ -81,11 +81,11 @@ fn test_uart() {
 
 #[test]
 fn test_read_and_write() {
-    println!("[VFS Test Read/Write] Test the tmpfs mounted at /");
+    println!("[VFS Test Read/Write] Test the root filesystem mounted at /");
     test_read_and_write(String::from("/"), 30);
     test_read_and_write(String::from("/"), 2000);
 
-    #[cfg(virtio)]
+    #[cfg(all(virtio, fatfs))]
     {
         println!("[VFS Test Read/Write] Test the fatfs mounted at /fat");
         test_read_and_write(String::from("/fat/"), 30);
@@ -161,10 +161,10 @@ fn test_read_and_write(path_prefix: String, test_data_len: usize) {
 
 #[test]
 fn test_multiple_open() {
-    println!("Test the tmpfs mounted at /");
+    println!("Test the root filesystem mounted at /");
     test_multiple_open(String::from("/"));
 
-    #[cfg(virtio)]
+    #[cfg(all(virtio, fatfs))]
     {
         println!("Test the fatfs mounted at /fat");
         test_multiple_open(String::from("/fat/"));
@@ -235,10 +235,10 @@ fn test_multiple_open(path_prefix: String) {
 
 #[test]
 fn test_directory_tree() {
-    println!("[VFS Test DirectoryTree] Test the tmpfs mounted at /");
+    println!("[VFS Test DirectoryTree] Test the root filesystem mounted at /");
     test_directory_tree(String::from("/"));
 
-    #[cfg(virtio)]
+    #[cfg(all(virtio, fatfs))]
     {
         println!("[VFS Test DirectoryTree] Test the fatfs mounted at /fat");
         test_directory_tree(String::from("/fat/"));
@@ -453,7 +453,7 @@ fn test_std_fds() {
     }
 }
 
-#[cfg(virtio)]
+#[cfg(all(virtio, fatfs))]
 #[test]
 fn test_fatfs_mount_unmount() {
     let mode: libc::mode_t = 0o644;
