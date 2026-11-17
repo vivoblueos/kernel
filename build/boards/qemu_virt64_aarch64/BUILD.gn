@@ -15,6 +15,7 @@
 import("//build/default_targets.gni")
 import("//build/templates/board.gni")
 import("//build/templates/linker_script.gni")
+import("//kernel/scal/features.gni")
 
 generate_linker_script("default_linker_script") {
   preprocessor = "aarch64-none-elf-cpp"
@@ -49,10 +50,13 @@ blueos_board("qemu_virt64_aarch64") {
     ]
   }
 
-  default = [
-    "//example:check_apps",
-    "//shell:shell_runner",
-  ]
+  default = []
+  if (syscall_mode != "linux_abi") {
+    default = [
+      "//example:check_apps",
+      "//shell:shell_runner",
+    ]
+  }
   _check_all = check_all_on_virtual_board + clippy_all_on_virtual_board
   check_all = default + filter_exclude(_check_all, [ "//kernel/adapter*" ])
 }
