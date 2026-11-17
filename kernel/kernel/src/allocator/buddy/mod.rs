@@ -17,7 +17,7 @@
 mod heap;
 
 pub(super) use allocator_crate::buddy::{order_of_size, PAGE_SIZE};
-pub(super) use heap::BuddyHeap;
+pub(super) use heap::{get_buddy_layout, BuddyHeap};
 
 #[cfg(test)]
 mod tests;
