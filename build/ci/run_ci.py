@@ -52,7 +52,7 @@ BOARDS = [
     'raspberry_pico2_cortexm',
 ]
 BUILD_TYPES = ['release', 'debug']
-DIRECT_SYSCALL_HANDLER_FLAGS = [True, False]
+SYSCALL_MODES = ['dsc', 'swi']
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
@@ -63,7 +63,7 @@ class Config(object):
     def __init__(self):
         self.build_type = 'release'
         self.board = 'qemu_mps3_an547'
-        self.direct_syscall_handler = False
+        self.syscall_mode = 'swi'
 
     def set_build_type(self, ty):
         self.build_type = ty
@@ -73,8 +73,8 @@ class Config(object):
         self.board = board
         return self
 
-    def set_direct_syscall_handler(self, flag):
-        self.direct_syscall_handler = flag
+    def set_syscall_mode(self, mode):
+        self.syscall_mode = mode
         return self
 
 
@@ -85,23 +85,19 @@ class Runner(object):
 
     def run(self):
         LOGGER.info(
-            f'Building {self.config.build_type} kernel for {self.config.board} with `direct_syscall_handler`[{self.config.direct_syscall_handler}]'
+            f'Building {self.config.build_type} kernel for {self.config.board} with syscall mode {self.config.syscall_mode}'
         )
         return self.run_gn_gen_and_ninja()
 
     def outdir_name(self):
-        basename = f'{self.config.board}.{self.config.build_type}'
-        if self.config.direct_syscall_handler:
-            basename += '.dsc'
-        else:
-            basename += '.swi'
+        basename = f'{self.config.board}.{self.config.build_type}.{self.config.syscall_mode}'
         return os.path.join('out', basename)
 
     def make_gn_args_str(self):
         return ' '.join([
             f'board="{self.config.board}"',
             f'build_type="{self.config.build_type}"',
-            f"direct_syscall_handler={'true' if self.config.direct_syscall_handler else 'false'}",
+            f'syscall_mode="{self.config.syscall_mode}"',
         ])
 
     def run_gn_gen(self):
@@ -205,9 +201,9 @@ def main():
                                ] if args.build_type else BUILD_TYPES
         boards_to_test = [args.board] if args.board else BOARDS
         for profile in itertools.product(build_types_to_test, boards_to_test,
-                                         DIRECT_SYSCALL_HANDLER_FLAGS):
+                                         SYSCALL_MODES):
             config = Config().set_build_type(profile[0]).set_board(
-                profile[1]).set_direct_syscall_handler(profile[2])
+                profile[1]).set_syscall_mode(profile[2])
             if args.setup_only:
                 rc = Runner(config).run_gn_gen()
                 if rc != 0:

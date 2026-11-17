@@ -71,6 +71,12 @@ impl TimerManager {
         }
     }
 
+    /// Read-only access to the underlying heap; used by the alignment hook to
+    /// scan anchor candidates without mutating the queue.
+    pub fn timers(&self) -> &IntrusiveBinaryHeap<Timer, Node, Comparator> {
+        &self.timers
+    }
+
     pub fn add<'a>(&mut self, tm: &'a mut Timer) -> Option<Iou<'a>> {
         self.timers.push(tm)
     }
