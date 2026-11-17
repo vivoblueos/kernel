@@ -34,6 +34,14 @@ python3 tools/ci/run_profile.py --board qemu_mps2_an385 --build-type release --s
 python3 tools/ci/check_changes.py --base BASE_COMMIT --head MERGE_COMMIT
 ```
 
+`--syscall-mode` accepts `swi`, `dsc`, and `linux_abi`; it passes the selected
+mode to GN as `syscall_mode`. The `linux_abi` option is available on
+`qemu_virt64_aarch64`, `rk3568`, and `qemu_riscv64`. These profiles generate
+both 64-bit Linux syscall tables through the `kernel/scal:gen_linux_syscalls`
+GN action. CI includes debug and release profiles for all three boards.
+Linux syscall dispatch integration remains pending, so these profiles verify
+generation and build integration only. Host profiles still support only `swi`.
+
 For changed-file checks, check out `MERGE_COMMIT` first. The script compares its
 tree with `BASE_COMMIT`, checks existing changed GN/Python/Rust/YAML files, and
 runs license-eye in each affected component using its existing configuration.
