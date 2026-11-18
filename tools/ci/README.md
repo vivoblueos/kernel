@@ -1,4 +1,4 @@
-# BlueKernel PR CI
+# BlueKernel CI
 
 The root `BlueKernel CI` workflow checks every pull request targeting `main`,
 including drafts. Each job checks out the PR's merge result and uses the existing
@@ -11,6 +11,16 @@ passes only when all jobs succeed and can be selected as a required PR check.
 
 The scripts live outside the synchronized component directories. Existing
 component workflows and repository synchronization remain independent.
+
+## Run CI on a fork
+
+Enable Actions on the fork and make sure its default branch and the branch to
+test both contain the workflow with `workflow_dispatch`. Open **Actions → BlueKernel CI
+→ Run workflow**, select the branch to test, and start the run.
+
+The full CI runs on the selected commit. Format and license checks cover changes
+since its common ancestor with the fork's `main`. Selecting `main` itself gives
+those checks an empty diff.
 
 ## Rust dependencies
 
