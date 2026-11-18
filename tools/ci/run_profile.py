@@ -38,7 +38,8 @@ BOARDS = (
     "raspberry_pico2_cortexm",
 )
 BUILD_TYPES = ("debug", "release")
-SYSCALL_MODES = ("swi", "dsc")
+SYSCALL_MODES = ("swi", "dsc", "linux_abi")
+LINUX_ABI_BOARDS = ("qemu_virt64_aarch64", "rk3568", "qemu_riscv64")
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,10 @@ class Profile:
             raise ValueError(f"unsupported syscall mode: {self.syscall_mode}")
         if self.board == "none" and self.syscall_mode != "swi":
             raise ValueError("the host profile only supports swi mode")
+        if (self.syscall_mode == "linux_abi"
+                and self.board not in LINUX_ABI_BOARDS):
+            raise ValueError(
+                "linux_abi only supports AArch64 and RISC-V 64 boards")
 
     @property
     def out_dir(self) -> str:
@@ -68,8 +73,7 @@ class Profile:
             f'build_type="{self.build_type}"',
         ]
         if self.board != "none":
-            direct = "true" if self.syscall_mode == "dsc" else "false"
-            args.append(f"direct_syscall_handler={direct}")
+            args.append(f'syscall_mode="{self.syscall_mode}"')
         return " ".join(args)
 
 
@@ -107,8 +111,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--build-type", required=True, choices=BUILD_TYPES)
     parser.add_argument("--syscall-mode", required=True, choices=SYSCALL_MODES)
     args = parser.parse_args(argv)
-    if args.board == "none" and args.syscall_mode != "swi":
-        parser.error("the host profile only supports --syscall-mode=swi")
+    try:
+        Profile(args.board, args.build_type, args.syscall_mode).validate()
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 

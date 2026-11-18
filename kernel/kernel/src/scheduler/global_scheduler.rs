@@ -79,11 +79,32 @@ fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Op
     Some(next)
 }
 
-pub fn next_preferred_thread(prio: ThreadPriority) -> Option<ThreadNode> {
+// Mode for selecting the next preferred thread.
+#[derive(Clone, Copy, Debug)]
+pub enum PreferMode {
+    /// Only pick a thread with strictly higher priority.
+    StrictHigher,
+    /// Pick a thread with the same or higher priority.
+    SameOrHigher,
+}
+
+#[inline(always)]
+pub fn next_preferred_thread(prio: ThreadPriority, mode: PreferMode) -> Option<ThreadNode> {
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     let highest_active = tbl.highest_active();
-    if highest_active > prio as u32 {
-        return None;
+    // highest_active is trailing_zeros(): 0 = highest priority. When a
+    // same-priority ready thread exists, highest_active == prio.
+    match mode {
+        PreferMode::StrictHigher => {
+            if highest_active >= prio as u32 {
+                return None;
+            }
+        }
+        PreferMode::SameOrHigher => {
+            if highest_active > prio as u32 {
+                return None;
+            }
+        }
     }
     inner_next_thread(tbl, highest_active as usize)
 }
@@ -118,18 +139,21 @@ where
         return None;
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
-    if !queue_ready_thread_inner(&mut tbl, t) {
+    if !queue_ready_thread_inner(&mut tbl, &t) {
+        // back to old_state.
+        t.transfer_state(thread::READY, old_state);
         return None;
     }
+    drop(tbl);
     Some(post_action())
 }
 
 #[inline]
-fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: ThreadNode) -> bool {
+fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadNode) -> bool {
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
     let q = &mut tbl.tables[priority as usize];
-    if !q.push_back(t) {
+    if !q.push_back(t.clone()) {
         return false;
     }
     tbl.set_active_queue(priority as u32);
@@ -152,8 +176,25 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
     }
     let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
     t.transfer_state(old_state, thread::READY)?;
-    let ok = queue_ready_thread_inner(&mut tbl, t);
-    debug_assert!(ok);
+    let ok = queue_ready_thread_inner(&mut tbl, &t);
+    if !ok {
+        // push_back failed: thread is in READY state with sched_node still
+        // detached. Roll back to old_state so the thread stays in its wait
+        // queue. If this rollback CAS also fails, the thread has been
+        // concurrently mutated by another path and is now stranded in READY
+        // with no ready-queue linkage — a permanent ghost that no scheduler
+        // path can recover. Surface it loudly.
+        let rollback = t.transfer_state(thread::READY, old_state);
+        debug_assert!(
+            rollback.is_ok(),
+            "queue_ready_thread rollback failed for TH:0x{:x}: state was {:?}, expected READY; alien_ptr={:?}, priority={}, thread is now ghost",
+            Thread::id(&t),
+            rollback,
+            t.get_alien_ptr(),
+            t.priority(),
+        );
+        return Err(old_state);
+    }
     drop(tbl);
     #[cfg(smp)]
     super::notify_idle_cores(1);
@@ -194,7 +235,7 @@ pub fn update_ready_thread_priority(
     thread_guard.set_priority(new_priority);
     drop(thread_guard);
 
-    if queue_ready_thread_inner(&mut tbl, t.clone()) {
+    if queue_ready_thread_inner(&mut tbl, t) {
         return Ok(());
     }
     Err(thread::RUNNING)

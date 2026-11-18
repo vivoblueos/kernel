@@ -15,19 +15,23 @@
 import("//build/boards/${board}.gni")
 import("//build/templates/build_template.gni")
 import("//build/toolchain/blueos.gni")
+import("//kernel/scal/features.gni")
 
 _loader_unittest_boards = [
   "qemu_riscv32",
   "qemu_riscv64",
   "qemu_virt64_aarch64",
 ]
-_loader_unittest_enabled =
-    !coverage && !profile &&
-    filter_include(_loader_unittest_boards, [ board ]) != []
+_loader_unittest_enabled = !coverage && !profile &&
+                           filter_include(_loader_unittest_boards, [ board ]) !=
+                           [] && syscall_mode != "linux_abi"
 
 group("check_loader") {
   testonly = true
-  deps = [ "tests:run_loader_integration_test" ]
+  deps = []
+  if (syscall_mode != "linux_abi") {
+    deps += [ "tests:run_loader_integration_test" ]
+  }
   if (_loader_unittest_enabled) {
     deps += [ ":run_loader_unittest" ]
   }
@@ -111,10 +115,10 @@ if (_loader_unittest_enabled) {
 
 group("check_loader_by_clippy") {
   testonly = true
-  deps = [
-    ":blueos_loader_clippy",
-    "tests/integration_test:loader_integration_test_clippy",
-  ]
+  deps = [ ":blueos_loader_clippy" ]
+  if (syscall_mode != "linux_abi") {
+    deps += [ "tests/integration_test:loader_integration_test_clippy" ]
+  }
   if (_loader_unittest_enabled) {
     deps += [ ":loader_unittest_clippy" ]
   }
