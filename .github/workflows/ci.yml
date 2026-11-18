@@ -13,6 +13,7 @@
 # limitations under the License.
 name: BlueKernel CI
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -33,7 +34,7 @@ jobs:
     container:
       image: ghcr.io/vivoblueos/kernel:latest
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -45,6 +46,9 @@ jobs:
           BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.sha }}
         run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            BASE_SHA=$(git merge-base refs/remotes/origin/main "$HEAD_SHA")
+          fi
           python3 tools/ci/check_changes.py \
             --base "$BASE_SHA" \
             --head "$HEAD_SHA"
@@ -55,7 +59,7 @@ jobs:
     container:
       image: ghcr.io/vivoblueos/kernel:latest
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -138,7 +142,7 @@ jobs:
         build_type: [debug, release]
         syscall_mode: [swi, dsc]
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -207,7 +211,7 @@ jobs:
             build_type: release
             syscall_mode: linux_abi
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -237,7 +241,7 @@ jobs:
     container:
       image: ghcr.io/vivoblueos/kernel:latest
     steps:
-      - name: Check out pull request
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -270,7 +274,7 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Require every PR CI job to pass
+      - name: Require every CI job to pass
         env:
           STATIC_CHECKS_RESULT: ${{ needs.static-checks.result }}
           DEPENDENCIES_RESULT: ${{ needs.resolve-dependencies.result }}
