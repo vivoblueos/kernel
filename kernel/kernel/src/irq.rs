@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{arch, support::DisableInterruptGuard, time, types::Uint};
+use crate::{
+    arch,
+    support::DisableInterruptGuard,
+    time,
+    types::{NotThreadSafe, Uint},
+};
 use blueos_kconfig::CONFIG_NUM_CORES as NUM_CORES;
 use core::sync::atomic::Ordering;
 
@@ -20,13 +25,23 @@ use core::sync::atomic::Ordering;
 pub(crate) static mut IRQ_NESTING_COUNT: [Uint; NUM_CORES as usize] =
     [const { 0 }; NUM_CORES as usize];
 
+/// Tracks an interrupt until the guard is dropped in the same IRQ context.
+#[must_use]
 pub struct IrqTrace {
     irq_number: arch::irq::IrqNumber,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: A shared reference exposes no operations on the CPU-local nesting
+// count. Dropping the guard decrements that count and requires ownership.
+unsafe impl Sync for IrqTrace {}
 
 impl IrqTrace {
     pub fn new(irq_number: arch::irq::IrqNumber) -> Self {
-        let irq_trace = Self { irq_number };
+        let irq_trace = Self {
+            irq_number,
+            _not_send: NotThreadSafe,
+        };
         irq_trace.enter();
         irq_trace
     }
