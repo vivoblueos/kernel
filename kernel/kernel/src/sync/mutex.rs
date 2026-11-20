@@ -26,7 +26,7 @@
 // consistency, instead it utilizes a local approach, while keeping the above
 // invariance, to achieve a not bad result.
 
-use super::{SpinLock, SpinLockGuard};
+use super::{OwnedIrqSpinLockGuard, SpinLock};
 use crate::{
     irq,
     scheduler::{self, wait_queue, InsertMode, OffsetOfWait, WaitEntry, WaitQueue},
@@ -77,7 +77,7 @@ impl Mutex {
         self.pending.irqsave_lock().init()
     }
 
-    pub fn waitqueue_guard(&self) -> SpinLockGuard<'_, WaitQueue> {
+    pub fn waitqueue_guard(&self) -> OwnedIrqSpinLockGuard<'_, WaitQueue> {
         self.pending.irqsave_lock()
     }
 
@@ -199,10 +199,10 @@ impl Mutex {
     fn inner_pend_for<'a>(
         ticks: Tick,
         this_mutex: &'a Arc<Self>,
-        mut this_lock: SpinLockGuard<'a, WaitQueue>,
+        mut this_lock: OwnedIrqSpinLockGuard<'a, WaitQueue>,
         this_thread: &'a ThreadNode,
         owner_thread: &ThreadNode,
-    ) -> (bool, SpinLockGuard<'a, WaitQueue>) {
+    ) -> (bool, OwnedIrqSpinLockGuard<'a, WaitQueue>) {
         // Publish the wait edge before propagating priority. A concurrent donor
         // either sees this edge and follows it, or promotes us before we acquire
         // our thread lock below, so this walk observes the inherited priority.
@@ -309,7 +309,7 @@ impl Mutex {
         _target_prio: ThreadPriority,
         who: &ThreadNode,
         mutex: &Arc<Self>,
-        mutex_lock: &mut SpinLockGuard<'_, WaitQueue>,
+        mutex_lock: &mut OwnedIrqSpinLockGuard<'_, WaitQueue>,
     ) -> bool {
         let Some(pending_on_mutex) = who.pending_on_mutex() else {
             return false;

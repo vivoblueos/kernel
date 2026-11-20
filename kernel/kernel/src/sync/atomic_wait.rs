@@ -110,8 +110,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), 
         |e| unsafe { Arc::clone_from(e) },
     );
     let t = scheduler::current_thread();
-    let mut we = entry.pending.lock();
-    we.take_irq_guard(w.get_guard_mut());
+    let mut we = entry.pending.irqsave_lock();
     drop(w);
     #[cfg(debugging_scheduler)]
     crate::trace!(
@@ -126,7 +125,7 @@ pub fn atomic_wait(atom: &AtomicUsize, val: usize, timeout: Tick) -> Result<(), 
             wait_queue::insert(we.deref_mut(), &mut wait_entry, InsertMode::InsertToEnd).unwrap();
         reached_deadline = scheduler::suspend_me_for(timeout, Some(we));
         w = EntryListHead::lock();
-        we = entry.pending.lock();
+        we = entry.pending.irqsave_lock();
         borrowed_wait_entry = we.pop(borrowed_wait_entry).unwrap();
     });
     if we.is_empty() {
@@ -161,8 +160,7 @@ pub fn atomic_wake(atom: &AtomicUsize, how_many: usize) -> Result<usize, Error> 
     let Some(entry) = entry else {
         return Ok(woken);
     };
-    let mut we = entry.pending.lock();
-    we.take_irq_guard(w.get_guard_mut());
+    let mut we = entry.pending.irqsave_lock();
     drop(w);
     for next in we.iter() {
         if scheduler::queue_ready_thread(thread::SUSPENDED, next.thread.clone()).is_err() {

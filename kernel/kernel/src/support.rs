@@ -14,7 +14,7 @@
 
 use crate::{
     arch,
-    sync::spinlock::{SpinLock, SpinLockGuard},
+    sync::spinlock::{OwnedIrqSpinLockGuard, SpinLock},
     thread::ThreadNode,
     types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, NotThreadSafe, Uint},
 };
@@ -309,14 +309,14 @@ impl<T: Sized, A: IntrusiveAdapter<T>, const N: usize> ArcBufferingQueue<T, A, N
 
     #[inline]
     #[allow(clippy::unnecessary_cast)]
-    pub fn advance_active_queue(&self) -> SpinLockGuard<'_, ArcList<T, A>> {
+    pub fn advance_active_queue(&self) -> OwnedIrqSpinLockGuard<'_, ArcList<T, A>> {
         let i = self.active.fetch_add(1, Ordering::AcqRel) as usize;
         self.queues[i % N].irqsave_lock()
     }
 
     #[inline]
     #[allow(clippy::unnecessary_cast)]
-    pub fn get_active_queue(&self) -> SpinLockGuard<'_, ArcList<T, A>> {
+    pub fn get_active_queue(&self) -> OwnedIrqSpinLockGuard<'_, ArcList<T, A>> {
         let i = self.active.load(Ordering::Acquire) as usize;
         self.queues[i % N].irqsave_lock()
     }
