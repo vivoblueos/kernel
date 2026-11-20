@@ -26,7 +26,7 @@ use blueos::{
     sync::{
         atomic_wait, atomic_wake,
         event_flags::{EventFlags, EventFlagsMode},
-        ConstBarrier, SpinLockGuard,
+        ConstBarrier, OwnedIrqSpinLockGuard,
     },
     thread::{self, Entry, GlobalQueueVisitor, Thread},
     time,
@@ -68,7 +68,7 @@ impl Os2Thread {
         to self.inner() {
             pub fn priority(&self) -> ThreadPriority;
             pub fn state(&self) -> Uint;
-            pub fn lock(&self) -> SpinLockGuard<'_, Thread>;
+            pub fn lock(&self) -> OwnedIrqSpinLockGuard<'_, Thread>;
             pub fn stack_size(&self) -> usize;
             pub fn stack_base(&self) -> usize;
             pub fn saved_stack_usage(&self) -> usize;

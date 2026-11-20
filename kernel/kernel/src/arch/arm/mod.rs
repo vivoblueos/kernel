@@ -568,7 +568,10 @@ impl Context {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq() {
+/// # Safety
+/// No live execution lease may require IRQs to remain masked. Only architecture
+/// entry/exit code may bypass the nesting-aware IRQ guard.
+pub unsafe extern "C" fn enable_local_irq() {
     unsafe {
         core::arch::asm!(
             "msr basepri, {}",
@@ -578,11 +581,11 @@ pub extern "C" fn enable_local_irq() {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub extern "C" fn disable_local_irq() {
     unsafe {
         core::arch::asm!(
-            "msr basepri, {}",
+            "msr basepri_max, {}",
             "isb",
             in(reg) DISABLE_LOCAL_IRQ_BASEPRI,
             options(nostack),
@@ -599,7 +602,7 @@ pub extern "C" fn disable_local_irq_save() -> usize {
             concat!(
                 "
                 mrs {old}, basepri
-                msr basepri, {val}
+                msr basepri_max, {val}
                 isb
                 ",
             ),
@@ -614,7 +617,7 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 
 #[coverage(off)]
 #[cfg_attr(debug, inline(never))]
-pub extern "C" fn enable_local_irq_restore(old: usize) {
+pub unsafe extern "C" fn enable_local_irq_restore(old: usize) {
     atomic::compiler_fence(Ordering::SeqCst);
     unsafe {
         core::arch::asm!(
@@ -652,6 +655,7 @@ pub extern "C" fn current_psp() -> usize {
 
 #[inline(never)]
 pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    crate::sync::local_context::assert_can_switch();
     unsafe {
         core::arch::asm!(
             "movs {tmp}, r7",

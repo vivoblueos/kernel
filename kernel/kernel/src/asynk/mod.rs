@@ -22,7 +22,7 @@ use crate::{
     scheduler::WaitQueue,
     static_arc,
     support::ArcBufferingQueue,
-    sync::{atomic_wait, SpinLock, SpinLockGuard},
+    sync::{atomic_wait, OwnedIrqSpinLockGuard, SpinLock},
     thread::{self, Entry, SystemThreadStorage, ThreadKind, ThreadNode},
     time::Tick,
     types::{impl_simple_intrusive_adapter, Arc, IlistHead},
@@ -61,7 +61,7 @@ impl Tasklet {
         }
     }
 
-    fn lock_inner(&self) -> SpinLockGuard<'_, TaskletInner> {
+    fn lock_inner(&self) -> OwnedIrqSpinLockGuard<'_, TaskletInner> {
         self.inner.irqsave_lock()
     }
 }

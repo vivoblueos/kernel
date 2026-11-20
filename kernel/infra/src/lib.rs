@@ -31,6 +31,7 @@
 pub mod intrusive;
 pub mod lifetime;
 pub mod list;
+pub mod marker;
 pub mod no_let_underscore;
 pub mod rbtree;
 pub mod ringbuffer;
@@ -40,5 +41,5 @@ pub mod string;
 pub mod tinyarc;
 pub use tinyarc::sorted_list;
 pub mod iheap;
-pub mod nolock;
+pub mod local_rwlock;
 pub mod tinyrwlock;
