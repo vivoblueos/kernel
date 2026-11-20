@@ -87,3 +87,43 @@ group("run_tests") {
     ":run_tm_synchronization_processing_test",
   ]
 }
+
+# Real-kernel lock contract checks, separate from measured benchmarks.
+foreach(probe,
+        [
+          "local_lock_contract_probe",
+          "local_lock_reject_yield_probe",
+          "local_lock_high_irq_probe",
+        ]) {
+  build_rust(probe) {
+    crate_type = "bin"
+    sources = [ "src/local_lock_probe.rs" ]
+    configs += [ "//build/boards/${board}:kernel_config" ]
+    deps = board_deps + [
+             "//kernel/kernel:blueos",
+             "//kernel/rsrt",
+             "//libs/libc",
+             "//libs/librs",
+           ]
+    linker_script = default_linker_script
+    if (probe == "local_lock_high_irq_probe") {
+      rustflags = [ "--cfg=probe_high_irq" ]
+    }
+    if (probe == "local_lock_reject_yield_probe") {
+      rustflags = [ "--cfg=probe_yield_in_lock" ]
+    }
+  }
+}
+
+build_rust("contended_semaphore_probe") {
+  crate_type = "bin"
+  sources = [ "src/contended_semaphore_probe.rs" ]
+  configs += [ "//build/boards/${board}:kernel_config" ]
+  deps = board_deps + [
+           "//kernel/kernel:blueos",
+           "//kernel/rsrt",
+           "//libs/libc",
+           "//libs/librs",
+         ]
+  linker_script = default_linker_script
+}
