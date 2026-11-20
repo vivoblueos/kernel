@@ -31,6 +31,7 @@
 pub mod intrusive;
 pub mod lifetime;
 pub mod list;
+pub mod marker;
 pub mod no_let_underscore;
 pub mod rbtree;
 pub mod ringbuffer;
