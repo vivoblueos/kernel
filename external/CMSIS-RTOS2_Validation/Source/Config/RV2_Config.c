@@ -33,7 +33,7 @@ extern int stdout_putchar (int ch);
 
 typedef unsigned short IRQn_Type;
 /* forward to rust */
-extern void NVIC_SetPriority(IRQn_Type IRQn, char priority);
+extern void configure_validation_irqs(IRQn_Type primary, IRQn_Type secondary);
 extern void NVIC_EnableIRQ(IRQn_Type IRQn);
 extern void NVIC_DisableIRQ(IRQn_Type IRQn);
 extern uint32_t NVIC_GetPendingIRQ(IRQn_Type IRQn);
@@ -65,9 +65,8 @@ void TST_IRQ_HANDLER_B (void) {
 void TS_Init (void) {
 
 #if defined(__CORTEX_M)
-  /* Set primary and secondary interrupt priority */
-  NVIC_SetPriority ((IRQn_Type)TST_IRQ_NUM_A, 5U);
-  NVIC_SetPriority ((IRQn_Type)TST_IRQ_NUM_B, 4U);
+  /* Install the validation handlers and set their kernel-callable priorities. */
+  configure_validation_irqs (TST_IRQ_NUM_A, TST_IRQ_NUM_B);
 
   /* Enable interrupts */
   NVIC_EnableIRQ((IRQn_Type)TST_IRQ_NUM_A);
