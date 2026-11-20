@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{SpinLock, SpinLockGuard};
+use super::{OwnedIrqSpinLockGuard, SpinLock};
 use crate::{
     error::code,
     irq, scheduler,
@@ -71,12 +71,29 @@ impl Semaphore {
         true
     }
 
+    #[inline(always)]
     pub fn acquire_notimeout<M>(&self) -> bool
     where
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
-        let mut w = self.pending.irqsave_lock();
+        let w = self.pending.irqsave_lock();
+        let old = self.counter.get();
+        if old != 0 {
+            self.counter.set(old - 1);
+            return true;
+        }
+        self.acquire_notimeout_slow::<M>(w)
+    }
+
+    // Keep wait-entry/timer setup out of the uncontended path's stack frame.
+    // The existing payload borrow and IRQ lease are passed in, never reacquired.
+    #[cold]
+    #[inline(never)]
+    fn acquire_notimeout_slow<'a, M>(&'a self, mut w: OwnedIrqSpinLockGuard<'a, WaitQueue>) -> bool
+    where
+        M: InsertModeTrait,
+    {
         loop {
             let old = self.counter.get();
             #[cfg(debugging_scheduler)]
@@ -94,8 +111,7 @@ impl Semaphore {
                 return true;
             }
             with_iou!(|borrowed_wait_entry| {
-                let this_thread = scheduler::current_thread();
-                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                let mut wait_entry = WaitEntry::new(scheduler::current_thread_with(w.irq_guard()));
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
                 let timeout = scheduler::suspend_me_for(Tick::MAX, Some(w));
@@ -103,7 +119,7 @@ impl Semaphore {
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
                 // ERESET injected by reset()/delete()? Bail out.
-                if this_thread.take_wait_error() != 0 {
+                if wait_entry.thread.take_wait_error() != 0 {
                     return false;
                 }
             });
@@ -138,15 +154,14 @@ impl Semaphore {
             }
             let timeout;
             with_iou!(|borrowed_wait_entry| {
-                let this_thread = scheduler::current_thread();
-                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                let mut wait_entry = WaitEntry::new(scheduler::current_thread_with(w.irq_guard()));
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
                 timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
                 // ERESET injected by reset()/delete()? Bail out.
-                if this_thread.take_wait_error() != 0 {
+                if wait_entry.thread.take_wait_error() != 0 {
                     return false;
                 }
             });
@@ -171,7 +186,7 @@ impl Semaphore {
         self.acquire_timeout::<M>(timeout)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn release(&self) {
         let w = self.pending.irqsave_lock();
         let old = self.counter.get();
@@ -193,11 +208,11 @@ impl Semaphore {
 
     #[cold]
     #[inline(never)]
-    fn wake_waiter(w: SpinLockGuard<'_, WaitQueue>) {
+    fn wake_waiter(w: OwnedIrqSpinLockGuard<'_, WaitQueue>) {
         let mut woken = false;
+        let irq = w.irq_guard();
         for next in w.iter() {
-            let t = next.thread.clone();
-            if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
+            if scheduler::queue_ready_thread_with(thread::SUSPENDED, &next.thread, irq).is_ok() {
                 woken = true;
                 break;
             }
