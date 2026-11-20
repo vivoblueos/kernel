@@ -53,7 +53,9 @@ pub(crate) extern "C" fn pend_switch_context() {
     let level = disable_local_irq_save();
     let id = current_cpu_id();
     unsafe { PENDING_SWITCH_CONTEXT[id].set(true) };
-    enable_local_irq_restore(level);
+    unsafe {
+        enable_local_irq_restore(level);
+    }
 }
 
 #[inline]
@@ -62,7 +64,9 @@ pub(crate) extern "C" fn claim_switch_context() -> bool {
     let id = current_cpu_id();
     let ok = unsafe { PENDING_SWITCH_CONTEXT[id].get() };
     unsafe { PENDING_SWITCH_CONTEXT[id].set(false) };
-    enable_local_irq_restore(level);
+    unsafe {
+        enable_local_irq_restore(level);
+    }
     ok
 }
 
@@ -339,7 +343,10 @@ pub(crate) extern "C" fn disable_local_irq() {
 }
 
 #[inline]
-pub(crate) extern "C" fn enable_local_irq() {
+/// # Safety
+/// No live execution lease may require IRQs to remain masked. Only architecture
+/// entry/exit code may bypass the nesting-aware IRQ guard.
+pub(crate) unsafe extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!(set_mstatus_mie!(), options(nostack)) };
     compiler_fence(Ordering::SeqCst);
 }
@@ -364,7 +371,7 @@ pub(crate) extern "C" fn disable_local_irq_save() -> usize {
 }
 
 #[inline]
-pub(crate) extern "C" fn enable_local_irq_restore(old: usize) {
+pub(crate) unsafe extern "C" fn enable_local_irq_restore(old: usize) {
     unsafe {
         core::arch::asm!("csrw mstatus, {old}", old = in(reg) old,
                          options(nostack))
@@ -380,6 +387,7 @@ pub extern "C" fn current_sp() -> usize {
 }
 
 pub(crate) extern "C" fn ecall_switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    crate::sync::local_context::assert_can_switch();
     unsafe {
         core::arch::asm!(
             "ecall",
@@ -392,6 +400,7 @@ pub(crate) extern "C" fn ecall_switch_context_with_hook(hook: *mut ContextSwitch
 
 #[inline(always)]
 pub(crate) extern "C" fn switch_context_with_hook(hook: *mut ContextSwitchHookHolder) {
+    crate::sync::local_context::assert_can_switch();
     ecall_switch_context_with_hook(hook)
 }
 
