@@ -354,6 +354,10 @@ impl<T: Sized, A: Adapter<T>> TinyArcList<T, A> {
         Some(unsafe { Self::clone_from(next.as_ref()) })
     }
 
+    // TODO(#559): Rework how detach updates head.next through the first node's prev
+    // pointer. Until then, inlining on RV32 release can elide the caller's post-pop
+    // emptiness check and leave an empty scheduler queue marked active.
+    #[inline(never)]
     pub fn pop_front(&mut self) -> Option<TinyArc<T>> {
         if self.is_empty() {
             return None;
