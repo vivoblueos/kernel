@@ -17,6 +17,7 @@ use crate::{
     boards::ClockImpl,
     config::MAX_THREAD_PRIORITY,
     scheduler, static_arc,
+    support::DisableInterruptGuard,
     sync::{atomic_wait, atomic_wake, SpinLock},
     thread,
     thread::{Entry, SystemThreadStorage, ThreadKind, ThreadNode},
@@ -231,22 +232,32 @@ pub fn remove_soft_timer<'a>(iou: Iou<'_>) -> Option<Iou<'a>> {
 }
 
 pub fn add_hard_timer(tm: &mut Timer) -> Option<Iou<'_>> {
-    let res;
-    {
-        let mut w = HW_TIMERS.irqsave_lock();
-        res = w.add(tm);
-    }
+    let res = HW_TIMERS.irqsave_lock().add(tm);
     update_clock_interrupt();
     res
 }
 
+pub(crate) fn add_hard_timer_with<'tm>(
+    tm: &'tm mut Timer,
+    irq: &DisableInterruptGuard,
+) -> Option<Iou<'tm>> {
+    let res = HW_TIMERS.lock_with(irq).add(tm);
+    update_clock_interrupt_with(irq);
+    res
+}
+
 pub fn remove_hard_timer<'a>(iou: Iou<'_>) -> Option<Iou<'a>> {
-    let res;
-    {
-        let mut w = HW_TIMERS.irqsave_lock();
-        res = w.remove(iou);
-    }
+    let res = HW_TIMERS.irqsave_lock().remove(iou);
     update_clock_interrupt();
+    res
+}
+
+pub(crate) fn remove_hard_timer_with<'a>(
+    iou: Iou<'_>,
+    irq: &DisableInterruptGuard,
+) -> Option<Iou<'a>> {
+    let res = HW_TIMERS.lock_with(irq).remove(iou);
+    update_clock_interrupt_with(irq);
     res
 }
 
@@ -298,6 +309,20 @@ fn update_clock_interrupt() -> Tick {
         .unwrap_or(Tick::MAX);
     let next_deadline = core::cmp::min(soft_deadline, hard_deadline);
     Tick::interrupt_at(next_deadline);
+    next_deadline
+}
+
+fn update_clock_interrupt_with(irq: &DisableInterruptGuard) -> Tick {
+    let soft_deadline = {
+        let mut w = unsafe { &SW_TIMER_WORKER.timers }.lock_with(irq);
+        w.next_deadline().unwrap_or(Tick::MAX)
+    };
+    let hard_deadline = HW_TIMERS
+        .lock_with(irq)
+        .next_deadline()
+        .unwrap_or(Tick::MAX);
+    let next_deadline = core::cmp::min(soft_deadline, hard_deadline);
+    Tick::interrupt_at_with(next_deadline, irq);
     next_deadline
 }
 
