@@ -98,7 +98,8 @@ pub const INTERRUPT_TABLE_LEN: usize = 1024;
 
 pub struct IrqContext {
     pub irq: IrqNumber,
-    pub handler: Box<dyn IsrDesc>,
+    // The registry owns the handler, which another thread can replace or remove.
+    pub handler: Box<dyn IsrDesc + Send>,
 }
 
 impl core::fmt::Display for IrqContext {
@@ -108,7 +109,7 @@ impl core::fmt::Display for IrqContext {
 }
 
 impl IrqContext {
-    fn new(irq: IrqNumber, handler: Box<dyn IsrDesc>) -> Self {
+    fn new(irq: IrqNumber, handler: Box<dyn IsrDesc + Send>) -> Self {
         Self { irq, handler }
     }
 }
@@ -130,7 +131,7 @@ impl IrqManager {
     fn register_handler(
         &mut self,
         irq: IrqNumber,
-        handler: Box<dyn IsrDesc>,
+        handler: Box<dyn IsrDesc + Send>,
     ) -> Result<(), &'static str> {
         if u32::from(irq) >= INTERRUPT_TABLE_LEN as u32 {
             return Err("IRQ number out of range");
@@ -149,7 +150,10 @@ impl IrqManager {
 }
 
 // Register interrupt handler
-pub fn register_handler(irq: IrqNumber, handler: Box<dyn IsrDesc>) -> Result<(), &'static str> {
+pub fn register_handler(
+    irq: IrqNumber,
+    handler: Box<dyn IsrDesc + Send>,
+) -> Result<(), &'static str> {
     IRQ_MANAGER.lock().register_handler(irq, handler)
 }
 
