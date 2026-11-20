@@ -93,7 +93,12 @@ impl Tick {
     }
 
     pub fn interrupt_at(n: Tick) {
-        let _guard = DisableInterruptGuard::new();
+        let guard = DisableInterruptGuard::new();
+        Self::interrupt_at_with(n, &guard);
+    }
+
+    #[inline]
+    pub(crate) fn interrupt_at_with(n: Tick, _irq: &DisableInterruptGuard) {
         if n == Self::MAX {
             ClockImpl::stop();
             return;

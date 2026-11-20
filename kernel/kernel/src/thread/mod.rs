@@ -26,7 +26,7 @@ use crate::{
     support::{Region, RegionalObjectBuilder, Storage},
     sync::{
         mutex::{MutexList, MutexListIterator},
-        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
+        ISpinLock, Mutex, OwnedIrqSpinLockGuard, SpinLock,
     },
     thread::builder::GlobalQueue,
     time::Tick,
@@ -311,8 +311,15 @@ impl Thread {
 
     // FIXME: rustc miscompiles it if not inlined.
     #[inline]
-    pub fn lock(&self) -> SpinLockGuard<'_, Self> {
+    pub fn lock(&self) -> OwnedIrqSpinLockGuard<'_, Self> {
         self.lock.irqsave_lock()
+    }
+    #[inline(always)]
+    pub(crate) fn lock_with<'a>(
+        &'a self,
+        irq: &'a crate::support::DisableInterruptGuard,
+    ) -> crate::sync::spinlock::BorrowedSpinLockGuard<'a, Self> {
+        self.lock.lock_with(irq)
     }
 
     #[inline(always)]
@@ -458,7 +465,7 @@ impl Thread {
     }
 
     #[inline]
-    pub fn acquired_mutexes_mut(&self) -> SpinLockWriteGuard<'_, MutexList> {
+    pub fn acquired_mutexes_mut(&self) -> OwnedIrqSpinLockGuard<'_, MutexList> {
         self.acquired_mutexes.irqsave_write()
     }
 
