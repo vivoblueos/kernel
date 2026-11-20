@@ -168,7 +168,10 @@ extern "C" fn handle_svc(context: &mut Context) -> usize {
             context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
         ],
     };
-    enable_local_irq();
+    crate::sync::local_context::assert_can_switch();
+    unsafe {
+        enable_local_irq();
+    }
     context.x0 = dispatch_syscall(&sc);
     disable_local_irq();
     compiler_fence(Ordering::SeqCst);
