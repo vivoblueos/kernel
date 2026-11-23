@@ -680,4 +680,45 @@ mod tests {
         wait_until(2, &observed);
         assert_eq!(observed.load(Ordering::Acquire), 2);
     }
+    #[cfg(not(smp))]
+    #[test]
+    fn up_permit_fast_path_after_timeout_and_reset() {
+        let sem = Arc::new(Semaphore::new());
+        assert!(sem.init(0));
+        assert!(!sem.acquire_timeout::<InsertToEnd>(Tick(2)));
+        {
+            let q = sem.pending.irqsave_lock();
+            assert!(q.is_empty() && !sem.has_waiters.get());
+        }
+
+        let observed = Arc::new(AtomicUsize::new(0));
+        let worker_sem = sem.clone();
+        let done = observed.clone();
+        let worker = thread::spawn(move || {
+            assert!(!worker_sem.acquire_notimeout::<InsertToEnd>());
+            done.store(1, Ordering::Release);
+            wake(&done);
+        })
+        .unwrap();
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        {
+            let q = sem.pending.irqsave_lock();
+            assert!(!q.is_empty() && sem.has_waiters.get());
+        }
+        assert_eq!(sem.reset(), 1);
+        wait_until(1, &observed);
+        {
+            let q = sem.pending.irqsave_lock();
+            assert!(q.is_empty() && !sem.has_waiters.get());
+        }
+        let outer = crate::support::DisableInterruptGuard::new();
+        sem.release();
+        assert!(sem.acquire_notimeout::<InsertToEnd>());
+        assert!(!crate::arch::local_irq_enabled());
+        drop(outer);
+        assert!(crate::arch::local_irq_enabled());
+        assert_eq!(sem.count(), 0);
+    }
 }
