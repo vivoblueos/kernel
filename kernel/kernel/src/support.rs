@@ -33,6 +33,13 @@ use core::{
 pub struct DisableInterruptGuard(NotThreadSafe);
 
 impl DisableInterruptGuard {
+    /// # Safety
+    /// The caller just registered exactly one owning IRQ lease on this CPU.
+    #[cfg(not(smp))]
+    pub(crate) unsafe fn from_registered() -> Self {
+        Self(NotThreadSafe)
+    }
+
     /// Borrows proof of an IRQ mask established by architecture code.
     ///
     /// # Safety

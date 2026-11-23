@@ -63,7 +63,7 @@ pub type SpinLockWriteGuard<'a, T> = SpinLockGuard<'a, T>;
 #[must_use]
 pub struct SpinLockGuard<'a, T: ?Sized> {
     lock_guard: ManuallyDrop<WriteGuard<'a, T>>,
-    _preempt: PreemptLease,
+    preempt: ManuallyDrop<PreemptLease>,
 }
 // SAFETY: shared access exposes only &T; mutation and release need ownership
 // or &mut Guard. Preserve the existing conservative bound.
@@ -72,7 +72,7 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for SpinLockGuard<'_, T> {}
 #[derive(Debug)]
 #[must_use]
 enum ReadProtection {
-    Plain { _lease: PreemptLease },
+    Plain { lease: ManuallyDrop<PreemptLease> },
     Irq { _guard: DisableInterruptGuard },
 }
 
@@ -107,22 +107,24 @@ impl<T: ?Sized> Deref for SpinLockReadGuard<'_, T> {
 impl<T: ?Sized> Drop for SpinLockGuard<'_, T> {
     #[inline(always)]
     fn drop(&mut self) {
-        // On UP the borrow count must be updated with kernel IRQs masked.
-        #[cfg(not(smp))]
-        let _irq = DisableInterruptGuard::new();
         unsafe {
-            ManuallyDrop::drop(&mut self.lock_guard);
-        }
+            PreemptLease::release_after(&mut self.preempt, || {
+                // SAFETY: this is the only drop of the payload guard.
+                ManuallyDrop::drop(&mut self.lock_guard);
+            })
+        };
     }
 }
 impl<T: ?Sized> Drop for SpinLockReadGuard<'_, T> {
     #[inline(always)]
     fn drop(&mut self) {
-        #[cfg(not(smp))]
-        let _irq = matches!(self.protection, ReadProtection::Plain { .. })
-            .then(DisableInterruptGuard::new);
-        unsafe {
-            ManuallyDrop::drop(&mut self.lock_guard);
+        // SAFETY: exactly one arm releases the payload, before its protection.
+        let mut unlock = || unsafe { ManuallyDrop::drop(&mut self.lock_guard) };
+        match &mut self.protection {
+            ReadProtection::Plain { lease } => unsafe {
+                PreemptLease::release_after(lease, unlock)
+            },
+            ReadProtection::Irq { .. } => unlock(),
         }
     }
 }
@@ -146,15 +148,25 @@ impl<T: ?Sized> SpinLock<T> {
     }
     #[inline(always)]
     pub fn try_lock(&self) -> Option<SpinLockGuard<'_, T>> {
-        let irq = DisableInterruptGuard::new();
-        let preempt = PreemptLease::new_with(&irq);
+        #[cfg(not(smp))]
+        // SAFETY: no callback or scheduling occurs. The returned guard holds a
+        // preemption lease and its destructor masks IRQs before releasing it.
+        let (g, preempt) = unsafe {
+            super::local_context::with_short_mask(|irq| {
+                let g = self.lock.try_write()?;
+                Some((g, PreemptLease::new_with(irq)))
+            })
+        }?;
         #[cfg(smp)]
-        drop(irq);
-        // SAFETY: on UP, irq protects acquisition and SpinLockGuard masks IRQs on drop.
-        let g = unsafe { self.lock.try_write()? };
+        let (g, preempt) = {
+            let irq = DisableInterruptGuard::new();
+            let preempt = PreemptLease::new_with(&irq);
+            drop(irq);
+            (self.lock.try_write()?, preempt)
+        };
         Some(SpinLockGuard {
             lock_guard: ManuallyDrop::new(g),
-            _preempt: preempt,
+            preempt: ManuallyDrop::new(preempt),
         })
     }
     #[inline(always)]
@@ -168,21 +180,47 @@ impl<T: ?Sized> SpinLock<T> {
     }
     #[inline(always)]
     pub fn try_read(&self) -> Option<SpinLockReadGuard<'_, T>> {
-        let irq = DisableInterruptGuard::new();
-        let preempt = PreemptLease::new_with(&irq);
+        #[cfg(not(smp))]
+        // SAFETY: no callback or scheduling occurs. The returned guard holds a
+        // preemption lease and its destructor masks IRQs before releasing it.
+        let (g, preempt) = unsafe {
+            super::local_context::with_short_mask(|irq| {
+                let g = self.lock.try_read()?;
+                Some((g, PreemptLease::new_with(irq)))
+            })
+        }?;
         #[cfg(smp)]
-        drop(irq);
-        // SAFETY: on UP, irq protects acquisition and the plain guard masks IRQs on drop.
-        let g = unsafe { self.lock.try_read()? };
+        let (g, preempt) = {
+            let irq = DisableInterruptGuard::new();
+            let preempt = PreemptLease::new_with(&irq);
+            drop(irq);
+            (self.lock.try_read()?, preempt)
+        };
         Some(SpinLockReadGuard {
             lock_guard: ManuallyDrop::new(g),
-            protection: ReadProtection::Plain { _lease: preempt },
+            protection: ReadProtection::Plain {
+                lease: ManuallyDrop::new(preempt),
+            },
         })
     }
     #[inline(always)]
     pub fn lock(&self) -> SpinLockGuard<'_, T> {
         acquire(|| self.try_lock(), "conflicting UP lock borrow")
     }
+    #[cfg(not(smp))]
+    #[inline(always)]
+    pub(super) fn lock_with_owned_irq(
+        &self,
+        irq_guard: DisableInterruptGuard,
+    ) -> OwnedIrqSpinLockGuard<'_, T> {
+        // SAFETY: this mask remains owned through payload guard destruction.
+        let lock_guard = unsafe { self.lock.try_write() }.expect("conflicting UP IRQ lock borrow");
+        OwnedIrqSpinLockGuard {
+            lock_guard,
+            irq_guard,
+        }
+    }
+
     /// Takes a write guard that owns the local IRQ mask through unlock.
     #[inline]
     pub fn irqsave_lock(&self) -> OwnedIrqSpinLockGuard<'_, T> {
@@ -190,9 +228,7 @@ impl<T: ?Sized> SpinLock<T> {
             smp => acquire(|| self.try_irqsave_lock(), "conflicting UP IRQ lock borrow"),
             _ => {
                 let irq_guard = DisableInterruptGuard::new();
-                // SAFETY: the IRQ mask protects the UP borrow count through guard release.
-                let lock_guard = unsafe { self.lock.try_write() }.expect("conflicting UP IRQ lock borrow");
-                OwnedIrqSpinLockGuard { lock_guard, irq_guard }
+                self.lock_with_owned_irq(irq_guard)
             },
         }
     }

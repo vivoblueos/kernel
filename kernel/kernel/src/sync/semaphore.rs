@@ -28,7 +28,10 @@ use core::{cell::Cell, ops::DerefMut};
 #[derive(Debug)]
 pub struct Semaphore {
     counter: Cell<Uint>,
-    // We let the Spinlock protect the whole semaphore.
+    // False means the wait queue is empty. Only admitted, masked UP code
+    // changes this flag, at the same time that it links or unlinks a waiter.
+    #[cfg(not(smp))]
+    has_waiters: Cell<bool>,
     pending: SpinLock<WaitQueue>,
 }
 
@@ -36,6 +39,8 @@ impl Semaphore {
     pub const fn new() -> Self {
         Self {
             counter: Cell::new(1),
+            #[cfg(not(smp))]
+            has_waiters: Cell::new(false),
             pending: SpinLock::new(WaitQueue::new()),
         }
     }
@@ -77,6 +82,12 @@ impl Semaphore {
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
+        #[cfg(not(smp))]
+        let w = match self.fast_permit_or_lease(false) {
+            None => return true,
+            Some(irq) => self.pending.lock_with_owned_irq(irq),
+        };
+        #[cfg(smp)]
         let w = self.pending.irqsave_lock();
         let old = self.counter.get();
         if old != 0 {
@@ -84,6 +95,33 @@ impl Semaphore {
             return true;
         }
         self.acquire_notimeout_slow::<M>(w)
+    }
+
+    #[cfg(not(smp))]
+    #[inline(always)]
+    fn fast_permit_or_lease(&self, release: bool) -> Option<crate::support::DisableInterruptGuard> {
+        // SAFETY: only scalar Cell operations run here. Every other access to
+        // these fields is serialized by the queue guard's owning IRQ mask.
+        unsafe {
+            super::local_context::short_or_owned(|| {
+                let old = self.counter.get();
+                if release {
+                    if self.has_waiters.get() {
+                        return false;
+                    }
+                    let Some(next) = old.checked_add(1) else {
+                        return false;
+                    };
+                    self.counter.set(next);
+                } else {
+                    if old == 0 {
+                        return false;
+                    }
+                    self.counter.set(old - 1);
+                }
+                true
+            })
+        }
     }
 
     // Keep wait-entry/timer setup out of the uncontended path's stack frame.
@@ -114,10 +152,14 @@ impl Semaphore {
                 let mut wait_entry = WaitEntry::new(scheduler::current_thread_with(w.irq_guard()));
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(true);
                 let timeout = scheduler::suspend_me_for(Tick::MAX, Some(w));
                 debug_assert!(!timeout);
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(!w.is_empty());
                 // ERESET injected by reset()/delete()? Bail out.
                 if wait_entry.thread.take_wait_error() != 0 {
                     return false;
@@ -157,9 +199,13 @@ impl Semaphore {
                 let mut wait_entry = WaitEntry::new(scheduler::current_thread_with(w.irq_guard()));
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(true);
                 timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(!w.is_empty());
                 // ERESET injected by reset()/delete()? Bail out.
                 if wait_entry.thread.take_wait_error() != 0 {
                     return false;
@@ -188,6 +234,12 @@ impl Semaphore {
 
     #[inline(always)]
     pub fn release(&self) {
+        #[cfg(not(any(smp, debugging_scheduler)))]
+        let w = match self.fast_permit_or_lease(true) {
+            None => return,
+            Some(irq) => self.pending.lock_with_owned_irq(irq),
+        };
+        #[cfg(any(smp, debugging_scheduler))]
         let w = self.pending.irqsave_lock();
         let old = self.counter.get();
         #[cfg(debugging_scheduler)]

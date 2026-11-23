@@ -64,30 +64,89 @@ fn admit() {
         unsafe {
             core::arch::asm!("mrs {}, ipsr", out(reg) ipsr, options(nomem, nostack, preserves_flags));
         }
-        match ipsr & 0x1ff {
-            // SVC is synchronous. Borrow-state/lease updates never invoke SVC
-            // or callbacks. The actual switch gateway separately checks leases.
-            0 | 11 | 14 => (),
-            15 => {
-                if unsafe {
-                    cortex_m::peripheral::SCB::get_priority(
-                        cortex_m::peripheral::scb::SystemHandler::SysTick,
-                    )
-                } < arch::irq::IRQ_PRIORITY_FOR_SCHEDULER
-                {
-                    invalid_context();
-                }
-            }
-            n if n >= 16 => {
-                if arch::irq::get_irq_priority(arch::irq::IrqNumber::new((n - 16) as u16))
-                    < arch::irq::IRQ_PRIORITY_FOR_SCHEDULER
-                {
-                    invalid_context();
-                }
-            }
-            _ => invalid_context(),
+        let exception = ipsr & 0x1ff;
+        if exception != 0 {
+            admit_exception(exception);
         }
     }
+}
+
+#[cfg(cortex_m)]
+#[cold]
+#[inline(never)]
+fn admit_exception(exception: u32) {
+    match exception {
+        // SVC is synchronous. Borrow-state/lease updates never invoke SVC
+        // or callbacks. The actual switch gateway separately checks leases.
+        11 | 14 => (),
+        15 => {
+            if unsafe {
+                cortex_m::peripheral::SCB::get_priority(
+                    cortex_m::peripheral::scb::SystemHandler::SysTick,
+                )
+            } < arch::irq::IRQ_PRIORITY_FOR_SCHEDULER
+            {
+                invalid_context();
+            }
+        }
+        n if n >= 16 => {
+            if arch::irq::get_irq_priority(arch::irq::IrqNumber::new((n - 16) as u16))
+                < arch::irq::IRQ_PRIORITY_FOR_SCHEDULER
+            {
+                invalid_context();
+            }
+        }
+        _ => invalid_context(),
+    }
+}
+
+#[cfg(not(smp))]
+#[must_use]
+struct ShortMask(usize);
+#[cfg(not(smp))]
+impl Drop for ShortMask {
+    #[inline(always)]
+    fn drop(&mut self) {
+        // SAFETY: this scope is strictly nested; the operation preserves the mask.
+        unsafe { arch::enable_local_irq_restore(self.0) };
+    }
+}
+
+/// A bounded UP operation that only accesses kernel-IRQ-serialized state.
+///
+/// # Safety
+/// The operation must not reschedule, invoke arbitrary code, or change the IRQ
+/// mask or drop an owning IRQ lease. Any borrow surviving the scope needs
+/// independent protection. Releasing the last preemption lease must retry
+/// pending scheduling after the hardware mask has been restored.
+#[cfg(not(smp))]
+#[inline(always)]
+pub(crate) unsafe fn with_short_mask<R>(
+    op: impl for<'a> FnOnce(&'a DisableInterruptGuard) -> R,
+) -> R {
+    admit();
+    let _restore = ShortMask(arch::disable_local_irq_save());
+    // SAFETY: the saved mask stays held throughout this bounded operation.
+    op(unsafe { DisableInterruptGuard::assume_disabled() })
+}
+
+/// Finish a scalar fast operation or promote its hardware mask to one owned
+/// lease without briefly unmasking IRQs on the slow path.
+///
+/// # Safety
+/// The closure must only access IRQ-serialized scalars without calling out.
+#[cfg(not(smp))]
+#[inline(always)]
+pub(super) unsafe fn short_or_owned(op: impl FnOnce() -> bool) -> Option<DisableInterruptGuard> {
+    admit();
+    let mask = ShortMask(arch::disable_local_irq_save());
+    if op() {
+        return None;
+    }
+    register_masked(mask.0);
+    core::mem::forget(mask);
+    // SAFETY: ownership of exactly the lease just registered moves to the caller.
+    Some(unsafe { DisableInterruptGuard::from_registered() })
 }
 
 /// # Safety
@@ -101,7 +160,12 @@ unsafe fn state() -> &'static CpuState {
 pub(crate) fn enter_irq() {
     admit();
     let old = arch::disable_local_irq_save();
-    // SAFETY: mask established before selecting the CPU slot.
+    register_masked(old);
+}
+
+#[inline(always)]
+fn register_masked(old: usize) {
+    // SAFETY: both callers mask IRQs before selecting the CPU slot.
     let s = unsafe { state() };
     let n = s.irq.get();
     if n == usize::MAX {
@@ -123,7 +187,7 @@ pub(crate) fn exit_irq() {
         return;
     }
     let old = s.saved.get();
-    let kick = s.plain.get() == 0 && s.pending.replace(false);
+    let kick = s.pending.get() && take_deferred(s);
     compiler_fence(Ordering::SeqCst);
     unsafe {
         arch::enable_local_irq_restore(old);
@@ -131,6 +195,16 @@ pub(crate) fn exit_irq() {
     if kick {
         crate::scheduler::yield_me_now_or_later();
     }
+}
+
+// Only called after observing a pending request, under the kernel IRQ mask.
+#[cold]
+fn take_deferred(s: &CpuState) -> bool {
+    if s.plain.get() != 0 || s.irq.get() != 0 {
+        return false;
+    }
+    s.pending.set(false);
+    true
 }
 
 #[derive(Debug)]
@@ -153,12 +227,35 @@ impl PreemptLease {
             _not_send: NotThreadSafe,
         }
     }
-}
-
-impl Drop for PreemptLease {
     #[inline(always)]
-    fn drop(&mut self) {
-        let _irq = DisableInterruptGuard::new();
+    pub(super) unsafe fn release_after(
+        lease: &mut core::mem::ManuallyDrop<Self>,
+        unlock: impl FnOnce(),
+    ) {
+        // SAFETY: the caller supplies only the backend payload guard release.
+        #[cfg(not(smp))]
+        {
+            let kick = unsafe {
+                with_short_mask(|irq| {
+                    unlock();
+                    lease.unregister(irq);
+                    let s = state();
+                    s.pending.get() && take_deferred(s)
+                })
+            };
+            if kick {
+                crate::scheduler::yield_me_now_or_later();
+            }
+        }
+        #[cfg(smp)]
+        {
+            unlock();
+            lease.unregister(&DisableInterruptGuard::new());
+        }
+    }
+
+    #[inline(always)]
+    fn unregister(&mut self, _irq: &DisableInterruptGuard) {
         let s = unsafe { state() };
         s.plain.set(
             s.plain
@@ -169,19 +266,33 @@ impl Drop for PreemptLease {
     }
 }
 
+impl Drop for PreemptLease {
+    #[inline(always)]
+    fn drop(&mut self) {
+        self.unregister(&DisableInterruptGuard::new());
+    }
+}
+
 // Called with the hardware kernel mask held, including in PendSV before any
 // ordinary guard exists. A queued request is retried when the last lease exits.
 #[inline(always)]
 pub(crate) fn defer_if_held() -> bool {
     admit();
     let old = arch::disable_local_irq_save();
+    // SAFETY: this admitted, masked section only inspects execution leases.
+    let held = defer_if_held_with(unsafe { DisableInterruptGuard::assume_disabled() });
+    unsafe {
+        arch::enable_local_irq_restore(old);
+    }
+    held
+}
+
+#[inline(always)]
+pub(crate) fn defer_if_held_with(_irq: &DisableInterruptGuard) -> bool {
     let s = unsafe { state() };
     let held = s.irq.get() != 0 || s.plain.get() != 0;
     if held {
         s.pending.set(true);
-    }
-    unsafe {
-        arch::enable_local_irq_restore(old);
     }
     held
 }

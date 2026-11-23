@@ -146,6 +146,18 @@ pub(crate) fn next_ready_thread_with(irq: &DisableInterruptGuard) -> Option<Thre
 #[inline]
 pub fn highest_ready_priority() -> Option<ThreadPriority> {
     let tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    priority_from_table(&tbl)
+}
+
+#[cfg(not(smp))]
+#[inline]
+pub(super) fn highest_ready_priority_with(irq: &DisableInterruptGuard) -> Option<ThreadPriority> {
+    let tbl = unsafe { READY_TABLE.assume_init_ref().lock_with(irq) };
+    priority_from_table(&tbl)
+}
+
+#[inline]
+fn priority_from_table(tbl: &ReadyTable) -> Option<ThreadPriority> {
     let highest_active = tbl.highest_active();
     if highest_active > MAX_THREAD_PRIORITY as u32 {
         return None;

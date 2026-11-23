@@ -595,6 +595,7 @@ pub extern "C" fn disable_local_irq() {
 
 #[coverage(off)]
 #[cfg_attr(debug, inline(never))]
+#[cfg_attr(not(debug), inline(always))]
 pub extern "C" fn disable_local_irq_save() -> usize {
     let old: usize;
     unsafe {
@@ -617,6 +618,7 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 
 #[coverage(off)]
 #[cfg_attr(debug, inline(never))]
+#[cfg_attr(not(debug), inline(always))]
 pub unsafe extern "C" fn enable_local_irq_restore(old: usize) {
     atomic::compiler_fence(Ordering::SeqCst);
     unsafe {

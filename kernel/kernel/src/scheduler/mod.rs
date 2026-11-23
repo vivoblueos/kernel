@@ -279,17 +279,17 @@ fn cleanup_retired_thread(old: &mut ThreadNode) {
 
 // It's usually used in cortex-m's pendsv handler.
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
-    if crate::sync::local_context::defer_if_held() {
+    // SAFETY: PendSV masked kernel IRQs before this hook and restores them only
+    // after it returns; this hook does not invoke a synchronous context switch.
+    let irq = unsafe { DisableInterruptGuard::assume_disabled() };
+    if crate::sync::local_context::defer_if_held_with(irq) {
         return old_sp;
     }
     debug_assert_eq!(old_sp % core::mem::align_of::<Context>(), 0);
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
-    let old = current_thread_ref();
+    let old = current_thread_ref_with(irq);
     debug_assert_eq!(old.preempt_count(), 0);
-    // SAFETY: PendSV masked kernel IRQs before this hook and restores them only
-    // after it returns; this hook does not invoke a synchronous context switch.
-    let irq = unsafe { DisableInterruptGuard::assume_disabled() };
     let Some(next) = next_preferred_thread_with(old.priority(), PreferMode::StrictHigher, irq)
     else {
         #[cfg(debugging_scheduler)]
@@ -443,23 +443,45 @@ pub fn yield_me_now_or_later() {
     if unlikely(!is_schedule_ready()) {
         return;
     }
-    if crate::sync::local_context::defer_if_held() {
-        return;
+    #[cfg(not(smp))]
+    {
+        // SAFETY: the decision only loads thread state and briefly borrows
+        // the ready table. The switch request is made after restoring the mask.
+        let should_pend = unsafe {
+            crate::sync::local_context::with_short_mask(|irq| {
+                if crate::sync::local_context::defer_if_held_with(irq) {
+                    return false;
+                }
+                let current = current_thread_ref_with(irq);
+                current.preempt_count() == 0
+                    && global_scheduler::highest_ready_priority_with(irq)
+                        .is_some_and(|priority| priority <= current.priority())
+            })
+        };
+        if should_pend {
+            arch::pend_switch_context();
+        }
     }
-    if current_thread_ref().preempt_count() != 0 {
-        return;
-    }
-    // Skip the pendsv round-trip only when no same-or-higher-priority thread is
-    // runnable: pendsv is not free, and critical-section exits call this at
-    // high frequency even when the current thread will just resume. We must
-    // yield to same-priority threads too, because arch::pend_switch_context's
-    // non-IRQ path delegates to relinquish_me, which selects with
-    // PreferMode::SameOrHigher. Restricting to strictly-higher priority strands
-    // same-priority runnable threads in the ready queue (round_robin is off),
-    // so their stacks are never freed and stress_barrier leaks ~126 KB and OOMs.
-    match global_scheduler::highest_ready_priority() {
-        Some(p) if p <= current_thread_ref().priority() => arch::pend_switch_context(),
-        _ => {}
+    #[cfg(smp)]
+    {
+        if crate::sync::local_context::defer_if_held() {
+            return;
+        }
+        if current_thread_ref().preempt_count() != 0 {
+            return;
+        }
+        // Skip the pendsv round-trip only when no same-or-higher-priority thread is
+        // runnable: pendsv is not free, and critical-section exits call this at
+        // high frequency even when the current thread will just resume. We must
+        // yield to same-priority threads too, because arch::pend_switch_context's
+        // non-IRQ path delegates to relinquish_me, which selects with
+        // PreferMode::SameOrHigher. Restricting to strictly-higher priority strands
+        // same-priority runnable threads in the ready queue (round_robin is off),
+        // so their stacks are never freed and stress_barrier leaks ~126 KB and OOMs.
+        match global_scheduler::highest_ready_priority() {
+            Some(p) if p <= current_thread_ref().priority() => arch::pend_switch_context(),
+            _ => {}
+        }
     }
 }
 
@@ -525,6 +547,13 @@ pub(crate) fn current_thread_with(_irq: &DisableInterruptGuard) -> ThreadNode {
     let my_id = arch::current_cpu_id();
     // SAFETY: the IRQ proof keeps this CPU's running thread stable for the clone.
     unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() }
+}
+
+#[inline]
+fn current_thread_ref_with(_irq: &DisableInterruptGuard) -> &Thread {
+    let cpu = arch::current_cpu_id();
+    // SAFETY: the mask pins this CPU's current thread for the borrowed scope.
+    unsafe { RUNNING_THREADS[cpu].assume_init_ref() }
 }
 
 #[inline]
