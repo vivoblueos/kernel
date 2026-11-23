@@ -28,7 +28,7 @@ use crate::{
         mqueue::MessageQueue,
         mutex::{MutexList, MutexListIterator},
         semaphore::Semaphore,
-        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard,
+        ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
     },
     thread::builder::GlobalQueue,
     time::Tick,
@@ -337,11 +337,6 @@ impl Thread {
     #[inline]
     pub fn lock(&self) -> SpinLockGuard<'_, Self> {
         self.lock.irqsave_lock()
-    }
-
-    #[inline]
-    pub fn lock_for_read(&self) -> SpinLockReadGuard<'_, Self> {
-        self.lock.irqsave_read()
     }
 
     #[inline(always)]
