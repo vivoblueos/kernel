@@ -68,7 +68,10 @@ pub enum PendRef {
     Event(Arc<EventFlags>),
     /// `dir` is `0` for the sender queue (SEND_TYPE) and `1` for the receiver
     /// queue (RECV_TYPE), matching `sync::mqueue`.
-    Mq { mq: Arc<MessageQueue>, dir: u8 },
+    Mq {
+        mq: Arc<MessageQueue>,
+        dir: u8,
+    },
 }
 
 pub enum Entry {
@@ -499,7 +502,9 @@ impl Thread {
     pub fn release_all_mutexes(th: &ThreadNode) {
         loop {
             let m = th.acquired_mutexes_mut().pop_front();
-            let Some(m) = m else { break; };
+            let Some(m) = m else {
+                break;
+            };
             m.reset();
         }
     }

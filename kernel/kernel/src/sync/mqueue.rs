@@ -243,12 +243,11 @@ impl MessageQueue {
                 // thread is pending on, so `release_pending_blocker` can
                 // unlink our `WaitEntry` if we are force-freed while still
                 // suspended. Cleared once we resume.
-                let _old = this_thread.replace_pending_blocker(Some(Arc::new(
-                    thread::PendRef::Mq {
+                let _old =
+                    this_thread.replace_pending_blocker(Some(Arc::new(thread::PendRef::Mq {
                         mq: self.arc_self(),
                         dir: SEND_TYPE as u8,
-                    },
-                )));
+                    })));
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(send_queue));
                 buffer_guard = self.lock_buffer();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
@@ -342,12 +341,11 @@ impl MessageQueue {
                 .unwrap();
                 // See the send path: record this queue's receiver pend queue
                 // as the host, cleared once we resume.
-                let _old = this_thread.replace_pending_blocker(Some(Arc::new(
-                    thread::PendRef::Mq {
+                let _old =
+                    this_thread.replace_pending_blocker(Some(Arc::new(thread::PendRef::Mq {
                         mq: self.arc_self(),
                         dir: RECV_TYPE as u8,
-                    },
-                )));
+                    })));
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(recv_queue));
                 buffer_guard = self.lock_buffer();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
