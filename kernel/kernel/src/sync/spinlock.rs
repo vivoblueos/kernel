@@ -119,12 +119,11 @@ impl<T: ?Sized> Drop for SpinLockReadGuard<'_, T> {
     #[inline(always)]
     fn drop(&mut self) {
         // SAFETY: exactly one arm releases the payload, before its protection.
-        let mut unlock = || unsafe { ManuallyDrop::drop(&mut self.lock_guard) };
         match &mut self.protection {
             ReadProtection::Plain { lease } => unsafe {
-                PreemptLease::release_after(lease, unlock)
+                PreemptLease::release_after(lease, || ManuallyDrop::drop(&mut self.lock_guard))
             },
-            ReadProtection::Irq { .. } => unlock(),
+            ReadProtection::Irq { .. } => unsafe { ManuallyDrop::drop(&mut self.lock_guard) },
         }
     }
 }
