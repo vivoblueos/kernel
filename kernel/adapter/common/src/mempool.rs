@@ -113,14 +113,15 @@ impl Block {
 
 #[derive(Debug)]
 pub struct MemoryPool {
-    sema: Semaphore,
+    // Arc-loaded: blocking get/put paths call `arc_self`.
+    sema: Arc<Semaphore>,
     inner: SpinLock<MemoryPoolInner>,
 }
 
 impl MemoryPool {
     pub fn new() -> Self {
         Self {
-            sema: Semaphore::new(),
+            sema: Semaphore::create(),
             inner: SpinLock::new(MemoryPoolInner::new()),
         }
     }

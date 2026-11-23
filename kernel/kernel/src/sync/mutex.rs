@@ -147,7 +147,7 @@ impl Mutex {
                 let mut guard = this_thread.lock();
                 let ok = guard.add_acquired_mutex(this_mutex.clone());
                 debug_assert!(ok);
-                let _ = guard.replace_pending_on_mutex(None);
+                let _ = guard.replace_pending_blocker(None);
                 #[cfg(debugging_scheduler)]
                 crate::trace!(
                     "TH:0x{:x} @ P{} has got mutex {:?}",
@@ -168,7 +168,7 @@ impl Mutex {
             }
 
             if ticks.0 == 0 {
-                this_thread.replace_pending_on_mutex(None);
+                this_thread.replace_pending_blocker(None);
                 Self::recover_priority(&this_thread, &this_mutex);
                 return false;
             }
@@ -184,7 +184,7 @@ impl Mutex {
             let timeout;
             (timeout, w) = Self::inner_pend_for(ticks, &this_mutex, w, &this_thread, &owner);
             if timeout {
-                this_thread.replace_pending_on_mutex(None);
+                this_thread.replace_pending_blocker(None);
                 Self::recover_priority(&this_thread, &this_mutex);
                 return false;
             }
@@ -207,15 +207,18 @@ impl Mutex {
         // either sees this edge and follows it, or promotes us before we acquire
         // our thread lock below, so this walk observes the inherited priority.
         // The mutex's pending lock keeps its owner stable until we suspend.
-        let old = this_thread.replace_pending_on_mutex(Some(this_mutex.clone()));
+        let old = this_thread
+            .replace_pending_blocker(Some(Arc::new(thread::PendRef::Mutex(this_mutex.clone()))));
         #[cfg(debugging_scheduler)]
         crate::trace!(
             "TH:0x{:x} is pending on mutex {:?}",
             Thread::id(this_thread),
             this_mutex.deref() as *const _,
         );
-        if let Some(check) = &old {
-            debug_assert!(Arc::is(check, this_mutex));
+        if let Some(check) = &old
+            && let thread::PendRef::Mutex(m) = &**check
+        {
+            debug_assert!(Arc::is(m, this_mutex));
         };
         drop(old);
         // We walk along the blocking chain to scan no more than
@@ -261,7 +264,15 @@ impl Mutex {
             drop(this_guard);
             // FIXME: Adjust priority in RQ for the scanning_thread.
             other_lock = None;
-            other_mutex = scanning_thread.pending_on_mutex();
+            // Dispatch on the pending blocker: advance only when the scanning
+            // thread is blocked on a Mutex (clone it, lock its pending queue,
+            // read its owner). Break on None or any other PendRef variant —
+            // those blockers belong to sync objects whose PI chains do not
+            // extend through a Mutex.
+            other_mutex = match scanning_thread.pending_blocker().as_deref() {
+                Some(thread::PendRef::Mutex(m)) => Some(m.clone()),
+                _ => None,
+            };
             let Some(other_mutex_ref) = &other_mutex else {
                 break;
             };
@@ -311,10 +322,13 @@ impl Mutex {
         mutex: &Arc<Self>,
         mutex_lock: &mut SpinLockGuard<'_, WaitQueue>,
     ) -> bool {
-        let Some(pending_on_mutex) = who.pending_on_mutex() else {
+        // Bind to a local: `pending_blocker()` returns an `Arc` by value that
+        // the deref borrows from.
+        let blocker = who.pending_blocker();
+        let Some(thread::PendRef::Mutex(m)) = blocker.as_deref() else {
             return false;
         };
-        if !Arc::is(mutex, &pending_on_mutex) {
+        if !Arc::is(mutex, m) {
             return false;
         }
         mutex_lock
@@ -380,6 +394,37 @@ impl Mutex {
             self as *const _
         );
         drop(this_thread);
+        scheduler::yield_me_now_or_later();
+    }
+
+    /// Force-release the mutex: clear its owner and nesting count, demote any
+    /// priority the owner inherited through it (PI recovery), and wake all
+    /// waiters so they re-contend. Called by robust exit
+    /// (`Thread::release_all_mutexes`) when a thread retires while still
+    /// holding mutexes; also usable as a general-purpose teardown.
+    ///
+    /// Ends with `yield_me_now_or_later()`, which is a no-op while preemption
+    /// is disabled — so robust exit drains every acquired mutex before the
+    /// retiring thread finally switches away.
+    pub fn reset(&self) {
+        let mut this_lock = self.pending.irqsave_lock();
+        let owner = self.owner();
+        self.nesting_count.set(0);
+        if let Some(ref owner) = owner {
+            // SAFETY: `mutex_node` is a value field of `self` whose intrusive
+            // node points back to `self` (the live `Mutex` this `Arc` was
+            // cloned from). We hold an exclusive borrow of the surrounding
+            // Mutex's `pending` lock here, so no concurrent post/pend can
+            // mutate `mutex_node` while we clone the `Arc`. The produced
+            // `Arc` is a strong ref to `self`, keeping it alive for
+            // `remove_acquired_mutex` / `recover_priority`.
+            let this_mutex = unsafe { MutexList::clone_from(&self.mutex_node) };
+            let _ok = owner.remove_acquired_mutex(&this_mutex);
+            Self::recover_priority(owner, &this_mutex);
+        }
+        self.replace_owner(None);
+        let _woken = wait_queue::wake_up_all(this_lock.deref_mut());
+        drop(this_lock);
         scheduler::yield_me_now_or_later();
     }
 

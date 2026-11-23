@@ -58,8 +58,8 @@ os_adapter! {
     "th" => Os2Thread: blueos::thread::Thread {
         joint: Joint,
         detached: AtomicI8,
-        // Use event flags to implement thread flags.
-        thread_flags: EventFlags,
+        // Arc-loaded: `osThreadFlagsWait` blocks via `EventFlags::wait`.
+        thread_flags: Arc<EventFlags>,
     }
 }
 
