@@ -297,21 +297,17 @@ pub(crate) fn defer_if_held_with(_irq: &DisableInterruptGuard) -> bool {
     held
 }
 
-pub(crate) fn assert_can_suspend(irq_guard: bool) {
-    admit();
-    let old = arch::disable_local_irq_save();
+pub(crate) fn assert_can_suspend_with(_irq: &DisableInterruptGuard) {
+    // SAFETY: the caller holds the admitted IRQ lease for queue selection.
     let s = unsafe { state() };
-    let resume_mask = if irq_guard { s.saved.get() } else { old };
+    let resume_mask = s.saved.get();
     #[cfg(cortex_m)]
     let resumes_enabled = resume_mask == 0;
     #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     let resumes_enabled = resume_mask & (1 << 3) != 0;
     #[cfg(target_arch = "aarch64")]
     let resumes_enabled = resume_mask & (1 << 7) == 0;
-    let ok = s.irq.get() == usize::from(irq_guard) && s.plain.get() == 0 && resumes_enabled;
-    unsafe {
-        arch::enable_local_irq_restore(old);
-    }
+    let ok = s.irq.get() == 1 && s.plain.get() == 0 && resumes_enabled;
     assert!(ok, "cannot suspend while other execution leases are held");
 }
 

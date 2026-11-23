@@ -188,10 +188,13 @@ pub(crate) extern "C" fn save_context_finish_hook(
     // FIXME: We must be careful about performance issue of Option::take, since besides
     // loading content from the Option, storing None into the Option also happens.
     let next = unsafe { Arc::from_raw(hook.next_thread) };
-    switch_current_thread(next, old_sp)
+    // SAFETY: the architecture switch hook runs with kernel IRQs masked. The
+    // architecture restores its mask only after the hook returns.
+    let irq = unsafe { DisableInterruptGuard::assume_disabled() };
+    switch_current_thread(next, old_sp, irq)
 }
 
-fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
+fn switch_current_thread(next: ThreadNode, old_sp: usize, irq: &DisableInterruptGuard) -> usize {
     #[cfg(round_robin)]
     let now = Tick::now();
     #[cfg(round_robin)]
@@ -199,18 +202,12 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         next.set_this_round_start_at(now);
         let time_slices = next.refresh_time_slices();
         let deadline = now.add(time_slices);
-        // SAFETY: all switch_current_thread callers are architecture hooks
-        // running with the kernel IRQ mask held through this timer update.
-        let irq = unsafe { DisableInterruptGuard::assume_disabled() };
         set_current_timer(deadline, irq);
     }
     #[cfg(thread_stats)]
     let cycles = time::current_clock_cycles();
     #[cfg(thread_stats)]
     {
-        // SAFETY: switch hook runs under the architecture's IRQ mask; this
-        // short stats update neither schedules nor invokes callbacks.
-        let irq = unsafe { DisableInterruptGuard::assume_disabled() };
         next.lock_with(irq).set_start_cycles(cycles);
     }
     let next_id = Thread::id(&next);
@@ -223,7 +220,7 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     arch::mpu::update_thread_stack_guard(&next);
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
-    let mut old = set_current_thread(next);
+    let mut old = set_current_thread_with(next, irq);
     #[cfg(thread_stats)]
     {
         // SAFETY: same masked switch-hook context as above.
@@ -297,14 +294,14 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
         return old_sp;
     };
     debug_assert_eq!(next.state(), thread::READY);
-    if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
+    if idle::is_current_idle_with(old, irq) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert_eq!(ok, Ok(()));
     } else {
         let ok = queue_ready_thread_with(thread::RUNNING, &unsafe { Arc::clone_from(old) }, irq);
         debug_assert_eq!(ok, Ok(()));
     };
-    switch_current_thread(next, old_sp)
+    switch_current_thread(next, old_sp, irq)
 }
 
 pub fn retire_me() -> ! {
@@ -393,12 +390,19 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<OwnedIrqSpinLockGuard<'_, 
         current_thread_id()
     );
     assert!(!crate::irq::is_in_irq(), "cannot suspend in an interrupt");
-    crate::sync::local_context::assert_can_suspend(wq.is_some());
     let old = current_thread_ref();
     debug_assert_ne!(Thread::id(old), Thread::id(idle::current_idle_thread_ref()));
-    let next = match &wq {
-        Some(guard) => next_ready_thread_with(guard.irq_guard()),
-        None => next_ready_thread(),
+    let next = {
+        let selection_guard;
+        let irq = match &wq {
+            Some(guard) => guard.irq_guard(),
+            None => {
+                selection_guard = DisableInterruptGuard::new();
+                &selection_guard
+            }
+        };
+        crate::sync::local_context::assert_can_suspend_with(irq);
+        next_ready_thread_with(irq)
     }
     .unwrap_or_else(idle::current_idle_thread);
     debug_assert_eq!(next.state(), thread::READY);
@@ -586,8 +590,7 @@ pub(crate) fn need_reschedule_at(moment: Tick) -> bool {
     }
 }
 
-fn set_current_thread(t: ThreadNode) -> ThreadNode {
-    let _dig = DisableInterruptGuard::new();
+fn set_current_thread_with(t: ThreadNode, _irq: &DisableInterruptGuard) -> ThreadNode {
     let my_id = arch::current_cpu_id();
     let old = unsafe { core::mem::replace(RUNNING_THREADS[my_id].assume_init_mut(), t) };
     // Do not validate sp here, since we might be using system stack,
