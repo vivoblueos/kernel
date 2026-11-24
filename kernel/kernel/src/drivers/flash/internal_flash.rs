@@ -16,7 +16,7 @@
 //! `write()` does NOT auto-erase; callers must `erase_region` first.
 
 use super::esp32_rom;
-use crate::{scheduler, sync::Mutex, time::Tick};
+use crate::{scheduler, sync::Mutex, time::Tick, types::NotThreadSafe};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const ESP_FLASH_SECTOR_SIZE: usize = 4096;
@@ -50,9 +50,15 @@ crate::static_arc! {
 }
 static INTERNAL_FLASH_CAPACITY: AtomicU32 = AtomicU32::new(0);
 
+#[must_use]
 struct InternalFlashGuard {
     locked: bool,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared references cannot release the mutex. Drop calls Mutex::post
+// on the acquiring thread because ownership cannot be sent to another thread.
+unsafe impl Sync for InternalFlashGuard {}
 
 impl InternalFlashGuard {
     fn acquire() -> Result<Self, EspFlashError> {
@@ -60,7 +66,10 @@ impl InternalFlashGuard {
         if locked && !INTERNAL_FLASH_LOCK.pend_for(Tick::MAX) {
             return Err(EspFlashError::Busy);
         }
-        Ok(Self { locked })
+        Ok(Self {
+            locked,
+            _not_send: NotThreadSafe,
+        })
     }
 }
 

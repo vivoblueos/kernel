@@ -16,6 +16,7 @@ pub mod atomic_wait;
 pub use atomic_wait::{atomic_wait, atomic_wake};
 pub mod delay;
 pub use delay::KernelDelay;
+pub(crate) mod local_context;
 pub mod mqueue;
 pub mod mutex;
 pub mod posix_mqueue;
@@ -24,7 +25,10 @@ pub mod spinlock;
 pub use mqueue::MessageQueue;
 pub use mutex::Mutex;
 pub use semaphore::Semaphore;
-pub use spinlock::{ISpinLock, SpinLock, SpinLockGuard, SpinLockReadGuard, SpinLockWriteGuard};
+pub use spinlock::{
+    ISpinLock, OwnedIrqSpinLockGuard, SpinLock, SpinLockGuard, SpinLockReadGuard,
+    SpinLockWriteGuard,
+};
 pub mod barrier;
 pub use barrier::ConstBarrier;
 #[cfg(event_flags)]

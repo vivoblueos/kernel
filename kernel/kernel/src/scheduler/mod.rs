@@ -18,7 +18,7 @@ use crate::{
     arch::{self, Context},
     signal,
     support::DisableInterruptGuard,
-    sync::SpinLockGuard,
+    sync::OwnedIrqSpinLockGuard,
     thread,
     thread::{Entry, GlobalQueueVisitor, Thread, ThreadNode},
     time,
@@ -111,24 +111,24 @@ fn init_timers() {
     }
 }
 
-fn set_per_cpu_timer(id: usize, deadline: Tick) {
+fn set_per_cpu_timer(id: usize, deadline: Tick, irq: &DisableInterruptGuard) {
     debug_assert_ne!(deadline, Tick::MAX);
     debug_assert!(!arch::local_irq_enabled());
     unsafe {
         let iou = TimerIou::from_mut(PER_CPU_TIMER[id].assume_init_mut());
-        timer::remove_hard_timer(iou);
+        timer::remove_hard_timer_with(iou, irq);
         let tm_mut = PER_CPU_TIMER[id].assume_init_mut();
         tm_mut.reset();
         let TimerMode::Deadline(d) = &mut tm_mut.mode else {
             panic!("PER_CPU_TIMER is in a wrong mode")
         };
         *d = deadline;
-        let _ = timer::add_hard_timer(tm_mut).unwrap();
+        let _ = timer::add_hard_timer_with(tm_mut, irq).unwrap();
     }
 }
 
-fn set_current_timer(deadline: Tick) {
-    set_per_cpu_timer(arch::current_cpu_id(), deadline);
+fn set_current_timer(deadline: Tick, irq: &DisableInterruptGuard) {
+    set_per_cpu_timer(arch::current_cpu_id(), deadline, irq);
 }
 
 pub(crate) struct ContextSwitchHookHolder {
@@ -188,10 +188,13 @@ pub(crate) extern "C" fn save_context_finish_hook(
     // FIXME: We must be careful about performance issue of Option::take, since besides
     // loading content from the Option, storing None into the Option also happens.
     let next = unsafe { Arc::from_raw(hook.next_thread) };
-    switch_current_thread(next, old_sp)
+    // SAFETY: the architecture switch hook runs with kernel IRQs masked. The
+    // architecture restores its mask only after the hook returns.
+    let irq = unsafe { DisableInterruptGuard::assume_disabled() };
+    switch_current_thread(next, old_sp, irq)
 }
 
-fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
+fn switch_current_thread(next: ThreadNode, old_sp: usize, irq: &DisableInterruptGuard) -> usize {
     #[cfg(round_robin)]
     let now = Tick::now();
     #[cfg(round_robin)]
@@ -199,12 +202,14 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
         next.set_this_round_start_at(now);
         let time_slices = next.refresh_time_slices();
         let deadline = now.add(time_slices);
-        set_current_timer(deadline);
+        set_current_timer(deadline, irq);
     }
     #[cfg(thread_stats)]
     let cycles = time::current_clock_cycles();
     #[cfg(thread_stats)]
-    next.lock().set_start_cycles(cycles);
+    {
+        next.lock_with(irq).set_start_cycles(cycles);
+    }
     let next_id = Thread::id(&next);
     let next_priority = next.priority();
     let next_saved_sp = spin_until_ready_to_run(&next);
@@ -215,9 +220,13 @@ fn switch_current_thread(next: ThreadNode, old_sp: usize) -> usize {
     arch::mpu::update_thread_stack_guard(&next);
     let ok = next.transfer_state(thread::READY, thread::RUNNING);
     debug_assert_eq!(ok, Ok(()));
-    let mut old = set_current_thread(next);
+    let mut old = set_current_thread_with(next, irq);
     #[cfg(thread_stats)]
-    old.lock().increment_cycles(cycles);
+    {
+        // SAFETY: same masked switch-hook context as above.
+        let irq = unsafe { DisableInterruptGuard::assume_disabled() };
+        old.lock_with(irq).increment_cycles(cycles);
+    }
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "Switching from 0x{:x}: {{ SP: 0x{:x} PRI: {} }} to 0x{:x}: {{ SP: 0x{:x} PRI: {} }}",
@@ -267,28 +276,41 @@ fn cleanup_retired_thread(old: &mut ThreadNode) {
 
 // It's usually used in cortex-m's pendsv handler.
 pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usize {
+    // SAFETY: PendSV masked kernel IRQs before this hook and restores them only
+    // after it returns; this hook does not invoke a synchronous context switch.
+    let irq = unsafe { DisableInterruptGuard::assume_disabled() };
+    if crate::sync::local_context::defer_if_held_with(irq) {
+        return old_sp;
+    }
     debug_assert_eq!(old_sp % core::mem::align_of::<Context>(), 0);
     debug_assert!(!arch::local_irq_enabled());
     debug_assert!(!crate::irq::is_in_irq());
-    let old = current_thread_ref();
+    let old = current_thread_ref_with(irq);
     debug_assert_eq!(old.preempt_count(), 0);
-    let Some(next) = next_preferred_thread(old.priority(), PreferMode::StrictHigher) else {
+    let Some(next) = next_preferred_thread_with(old.priority(), PreferMode::StrictHigher, irq)
+    else {
         #[cfg(debugging_scheduler)]
         crate::trace!("[TH:0x{:x}] keeps running", Thread::id(old));
         return old_sp;
     };
     debug_assert_eq!(next.state(), thread::READY);
-    if Thread::id(old) == Thread::id(idle::current_idle_thread_ref()) {
+    if idle::is_current_idle_with(old, irq) {
         let ok = old.transfer_state(thread::RUNNING, thread::READY);
         debug_assert_eq!(ok, Ok(()));
     } else {
-        let ok = queue_ready_thread(thread::RUNNING, unsafe { Arc::clone_from(old) });
+        let ok = queue_ready_thread_with(thread::RUNNING, &unsafe { Arc::clone_from(old) }, irq);
         debug_assert_eq!(ok, Ok(()));
     };
-    switch_current_thread(next, old_sp)
+    switch_current_thread(next, old_sp, irq)
 }
 
 pub fn retire_me() -> ! {
+    crate::sync::local_context::assert_can_switch();
+    assert!(
+        arch::local_irq_enabled(),
+        "cannot retire in a masked context"
+    );
+    assert!(!crate::irq::is_in_irq(), "cannot retire in an interrupt");
     let retiring = current_thread_ref();
     #[cfg(procfs)]
     {
@@ -317,15 +339,16 @@ fn inner_yield(next: ThreadNode) {
         debug_assert_eq!(ok, Ok(()));
     };
     arch::switch_context_with_hook(&mut hook_holder as *mut _);
-    debug_assert!(arch::local_irq_enabled());
+    assert!(arch::local_irq_enabled());
     old.finish_resumption();
 }
 
 pub fn yield_me() {
+    crate::sync::local_context::assert_can_switch();
     // We don't allow thread yielding with irq disabled.
     // The scheduler assumes every thread should be resumed with local
     // irq enabled.
-    debug_assert!(arch::local_irq_enabled());
+    assert!(arch::local_irq_enabled());
     let Some(next) = next_ready_thread() else {
         return;
     };
@@ -334,7 +357,8 @@ pub fn yield_me() {
 }
 
 pub fn relinquish_me() {
-    debug_assert!(arch::local_irq_enabled());
+    crate::sync::local_context::assert_can_switch();
+    assert!(arch::local_irq_enabled());
     let old = current_thread_ref();
     let Some(next) = next_preferred_thread(old.priority(), PreferMode::SameOrHigher) else {
         return;
@@ -343,7 +367,8 @@ pub fn relinquish_me() {
     inner_yield(next);
 }
 
-pub fn suspend_me_for<T>(mut timeout: Tick, wq: Option<SpinLockGuard<'_, T>>) -> bool {
+/// Suspends with an optional queue lock acquired by [`SpinLock::irqsave_lock`](crate::sync::SpinLock::irqsave_lock).
+pub fn suspend_me_for<T>(mut timeout: Tick, wq: Option<OwnedIrqSpinLockGuard<'_, T>>) -> bool {
     if timeout != Tick::MAX {
         timeout = Tick::after(timeout);
     }
@@ -354,7 +379,8 @@ pub fn suspend_me_for<T>(mut timeout: Tick, wq: Option<SpinLockGuard<'_, T>>) ->
 // exception, we have to implement waking up the thread via signal. Currently,
 // the timer is detached when the thread is re-scheduled, we have to implement
 // detaching from a waitqueue uniformly.
-pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> bool {
+/// Publishes the suspended state before releasing the supplied queue lock and IRQ mask.
+pub fn suspend_me_until<T>(deadline: Tick, wq: Option<OwnedIrqSpinLockGuard<'_, T>>) -> bool {
     if unlikely(!is_schedule_ready()) {
         return false;
     }
@@ -363,10 +389,22 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
         "[TH:0x{:x}] is looking for the next thread",
         current_thread_id()
     );
+    assert!(!crate::irq::is_in_irq(), "cannot suspend in an interrupt");
     let old = current_thread_ref();
-    let current_idle = idle::current_idle_thread_ref();
-    debug_assert_ne!(Thread::id(old), Thread::id(current_idle));
-    let next = next_ready_thread().unwrap_or_else(|| unsafe { Arc::clone_from(current_idle) });
+    debug_assert_ne!(Thread::id(old), Thread::id(idle::current_idle_thread_ref()));
+    let next = {
+        let selection_guard;
+        let irq = match &wq {
+            Some(guard) => guard.irq_guard(),
+            None => {
+                selection_guard = DisableInterruptGuard::new();
+                &selection_guard
+            }
+        };
+        crate::sync::local_context::assert_can_suspend_with(irq);
+        next_ready_thread_with(irq)
+    }
+    .unwrap_or_else(idle::current_idle_thread);
     debug_assert_eq!(next.state(), thread::READY);
     #[cfg(debugging_scheduler)]
     crate::trace!(
@@ -396,7 +434,7 @@ pub fn suspend_me_until<T>(deadline: Tick, wq: Option<SpinLockGuard<'_, T>>) -> 
     } else {
         arch::switch_context_with_hook(&mut hook_holder as *mut _);
     }
-    debug_assert!(arch::local_irq_enabled());
+    assert!(arch::local_irq_enabled());
     old.finish_resumption();
     reached_deadline
 }
@@ -409,24 +447,49 @@ pub fn yield_me_now_or_later() {
     if unlikely(!is_schedule_ready()) {
         return;
     }
-    if current_thread_ref().preempt_count() != 0 {
-        return;
+    #[cfg(not(smp))]
+    {
+        // SAFETY: the decision only loads thread state and briefly borrows
+        // the ready table. The switch request is made after restoring the mask.
+        let should_pend = unsafe {
+            crate::sync::local_context::with_short_mask(|irq| {
+                if crate::sync::local_context::defer_if_held_with(irq) {
+                    return false;
+                }
+                let current = current_thread_ref_with(irq);
+                current.preempt_count() == 0
+                    && global_scheduler::highest_ready_priority_with(irq)
+                        .is_some_and(|priority| priority <= current.priority())
+            })
+        };
+        if should_pend {
+            arch::pend_switch_context();
+        }
     }
-    // Skip the pendsv round-trip only when no same-or-higher-priority thread is
-    // runnable: pendsv is not free, and critical-section exits call this at
-    // high frequency even when the current thread will just resume. We must
-    // yield to same-priority threads too, because arch::pend_switch_context's
-    // non-IRQ path delegates to relinquish_me, which selects with
-    // PreferMode::SameOrHigher. Restricting to strictly-higher priority strands
-    // same-priority runnable threads in the ready queue (round_robin is off),
-    // so their stacks are never freed and stress_barrier leaks ~126 KB and OOMs.
-    match global_scheduler::highest_ready_priority() {
-        Some(p) if p <= current_thread_ref().priority() => arch::pend_switch_context(),
-        _ => {}
+    #[cfg(smp)]
+    {
+        if crate::sync::local_context::defer_if_held() {
+            return;
+        }
+        if current_thread_ref().preempt_count() != 0 {
+            return;
+        }
+        // Skip the pendsv round-trip only when no same-or-higher-priority thread is
+        // runnable: pendsv is not free, and critical-section exits call this at
+        // high frequency even when the current thread will just resume. We must
+        // yield to same-priority threads too, because arch::pend_switch_context's
+        // non-IRQ path delegates to relinquish_me, which selects with
+        // PreferMode::SameOrHigher. Restricting to strictly-higher priority strands
+        // same-priority runnable threads in the ready queue (round_robin is off),
+        // so their stacks are never freed and stress_barrier leaks ~126 KB and OOMs.
+        match global_scheduler::highest_ready_priority() {
+            Some(p) if p <= current_thread_ref().priority() => arch::pend_switch_context(),
+            _ => {}
+        }
     }
 }
 
-pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
+pub fn wake_up_all(mut w: OwnedIrqSpinLockGuard<'_, WaitQueue>) -> usize {
     #[cfg(debugging_scheduler)]
     crate::trace!("[TH:0x{:x}] is waking up all threads", current_thread_id());
     let woken = wait_queue::wake_up_all(&mut w);
@@ -438,7 +501,7 @@ pub fn wake_up_all(mut w: SpinLockGuard<'_, WaitQueue>) -> usize {
 }
 
 // wake_up_all, but injects `err` into each woken waiter. Same post-wake yield.
-pub fn wake_up_all_with_error(mut w: SpinLockGuard<'_, WaitQueue>, err: i32) -> usize {
+pub fn wake_up_all_with_error(mut w: OwnedIrqSpinLockGuard<'_, WaitQueue>, err: i32) -> usize {
     #[cfg(debugging_scheduler)]
     crate::trace!(
         "[TH:0x{:x}] is waking up all threads with error {}",
@@ -467,8 +530,10 @@ pub fn wait_and_then_start_schedule() {
 // Entry of system idle threads.
 pub extern "C" fn schedule() -> ! {
     READY_CORES.fetch_add(1, Ordering::Relaxed);
-    arch::enable_local_irq();
-    debug_assert!(arch::local_irq_enabled());
+    unsafe {
+        arch::enable_local_irq();
+    }
+    assert!(arch::local_irq_enabled());
     loop {
         yield_me();
         idle::get_idle_hook()();
@@ -477,10 +542,22 @@ pub extern "C" fn schedule() -> ! {
 
 #[inline]
 pub fn current_thread() -> ThreadNode {
-    let _guard = DisableInterruptGuard::new();
-    let my_id = arch::current_cpu_id();
+    let guard = DisableInterruptGuard::new();
+    current_thread_with(&guard)
+}
 
+#[inline]
+pub(crate) fn current_thread_with(_irq: &DisableInterruptGuard) -> ThreadNode {
+    let my_id = arch::current_cpu_id();
+    // SAFETY: the IRQ proof keeps this CPU's running thread stable for the clone.
     unsafe { RUNNING_THREADS[my_id].assume_init_ref().clone() }
+}
+
+#[inline]
+fn current_thread_ref_with(_irq: &DisableInterruptGuard) -> &Thread {
+    let cpu = arch::current_cpu_id();
+    // SAFETY: the mask pins this CPU's current thread for the borrowed scope.
+    unsafe { RUNNING_THREADS[cpu].assume_init_ref() }
 }
 
 #[inline]
@@ -513,8 +590,7 @@ pub(crate) fn need_reschedule_at(moment: Tick) -> bool {
     }
 }
 
-fn set_current_thread(t: ThreadNode) -> ThreadNode {
-    let _dig = DisableInterruptGuard::new();
+fn set_current_thread_with(t: ThreadNode, _irq: &DisableInterruptGuard) -> ThreadNode {
     let my_id = arch::current_cpu_id();
     let old = unsafe { core::mem::replace(RUNNING_THREADS[my_id].assume_init_mut(), t) };
     // Do not validate sp here, since we might be using system stack,

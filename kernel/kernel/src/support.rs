@@ -14,9 +14,9 @@
 
 use crate::{
     arch,
-    sync::spinlock::{SpinLock, SpinLockGuard},
+    sync::spinlock::{OwnedIrqSpinLockGuard, SpinLock},
     thread::ThreadNode,
-    types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, Uint},
+    types::{Arc, ArcList, AtomicUint, IntrusiveAdapter, NotThreadSafe, Uint},
 };
 pub use blueos_infra::storage::Storage;
 use core::{
@@ -26,43 +26,43 @@ use core::{
     sync::atomic::{compiler_fence, AtomicUsize, Ordering},
 };
 
+/// Owns one counted kernel IRQ mask on the current CPU. A shared reference
+/// proves that the mask is held for the duration of the borrow.
 #[derive(Debug)]
 #[must_use]
-pub struct DisableInterruptGuard {
-    old: usize,
-}
+pub struct DisableInterruptGuard(NotThreadSafe);
 
 impl DisableInterruptGuard {
-    #[inline]
+    /// # Safety
+    /// The caller just registered exactly one owning IRQ lease on this CPU.
+    #[cfg(not(smp))]
+    pub(crate) unsafe fn from_registered() -> Self {
+        Self(NotThreadSafe)
+    }
+
+    /// Borrows proof of an IRQ mask established by architecture code.
+    ///
+    /// # Safety
+    /// For all of `'a` the current CPU must stay in an admitted context with
+    /// kernel-capable IRQs masked and without switching execution context.
+    #[inline(always)]
+    pub(crate) unsafe fn assume_disabled<'a>() -> &'a Self {
+        // Borrow this zero-sized marker without creating a counted owner to drop.
+        const MASKED: &DisableInterruptGuard = &DisableInterruptGuard(NotThreadSafe);
+        MASKED
+    }
+
+    #[inline(always)]
     pub fn new() -> Self {
-        Self {
-            old: arch::disable_local_irq_save(),
-        }
+        crate::sync::local_context::enter_irq();
+        Self(NotThreadSafe)
     }
 }
 
 impl Drop for DisableInterruptGuard {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
-        arch::enable_local_irq_restore(self.old);
-    }
-}
-
-#[must_use]
-pub struct PlainDisableInterruptGuard;
-
-impl PlainDisableInterruptGuard {
-    #[inline]
-    pub fn new() -> Self {
-        arch::disable_local_irq();
-        Self
-    }
-}
-
-impl Drop for PlainDisableInterruptGuard {
-    #[inline]
-    fn drop(&mut self) {
-        arch::enable_local_irq();
+        crate::sync::local_context::exit_irq();
     }
 }
 
@@ -243,7 +243,12 @@ pub fn nonnull_slice_end<T>(ptr: NonNull<[T]>) -> *mut T {
 pub(crate) struct PerCpuVarAccessGuard {
     t: ThreadNode,
     id: u8,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Shared access only reads the captured CPU id. Releasing preemption
+// protection requires ownership, which stays in the acquiring context.
+unsafe impl Sync for PerCpuVarAccessGuard {}
 
 impl PerCpuVarAccessGuard {
     pub fn new() -> Self {
@@ -257,7 +262,11 @@ impl PerCpuVarAccessGuard {
         t.disable_preempt();
         compiler_fence(Ordering::SeqCst);
         drop(dig);
-        Self { t, id: id as u8 }
+        Self {
+            t,
+            id: id as u8,
+            _not_send: NotThreadSafe,
+        }
     }
 
     #[inline(always)]
@@ -307,14 +316,14 @@ impl<T: Sized, A: IntrusiveAdapter<T>, const N: usize> ArcBufferingQueue<T, A, N
 
     #[inline]
     #[allow(clippy::unnecessary_cast)]
-    pub fn advance_active_queue(&self) -> SpinLockGuard<'_, ArcList<T, A>> {
+    pub fn advance_active_queue(&self) -> OwnedIrqSpinLockGuard<'_, ArcList<T, A>> {
         let i = self.active.fetch_add(1, Ordering::AcqRel) as usize;
         self.queues[i % N].irqsave_lock()
     }
 
     #[inline]
     #[allow(clippy::unnecessary_cast)]
-    pub fn get_active_queue(&self) -> SpinLockGuard<'_, ArcList<T, A>> {
+    pub fn get_active_queue(&self) -> OwnedIrqSpinLockGuard<'_, ArcList<T, A>> {
         let i = self.active.load(Ordering::Acquire) as usize;
         self.queues[i % N].irqsave_lock()
     }

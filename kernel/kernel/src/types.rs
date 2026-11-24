@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::sync::{SpinLock, SpinLockGuard};
+use crate::sync::{OwnedIrqSpinLockGuard, SpinLock};
 pub use blueos_infra::{
     iheap::{
         IouMinHeapNodeMut as IouIntrusiveBinaryHeapNodeMut, MinHeap as IntrusiveBinaryHeap,
@@ -30,6 +30,7 @@ pub use blueos_infra::{
         },
         GenericList,
     },
+    marker::NotThreadSafe,
     tinyarc::{
         TinyArc as Arc, TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
         TinyArcListIterator as ArcListIterator,
@@ -89,7 +90,7 @@ pub(crate) struct UniqueListHeadAccessGuard<
     A: IntrusiveAdapter<T> + 'static,
     O: StaticListOwner<T, A>,
 >(
-    SpinLockGuard<'static, AtomicIlistHead<T, A>>,
+    OwnedIrqSpinLockGuard<'static, AtomicIlistHead<T, A>>,
     PhantomData<O>,
 );
 
@@ -97,7 +98,7 @@ impl<T: 'static, A: IntrusiveAdapter<T> + 'static, O: StaticListOwner<T, A>>
     UniqueListHeadAccessGuard<T, A, O>
 {
     #[inline]
-    pub fn new(w: SpinLockGuard<'static, AtomicIlistHead<T, A>>) -> Self {
+    pub fn new(w: OwnedIrqSpinLockGuard<'static, AtomicIlistHead<T, A>>) -> Self {
         Self(w, PhantomData)
     }
 
@@ -117,7 +118,7 @@ impl<T: 'static, A: IntrusiveAdapter<T> + 'static, O: StaticListOwner<T, A>>
     }
 
     #[inline]
-    pub fn get_guard_mut(&mut self) -> &mut SpinLockGuard<'static, AtomicIlistHead<T, A>> {
+    pub fn get_guard_mut(&mut self) -> &mut OwnedIrqSpinLockGuard<'static, AtomicIlistHead<T, A>> {
         &mut self.0
     }
 }

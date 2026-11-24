@@ -74,6 +74,15 @@ pub(super) fn init_idle_threads() {
 }
 
 #[inline]
+pub(super) fn is_current_idle_with(thread: &Thread, _irq: &support::DisableInterruptGuard) -> bool {
+    let cpu = arch::current_cpu_id();
+    // SAFETY: idle threads were initialized before scheduling; the mask keeps
+    // this lookup on the current CPU.
+    let idle = unsafe { IDLE_THREADS[cpu].assume_init_ref() };
+    Thread::id(thread) == Thread::id(idle)
+}
+
+#[inline]
 pub fn current_idle_thread_ref() -> &'static Thread {
     let _dig = support::DisableInterruptGuard::new();
     let id = arch::current_cpu_id();

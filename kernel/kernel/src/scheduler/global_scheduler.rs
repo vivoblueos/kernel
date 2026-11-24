@@ -15,7 +15,8 @@
 use crate::{
     arch,
     config::MAX_THREAD_PRIORITY,
-    sync::spinlock::{SpinLock, SpinLockGuard},
+    support::DisableInterruptGuard,
+    sync::spinlock::SpinLock,
     thread,
     thread::{Thread, ThreadNode},
     types::{ArcList, ThreadPriority, Uint},
@@ -69,7 +70,7 @@ impl ReadyTable {
 }
 
 #[inline]
-fn inner_next_thread(mut tbl: SpinLockGuard<'_, ReadyTable>, index: usize) -> Option<ThreadNode> {
+fn inner_next_thread(tbl: &mut ReadyTable, index: usize) -> Option<ThreadNode> {
     let q = &mut tbl.tables[index];
     let next = q.pop_front()?;
     debug_assert_eq!(next.state(), thread::READY);
@@ -90,7 +91,16 @@ pub enum PreferMode {
 
 #[inline(always)]
 pub fn next_preferred_thread(prio: ThreadPriority, mode: PreferMode) -> Option<ThreadNode> {
-    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    let irq = DisableInterruptGuard::new();
+    next_preferred_thread_with(prio, mode, &irq)
+}
+#[inline(always)]
+pub(crate) fn next_preferred_thread_with(
+    prio: ThreadPriority,
+    mode: PreferMode,
+    irq: &DisableInterruptGuard,
+) -> Option<ThreadNode> {
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().lock_with(irq) };
     let highest_active = tbl.highest_active();
     // highest_active is trailing_zeros(): 0 = highest priority. When a
     // same-priority ready thread exists, highest_active == prio.
@@ -106,11 +116,16 @@ pub fn next_preferred_thread(prio: ThreadPriority, mode: PreferMode) -> Option<T
             }
         }
     }
-    inner_next_thread(tbl, highest_active as usize)
+    inner_next_thread(&mut tbl, highest_active as usize)
 }
 
 pub fn next_ready_thread() -> Option<ThreadNode> {
-    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    let irq = DisableInterruptGuard::new();
+    next_ready_thread_with(&irq)
+}
+#[inline(always)]
+pub(crate) fn next_ready_thread_with(irq: &DisableInterruptGuard) -> Option<ThreadNode> {
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().lock_with(irq) };
     let highest_active = tbl.highest_active();
 
     #[cfg(debugging_scheduler)]
@@ -121,7 +136,7 @@ pub fn next_ready_thread() -> Option<ThreadNode> {
     if highest_active > MAX_THREAD_PRIORITY as u32 {
         return None;
     }
-    inner_next_thread(tbl, highest_active as usize)
+    inner_next_thread(&mut tbl, highest_active as usize)
 }
 
 // Peek at the highest ready priority without popping. Used by
@@ -131,6 +146,18 @@ pub fn next_ready_thread() -> Option<ThreadNode> {
 #[inline]
 pub fn highest_ready_priority() -> Option<ThreadPriority> {
     let tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    priority_from_table(&tbl)
+}
+
+#[cfg(not(smp))]
+#[inline]
+pub(super) fn highest_ready_priority_with(irq: &DisableInterruptGuard) -> Option<ThreadPriority> {
+    let tbl = unsafe { READY_TABLE.assume_init_ref().lock_with(irq) };
+    priority_from_table(&tbl)
+}
+
+#[inline]
+fn priority_from_table(tbl: &ReadyTable) -> Option<ThreadPriority> {
     let highest_active = tbl.highest_active();
     if highest_active > MAX_THREAD_PRIORITY as u32 {
         return None;
@@ -163,7 +190,7 @@ where
 }
 
 #[inline]
-fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadNode) -> bool {
+fn queue_ready_thread_inner(tbl: &mut ReadyTable, t: &ThreadNode) -> bool {
     let priority = t.priority();
     debug_assert!(priority <= MAX_THREAD_PRIORITY);
     let q = &mut tbl.tables[priority as usize];
@@ -185,12 +212,21 @@ fn queue_ready_thread_inner(tbl: &mut SpinLockGuard<'_, ReadyTable>, t: &ThreadN
 
 // We only queue the thread if old_state equals thread's current state.
 pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
+    let irq = DisableInterruptGuard::new();
+    queue_ready_thread_with(old_state, &t, &irq)
+}
+#[inline(always)]
+pub(crate) fn queue_ready_thread_with(
+    old_state: Uint,
+    t: &ThreadNode,
+    irq: &DisableInterruptGuard,
+) -> Result<(), Uint> {
     if old_state == thread::READY {
         return Err(thread::READY);
     }
-    let mut tbl = unsafe { READY_TABLE.assume_init_ref().irqsave_lock() };
+    let mut tbl = unsafe { READY_TABLE.assume_init_ref().lock_with(irq) };
     t.transfer_state(old_state, thread::READY)?;
-    let ok = queue_ready_thread_inner(&mut tbl, &t);
+    let ok = queue_ready_thread_inner(&mut tbl, t);
     if !ok {
         // push_back failed: thread is in READY state with sched_node still
         // detached. Roll back to old_state so the thread stays in its wait
@@ -202,7 +238,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
         debug_assert!(
             rollback.is_ok(),
             "queue_ready_thread rollback failed for TH:0x{:x}: state was {:?}, expected READY; alien_ptr={:?}, priority={}, thread is now ghost",
-            Thread::id(&t),
+            Thread::id(t),
             rollback,
             t.get_alien_ptr(),
             t.priority(),
@@ -216,7 +252,7 @@ pub fn queue_ready_thread(old_state: Uint, t: ThreadNode) -> Result<(), Uint> {
 }
 
 fn remove_from_ready_queue_inner(
-    tbl: &mut SpinLockGuard<'_, ReadyTable>,
+    tbl: &mut ReadyTable,
     t: &ThreadNode,
     old_priority: ThreadPriority,
 ) -> bool {

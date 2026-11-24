@@ -17,8 +17,11 @@
 // SPDX-License: MIT
 
 //! A lock that provides data access to either one writer or many readers.
+//!
+//! Guards stay on the thread that acquired them. Upgrading or downgrading a
+//! guard preserves this contract.
 
-use crate::intrusive::Adapter;
+use crate::{intrusive::Adapter, marker::NotThreadSafe};
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -99,6 +102,11 @@ pub struct RwLock<T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
+// SAFETY: Moving the lock transfers ownership of its protected data.
+unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
+// SAFETY: Writers can move T out by replacement; concurrent readers share &T.
+unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
+
 const READER: Usize = 1 << 2;
 const UPGRADED: Usize = 1 << 1;
 const WRITER: Usize = 1;
@@ -111,7 +119,11 @@ const WRITER: Usize = 1;
 pub struct RwLockReadGuard<'a, T: 'a + ?Sized> {
     lock: &'a AtomicUsize,
     data: *const T,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Sharing a read guard exposes only &T; releasing it consumes the guard.
+unsafe impl<T: ?Sized + Sync> Sync for RwLockReadGuard<'_, T> {}
 
 /// A guard that provides mutable data access.
 ///
@@ -120,7 +132,12 @@ pub struct RwLockReadGuard<'a, T: 'a + ?Sized> {
 pub struct RwLockWriteGuard<'a, T: 'a + ?Sized> {
     lock: &'a AtomicUsize,
     data: *mut T,
+    _not_send: NotThreadSafe,
 }
+
+// SAFETY: Sharing a write guard exposes only &T. Mutation requires &mut Guard,
+// and releasing or changing lock mode consumes it. Keep the existing Send bound.
+unsafe impl<T: ?Sized + Send + Sync> Sync for RwLockWriteGuard<'_, T> {}
 
 /// A guard that provides immutable data access but can be upgraded to [`RwLockWriteGuard`].
 ///
@@ -133,19 +150,11 @@ pub struct RwLockWriteGuard<'a, T: 'a + ?Sized> {
 pub struct RwLockUpgradableGuard<'a, T: 'a + ?Sized> {
     lock: &'a AtomicUsize,
     data: *const T,
+    _not_send: NotThreadSafe,
 }
 
-// Same unsafe impls as `std::sync::RwLock`
-unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
-unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
-
-unsafe impl<T: ?Sized + Send + Sync> Send for RwLockWriteGuard<'_, T> {}
-unsafe impl<T: ?Sized + Send + Sync> Sync for RwLockWriteGuard<'_, T> {}
-
-unsafe impl<T: ?Sized + Sync> Send for RwLockReadGuard<'_, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwLockReadGuard<'_, T> {}
-
-unsafe impl<T: ?Sized + Send + Sync> Send for RwLockUpgradableGuard<'_, T> {}
+// SAFETY: Sharing this guard exposes only &T; upgrading, downgrading or releasing
+// it consumes the guard. Keep the existing Send bound.
 unsafe impl<T: ?Sized + Send + Sync> Sync for RwLockUpgradableGuard<'_, T> {}
 
 impl<T> RwLock<T> {
@@ -339,6 +348,7 @@ impl<T: ?Sized> RwLock<T> {
             Some(RwLockReadGuard {
                 lock: &self.lock,
                 data: self.data.get(),
+                _not_send: NotThreadSafe,
             })
         }
     }
@@ -409,6 +419,7 @@ impl<T: ?Sized> RwLock<T> {
             Some(RwLockWriteGuard {
                 lock: &self.lock,
                 data: self.data.get(),
+                _not_send: NotThreadSafe,
             })
         } else {
             None
@@ -446,6 +457,7 @@ impl<T: ?Sized> RwLock<T> {
             Some(RwLockUpgradableGuard {
                 lock: &self.lock,
                 data: self.data.get(),
+                _not_send: NotThreadSafe,
             })
         } else {
             // We can't unflip the UPGRADED bit back just yet as there is another upgradeable or write lock.
@@ -573,6 +585,7 @@ impl<'rwlock, T: ?Sized> RwLockUpgradableGuard<'rwlock, T> {
             Ok(RwLockWriteGuard {
                 lock,
                 data: data as *mut T,
+                _not_send: NotThreadSafe,
             })
         } else {
             Err(self)
@@ -619,7 +632,11 @@ impl<'rwlock, T: ?Sized> RwLockUpgradableGuard<'rwlock, T> {
         // Dropping self removes the UPGRADED bit
         mem::drop(self);
 
-        RwLockReadGuard { lock, data }
+        RwLockReadGuard {
+            lock,
+            data,
+            _not_send: NotThreadSafe,
+        }
     }
 
     /// Leak the lock guard, yielding a reference to the underlying data.
@@ -677,7 +694,11 @@ impl<'rwlock, T: ?Sized> RwLockWriteGuard<'rwlock, T> {
         // Dropping self removes the UPGRADED bit
         mem::drop(self);
 
-        RwLockReadGuard { lock, data }
+        RwLockReadGuard {
+            lock,
+            data,
+            _not_send: NotThreadSafe,
+        }
     }
 
     /// Downgrades the writable lock guard to an upgradable, shared lock guard. Cannot fail and is guaranteed not to spin.
@@ -707,7 +728,11 @@ impl<'rwlock, T: ?Sized> RwLockWriteGuard<'rwlock, T> {
         // Dropping self removes the UPGRADED bit
         mem::forget(self);
 
-        RwLockUpgradableGuard { lock, data }
+        RwLockUpgradableGuard {
+            lock,
+            data,
+            _not_send: NotThreadSafe,
+        }
     }
 
     /// Leak the lock guard, yielding a mutable reference to the underlying data.
@@ -848,7 +873,11 @@ impl<T: Sized, A: Adapter<T>> IRwLock<T, A> {
         let lock = g.lock;
         let data = self.this_mut() as *mut T;
         core::mem::forget(g);
-        RwLockWriteGuard { lock, data }
+        RwLockWriteGuard {
+            lock,
+            data,
+            _not_send: NotThreadSafe,
+        }
     }
 }
 

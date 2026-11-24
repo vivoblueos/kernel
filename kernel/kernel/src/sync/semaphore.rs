@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{SpinLock, SpinLockGuard};
+use super::{OwnedIrqSpinLockGuard, SpinLock};
 use crate::{
     error::code,
     irq, scheduler,
@@ -28,7 +28,10 @@ use core::{cell::Cell, ops::DerefMut};
 #[derive(Debug)]
 pub struct Semaphore {
     counter: Cell<Uint>,
-    // We let the Spinlock protect the whole semaphore.
+    // False means the wait queue is empty. Only admitted, masked UP code
+    // changes this flag, at the same time that it links or unlinks a waiter.
+    #[cfg(not(smp))]
+    has_waiters: Cell<bool>,
     pending: SpinLock<WaitQueue>,
 }
 
@@ -36,6 +39,8 @@ impl Semaphore {
     pub const fn new() -> Self {
         Self {
             counter: Cell::new(1),
+            #[cfg(not(smp))]
+            has_waiters: Cell::new(false),
             pending: SpinLock::new(WaitQueue::new()),
         }
     }
@@ -71,12 +76,62 @@ impl Semaphore {
         true
     }
 
+    #[inline(always)]
     pub fn acquire_notimeout<M>(&self) -> bool
     where
         M: InsertModeTrait,
     {
         debug_assert!(!irq::is_in_irq());
-        let mut w = self.pending.irqsave_lock();
+        #[cfg(not(smp))]
+        let w = match self.fast_permit_or_lease(false) {
+            None => return true,
+            Some(irq) => self.pending.lock_with_owned_irq(irq),
+        };
+        #[cfg(smp)]
+        let w = self.pending.irqsave_lock();
+        let old = self.counter.get();
+        if old != 0 {
+            self.counter.set(old - 1);
+            return true;
+        }
+        self.acquire_notimeout_slow::<M>(w)
+    }
+
+    #[cfg(not(smp))]
+    #[inline(always)]
+    fn fast_permit_or_lease(&self, release: bool) -> Option<crate::support::DisableInterruptGuard> {
+        // SAFETY: only scalar Cell operations run here. Every other access to
+        // these fields is serialized by the queue guard's owning IRQ mask.
+        unsafe {
+            super::local_context::short_or_owned(|| {
+                let old = self.counter.get();
+                if release {
+                    if self.has_waiters.get() {
+                        return false;
+                    }
+                    let Some(next) = old.checked_add(1) else {
+                        return false;
+                    };
+                    self.counter.set(next);
+                } else {
+                    if old == 0 {
+                        return false;
+                    }
+                    self.counter.set(old - 1);
+                }
+                true
+            })
+        }
+    }
+
+    // Keep wait-entry/timer setup out of the uncontended path's stack frame.
+    // The existing payload borrow and IRQ lease are passed in, never reacquired.
+    #[cold]
+    #[inline(never)]
+    fn acquire_notimeout_slow<'a, M>(&'a self, mut w: OwnedIrqSpinLockGuard<'a, WaitQueue>) -> bool
+    where
+        M: InsertModeTrait,
+    {
         loop {
             let old = self.counter.get();
             #[cfg(debugging_scheduler)]
@@ -94,16 +149,19 @@ impl Semaphore {
                 return true;
             }
             with_iou!(|borrowed_wait_entry| {
-                let this_thread = scheduler::current_thread();
-                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                let mut wait_entry = WaitEntry::new(scheduler::current_thread_with(w.irq_guard()));
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(true);
                 let timeout = scheduler::suspend_me_for(Tick::MAX, Some(w));
                 debug_assert!(!timeout);
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(!w.is_empty());
                 // ERESET injected by reset()/delete()? Bail out.
-                if this_thread.take_wait_error() != 0 {
+                if wait_entry.thread.take_wait_error() != 0 {
                     return false;
                 }
             });
@@ -138,15 +196,18 @@ impl Semaphore {
             }
             let timeout;
             with_iou!(|borrowed_wait_entry| {
-                let this_thread = scheduler::current_thread();
-                let mut wait_entry = WaitEntry::new(this_thread.clone());
+                let mut wait_entry = WaitEntry::new(scheduler::current_thread_with(w.irq_guard()));
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(true);
                 timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                #[cfg(not(smp))]
+                self.has_waiters.set(!w.is_empty());
                 // ERESET injected by reset()/delete()? Bail out.
-                if this_thread.take_wait_error() != 0 {
+                if wait_entry.thread.take_wait_error() != 0 {
                     return false;
                 }
             });
@@ -171,8 +232,14 @@ impl Semaphore {
         self.acquire_timeout::<M>(timeout)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn release(&self) {
+        #[cfg(not(any(smp, debugging_scheduler)))]
+        let w = match self.fast_permit_or_lease(true) {
+            None => return,
+            Some(irq) => self.pending.lock_with_owned_irq(irq),
+        };
+        #[cfg(any(smp, debugging_scheduler))]
         let w = self.pending.irqsave_lock();
         let old = self.counter.get();
         #[cfg(debugging_scheduler)]
@@ -193,11 +260,11 @@ impl Semaphore {
 
     #[cold]
     #[inline(never)]
-    fn wake_waiter(w: SpinLockGuard<'_, WaitQueue>) {
+    fn wake_waiter(w: OwnedIrqSpinLockGuard<'_, WaitQueue>) {
         let mut woken = false;
+        let irq = w.irq_guard();
         for next in w.iter() {
-            let t = next.thread.clone();
-            if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
+            if scheduler::queue_ready_thread_with(thread::SUSPENDED, &next.thread, irq).is_ok() {
                 woken = true;
                 break;
             }
@@ -612,5 +679,46 @@ mod tests {
         semaphore.delete();
         wait_until(2, &observed);
         assert_eq!(observed.load(Ordering::Acquire), 2);
+    }
+    #[cfg(not(smp))]
+    #[test]
+    fn up_permit_fast_path_after_timeout_and_reset() {
+        let sem = Arc::new(Semaphore::new());
+        assert!(sem.init(0));
+        assert!(!sem.acquire_timeout::<InsertToEnd>(Tick(2)));
+        {
+            let q = sem.pending.irqsave_lock();
+            assert!(q.is_empty() && !sem.has_waiters.get());
+        }
+
+        let observed = Arc::new(AtomicUsize::new(0));
+        let worker_sem = sem.clone();
+        let done = observed.clone();
+        let worker = thread::spawn(move || {
+            assert!(!worker_sem.acquire_notimeout::<InsertToEnd>());
+            done.store(1, Ordering::Release);
+            wake(&done);
+        })
+        .unwrap();
+        while worker.state() != thread::SUSPENDED {
+            scheduler::relinquish_me();
+        }
+        {
+            let q = sem.pending.irqsave_lock();
+            assert!(!q.is_empty() && sem.has_waiters.get());
+        }
+        assert_eq!(sem.reset(), 1);
+        wait_until(1, &observed);
+        {
+            let q = sem.pending.irqsave_lock();
+            assert!(q.is_empty() && !sem.has_waiters.get());
+        }
+        let outer = crate::support::DisableInterruptGuard::new();
+        sem.release();
+        assert!(sem.acquire_notimeout::<InsertToEnd>());
+        assert!(!crate::arch::local_irq_enabled());
+        drop(outer);
+        assert!(crate::arch::local_irq_enabled());
+        assert_eq!(sem.count(), 0);
     }
 }

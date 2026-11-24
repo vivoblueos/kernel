@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use super::{SpinLock, SpinLockGuard};
+use super::{OwnedIrqSpinLockGuard, SpinLock};
 use crate::{
     allocator,
     error::{code, Error},
@@ -118,7 +118,7 @@ impl MessageQueue {
     }
 
     #[inline]
-    fn lock_buffer(&self) -> SpinLockGuard<'_, BoxedRingBuffer> {
+    fn lock_buffer(&self) -> OwnedIrqSpinLockGuard<'_, BoxedRingBuffer> {
         self.queue_buffer.irqsave_lock()
     }
 
@@ -157,7 +157,7 @@ impl MessageQueue {
         self.accessible_count[RECV_TYPE].fetch_sub(1, Ordering::Relaxed);
     }
 
-    fn wakeup_pend_receiver(w: &mut SpinLockGuard<'_, WaitQueue>) -> bool {
+    fn wakeup_pend_receiver(w: &mut OwnedIrqSpinLockGuard<'_, WaitQueue>) -> bool {
         for next in w.iter() {
             let t = next.thread.clone();
             if scheduler::queue_ready_thread(thread::SUSPENDED, t).is_ok() {
@@ -197,7 +197,6 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            send_queue.take_irq_guard(&mut buffer_guard);
             drop(buffer_guard);
             let reached_deadline;
             with_iou!(|borrowed_wait_entry| {
@@ -287,7 +286,6 @@ impl MessageQueue {
             if irq::is_in_irq() {
                 return Err(code::ENOTSUP);
             }
-            recv_queue.take_irq_guard(&mut buffer_guard);
             drop(buffer_guard);
             let reached_deadline;
             with_iou!(|borrowed_wait_entry| {

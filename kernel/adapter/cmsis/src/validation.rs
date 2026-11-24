@@ -126,12 +126,21 @@ mod tests {
         }
     }
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn NVIC_SetPriority(irq: u16, priority: u8) {
+    pub unsafe extern "C" fn configure_validation_irqs(primary: u16, secondary: u16) {
+        use arch::irq::{disable_irq, register_raw_isr, set_irq_priority, IrqNumber, Priority};
+        let primary = IrqNumber::new(primary);
+        let secondary = IrqNumber::new(secondary);
+        disable_irq(primary);
+        disable_irq(secondary);
+        // SAFETY: TS_Init installs the validation vectors before enabling either IRQ.
         unsafe {
-            cortex_m::Peripherals::steal()
-                .NVIC
-                .set_priority(IrqNumber::new(irq), priority)
-        };
+            register_raw_isr(primary, uart::uart1rx_handler);
+            register_raw_isr(secondary, uart::uart1tx_handler);
+        }
+        // Both ISRs call RTOS APIs. Keep the secondary IRQ above the primary
+        // while allowing the kernel's IRQ mask to exclude either one.
+        set_irq_priority(primary, Priority::Low as u8);
+        set_irq_priority(secondary, Priority::Normal as u8);
     }
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_EnableIRQ(irq: u16) {

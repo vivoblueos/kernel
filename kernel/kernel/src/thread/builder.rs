@@ -19,7 +19,7 @@ use crate::{
     arch::Context,
     config, debug, scheduler, static_arc,
     support::Storage,
-    sync::spinlock::{SpinLock, SpinLockGuard},
+    sync::spinlock::{OwnedIrqSpinLockGuard, SpinLock},
     thread, trace,
     types::{
         Arc, ArcInner, ArcList, ArcListIterator, AtomicIlistHead as ListHead, StaticListOwner, Uint,
@@ -41,7 +41,7 @@ static_arc! {
 }
 
 pub struct GlobalQueueVisitor<'a> {
-    lock: SpinLockGuard<'a, Head>,
+    lock: OwnedIrqSpinLockGuard<'a, Head>,
     it: ArcListIterator<'a, Thread, OffsetOfGlobal>,
 }
 
