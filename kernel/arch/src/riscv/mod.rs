@@ -49,7 +49,7 @@ pub(crate) extern "C" fn pend_switch_context() {
     let level = disable_local_irq_save();
     let id = current_cpu_id();
     unsafe { PENDING_SWITCH_CONTEXT[id].set(true) };
-    enable_local_irq_restore(level);
+    unsafe { enable_local_irq_restore(level) };
 }
 
 #[inline]
@@ -58,7 +58,7 @@ pub(crate) extern "C" fn claim_switch_context() -> bool {
     let id = current_cpu_id();
     let ok = unsafe { PENDING_SWITCH_CONTEXT[id].get() };
     unsafe { PENDING_SWITCH_CONTEXT[id].set(false) };
-    enable_local_irq_restore(level);
+    unsafe { enable_local_irq_restore(level) };
     ok
 }
 
@@ -335,7 +335,9 @@ pub extern "C" fn disable_local_irq() {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq() {
+/// # Safety
+/// No live guard may require local interrupts to remain masked.
+pub unsafe extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!(set_mstatus_mie!(), options(nostack)) };
     compiler_fence(Ordering::SeqCst);
 }
@@ -360,7 +362,9 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq_restore(old: usize) {
+/// # Safety
+/// Restore only a matching mask saved on this CPU, respecting live IRQ guards.
+pub unsafe extern "C" fn enable_local_irq_restore(old: usize) {
     unsafe {
         core::arch::asm!("csrw mstatus, {old}", old = in(reg) old,
                          options(nostack))

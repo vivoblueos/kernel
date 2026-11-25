@@ -348,7 +348,7 @@ pub unsafe extern "C" fn wifi_int_disable(_wifi_int_mux: *mut c_void) -> u32 {
 }
 
 pub unsafe extern "C" fn wifi_int_restore(_wifi_int_mux: *mut c_void, tmp: u32) {
-    crate::arch::enable_local_irq_restore(tmp as usize);
+    unsafe { crate::arch::enable_local_irq_restore(tmp as usize) };
 }
 
 pub unsafe extern "C" fn task_yield_from_isr() {

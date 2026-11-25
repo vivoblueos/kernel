@@ -497,7 +497,8 @@ pub extern "C" fn sysconf(name: c_int) -> i64 {
 fn with_irq_masked<R>(f: impl FnOnce() -> R) -> R {
     let saved = blueos::arch::disable_local_irq_save();
     let r = f();
-    blueos::arch::enable_local_irq_restore(saved);
+    // SAFETY: f is a private scalar operation with no callbacks or scheduling.
+    unsafe { blueos::arch::enable_local_irq_restore(saved) };
     r
 }
 

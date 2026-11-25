@@ -44,7 +44,7 @@ impl DisableInterruptGuard {
 impl Drop for DisableInterruptGuard {
     #[inline]
     fn drop(&mut self) {
-        arch::enable_local_irq_restore(self.old);
+        unsafe { arch::enable_local_irq_restore(self.old) };
     }
 }
 
@@ -62,7 +62,7 @@ impl PlainDisableInterruptGuard {
 impl Drop for PlainDisableInterruptGuard {
     #[inline]
     fn drop(&mut self) {
-        arch::enable_local_irq();
+        unsafe { arch::enable_local_irq() };
     }
 }
 

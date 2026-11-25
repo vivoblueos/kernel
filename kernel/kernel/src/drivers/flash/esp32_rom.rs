@@ -72,7 +72,7 @@ pub(crate) fn with_flash_op<R>(body: impl FnOnce() -> R) -> R {
     let cache_state = unsafe { Cache_Suspend_ICache() };
     let result = body();
     unsafe { Cache_Resume_ICache(cache_state) };
-    enable_local_irq_restore(flags);
+    unsafe { enable_local_irq_restore(flags) };
     result
 }
 #[unsafe(link_section = ".rwtext")]
