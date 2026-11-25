@@ -35,7 +35,7 @@ use alloc::boxed::Box;
 use core::{
     intrinsics::unlikely,
     mem::MaybeUninit,
-    sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{compiler_fence, AtomicU8, Ordering},
 };
 pub use global_scheduler::*;
 pub(crate) use wait_queue::*;

@@ -15,17 +15,17 @@
 use crate::{
     devices::{Device, DeviceManager},
     error::{code, Error},
-    vfs::{inode_mode::InodeMode, path},
+    vfs::{dcache::Dcache, inode_mode::InodeMode},
 };
 use alloc::sync::Arc;
 use log::debug;
 
-pub fn init() -> Result<(), Error> {
-    DeviceManager::get().foreach(add_device)
+pub fn init(dev_dir: Arc<Dcache>) -> Result<(), Error> {
+    DeviceManager::get().foreach(|path, dev| add_device(&dev_dir, path, dev))
 }
 
-fn add_device(path: &str, dev: Arc<dyn Device>) -> Result<(), Error> {
-    let mut dev_dir = path::lookup_path("/dev").ok_or(code::ENOENT)?;
+fn add_device(dev_root: &Arc<Dcache>, path: &str, dev: Arc<dyn Device>) -> Result<(), Error> {
+    let mut dev_dir = dev_root.clone();
 
     let mut rel_path = path.trim_start_matches('/');
     while !rel_path.is_empty() {
