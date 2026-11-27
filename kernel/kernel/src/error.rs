@@ -185,6 +185,32 @@ impl<T> From<fatfs::Error<T>> for Error {
     }
 }
 
+impl From<rsext4::Ext4Error> for Error {
+    fn from(value: rsext4::Ext4Error) -> Self {
+        use rsext4::Ext4ErrorKind;
+
+        match value.kind() {
+            Ext4ErrorKind::NoSpace | Ext4ErrorKind::QuotaExceeded => code::ENOSPC,
+            Ext4ErrorKind::NoMemory => code::ENOMEM,
+            Ext4ErrorKind::PermissionDenied | Ext4ErrorKind::ReadOnly => code::EACCES,
+            Ext4ErrorKind::NotFound => code::ENOENT,
+            Ext4ErrorKind::AlreadyExists => code::EEXIST,
+            Ext4ErrorKind::NotDirectory => code::ENOTDIR,
+            Ext4ErrorKind::IsDirectory => code::EISDIR,
+            Ext4ErrorKind::NotEmpty => code::ENOTEMPTY,
+            Ext4ErrorKind::Busy => code::EBUSY,
+            Ext4ErrorKind::BadFileDescriptor => code::EBADF,
+            Ext4ErrorKind::InvalidInput => code::EINVAL,
+            Ext4ErrorKind::Overflow | Ext4ErrorKind::FileTooLarge => code::EOVERFLOW,
+            Ext4ErrorKind::Timeout => code::ETIMEDOUT,
+            Ext4ErrorKind::Unsupported
+            | Ext4ErrorKind::UnsupportedCapability
+            | Ext4ErrorKind::UnsupportedFeature => code::ENOTSUP,
+            _ => code::EIO,
+        }
+    }
+}
+
 pub fn strerror(error: i32) -> *const core::ffi::c_char {
     Error(error).name().as_ptr()
 }

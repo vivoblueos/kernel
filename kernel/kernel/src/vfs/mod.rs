@@ -27,6 +27,8 @@ use log::debug;
 mod dcache;
 mod devfs;
 pub mod dirent;
+#[cfg(rootfs_ext4)]
+mod ext4;
 #[cfg(fatfs)]
 mod fatfs;
 pub mod fd_manager;
@@ -56,22 +58,34 @@ fn should_skip_fatfs_mount(policy: crate::boards::BlockStoragePolicy, error: Err
     policy.allows_missing() && error == crate::error::code::ENODEV
 }
 
+fn ensure_mount_directory(parent: &alloc::sync::Arc<Dcache>, name: &str) -> Result<(), Error> {
+    match parent.lookup(name) {
+        Ok(entry) if entry.type_() == InodeFileType::Directory => Ok(()),
+        Ok(_) => Err(crate::error::code::ENOTDIR),
+        Err(error) if error == crate::error::code::ENOENT => {
+            parent.new_child(
+                name,
+                InodeFileType::Directory,
+                InodeMode::from(0o555),
+                || None,
+            )?;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// Initialize the virtual file system
 pub fn vfs_init() -> Result<(), Error> {
     debug!("Initializing VFS...");
-    root::init();
+    root::init()?;
     let cwd = path::get_working_dir();
 
     // /dev is a temporary filesystem
     let dev_name = String::from("dev");
     let devfs = TmpFileSystem::new();
     // create the directory /dev
-    let dev_dir = cwd.new_child(
-        dev_name.as_str(),
-        InodeFileType::Directory,
-        InodeMode::from(0o555),
-        || None,
-    )?;
+    ensure_mount_directory(&cwd, dev_name.as_str())?;
     let devfs_mount_point = Dcache::new(devfs.root_inode(), dev_name, cwd.get_weak_ref());
     devfs_mount_point.mount(devfs)?;
     debug!("Mounted devfs at '/dev'");
@@ -93,12 +107,7 @@ pub fn vfs_init() -> Result<(), Error> {
         match FatFileSystem::new(BLOCK_STORAGE_DEVICE_NAME) {
             Ok(fatfs) => {
                 let fat_name = String::from(BLOCK_STORAGE_MOUNT_POINT);
-                let dev_dir = cwd.new_child(
-                    fat_name.as_str(),
-                    InodeFileType::Directory,
-                    InodeMode::from(0o555),
-                    || None,
-                )?;
+                ensure_mount_directory(&cwd, fat_name.as_str())?;
                 let fatfs_mount_point =
                     Dcache::new(fatfs.root_inode(), fat_name, cwd.get_weak_ref());
                 fatfs_mount_point.mount(fatfs)?;
@@ -113,12 +122,7 @@ pub fn vfs_init() -> Result<(), Error> {
     {
         let proc_name = String::from("proc");
         let procfs = procfs::get_procfs();
-        let proc_dir = cwd.new_child(
-            proc_name.as_str(),
-            InodeFileType::Directory,
-            InodeMode::from(0o555),
-            || None,
-        )?;
+        ensure_mount_directory(&cwd, proc_name.as_str())?;
         let procfs_mount_point = Dcache::new(procfs.root_inode(), proc_name, cwd.get_weak_ref());
         procfs_mount_point.mount(procfs.clone())?;
         debug!("Mounted procfs at '/proc'");
