@@ -16,6 +16,7 @@ pub(crate) mod asm;
 mod exception;
 pub mod irq;
 pub(crate) mod mmu;
+mod page_fault;
 pub(crate) mod psci;
 pub(crate) mod vector;
 pub(crate) mod virt;

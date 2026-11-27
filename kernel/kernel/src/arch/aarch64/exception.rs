@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{irq, Context, NR_SWITCH};
+use super::{irq, page_fault::PageFaultInfo, Context, NR_SWITCH};
 use crate::{
     arch::aarch64::{disable_local_irq, enable_local_irq},
     scheduler::{self, ContextSwitchHookHolder},
     support::sideeffect,
     syscalls::{dispatch_syscall, Context as ScContext},
 };
-use aarch64_cpu::registers::ESR_EL1;
+use aarch64_cpu::registers::{ESR_EL1, FAR_EL1};
 use core::{
     arch::{asm, naked_asm},
     mem::offset_of,
@@ -127,7 +127,7 @@ unsafe extern "C" fn trap_sync() -> ! {
         mov lr, x19
         b {might_switch}
         ",
-        handle_svc = sym handle_svc,
+        handle_svc = sym handle_sync,
         might_switch = sym might_switch,
     );
 }
@@ -150,37 +150,50 @@ fn prepare_for_context_switch(context: &Context) -> usize {
     scheduler::spin_until_ready_to_run(unsafe { hook.next_thread() })
 }
 
-extern "C" fn handle_svc(context: &mut Context) -> usize {
+extern "C" fn handle_sync(context: &mut Context) -> usize {
+    use ESR_EL1::EC::Value::*;
     let esr = ESR_EL1.get();
-    let ec = (esr >> 26) & 0x3F;
-    let old_sp = context as *const _ as usize;
-    if ec != 0x15 {
-        show_exception(ec, context);
-        return old_sp;
-    }
-    if context.x8 == NR_SWITCH {
-        return prepare_for_context_switch(context);
-    }
-    compiler_fence(Ordering::SeqCst);
-    let sc = ScContext {
-        nr: context.x8,
-        args: [
-            context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
-        ],
+    match ESR_EL1::EC.read_as_enum(esr) {
+        Some(ec) => match ec {
+            SVC64 => {
+                if context.x8 == NR_SWITCH {
+                    return prepare_for_context_switch(context);
+                }
+                compiler_fence(Ordering::SeqCst);
+                let sc = ScContext {
+                    nr: context.x8,
+                    args: [
+                        context.x0, context.x1, context.x2, context.x3, context.x4, context.x5,
+                    ],
+                };
+                enable_local_irq();
+                context.x0 = dispatch_syscall(&sc);
+                disable_local_irq();
+                compiler_fence(Ordering::SeqCst);
+            }
+            InstrAbortLowerEL | InstrAbortCurrentEL | DataAbortLowerEL | DataAbortCurrentEL => {
+                if let Some(fault) = PageFaultInfo::decode(esr, || FAR_EL1.get()) {
+                    panic!(
+                            "Page fault: {:?} at L{}, access={:?}, FAR_EL1={:#x}, ELR_EL1={:#x}, ESR_EL1={esr:#x}",
+                            fault.kind, fault.level, fault.access, fault.fault_address, context.elr,
+                        );
+                }
+                show_exception(esr, context)
+            }
+            _ => show_exception(esr, context),
+        },
+        _ => {
+            panic!(
+                "Unhandled exception: ESR_EL1={:#x}\n======== error stack ======== \n{}",
+                esr, context
+            )
+        }
     };
-    enable_local_irq();
-    context.x0 = dispatch_syscall(&sc);
-    disable_local_irq();
-    compiler_fence(Ordering::SeqCst);
-    old_sp
+    context as *const _ as usize
 }
 
 extern "C" fn trap_exception(context: &mut Context) -> usize {
-    let sp = context as *const _ as usize;
-    let esr = ESR_EL1.get();
-    let ec = (esr >> 26) & 0x3F;
-    show_exception(ec, context);
-    sp
+    show_exception(ESR_EL1.get(), context)
 }
 
 extern "C" fn trap_irq(context: &mut Context) -> usize {
@@ -201,8 +214,9 @@ extern "C" fn trap_fiq(context: &mut Context) -> usize {
     sp
 }
 
-fn show_exception(ec: u64, context: &mut Context) {
-    match ec {
+#[cold]
+fn show_exception(esr: u64, context: &Context) -> ! {
+    match ESR_EL1::EC.read(esr) {
         0x00 => panic!("Unknown reason Exceptions\n======== error stack ======== \n{}",context),
         0x01 => panic!("WFI or WFE instruction\n======== error stack ======== \n{}",context),
         0x03 => panic!("MCR or MRC access to CP15a that is not reported using EC 0x00\n======== error stack ======== \n{}",context),
