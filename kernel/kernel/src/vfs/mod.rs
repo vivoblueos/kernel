@@ -15,7 +15,6 @@
 use crate::{
     error::Error,
     vfs::{
-        dcache::Dcache,
         fs::FileSystem,
         inode_mode::{InodeFileType, InodeMode},
         mount::get_mount_manager,
@@ -47,7 +46,9 @@ pub mod syscalls;
 mod tmpfs;
 mod utils;
 use alloc::string::String;
+pub(crate) use dcache::Dcache;
 pub use file::AccessMode;
+pub(crate) use path::default_process_fs;
 #[cfg(enable_net)]
 pub use sockfs::{alloc_sock_fd, free_sock_fd, get_sock_by_fd, sock_attach_to_fd};
 
@@ -60,7 +61,7 @@ fn should_skip_fatfs_mount(policy: crate::boards::BlockStoragePolicy, error: Err
 pub fn vfs_init() -> Result<(), Error> {
     debug!("Initializing VFS...");
     root::init();
-    let cwd = path::get_working_dir();
+    let cwd = root::get_root_dir().clone();
 
     // /dev is a temporary filesystem
     let dev_name = String::from("dev");
@@ -75,7 +76,7 @@ pub fn vfs_init() -> Result<(), Error> {
     let devfs_mount_point = Dcache::new(devfs.root_inode(), dev_name, cwd.get_weak_ref());
     devfs_mount_point.mount(devfs)?;
     debug!("Mounted devfs at '/dev'");
-    devfs::init()?;
+    devfs::init(devfs_mount_point.clone())?;
 
     // Stdio (fds 0/1/2 on the root process's fd table) is now initialized in
     // the boot path after the root process is created, since it requires the

@@ -28,6 +28,7 @@ use alloc::{
     format,
     string::String,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use core::{
     fmt::{self, Debug},
@@ -235,6 +236,33 @@ impl Dcache {
         }
         path = format!("/{}", path);
         path
+    }
+
+    pub fn path_relative_to(&self, ancestor: &Dcache) -> Option<String> {
+        if ptr::eq(self, ancestor) {
+            return Some(String::from("/"));
+        }
+        let mut names: Vec<String> = Vec::new();
+        let mut current = self.this.upgrade().expect("dangling dcache self-ref");
+        loop {
+            if ptr::eq(Arc::as_ptr(&current), ancestor) {
+                if names.is_empty() {
+                    return Some(String::from("/"));
+                }
+                let mut path = String::new();
+                for name in names.iter().rev() {
+                    path.push('/');
+                    path.push_str(name);
+                }
+                return Some(path);
+            }
+            let Some(parent) = current.parent() else {
+                // Reached the global root without meeting `ancestor`.
+                return None;
+            };
+            names.push(current.name());
+            current = parent;
+        }
     }
 
     pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<(), Error> {

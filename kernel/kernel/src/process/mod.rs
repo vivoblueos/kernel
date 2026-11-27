@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #[cfg(enable_vfs)]
-use crate::vfs::fd_manager::FdManager;
+use crate::vfs::{default_process_fs, fd_manager::FdManager, Dcache};
 use crate::{
     error::Error,
     scheduler,
@@ -223,6 +223,12 @@ struct ProcessTopology {
     state: ProcessState,
 }
 
+#[cfg(enable_vfs)]
+struct ProcessFs {
+    cwd: Arc<Dcache>,
+    root: Arc<Dcache>,
+}
+
 pub struct Process {
     pid: Pid,
     // Parent/child topology. Read with `irqsave_read()`, mutate with
@@ -234,6 +240,9 @@ pub struct Process {
     // This process's open-file table.
     #[cfg(enable_vfs)]
     fd_manager: SpinLock<FdManager>,
+    // This process's filesystem anchors (per-process cwd/root).
+    #[cfg(enable_vfs)]
+    fs: SpinLock<ProcessFs>,
 }
 
 // SAFETY: `Process` would otherwise be `!Send` only because `threads` holds a
@@ -241,7 +250,7 @@ pub struct Process {
 // a raw `NonNull`). A process never actually migrates across cores by being
 // *moved* as a Rust value: once created it is pinned behind an `Arc` whose
 // storage is never moved or dropped, and every field that can be touched
-// concurrently (`topology`, `threads`, `fd_manager`) is already guarded by a
+// concurrently (`topology`, `threads`, `fd_manager`, `fs`) is already guarded by a
 // `SpinLock` whose irqsave read/write guards serialize access. The remaining
 // field (`pid`) is plain `Send + Sync`. So it is sound to move the owning
 // `Arc<Process>` between threads and to share `&Process` across cores — which
@@ -253,6 +262,8 @@ unsafe impl Sync for Process {}
 
 impl Process {
     pub fn new(pid: Pid, parent: Weak<Process>) -> Result<Arc<Self>, crate::error::Error> {
+        #[cfg(enable_vfs)]
+        let (fs_cwd, fs_root) = default_process_fs();
         let arc = Arc::new(Self {
             pid,
             topology: SpinLock::new(ProcessTopology {
@@ -264,6 +275,11 @@ impl Process {
 
             #[cfg(enable_vfs)]
             fd_manager: SpinLock::new(FdManager::new()),
+            #[cfg(enable_vfs)]
+            fs: SpinLock::new(ProcessFs {
+                cwd: fs_cwd,
+                root: fs_root,
+            }),
         });
         // SAFETY: `arc` is the sole strong ref and is not yet observable by any
         // other thread, so this `&mut Process` aliases no live reference.
@@ -355,6 +371,32 @@ impl Process {
     #[cfg(enable_vfs)]
     pub fn fd_manager(&self) -> &SpinLock<FdManager> {
         &self.fd_manager
+    }
+
+    /// This process's cwd anchor for relative-path resolution. Only present
+    /// when VFS is enabled.
+    #[cfg(enable_vfs)]
+    pub fn cwd(&self) -> Arc<Dcache> {
+        self.fs.irqsave_lock().cwd.clone()
+    }
+
+    /// This process's root anchor for absolute-path resolution
+    /// (chroot-equivalent). Only present when VFS is enabled.
+    #[cfg(enable_vfs)]
+    pub fn root(&self) -> Arc<Dcache> {
+        self.fs.irqsave_lock().root.clone()
+    }
+
+    /// Update this process's cwd anchor. Only present when VFS is enabled.
+    #[cfg(enable_vfs)]
+    pub fn set_cwd(&self, dir: Arc<Dcache>) {
+        self.fs.irqsave_lock().cwd = dir;
+    }
+
+    /// Update this process's root anchor. Only present when VFS is enabled.
+    #[cfg(enable_vfs)]
+    pub fn set_root(&self, dir: Arc<Dcache>) {
+        self.fs.irqsave_lock().root = dir;
     }
 
     /// Add a thread to this process's thread list.

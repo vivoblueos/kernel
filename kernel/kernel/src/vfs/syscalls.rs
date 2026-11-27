@@ -833,8 +833,7 @@ pub fn getcwd(buf: *mut c_char, len: usize) -> c_int {
         return -libc::EINVAL;
     }
 
-    let cwd = path::get_working_dir();
-    let cwd_str = cwd.get_full_path();
+    let cwd_str = path::get_working_dir_path();
     let cwd_str_len = cwd_str.len();
     if cwd_str_len > len - 1 {
         return -libc::ERANGE;
@@ -1256,6 +1255,78 @@ mod tests {
 
         let result = chdir(ROOT_DIR);
         assert_eq!(result, code::EOK.to_errno());
+    }
+
+    /// Per-process cwd/root anchors (mechanism only — syscall glue is
+    /// exercised by `test_chdir`, which now flows through the owning
+    /// process's anchors via `path::get/set_working_dir`).
+    #[test]
+    fn test_per_process_fs_isolation() {
+        use crate::process::{current_process, ProcessManager};
+
+        let mgr = ProcessManager::get();
+        let owner = current_process().expect("test thread must own a process");
+
+        // Snapshot the owner's anchors so parallel mutation by other tests
+        // doesn't race with the isolation asserts below.
+        let owner_cwd = owner.cwd();
+        let owner_root = owner.root();
+
+        // A fresh process anchors both cwd and root where its parent's are.
+        let child = mgr
+            .create_process(alloc::sync::Arc::downgrade(&owner))
+            .expect("create_process failed");
+        let child_pid = child.pid();
+        assert!(Arc::ptr_eq(&child.cwd(), &owner_cwd));
+        assert!(Arc::ptr_eq(&child.root(), &owner_root));
+
+        // Updating the child's anchors leaves the owning process untouched.
+        let dev = path::lookup_path("/dev").expect("/dev must be mounted");
+        child.set_cwd(dev.clone());
+        child.set_root(dev.clone());
+        assert!(Arc::ptr_eq(&child.cwd(), &dev));
+        assert!(Arc::ptr_eq(&child.root(), &dev));
+        assert!(Arc::ptr_eq(&owner.cwd(), &owner_cwd));
+        assert!(Arc::ptr_eq(&owner.root(), &owner_root));
+
+        mgr.destroy_process(child_pid);
+    }
+
+    /// Syscall-level behavior of the per-process anchors: chdir/getcwd flow
+    /// through the owning process's cwd, absolute-path resolution is bounded
+    /// at the process root (`..` cannot escape it), and getcwd reports paths
+    /// relative to the process root.
+    #[test]
+    fn test_chdir_getcwd_with_process_root() {
+        use crate::process::current_process;
+
+        let owner = current_process().expect("test thread must own a process");
+        let saved_cwd = owner.cwd();
+        let saved_root = owner.root();
+
+        let dev = path::lookup_path("/dev").expect("/dev must be mounted");
+
+        // chdir/getcwd round trip through the owning process's anchors.
+        assert_eq!(chdir(c"/dev".as_ptr() as *const c_char), 0);
+        let mut buf = [0u8; 256];
+        let len = getcwd(buf.as_mut_ptr() as *mut c_char, buf.len());
+        assert_eq!(len, 4);
+        assert_eq!(&buf[..4], b"/dev");
+
+        // With the process root at /dev, ".." stays at the root and getcwd
+        // reports the cwd relative to it ("/" since cwd == root).
+        owner.set_root(dev.clone());
+        let up = path::lookup_path("/..").expect("/.. must resolve");
+        assert!(Arc::ptr_eq(&up, &dev));
+        let len = getcwd(buf.as_mut_ptr() as *mut c_char, buf.len());
+        assert_eq!(len, 1);
+        assert_eq!(&buf[..1], b"/");
+
+        // Restore, then verify the owner's original anchors are back.
+        owner.set_cwd(saved_cwd.clone());
+        owner.set_root(saved_root.clone());
+        assert!(Arc::ptr_eq(&owner.cwd(), &saved_cwd));
+        assert!(Arc::ptr_eq(&owner.root(), &saved_root));
     }
 
     #[test]

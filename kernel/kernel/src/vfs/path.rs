@@ -15,6 +15,7 @@
 //! Provides utility functions for path processing
 use crate::{
     error::{code, Error},
+    process::current_process,
     vfs::{
         dcache::Dcache,
         file::{AccessMode, File, OpenFlags},
@@ -28,18 +29,57 @@ use spin::{Mutex as SpinMutex, Once};
 // FIXME: move WORKING_DIR to FsEnv
 static WORKING_DIR: Once<SpinMutex<Arc<Dcache>>> = Once::new();
 
+/// The owning process's `(cwd, root)` filesystem anchors, if any.
+fn cur_process_fs() -> Option<(Arc<Dcache>, Arc<Dcache>)> {
+    current_process().map(|p| (p.cwd(), p.root()))
+}
+
+/// Path-resolution root anchor: the owning process's chroot-equivalent
+/// root if any, else the global vfs root.
+pub(crate) fn get_root_for_current() -> Arc<Dcache> {
+    match cur_process_fs() {
+        Some((_, root)) => root,
+        None => get_root_dir().clone(),
+    }
+}
+
+/// `(cwd, root)` anchors for a fresh process: both at the vfs root.
+pub fn default_process_fs() -> (Arc<Dcache>, Arc<Dcache>) {
+    let root = get_root_dir().clone();
+    (root.clone(), root)
+}
+
 pub fn get_working_dir() -> Arc<Dcache> {
-    WORKING_DIR
+    match cur_process_fs() {
+        Some((cwd, _)) => cwd,
+        None => WORKING_DIR
+            .call_once(|| {
+                let dir: &'static Arc<Dcache> = get_root_dir();
+                SpinMutex::new(dir.clone())
+            })
+            .lock()
+            .clone(),
+    }
+}
+
+pub fn get_working_dir_path() -> String {
+    let cwd = get_working_dir();
+    cwd.path_relative_to(&get_root_for_current())
+        .unwrap_or_else(|| cwd.get_full_path())
+}
+
+pub fn set_working_dir(dir: Arc<Dcache>) -> Result<(), Error> {
+    if let Some(process) = current_process() {
+        process.set_cwd(dir);
+        return Ok(());
+    }
+    // No process context: mutate the global anchor instead.
+    let mut working_dir = WORKING_DIR
         .call_once(|| {
             let dir: &'static Arc<Dcache> = get_root_dir();
             SpinMutex::new(dir.clone())
         })
-        .lock()
-        .clone()
-}
-
-pub fn set_working_dir(dir: Arc<Dcache>) -> Result<(), Error> {
-    let mut working_dir = WORKING_DIR.get().unwrap().lock();
+        .lock();
     *working_dir = dir;
     Ok(())
 }
@@ -61,8 +101,11 @@ impl<'a> FilePath<'a> {
 
 pub fn lookup_path(path: &str) -> Option<Arc<Dcache>> {
     match FilePath::new(path) {
-        FilePath::Absolute(path) => lookup_in_dir(get_root_dir(), path.trim_start_matches('/')),
-        FilePath::Relative(path) => lookup_in_dir(&get_working_dir(), path),
+        FilePath::Absolute(path) => {
+            let root = get_root_for_current();
+            lookup_in_dir(&root, path.trim_start_matches('/'), Some(&root))
+        }
+        FilePath::Relative(path) => lookup_in_dir(&get_working_dir(), path, None),
     }
 }
 
@@ -71,13 +114,13 @@ pub fn find_parent_and_name(path: &str) -> Option<(Arc<Dcache>, &str)> {
         FilePath::Relative(path) => {
             let (parent, name) = split_path(path)?;
             let dir = get_working_dir();
-            let parent = lookup_in_dir(&dir, parent)?;
+            let parent = lookup_in_dir(&dir, parent, None)?;
             Some((parent, name))
         }
         FilePath::Absolute(path) => {
             let (parent, name) = split_path(path)?;
-            let dir = get_root_dir();
-            let parent = lookup_in_dir(dir, parent.trim_start_matches('/'))?;
+            let root = get_root_for_current();
+            let parent = lookup_in_dir(&root, parent.trim_start_matches('/'), Some(&root))?;
             Some((parent, name))
         }
     }
@@ -270,7 +313,23 @@ pub fn is_valid_path(path: &str) -> bool {
     true
 }
 
-fn lookup_in_dir(dir: &Arc<Dcache>, path: &str) -> Option<Arc<Dcache>> {
+/// One component lookup, bounded at `root_bound`.
+fn lookup_step(
+    current: &Arc<Dcache>,
+    name: &str,
+    root_bound: Option<&Arc<Dcache>>,
+) -> Option<Arc<Dcache>> {
+    if name == ".." && root_bound.is_some_and(|root| Arc::ptr_eq(current, root)) {
+        return Some(current.clone());
+    }
+    current.lookup(name).ok()
+}
+
+fn lookup_in_dir(
+    dir: &Arc<Dcache>,
+    path: &str,
+    root_bound: Option<&Arc<Dcache>>,
+) -> Option<Arc<Dcache>> {
     // TODO: add support for symlink
     let mut current = dir.clone();
     let mut cur_path = path;
@@ -279,7 +338,7 @@ fn lookup_in_dir(dir: &Arc<Dcache>, path: &str) -> Option<Arc<Dcache>> {
         match cur_path.split_once('/') {
             Some((next_name, next_path)) => {
                 let next_path = next_path.trim_start_matches('/');
-                let next = current.lookup(next_name).ok()?;
+                let next = lookup_step(&current, next_name, root_bound)?;
                 if next.type_() == InodeFileType::Directory {
                     current = next;
                     cur_path = next_path;
@@ -290,7 +349,7 @@ fn lookup_in_dir(dir: &Arc<Dcache>, path: &str) -> Option<Arc<Dcache>> {
             }
             None => {
                 // end of path, just find in cur dir
-                current = current.lookup(cur_path).ok()?;
+                current = lookup_step(&current, cur_path, root_bound)?;
                 break;
             }
         };
