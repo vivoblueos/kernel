@@ -30,6 +30,7 @@ pub use blueos_infra::{
         },
         GenericList,
     },
+    marker::{NotSend, NotSync, NotThreadSafe},
     tinyarc::{
         TinyArc as Arc, TinyArcCas as ArcCas, TinyArcInner as ArcInner, TinyArcList as ArcList,
         TinyArcListIterator as ArcListIterator,
