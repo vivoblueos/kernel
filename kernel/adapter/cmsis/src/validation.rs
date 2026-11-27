@@ -126,12 +126,34 @@ mod tests {
         }
     }
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn NVIC_SetPriority(irq: u16, priority: u8) {
+    pub unsafe extern "C" fn configure_validation_irqs(primary: u16, secondary: u16) {
+        use arch::irq::{disable_irq, register_raw_isr, set_irq_priority, Priority};
+        use blueos::boards::qemu_mps2_an385::config::{UART1RX_IRQn, UART1TX_IRQn};
+
+        // The AN385 validation handlers trace UART1 RX/TX as IRQs A/B.
+        // Check both C-side assignments before changing either vector or mask.
+        assert_eq!(
+            usize::from(primary),
+            usize::from(UART1RX_IRQn),
+            "CMSIS validation IRQ A must be UART1 RX"
+        );
+        assert_eq!(
+            usize::from(secondary),
+            usize::from(UART1TX_IRQn),
+            "CMSIS validation IRQ B must be UART1 TX"
+        );
+
+        disable_irq(UART1RX_IRQn);
+        disable_irq(UART1TX_IRQn);
+        // SAFETY: TS_Init installs both vectors with their IRQ lines disabled.
         unsafe {
-            cortex_m::Peripherals::steal()
-                .NVIC
-                .set_priority(IrqNumber::new(irq), priority)
-        };
+            register_raw_isr(UART1RX_IRQn, uart::uart1rx_handler);
+            register_raw_isr(UART1TX_IRQn, uart::uart1tx_handler);
+        }
+        // Both ISRs call RTOS APIs. Keep the secondary IRQ above the primary
+        // while allowing the kernel's IRQ mask to exclude either one.
+        set_irq_priority(UART1RX_IRQn, Priority::Low as u8);
+        set_irq_priority(UART1TX_IRQn, Priority::Normal as u8);
     }
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn NVIC_EnableIRQ(irq: u16) {
