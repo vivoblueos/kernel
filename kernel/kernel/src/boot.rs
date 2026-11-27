@@ -127,6 +127,7 @@ extern "C" fn init() {
 
     scheduler::init();
     logger::logger_init();
+    log::info!("BlueOS kernel booted");
     time::timer::init();
     #[cfg(kernel_async)]
     asynk::init();
