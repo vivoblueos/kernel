@@ -53,9 +53,10 @@ def do_gen(config, template, suffix='', need_log=False):
         if config.block_img:
             dirname = os.path.dirname(config.block_img)
             os.makedirs(dirname, exist_ok=True)
-            f.write(
-                GEN_BLOCK_IMG.format(block_img=config.block_img,
-                                     block_size=config.block_size))
+            if not config.preserve_block_img:
+                f.write(
+                    GEN_BLOCK_IMG.format(block_img=config.block_img,
+                                         block_size=config.block_size))
             block_args += f'-drive file={config.block_img},if=none,format=raw,id=hd'
 
         if config.block_args:
@@ -112,6 +113,11 @@ def main():
     parser.add_argument("--out_dir", help="Output directory", required=True)
     parser.add_argument("--qemu_args", help="Extra qmeu args", default="")
     parser.add_argument("--block_img", help="Add block image", default="")
+    parser.add_argument(
+        "--preserve_block_img",
+        help="Attach an existing block image without recreating it",
+        action='store_true',
+        default=False)
     parser.add_argument("--block_size",
                         help="Specify block image size",
                         default=32)

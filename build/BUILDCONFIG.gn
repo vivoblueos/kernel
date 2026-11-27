@@ -38,6 +38,10 @@ declare_args() {
 declare_args() {
   defconfig_files =
       rebase_path("//kernel/kconfig/config/${board}/${build_type}/defconfig")
+
+  # Optional existing raw block image used by QEMU runners. When set, runners
+  # attach this image without recreating it.
+  qemu_block_image = ""
 }
 
 # Define boolean flags for convenience.

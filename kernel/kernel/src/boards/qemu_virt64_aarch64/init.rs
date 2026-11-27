@@ -95,7 +95,7 @@ pub const DRAM_BASE: usize = mmu::kernel_phys_to_virt(PhysicalAddress::new(0x400
 
 crate::define_pin_states!(None);
 
-#[cfg(fatfs)]
+#[cfg(any(fatfs, rootfs_ext4))]
 pub const BLOCK_STORAGE_DEVICE_NAME: &str = "virt-storage";
 #[cfg(fatfs)]
 pub const BLOCK_STORAGE_MOUNT_POINT: &str = "fat";

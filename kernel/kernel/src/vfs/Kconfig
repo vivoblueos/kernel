@@ -6,6 +6,27 @@ config ENABLE_VFS
     help
       Enable virtual file system support. When enabled, vfs will be available.
 
+choice
+    prompt "Root filesystem type"
+    default ROOTFS_TMPFS
+    depends on ENABLE_VFS
+    help
+      Select the filesystem mounted as the root directory during VFS
+      initialization.
+
+config ROOTFS_TMPFS
+    bool "TMPFS"
+    help
+      Use an in-memory temporary filesystem as the root filesystem.
+
+config ROOTFS_EXT4
+    bool "EXT4"
+    depends on ENABLE_BLOCK
+    help
+      Use an ext4 filesystem on a block device as the root filesystem.
+
+endchoice
+
 config PROCFS
     depends on ENABLE_VFS
     default n
