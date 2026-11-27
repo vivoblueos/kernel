@@ -421,14 +421,14 @@ impl SemaphoreImplementation for BkSemaphore {
                 return false;
             }
             let irq_level = arch::disable_local_irq_save();
-            arch::enable_local_irq();
+            unsafe { arch::enable_local_irq() };
             // SAFETY: `waiting` pointer is immutable after new() — it is only
             // read here and in give().  `waiting` was already captured under the
             // guard above, so we use the local copy.
             unsafe {
                 EspWaitQueue::wait_until(waiting, _deadline_instant);
             }
-            arch::enable_local_irq_restore(irq_level);
+            unsafe { arch::enable_local_irq_restore(irq_level) };
         }
     }
 

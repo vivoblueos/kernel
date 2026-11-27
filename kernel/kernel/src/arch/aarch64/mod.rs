@@ -524,7 +524,10 @@ pub extern "C" fn disable_local_irq() {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq() {
+/// # Safety
+/// No live execution lease may require IRQs to remain masked. Only architecture
+/// entry/exit code may bypass the nesting-aware IRQ guard.
+pub unsafe extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!("msr daifclr, #3", options(nostack, nomem)) }
 }
 
@@ -552,7 +555,9 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq_restore(old: usize) {
+/// # Safety
+/// Restore only a matching mask saved on this CPU, respecting live IRQ guards.
+pub unsafe extern "C" fn enable_local_irq_restore(old: usize) {
     atomic::compiler_fence(Ordering::SeqCst);
     DAIF.set(old as u64);
 }

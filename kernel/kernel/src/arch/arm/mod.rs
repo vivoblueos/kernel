@@ -568,7 +568,10 @@ impl Context {
 }
 
 #[inline]
-pub extern "C" fn enable_local_irq() {
+/// # Safety
+/// No live execution lease may require IRQs to remain masked. Only architecture
+/// entry/exit code may bypass the nesting-aware IRQ guard.
+pub unsafe extern "C" fn enable_local_irq() {
     unsafe {
         core::arch::asm!(
             "msr basepri, {}",
@@ -614,7 +617,9 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 
 #[coverage(off)]
 #[cfg_attr(debug, inline(never))]
-pub extern "C" fn enable_local_irq_restore(old: usize) {
+/// # Safety
+/// Restore only a matching mask saved on this CPU, respecting live IRQ guards.
+pub unsafe extern "C" fn enable_local_irq_restore(old: usize) {
     atomic::compiler_fence(Ordering::SeqCst);
     unsafe {
         core::arch::asm!(

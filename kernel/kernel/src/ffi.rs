@@ -23,8 +23,10 @@ pub extern "C" fn disable_local_irq_save() -> usize {
 
 #[coverage(off)]
 #[unsafe(no_mangle)]
-pub extern "C" fn enable_local_irq_restore(val: usize) {
-    crate::arch::enable_local_irq_restore(val)
+/// # Safety
+/// Restore only a matching mask saved on this CPU, respecting live IRQ guards.
+pub unsafe extern "C" fn enable_local_irq_restore(val: usize) {
+    unsafe { crate::arch::enable_local_irq_restore(val) };
 }
 
 #[coverage(off)]

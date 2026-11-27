@@ -467,7 +467,7 @@ pub fn wait_and_then_start_schedule() {
 // Entry of system idle threads.
 pub extern "C" fn schedule() -> ! {
     READY_CORES.fetch_add(1, Ordering::Relaxed);
-    arch::enable_local_irq();
+    unsafe { arch::enable_local_irq() };
     debug_assert!(arch::local_irq_enabled());
     loop {
         yield_me();

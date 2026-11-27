@@ -143,7 +143,7 @@ impl SyscallGuard {
         }
         compiler_fence(Ordering::SeqCst);
         leave_irq();
-        enable_local_irq();
+        unsafe { enable_local_irq() };
         g
     }
 }
