@@ -56,7 +56,7 @@ config ENABLE_BLOCK
 config FATFS
     default n
     bool "Enable FAT filesystem"
-    depends on ENABLE_BLOCK
+    depends on ENABLE_BLOCK && !ROOTFS_EXT4
 
 # os adapter configuration
 menu "os adapter configuration"
