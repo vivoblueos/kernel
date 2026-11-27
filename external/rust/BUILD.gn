@@ -79,6 +79,13 @@ cargo_spec("log") {
   default_features = false
 }
 
+cargo_spec("rsext4") {
+  package = "rsext4"
+  version = "=0.9.2"
+  default_features = false
+  features = [ "USE_MULTILEVEL_CACHE" ]
+}
+
 cargo_spec("memchr") {
   package = "memchr"
   version = "=2.7.6"
