@@ -1044,13 +1044,16 @@ mod tests {
 
         // Release the keeper so the Zombie child finalizes and reaps.
         release.wait();
+        // Poll the state, not `root.child()`: `finalize_destroy` removes the
+        // child from root before `become_dead`, so on another core the child
+        // can already be gone from root while still `Zombie`.
         let mut spins = 0u32;
-        while root.child(zombie_pid).is_some() {
+        while zombie_child.state() != ProcessState::Dead {
             crate::scheduler::yield_me();
             spins += 1;
             assert!(spins < 100_000, "zombie child never reaped");
         }
-        assert_eq!(zombie_child.state(), ProcessState::Dead);
+        assert!(root.child(zombie_pid).is_none());
 
         // --- Dead case ---------------------------------------------------
         // A Dead process is even lower-leverage: `add_thread` must reject it
