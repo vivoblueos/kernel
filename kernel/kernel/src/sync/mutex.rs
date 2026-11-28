@@ -86,6 +86,11 @@ impl Mutex {
         self.nesting_count.get()
     }
 
+    /// `true` when the calling thread holds this mutex at nesting depth > 1
+    pub fn is_recursively_held(&self) -> bool {
+        self.count() > 1
+    }
+
     #[inline]
     fn nesting_count(&self) -> Uint {
         self.nesting_count.get()
@@ -425,6 +430,46 @@ impl Default for Mutex {
 
 impl !Send for Mutex {}
 unsafe impl Sync for Mutex {}
+
+/// RAII guard for [`Mutex`]
+#[must_use]
+pub struct MutexGuard<'a, T> {
+    mutex: &'a Mutex,
+    data: &'a UnsafeCell<T>,
+}
+
+impl Mutex {
+    /// Lock `self` and return a guard granting exclusive `&mut` access to the
+    /// `UnsafeCell`-wrapped `data`. Sleeps (PI-aware) on contention; never
+    /// times out (`Tick::MAX`). Must be called from process context
+    /// (`pend_for` `debug_assert!(!irq::is_in_irq())`).
+    pub fn lock_guard<'a, T>(&'a self, data: &'a UnsafeCell<T>) -> MutexGuard<'a, T> {
+        let _ = self.pend_for(Tick::MAX);
+        MutexGuard { mutex: self, data }
+    }
+}
+
+impl<T> Deref for MutexGuard<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        // SAFETY: `self` holds the lock; exclusive access is guaranteed while
+        // the guard is live.
+        unsafe { &*self.data.get() }
+    }
+}
+
+impl<T> DerefMut for MutexGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        // SAFETY: same as deref; `&mut` is sound because the lock is held.
+        unsafe { &mut *self.data.get() }
+    }
+}
+
+impl<T> Drop for MutexGuard<'_, T> {
+    fn drop(&mut self) {
+        self.mutex.post();
+    }
+}
 
 #[cfg(test)]
 mod tests {
