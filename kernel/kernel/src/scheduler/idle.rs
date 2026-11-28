@@ -65,6 +65,7 @@ fn init_idle_thread(i: usize) {
     unsafe {
         RUNNING_THREADS[i].write(arc.clone());
     }
+    super::RUNNING_THREAD_IDS[i].store(Thread::id(&arc), Ordering::Relaxed);
 }
 
 pub(super) fn init_idle_threads() {

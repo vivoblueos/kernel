@@ -35,7 +35,7 @@ use alloc::boxed::Box;
 use core::{
     intrinsics::unlikely,
     mem::MaybeUninit,
-    sync::atomic::{compiler_fence, AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{compiler_fence, AtomicBool, AtomicU8, AtomicUsize, Ordering},
 };
 pub use global_scheduler::*;
 pub(crate) use wait_queue::*;
@@ -48,6 +48,10 @@ pub use idle::{
 pub mod wait_queue;
 
 static READY_CORES: AtomicU8 = AtomicU8::new(0);
+// `Thread::id` of the thread in `RUNNING_THREADS[i]`, for other cores to read:
+// `RUNNING_THREADS[i]` itself is only accessed by core `i`.
+pub(super) static RUNNING_THREAD_IDS: [AtomicUsize; blueos_kconfig::CONFIG_NUM_CORES as usize] =
+    [const { AtomicUsize::new(0) }; blueos_kconfig::CONFIG_NUM_CORES as usize];
 const NUM_CORES: usize = blueos_kconfig::CONFIG_NUM_CORES as usize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -516,18 +520,18 @@ pub(crate) fn need_reschedule_at(moment: Tick) -> bool {
 fn set_current_thread(t: ThreadNode) -> ThreadNode {
     let _dig = DisableInterruptGuard::new();
     let my_id = arch::current_cpu_id();
+    RUNNING_THREAD_IDS[my_id].store(Thread::id(&t), Ordering::Relaxed);
     let old = unsafe { core::mem::replace(RUNNING_THREADS[my_id].assume_init_mut(), t) };
     // Do not validate sp here, since we might be using system stack,
     // like on cortex-m platform.
     old
 }
 
-// FIXME: Might use ArcCas to store Arc<Thread> in RUNNING_THREADS and
-// IDLE_THREADS to avoid data race condition.
+// Reads the id published by core `id` rather than `RUNNING_THREADS[id]`, which
+// core `id` replaces concurrently. `IDLE_THREADS` does not change after `init`.
 pub(crate) fn is_idle_core(id: usize) -> bool {
-    let running = unsafe { RUNNING_THREADS[id].assume_init_ref() };
     let idle = unsafe { idle::IDLE_THREADS[id].assume_init_ref() };
-    Thread::id(running) == Thread::id(idle)
+    RUNNING_THREAD_IDS[id].load(Ordering::Relaxed) == Thread::id(idle)
 }
 
 pub(crate) fn notify_idle_cores(how_many: usize) {
