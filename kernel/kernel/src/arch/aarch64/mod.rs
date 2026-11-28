@@ -523,6 +523,15 @@ pub extern "C" fn disable_local_irq() {
     unsafe { core::arch::asm!("msr daifset, #3", options(nostack, nomem)) }
 }
 
+// Disable IRQs for the RUNNING -> RETIRED transition in `retire_me`, closing
+// the window between release_pending_blocker/release_all_mutexes and the
+// context switch so no IRQ can re-enter the scheduler on this dying stack. On
+// AArch64 (DAIF masking) this is the same mask as `disable_local_irq`.
+#[inline(always)]
+pub extern "C" fn disable_irq_when_retiring() {
+    disable_local_irq();
+}
+
 #[inline]
 pub extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!("msr daifclr, #3", options(nostack, nomem)) }

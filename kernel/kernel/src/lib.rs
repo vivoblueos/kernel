@@ -497,7 +497,10 @@ mod tests {
 
     static SEMA_CLEANUP_COUNTER: CleanupCounter = CleanupCounter::new();
     static mut SEMA_COUNTER: usize = 0usize;
-    static SEMA: sync::semaphore::Semaphore = sync::semaphore::Semaphore::new();
+    // Arc-loaded: blocking paths call `arc_self`.
+    static_arc! {
+        SEMA(sync::semaphore::Semaphore, sync::semaphore::Semaphore::new()),
+    }
 
     extern "C" fn test_semaphore() {
         SEMA.acquire_notimeout::<scheduler::InsertToEnd>();
@@ -991,7 +994,10 @@ mod tests {
     #[cfg(event_flags)]
     static EVENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
     #[cfg(event_flags)]
-    static EVENT: sync::event_flags::EventFlags = sync::event_flags::EventFlags::new();
+    // Arc-loaded: blocking waits call `arc_self`.
+    static_arc! {
+        EVENT(sync::event_flags::EventFlags, sync::event_flags::EventFlags::new()),
+    }
     #[cfg(event_flags)]
     extern "C" fn test_event_flags() {
         EVENT.wait::<scheduler::InsertToEnd>(

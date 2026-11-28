@@ -212,6 +212,20 @@ fn might_switch_context(from: &Context, ra: usize) -> usize {
     if old.preempt_count() != 0 {
         return old_sp;
     }
+    // MUST check RETIRED before calling next_preferred_thread(), because
+    // next_preferred_thread() dequeues a thread from the ready queue.  If we
+    // returned after dequeueing, that thread would be orphaned (removed from
+    // the ready queue but never scheduled).
+    //
+    // A thread can reach RETIRED state here when retire_me() sets the state
+    // to RETIRED then a timer/PLIC interrupt fires before the ecall that
+    // performs the actual switch.  Preemption is disabled inside retire_me()
+    // so the preempt_count guard above normally catches this; this check
+    // handles the residual case (e.g. a stale PENDING_SWITCH_CONTEXT bit).
+    // retire_me()'s own ecall will do the cleanup — skip the switch here.
+    if old.state() == thread::RETIRED {
+        return old_sp;
+    }
     let Some(next) =
         scheduler::next_preferred_thread(old.priority(), scheduler::PreferMode::StrictHigher)
     else {

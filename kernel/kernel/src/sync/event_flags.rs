@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::SpinLock;
+use super::{SpinLock, SpinLockGuard};
 use crate::{
     error::{code, Error},
     irq, scheduler,
     scheduler::{wait_queue, InsertMode, InsertModeTrait, InsertToEnd, WaitEntry, WaitQueue},
     thread,
-    thread::Thread,
+    thread::{PendRef, Thread},
     time::Tick,
-    types::{Arc, ArcList},
+    types::{impl_simple_intrusive_adapter, Arc, ArcList, GenericList},
     with_iou,
 };
 use bitflags::bitflags;
@@ -35,11 +35,20 @@ bitflags! {
     }
 }
 
+impl_simple_intrusive_adapter!(OffsetOfEventNode, EventFlags, event_node);
+pub(crate) type EventList = ArcList<EventFlags, OffsetOfEventNode>;
+type EventNode = <EventList as GenericList>::Node;
+
 #[derive(Debug)]
 pub struct EventFlags {
     // We let the Spinlock protect the whole EventFlags.
     pending: SpinLock<WaitQueue>,
     flags: Cell<u32>,
+    // Self-referential intrusive node, mirroring `Mutex::mutex_node`, so a
+    // `&EventFlags` on the wait path can reconstruct the owning `Arc<EventFlags>`
+    // via `EventList::clone_from`. Used by `release_pending_blocker` to unlink
+    // a dying thread's `WaitEntry` before the thread is force-freed.
+    event_node: EventNode,
 }
 
 impl Default for EventFlags {
@@ -53,7 +62,38 @@ impl EventFlags {
         Self {
             flags: Cell::new(0),
             pending: SpinLock::new(WaitQueue::new()),
+            event_node: EventNode::new(),
         }
+    }
+
+    /// Wrap a freshly-constructed `EventFlags` in an `Arc` and finalize it,
+    /// mirroring `Mutex::create`. Any event-flags whose `wait` path may be
+    /// entered must be `Arc`-loaded so `arc_self` can safely reconstruct the
+    /// handle (see the safety note on `arc_self`).
+    pub fn create() -> Arc<Self> {
+        let ev = Arc::new(Self::new());
+        ev.init(0);
+        ev
+    }
+
+    /// Reconstruct the owning `Arc<EventFlags>` from a `&self` that lives inside
+    /// a `TinyArcInner<EventFlags>` (i.e. was produced by `create()` / `Arc::new`).
+    /// # Safety
+    /// Mirrors `Mutex`'s `MutexList::clone_from(&self.mutex_node)`: the caller
+    /// must guarantee `self` is embedded in an `Arc`-allocated `EventFlags`, not
+    /// a stack/inline object. Production wait paths go through the adapter's
+    /// `Arc`-stored host; tests that block must use `create()` / `Arc::new`.
+    #[inline]
+    fn arc_self(&self) -> Arc<Self> {
+        // SAFETY: same contract as `Semaphore::arc_self` / `MutexList::clone_from`.
+        unsafe { EventList::clone_from(&self.event_node) }
+    }
+
+    /// Lock and return this event-flags' waiter queue, so `release_pending_blocker`
+    /// can unlink a dying thread's `WaitEntry` under the same lock the wait path
+    /// inserts into.
+    pub fn wait_queue(&self) -> SpinLockGuard<'_, WaitQueue> {
+        self.pending.irqsave_lock()
     }
 
     pub fn init(&self, flags: u32) -> bool {
@@ -165,9 +205,15 @@ impl EventFlags {
             let mut wait_entry = WaitEntry::new(current_thread.clone());
             borrowed_wait_entry =
                 wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+            // Record this event-flags as the host this thread is pending on,
+            // so `release_pending_blocker` can unlink our `WaitEntry` if we
+            // are force-freed while still suspended. Cleared once we resume.
+            let _old = current_thread
+                .replace_pending_blocker(Some(Arc::new(PendRef::Event(self.arc_self()))));
             reached_deadline = scheduler::suspend_me_for(timeout, Some(w));
             w = self.pending.irqsave_lock();
             borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+            let _old = current_thread.replace_pending_blocker(None);
         });
         // ERESET injected by reset()/delete()? Bail out with that errno.
         let werr = current_thread.take_wait_error();
@@ -214,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_new() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         assert_eq!(event_flags.get(), 0);
     }
 
@@ -226,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_set_get() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Test set and get single flag
@@ -244,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_set_zero() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Setting zero flags should return error
@@ -253,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_wait_any() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Set flags first
@@ -270,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_wait_all() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Set multiple flags
@@ -288,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_wait_zero() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Waiting for zero flags should return error
@@ -304,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_timeout() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Wait with zero timeout should return error immediately
@@ -314,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_no_clear() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Set flags
@@ -335,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_clear_on_wait() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Set flags
@@ -352,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_edge_cases() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Test with maximum flag values
@@ -377,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_wait_combinations() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Set multiple flags
@@ -401,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_no_clear_behavior() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Set flags
@@ -436,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_complex_scenario() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Test complex scenario with multiple operations
@@ -468,7 +514,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_mode_combinations() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Test ANY + NO_CLEAR
@@ -521,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_sequential_operations() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Sequential set operations
@@ -544,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_event_flags_clear_nonexistent() {
-        let event_flags = EventFlags::new();
+        let event_flags = EventFlags::create();
         event_flags.init(0);
 
         // Clear flags that don't exist (should be safe)

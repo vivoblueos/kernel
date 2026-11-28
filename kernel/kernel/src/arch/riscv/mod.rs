@@ -338,6 +338,17 @@ pub(crate) extern "C" fn disable_local_irq() {
     unsafe { core::arch::asm!(clear_mstatus_mie!(), options(nostack)) };
 }
 
+// `retire_me` calls this to bracket the RUNNING -> RETIRED transition, but on
+// RISC-V it is a no-op: closing the IRQ window across a switch is only correct
+// here when disable/enable are paired at the same call site (e.g.
+// suspend_me_until() disables before the switch and re-enables after it
+// returns). retire_me() cannot form such a pair, so the residual re-switch
+// race during the RUNNING->RETIRED transition is instead blocked by the
+// `preempt_count() != 0` early-return in might_switch_context()
+// (arch/riscv/trap.rs) — kernel-b2 relies on disable_preempt for this window.
+#[inline]
+pub extern "C" fn disable_irq_when_retiring() {}
+
 #[inline]
 pub(crate) extern "C" fn enable_local_irq() {
     unsafe { core::arch::asm!(set_mstatus_mie!(), options(nostack)) };

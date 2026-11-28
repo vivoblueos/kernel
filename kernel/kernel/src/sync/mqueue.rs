@@ -20,7 +20,7 @@ use crate::{
     support::align_up_size,
     thread, time,
     time::Tick,
-    types::Arc,
+    types::{impl_simple_intrusive_adapter, Arc, ArcList, GenericList},
     with_iou,
 };
 use alloc::alloc::{alloc, dealloc, Layout};
@@ -30,6 +30,9 @@ use core::{
     slice,
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
+
+impl_simple_intrusive_adapter!(OffsetOfMqNode, MessageQueue, mq_node);
+pub(crate) type MqList = ArcList<MessageQueue, OffsetOfMqNode>;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SendMode {
@@ -59,6 +62,12 @@ pub struct MessageQueue {
     // ACTIVE on construction/init; DEACTIVE during reset()/delete() teardown.
     // Checked at the top of the send/recv pend loops to return EBADF.
     state: AtomicU8,
+    // Self-referential intrusive node, mirroring `Mutex::mutex_node`, so a
+    // `&MessageQueue` on the send/recv wait path can reconstruct the owning
+    // `Arc<MessageQueue>` via `MqList::clone_from`. Used by
+    // `release_pending_blocker` to unlink a dying thread's `WaitEntry` from
+    // this queue's sender/receiver pending queue before the thread is freed.
+    mq_node: <MqList as GenericList>::Node,
 }
 
 impl MessageQueue {
@@ -93,6 +102,7 @@ impl MessageQueue {
                 BoxedRingBuffer::new_with_mem(total_size, buf)
             }),
             state: AtomicU8::new(STATE_ACTIVE),
+            mq_node: <MqList as GenericList>::Node::new(),
         })
     }
 
@@ -120,6 +130,27 @@ impl MessageQueue {
     #[inline]
     fn lock_buffer(&self) -> SpinLockGuard<'_, BoxedRingBuffer> {
         self.queue_buffer.irqsave_lock()
+    }
+
+    /// Reconstruct the owning `Arc<MessageQueue>` from a `&self` that lives
+    /// inside a `TinyArcInner<MessageQueue>` (i.e. was produced by `create()` /
+    /// `Arc::new`). # Safety: mirrors `Mutex`'s `MutexList::clone_from`: the
+    /// caller must guarantee `self` is embedded in an `Arc`-allocated
+    /// `MessageQueue`, not a stack/inline object. Production send/recv paths
+    /// go through the `Arc`-stored host; tests that block must use `create()`.
+    #[inline]
+    fn arc_self(&self) -> Arc<Self> {
+        // SAFETY: same contract as `Semaphore::arc_self` / `MutexList::clone_from`.
+        unsafe { MqList::clone_from(&self.mq_node) }
+    }
+
+    /// Lock and return one of the two pending queues (`SEND_TYPE` or
+    /// `RECV_TYPE`), so `release_pending_blocker` can unlink a dying thread's
+    /// `WaitEntry` under the same lock the send/recv wait path inserts into.
+    #[inline]
+    pub fn pend_queue_of(&self, dir: usize) -> SpinLockGuard<'_, WaitQueue> {
+        debug_assert!(dir <= RECV_TYPE);
+        self.pend_queues[dir].irqsave_lock()
     }
 
     #[inline]
@@ -208,10 +239,20 @@ impl MessageQueue {
                     InsertMode::InsertToEnd,
                 )
                 .unwrap();
+                // Record this queue's sender pend queue as the host this
+                // thread is pending on, so `release_pending_blocker` can
+                // unlink our `WaitEntry` if we are force-freed while still
+                // suspended. Cleared once we resume.
+                let _old =
+                    this_thread.replace_pending_blocker(Some(Arc::new(thread::PendRef::Mq {
+                        mq: self.arc_self(),
+                        dir: SEND_TYPE as u8,
+                    })));
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(send_queue));
                 buffer_guard = self.lock_buffer();
                 send_queue = self.pend_queues[SEND_TYPE].irqsave_lock();
                 borrowed_wait_entry = send_queue.pop(borrowed_wait_entry).unwrap();
+                let _old = this_thread.replace_pending_blocker(None);
                 // ERESET injected by reset()/delete()? Bail out of send.
                 let werr = this_thread.take_wait_error();
                 if werr != 0 {
@@ -298,10 +339,18 @@ impl MessageQueue {
                     InsertMode::InsertToEnd,
                 )
                 .unwrap();
+                // See the send path: record this queue's receiver pend queue
+                // as the host, cleared once we resume.
+                let _old =
+                    this_thread.replace_pending_blocker(Some(Arc::new(thread::PendRef::Mq {
+                        mq: self.arc_self(),
+                        dir: RECV_TYPE as u8,
+                    })));
                 reached_deadline = scheduler::suspend_me_for(timeout, Some(recv_queue));
                 buffer_guard = self.lock_buffer();
                 recv_queue = self.pend_queues[RECV_TYPE].irqsave_lock();
                 borrowed_wait_entry = recv_queue.pop(borrowed_wait_entry).unwrap();
+                let _old = this_thread.replace_pending_blocker(None);
                 // ERESET injected by reset()/delete()? Bail out of recv.
                 let werr = this_thread.take_wait_error();
                 if werr != 0 {
@@ -539,7 +588,8 @@ mod tests {
 
     #[test]
     fn test_message_send_outtime() {
-        let queue = MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue");
+        // Arc-loaded: blocking send calls `arc_self`.
+        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue"));
 
         // Test initialization
         let result = queue.init();
@@ -564,7 +614,8 @@ mod tests {
 
     #[test]
     fn test_message_recv_outtime() {
-        let queue = MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue");
+        // Arc-loaded: blocking recv calls `arc_self`.
+        let queue = Arc::new(MessageQueue::new(4, 2, ptr::null_mut()).expect("mqueue"));
 
         // Test initialization
         let result = queue.init();

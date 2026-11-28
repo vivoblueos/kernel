@@ -289,18 +289,46 @@ pub(crate) extern "C" fn relinquish_me_and_return_next_sp(old_sp: usize) -> usiz
 }
 
 pub fn retire_me() -> ! {
-    let retiring = current_thread_ref();
+    let retiring = current_thread();
     #[cfg(procfs)]
     {
         use blueos_infra::no_let_underscore::IgnoreResult;
-        crate::vfs::trace_thread_close(unsafe { Arc::clone_from(retiring) }).ignore_result();
+        crate::vfs::trace_thread_close(retiring.clone()).ignore_result();
     }
+    // Disable local IRQ before releasing mutexes and transitioning the thread
+    // to RETIRED. release_all_mutexes → reset → wake_up_all may wake a
+    // higher-priority waiter, which triggers yield_me_now_or_later. Without
+    // this guard, a timer interrupt could preempt the dying thread
+    // mid-release and re-schedule it, causing transfer_state(RUNNING,
+    // RETIRED) below to race with the re-queued RUNNING state on SMP, or the
+    // assert to fire on UP (for ARM).
+    arch::disable_irq_when_retiring();
+    // Prevent the current thread from being preempted and switched to another
+    // task during release_all_mutexes.
+    retiring.disable_preempt();
+    // Detach this thread's WaitEntry from its blocked host wait_queue and
+    // clear pending_blocker; a leaked Arc<PendRef> otherwise resurfaces as a
+    // slab-misalign free after Thread recycling.
+    Thread::release_pending_blocker(&retiring);
+    // Release every mutex this thread still holds. Without this, a thread
+    // holding a Mutex at exit would strand all waiters.
+    Thread::release_all_mutexes(&retiring);
+    // Compute `next` after the releases: release_all_mutexes may wake a
+    // higher-priority waiter that should become `next` instead of the
+    // previously-highest ready thread.
     let next = next_ready_thread().unwrap_or_else(idle::current_idle_thread);
     debug_assert_eq!(next.state(), thread::READY);
     let mut hooks = ContextSwitchHookHolder::new(next);
-    retiring.disable_preempt();
     let ok = retiring.transfer_state(thread::RUNNING, thread::RETIRED);
     debug_assert_eq!(ok, Ok(()));
+    // Drop the local Arc clone BEFORE switching away. The retired thread's
+    // stack is freed by the next owner without unwinding, so any Arc on this
+    // stack would never run Drop — leaving a stray strong ref that pins the
+    // Thread (and its Stack) forever, leaking ~DEFAULT_STACK_SIZE per retire.
+    // After this drop, the only strong refs left are GlobalQueue and
+    // RUNNING_THREADS, both of which switch_context_with_hook reclaims on the
+    // next thread's stack.
+    drop(retiring);
     arch::switch_context_with_hook(&mut hooks as *mut _);
     unreachable!("Retired thread should not reach here")
 }

@@ -14,7 +14,7 @@
 
 extern crate alloc;
 #[cfg(event_flags)]
-use crate::sync::event_flags::EventFlagsMode;
+use crate::sync::event_flags::{EventFlags, EventFlagsMode};
 use crate::{
     arch,
     arch::Context,
@@ -25,7 +25,9 @@ use crate::{
     scheduler,
     support::{Region, RegionalObjectBuilder, Storage},
     sync::{
+        mqueue::MessageQueue,
         mutex::{MutexList, MutexListIterator},
+        semaphore::Semaphore,
         ISpinLock, Mutex, SpinLock, SpinLockGuard, SpinLockWriteGuard,
     },
     thread::builder::GlobalQueue,
@@ -47,6 +49,30 @@ mod builder;
 pub use builder::*;
 
 pub type ThreadNode = Arc<Thread>;
+
+/// What a thread is blocked on. A thread blocks on at most one object at a
+/// time, so `pending_blocker` holds exactly one variant (or `None`). The
+/// `Mutex` variant drives priority-inheritance (PI) chain walking; the others
+/// (sema / event / mq) do not participate in PI and naturally break the chain.
+///
+/// Carries an `Arc` so `inner_detach` can re-lock the host's `WaitQueue` to
+/// unlink the dying thread's `WaitEntry` *before* the thread is force-freed.
+/// The `Arc` keeps the host alive across detach: a host's `delete()`/`reset()`
+/// drops its `WaitQueue` lock before freeing the host, so a raw pointer would
+/// race that free on another core.
+#[derive(Debug)]
+pub enum PendRef {
+    Mutex(Arc<Mutex>),
+    Sema(Arc<Semaphore>),
+    #[cfg(event_flags)]
+    Event(Arc<EventFlags>),
+    /// `dir` is `0` for the sender queue (SEND_TYPE) and `1` for the receiver
+    /// queue (RECV_TYPE), matching `sync::mqueue`.
+    Mq {
+        mq: Arc<MessageQueue>,
+        dir: u8,
+    },
+}
 
 pub enum Entry {
     C(extern "C" fn()),
@@ -235,8 +261,9 @@ pub struct Thread {
     // are aware of kernel's APIs, while POSIX are not. So librs' POSIX
     // implementation should not rely on this field.
     alien_ptr: Option<NonNull<core::ffi::c_void>>,
-    // The mutex this thread is acquiring.
-    pending_on_mutex: ArcCas<Mutex>,
+    // The sync object this thread is blocked on (Mutex / Sema / Event / Mq).
+    // Drives priority-inheritance chain walking for the Mutex variant.
+    pending_blocker: ArcCas<PendRef>,
     // Mutexes this thread has acquired.  It's protected by its own spinlock to
     // avoid deadlock, since before this change we might have lock pattern
     // Thread0:
@@ -463,8 +490,58 @@ impl Thread {
     }
 
     #[inline]
-    pub fn replace_pending_on_mutex(&self, mu: Option<Arc<Mutex>>) -> Option<Arc<Mutex>> {
-        self.pending_on_mutex.swap(mu, Ordering::Release)
+    pub fn replace_pending_blocker(&self, p: Option<Arc<PendRef>>) -> Option<Arc<PendRef>> {
+        self.pending_blocker.swap(p, Ordering::Release)
+    }
+
+    /// Pop and reset every mutex this thread has acquired. Called by
+    /// `retire_me` while the retiring thread is off the ready queues and
+    /// cannot be stolen, so `pop_front` needs no extra synchronization.
+    /// `reset()` wakes the mutex's waiters with ERESET and demotes any
+    /// priority they inherited through this thread (PI recovery).
+    pub fn release_all_mutexes(th: &ThreadNode) {
+        loop {
+            let m = th.acquired_mutexes_mut().pop_front();
+            let Some(m) = m else {
+                break;
+            };
+            m.reset();
+        }
+    }
+
+    /// A thread blocks on at most one object at a time, so the first match is
+    /// the only one and we `break` immediately. Called by
+    /// `release_pending_blocker` while the host's `WaitQueue` lock is held,
+    /// so the detach itself needs no extra synchronization.
+    fn detach_wait_entry(q: &mut crate::scheduler::WaitQueue, th: &ThreadNode) {
+        for entry in q.iter_mut() {
+            if Arc::is(&entry.thread, th) {
+                IlistHead::detach(&mut entry.wait_node);
+                break;
+            }
+        }
+    }
+
+    /// Detach `th` from whatever sync object it is currently blocked on.
+    /// Each variant re-locks the host's `WaitQueue`, unlinks the entry, then
+    /// clears the `pending_blocker` field. The `Mutex` variant does not
+    /// drive a priority-inheritance demote here — that is `reset()`'s job in
+    /// `release_all_mutexes`; this function only removes the waiter from the
+    /// queue so the dying thread can be freed without leaving a dangling
+    /// `WaitEntry` in a live host's queue.
+    pub fn release_pending_blocker(th: &ThreadNode) {
+        if let Some(p) = th.pending_blocker() {
+            match &*p {
+                PendRef::Mutex(m) => Self::detach_wait_entry(&mut m.waitqueue_guard(), th),
+                PendRef::Sema(s) => Self::detach_wait_entry(&mut s.wait_queue(), th),
+                #[cfg(event_flags)]
+                PendRef::Event(e) => Self::detach_wait_entry(&mut e.wait_queue(), th),
+                PendRef::Mq { mq, dir } => {
+                    Self::detach_wait_entry(&mut mq.pend_queue_of(*dir as usize), th)
+                }
+            }
+            let _old = th.replace_pending_blocker(None);
+        }
     }
 
     pub fn process(&self) -> Option<alloc::sync::Arc<Process>> {
@@ -497,7 +574,7 @@ impl Thread {
             #[cfg(event_flags)]
             event_flags_mask: 0,
             alien_ptr: None,
-            pending_on_mutex: ArcCas::new(None),
+            pending_blocker: ArcCas::new(None),
             acquired_mutexes: SpinLock::new(MutexList::new()),
             signal_context: None,
             process: Weak::new(),
@@ -552,8 +629,8 @@ impl Thread {
     }
 
     #[inline]
-    pub(crate) fn pending_on_mutex(&self) -> Option<Arc<Mutex>> {
-        self.pending_on_mutex.load(Ordering::Acquire)
+    pub(crate) fn pending_blocker(&self) -> Option<Arc<PendRef>> {
+        self.pending_blocker.load(Ordering::Acquire)
     }
 
     #[inline]

@@ -18,18 +18,28 @@ use crate::{
     irq, scheduler,
     scheduler::{wait_queue, InsertMode, InsertModeTrait, WaitEntry, WaitQueue},
     thread,
-    thread::Thread,
+    thread::{PendRef, Thread},
     time::Tick,
-    types::Uint,
+    types::{impl_simple_intrusive_adapter, Arc, ArcList, GenericList, Uint},
     with_iou,
 };
 use core::{cell::Cell, ops::DerefMut};
+
+impl_simple_intrusive_adapter!(OffsetOfSemaNode, Semaphore, sema_node);
+pub(crate) type SemaList = ArcList<Semaphore, OffsetOfSemaNode>;
+type SemaNode = <SemaList as GenericList>::Node;
 
 #[derive(Debug)]
 pub struct Semaphore {
     counter: Cell<Uint>,
     // We let the Spinlock protect the whole semaphore.
     pending: SpinLock<WaitQueue>,
+    // Self-referential intrusive node, mirroring `Mutex::mutex_node`, so that a
+    // `&Semaphore` on a wait path can reconstruct the owning `Arc<Semaphore>`
+    // via `SemaList::clone_from`. This is the handle `release_pending_blocker`
+    // uses to unlink a dying thread's `WaitEntry` before the thread is
+    // force-freed.
+    sema_node: SemaNode,
 }
 
 impl Semaphore {
@@ -37,7 +47,33 @@ impl Semaphore {
         Self {
             counter: Cell::new(1),
             pending: SpinLock::new(WaitQueue::new()),
+            sema_node: SemaNode::new(),
         }
+    }
+
+    /// Wrap a freshly-constructed semaphore in an `Arc` and finalize it, mirroring
+    /// `Mutex::create`. Any semaphore whose blocking wait paths may be entered
+    /// must be `Arc`-loaded so that `arc_self` can safely reconstruct the handle
+    /// (see the safety note on `arc_self`).
+    pub fn create() -> Arc<Self> {
+        let sema = Arc::new(Self::new());
+        sema.init(1);
+        sema
+    }
+
+    /// Reconstruct the owning `Arc<Semaphore>` from a `&self` that lives inside a
+    /// `TinyArcInner<Semaphore>` (i.e. was produced by `create()` / `Arc::new`).
+    /// # Safety
+    /// Mirrors `Mutex`'s `MutexList::clone_from(&self.mutex_node)`: the caller
+    /// must guarantee `self` is embedded in an `Arc`-allocated `Semaphore`, not a
+    /// stack/inline object. All production wait paths go through the adapter's
+    /// `Arc`-stored host; tests that block must use `create()` / `Arc::new`.
+    #[inline]
+    fn arc_self(&self) -> Arc<Self> {
+        // SAFETY: `sema_node` is an inline field reachable from the
+        // `Arc`-allocated `Semaphore`; `clone_from` re-derives the `Arc` by
+        // bumping the strong count, same contract as `MutexList::clone_from`.
+        unsafe { SemaList::clone_from(&self.sema_node) }
     }
 
     pub fn init(&self, counter: Uint) -> bool {
@@ -49,6 +85,10 @@ impl Semaphore {
     pub fn count(&self) -> Uint {
         let _w = self.pending.irqsave_lock();
         self.counter.get()
+    }
+
+    pub fn wait_queue(&self) -> SpinLockGuard<'_, WaitQueue> {
+        self.pending.irqsave_lock()
     }
 
     #[inline(always)]
@@ -98,10 +138,17 @@ impl Semaphore {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                // Record this semaphore as the host this thread is pending on,
+                // so `release_pending_blocker` can unlink our `WaitEntry` if
+                // we are force-freed while still suspended. Cleared once we
+                // resume.
+                let _old = this_thread
+                    .replace_pending_blocker(Some(Arc::new(PendRef::Sema(self.arc_self()))));
                 let timeout = scheduler::suspend_me_for(Tick::MAX, Some(w));
                 debug_assert!(!timeout);
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                let _old = this_thread.replace_pending_blocker(None);
                 // ERESET injected by reset()/delete()? Bail out.
                 if this_thread.take_wait_error() != 0 {
                     return false;
@@ -142,9 +189,14 @@ impl Semaphore {
                 let mut wait_entry = WaitEntry::new(this_thread.clone());
                 borrowed_wait_entry =
                     wait_queue::insert(w.deref_mut(), &mut wait_entry, M::MODE).unwrap();
+                // See `acquire_notimeout`: record this semaphore as the pending
+                // host for the duration of the suspend, then clear on resume.
+                let _old = this_thread
+                    .replace_pending_blocker(Some(Arc::new(PendRef::Sema(self.arc_self()))));
                 timeout = scheduler::suspend_me_for(ticks, Some(w));
                 w = self.pending.irqsave_lock();
                 borrowed_wait_entry = w.pop(borrowed_wait_entry).unwrap();
+                let _old = this_thread.replace_pending_blocker(None);
                 // ERESET injected by reset()/delete()? Bail out.
                 if this_thread.take_wait_error() != 0 {
                     return false;
@@ -268,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_count() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(5);
 
         // Test semaphore number count
@@ -277,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_try_acquire_success() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(3);
 
         // Test successful acquisition
@@ -297,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_try_acquire_failure() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(1);
 
         // Acquire the only available resource
@@ -313,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_acquire_notimeout() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(2);
 
         // Test successful acquisition without timeout
@@ -329,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_acquire_timeout_success() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(2);
 
         // Test successful acquisition with timeout
@@ -345,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_acquire_none() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(2);
 
         // Test acquire with None timeout (should call acquire_notimeout)
@@ -356,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_acquire_some() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(2);
 
         // Test acquire with Some timeout (should call acquire_timeout)
@@ -367,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_release_basic() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(2);
 
         // Test basic release
@@ -381,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_release_after_acquire() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(1);
 
         // Acquire the resource
@@ -404,7 +456,7 @@ mod tests {
     fn test_semaphore_release_without_waiters_does_not_schedule() {
         use cortex_m::peripheral::SCB;
 
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(0);
         let _guard = crate::support::DisableInterruptGuard::new();
         let was_pending = SCB::is_pendsv_pending();
@@ -423,7 +475,7 @@ mod tests {
         use crate::types::Arc;
         use core::sync::atomic::{AtomicUsize, Ordering};
 
-        let semaphore = Arc::new(Semaphore::new());
+        let semaphore = Arc::new(Semaphore::create());
         semaphore.init(0);
         let acquired = Arc::new(AtomicUsize::new(0));
         let worker_semaphore = semaphore.clone();
@@ -445,7 +497,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_acquire_release_cycle() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(1);
 
         // Complete cycle: acquire -> release -> acquire
@@ -463,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_multiple_operations() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(3);
 
         // Multiple acquire operations
@@ -495,7 +547,7 @@ mod tests {
     #[test]
     fn test_semaphore_edge_cases() {
         // Test with maximum value
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(10);
 
         // Should be able to acquire
@@ -510,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_semaphore_concurrent_simulation() {
-        let semaphore = Semaphore::new();
+        let semaphore = Semaphore::create();
         semaphore.init(2);
 
         // Simulate concurrent access pattern
@@ -592,7 +644,7 @@ mod tests {
         // delete() on a zero-count sem must wake a blocked acquire with ERESET,
         // making it return false. The only path returning false is the bail-out,
         // so observing false proves the injection landed.
-        let semaphore = Arc::new(Semaphore::new());
+        let semaphore = Arc::new(Semaphore::create());
         semaphore.init(0);
         // 0 = blocked, 1 = acquired, 2 = bailed out (ERESET)
         let observed = Arc::new(AtomicUsize::new(0));

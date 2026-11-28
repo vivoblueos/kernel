@@ -55,7 +55,9 @@ pub unsafe extern "C" fn osMemoryPoolNew(
                 return core::ptr::null_mut();
             }
             result = attr.cb_mem as *mut MemoryPool;
-            unsafe { core::ptr::write_bytes(result, 0, 1) };
+            // Placement-new: zero-fill would leave the `Arc<Semaphore>` field
+            // NULL, crashing `init()`. Matches the Box path above.
+            unsafe { core::ptr::write(result, MemoryPool::new()) };
         }
     } else {
         result = Box::into_raw(Box::new(MemoryPool::new()));
@@ -182,7 +184,7 @@ mod tests {
         .unwrap();
         let cb = Storage::from_layout(cb_layout);
         let data_layout = Layout::from_size_align(block_count * block_size, 8).unwrap();
-        let data = Storage::from_layout(cb_layout);
+        let data = Storage::from_layout(data_layout);
         attr.cb_mem = cb.base() as *mut c_void;
         attr.cb_size = cb_layout.size() as u32;
         attr.mp_mem = data.base() as *mut c_void;

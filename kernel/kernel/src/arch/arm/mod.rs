@@ -590,6 +590,17 @@ pub extern "C" fn disable_local_irq() {
     }
 }
 
+/// Disable IRQs for the RUNNING -> RETIRED transition in `retire_me`, closing
+/// the window between release_pending_blocker/release_all_mutexes and the
+/// context switch so no IRQ that fires between `release_pending_blocker`/
+/// `release_all_mutexes` and the actual context switch can re-enter the
+/// scheduler on this stack while the dying thread is half-torn-down. On ARM
+/// (basepri masking) this is the same mask as `disable_local_irq`.
+#[inline(always)]
+pub extern "C" fn disable_irq_when_retiring() {
+    disable_local_irq();
+}
+
 #[coverage(off)]
 #[cfg_attr(debug, inline(never))]
 pub extern "C" fn disable_local_irq_save() -> usize {
